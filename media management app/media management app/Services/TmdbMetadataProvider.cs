@@ -13,6 +13,8 @@ public sealed class TmdbMetadataProvider : IMetadataProvider
     private readonly ISettingsService _settingsService;
     private readonly IAppLogger _logger;
     private readonly HttpClient _httpClient;
+    private readonly Dictionary<int, IReadOnlyList<TmdbSeasonSummary>> _seasonSummaryCache = [];
+    private readonly Dictionary<(int SeriesId, int SeasonNumber), IReadOnlyList<TmdbEpisodeSummary>> _seasonEpisodeCache = [];
 
     public TmdbMetadataProvider(ISettingsService settingsService, IAppLogger logger, HttpClient httpClient)
     {
@@ -89,6 +91,107 @@ public sealed class TmdbMetadataProvider : IMetadataProvider
         }
     }
 
+    public async Task<EpisodeMappingResult> MapTvEpisodeAsync(SourceItem item, CancellationToken cancellationToken = default)
+    {
+        if (item.MediaKind != MediaKind.TvEpisode ||
+            item.EpisodeNumber is null ||
+            string.IsNullOrWhiteSpace(item.ProviderId) ||
+            !int.TryParse(item.ProviderId, NumberStyles.None, CultureInfo.InvariantCulture, out var seriesId))
+        {
+            return new EpisodeMappingResult
+            {
+                IsAvailable = false,
+                ErrorMessage = "Item does not have enough TV metadata to map an episode."
+            };
+        }
+
+        if (string.IsNullOrWhiteSpace(_settingsService.Current.TmdbReadAccessToken))
+        {
+            return new EpisodeMappingResult
+            {
+                IsAvailable = false,
+                ErrorMessage = "TMDb read access token is not configured."
+            };
+        }
+
+        ConfigureHeaders();
+
+        try
+        {
+            var targetEpisode = item.EpisodeNumber.Value;
+            var seasons = await GetSeasonSummariesAsync(seriesId, cancellationToken);
+            if (seasons.Count == 0)
+            {
+                return new EpisodeMappingResult
+                {
+                    IsAvailable = true,
+                    IsMapped = false,
+                    Reason = "TMDb returned no seasons for this series."
+                };
+            }
+
+            foreach (var season in seasons)
+            {
+                var episodes = await GetSeasonEpisodesAsync(seriesId, season.SeasonNumber, cancellationToken);
+                var directMatch = episodes.FirstOrDefault(episode => episode.EpisodeNumber == targetEpisode);
+                if (directMatch is not null)
+                {
+                    var reason = $"TMDb direct season lookup found absolute episode {targetEpisode} in season {season.SeasonNumber} ({season.Name}).";
+                    _logger.Info($"Mapped {item.ShowTitle} absolute episode {targetEpisode} to S{season.SeasonNumber:00}E{directMatch.EpisodeNumber:00}. {reason}", LogTarget.All);
+                    return new EpisodeMappingResult
+                    {
+                        IsAvailable = true,
+                        IsMapped = true,
+                        SeasonNumber = season.SeasonNumber,
+                        EpisodeNumber = directMatch.EpisodeNumber,
+                        Source = "TmdbSeasonDirect",
+                        Confidence = 100,
+                        Reason = reason
+                    };
+                }
+            }
+
+            var remainingEpisode = targetEpisode;
+            foreach (var season in seasons)
+            {
+                if (season.EpisodeCount <= 0)
+                {
+                    continue;
+                }
+
+                if (remainingEpisode <= season.EpisodeCount)
+                {
+                    var reason = $"TMDb cumulative season counts mapped absolute episode {targetEpisode} to season {season.SeasonNumber}, episode {remainingEpisode}.";
+                    _logger.Warning($"Mapped {item.ShowTitle} absolute episode {targetEpisode} with lower-confidence cumulative fallback: S{season.SeasonNumber:00}E{remainingEpisode:00}", LogTarget.All);
+                    return new EpisodeMappingResult
+                    {
+                        IsAvailable = true,
+                        IsMapped = true,
+                        SeasonNumber = season.SeasonNumber,
+                        EpisodeNumber = remainingEpisode,
+                        Source = "TmdbSeasonCumulative",
+                        Confidence = 70,
+                        Reason = reason
+                    };
+                }
+
+                remainingEpisode -= season.EpisodeCount;
+            }
+
+            return new EpisodeMappingResult
+            {
+                IsAvailable = true,
+                IsMapped = false,
+                Reason = $"Absolute episode {targetEpisode} was not found in TMDb seasons."
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.Error($"TMDb episode mapping failed for {item.FilePath}", ex, LogTarget.All);
+            return new EpisodeMappingResult { IsAvailable = false, ErrorMessage = ex.Message };
+        }
+    }
+
     private async Task<TmdbTvCandidate?> GetCandidateDetailsAsync(int id, CancellationToken cancellationToken)
     {
         using var detailsResponse = await _httpClient.GetAsync($"tv/{id}?language=en-US", cancellationToken);
@@ -116,6 +219,64 @@ public sealed class TmdbMetadataProvider : IMetadataProvider
                 ? genres.EnumerateArray().Select(genre => GetString(genre, "name")).Where(name => !string.IsNullOrWhiteSpace(name)).Cast<string>().ToList()
                 : []
         };
+    }
+
+    private async Task<IReadOnlyList<TmdbSeasonSummary>> GetSeasonSummariesAsync(int seriesId, CancellationToken cancellationToken)
+    {
+        if (_seasonSummaryCache.TryGetValue(seriesId, out var cached))
+        {
+            return cached;
+        }
+
+        using var detailsResponse = await _httpClient.GetAsync($"tv/{seriesId}?language=en-US", cancellationToken);
+        detailsResponse.EnsureSuccessStatusCode();
+
+        await using var detailsStream = await detailsResponse.Content.ReadAsStreamAsync(cancellationToken);
+        using var detailsDocument = await JsonDocument.ParseAsync(detailsStream, cancellationToken: cancellationToken);
+        var root = detailsDocument.RootElement;
+
+        var seasons = root.TryGetProperty("seasons", out var seasonsElement) && seasonsElement.ValueKind == JsonValueKind.Array
+            ? seasonsElement.EnumerateArray()
+                .Select(ReadSeasonSummary)
+                .Where(season => season.SeasonNumber > 0)
+                .OrderBy(season => season.SeasonNumber)
+                .ToList()
+            : [];
+
+        _seasonSummaryCache[seriesId] = seasons;
+        return seasons;
+    }
+
+    private async Task<IReadOnlyList<TmdbEpisodeSummary>> GetSeasonEpisodesAsync(int seriesId, int seasonNumber, CancellationToken cancellationToken)
+    {
+        var key = (seriesId, seasonNumber);
+        if (_seasonEpisodeCache.TryGetValue(key, out var cached))
+        {
+            return cached;
+        }
+
+        using var seasonResponse = await _httpClient.GetAsync($"tv/{seriesId}/season/{seasonNumber}?language=en-US", cancellationToken);
+        if (!seasonResponse.IsSuccessStatusCode)
+        {
+            _logger.Warning($"TMDb season lookup failed for series {seriesId}, season {seasonNumber}: {(int)seasonResponse.StatusCode}", LogTarget.File | LogTarget.Console);
+            _seasonEpisodeCache[key] = [];
+            return [];
+        }
+
+        await using var seasonStream = await seasonResponse.Content.ReadAsStreamAsync(cancellationToken);
+        using var seasonDocument = await JsonDocument.ParseAsync(seasonStream, cancellationToken: cancellationToken);
+        var root = seasonDocument.RootElement;
+
+        var episodes = root.TryGetProperty("episodes", out var episodesElement) && episodesElement.ValueKind == JsonValueKind.Array
+            ? episodesElement.EnumerateArray()
+                .Select(ReadEpisodeSummary)
+                .Where(episode => episode.EpisodeNumber > 0)
+                .OrderBy(episode => episode.EpisodeNumber)
+                .ToList()
+            : [];
+
+        _seasonEpisodeCache[key] = episodes;
+        return episodes;
     }
 
     private static void ScoreCandidate(TmdbTvCandidate candidate, SourceItem item, string queryTitle, int? parsedYear)
@@ -244,5 +405,40 @@ public sealed class TmdbMetadataProvider : IMetadataProvider
         return !string.IsNullOrWhiteSpace(date) && date.Length >= 4 && int.TryParse(date[..4], out var year)
             ? year
             : null;
+    }
+
+    private static TmdbSeasonSummary ReadSeasonSummary(JsonElement element)
+    {
+        return new TmdbSeasonSummary
+        {
+            SeasonNumber = GetInt(element, "season_number") ?? 0,
+            EpisodeCount = GetInt(element, "episode_count") ?? 0,
+            Name = GetString(element, "name") ?? "Season"
+        };
+    }
+
+    private static TmdbEpisodeSummary ReadEpisodeSummary(JsonElement element)
+    {
+        return new TmdbEpisodeSummary
+        {
+            EpisodeNumber = GetInt(element, "episode_number") ?? 0,
+            Name = GetString(element, "name")
+        };
+    }
+
+    private sealed class TmdbSeasonSummary
+    {
+        public int SeasonNumber { get; init; }
+
+        public int EpisodeCount { get; init; }
+
+        public string Name { get; init; } = string.Empty;
+    }
+
+    private sealed class TmdbEpisodeSummary
+    {
+        public int EpisodeNumber { get; init; }
+
+        public string? Name { get; init; }
     }
 }

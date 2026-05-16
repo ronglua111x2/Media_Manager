@@ -61,7 +61,7 @@ public sealed class ParserService : IParserService
         var anime = TryParseAnimeAbsolute(fileBase);
         if (anime.MediaKind == MediaKind.TvEpisode)
         {
-            _logger.Debug($"Anime absolute parser matched '{fileName}' as {anime.ShowTitle} S{anime.SeasonNumber:00}E{anime.EpisodeNumber:0000}", LogTarget.File);
+            _logger.Debug($"Anime absolute parser matched '{fileName}' as {anime.ShowTitle} absolute episode {anime.EpisodeNumber:0000}", LogTarget.File);
             return anime;
         }
 
@@ -145,7 +145,7 @@ public sealed class ParserService : IParserService
             MediaKind = MediaKind.TvEpisode,
             ParserPattern = ParserPattern.AnimeAbsolute,
             ShowTitle = showTitle,
-            SeasonNumber = 1,
+            SeasonNumber = null,
             EpisodeNumber = hasEpisode ? episode : null,
             EpisodeTitle = string.IsNullOrWhiteSpace(rest) ? null : rest,
             NeedsReview = needsReview,

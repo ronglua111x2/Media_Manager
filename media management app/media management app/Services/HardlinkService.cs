@@ -28,9 +28,11 @@ public sealed class HardlinkService : IHardlinkService
         }
 
         var showName = BuildSeriesFolderName(item);
-        var seasonFolder = $"Season {item.SeasonNumber.GetValueOrDefault():00}";
+        var seasonNumber = item.MappedSeasonNumber ?? item.SeasonNumber.GetValueOrDefault();
+        var episodeNumber = item.MappedEpisodeNumber ?? item.EpisodeNumber.GetValueOrDefault();
+        var seasonFolder = $"Season {seasonNumber:00}";
         var fileTitle = Sanitize(item.MatchedTitle ?? item.ShowTitle ?? "Unknown Show");
-        var fileName = $"{fileTitle} - S{item.SeasonNumber.GetValueOrDefault():00}E{item.EpisodeNumber.GetValueOrDefault():00}{Path.GetExtension(item.FilePath)}";
+        var fileName = $"{fileTitle} - S{seasonNumber:00}E{episodeNumber:00}{Path.GetExtension(item.FilePath)}";
         return Path.Combine(outputRoot, showName, seasonFolder, fileName);
     }
 
@@ -47,6 +49,15 @@ public sealed class HardlinkService : IHardlinkService
         {
             errorMessage = "TV item does not have an accepted metadata identity. Refusing to create an ambiguous Jellyfin folder.";
             _logger.Warning($"Hardlink blocked for unresolved TV identity: {item.FilePath}", LogTarget.All);
+            return false;
+        }
+
+        if (item.MediaKind == MediaKind.TvEpisode &&
+            item.ParserPattern == ParserPattern.AnimeAbsolute &&
+            (item.MappedSeasonNumber is null || item.MappedEpisodeNumber is null))
+        {
+            errorMessage = "Anime absolute episode does not have a TMDb season mapping. Refusing to create Season 01 absolute fallback.";
+            _logger.Warning($"Hardlink blocked for unmapped anime absolute episode: {item.FilePath}", LogTarget.All);
             return false;
         }
 

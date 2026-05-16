@@ -36,6 +36,16 @@ public sealed class SourceItem
 
     public int? EpisodeNumber { get; set; }
 
+    public int? MappedSeasonNumber { get; set; }
+
+    public int? MappedEpisodeNumber { get; set; }
+
+    public string? EpisodeMappingSource { get; set; }
+
+    public double? EpisodeMappingConfidence { get; set; }
+
+    public string? EpisodeMappingReason { get; set; }
+
     public string? EpisodeTitle { get; set; }
 
     public string? MatchedTitle { get; set; }

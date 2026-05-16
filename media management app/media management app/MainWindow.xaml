@@ -244,6 +244,8 @@
                         <DataGridTextColumn Header="Year" Binding="{Binding MovieYear}" Width="65" />
                         <DataGridTextColumn Header="Season" Binding="{Binding SeasonNumber}" Width="70" />
                         <DataGridTextColumn Header="Episode" Binding="{Binding EpisodeNumber}" Width="75" />
+                        <DataGridTextColumn Header="Mapped S" Binding="{Binding MappedSeasonNumber}" Width="85" />
+                        <DataGridTextColumn Header="Mapped E" Binding="{Binding MappedEpisodeNumber}" Width="85" />
                         <DataGridTextColumn Header="Pattern" Binding="{Binding ParserPattern}" Width="120" />
                         <DataGridTextColumn Header="Matched" Binding="{Binding MatchedTitle}" Width="190">
                             <DataGridTextColumn.ElementStyle>
@@ -257,6 +259,14 @@
                         <DataGridTextColumn Header="Provider ID" Binding="{Binding ProviderId}" Width="95" />
                         <DataGridTextColumn Header="Confidence" Binding="{Binding MatchConfidence, StringFormat={}{0:0}}" Width="90" />
                         <DataGridCheckBoxColumn Header="Review" Binding="{Binding RequiresManualReview}" Width="70" />
+                        <DataGridTextColumn Header="Episode Mapping" Binding="{Binding EpisodeMappingReason}" Width="260">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+                                    <Setter Property="ToolTip" Value="{Binding EpisodeMappingReason}" />
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
                         <DataGridTextColumn Header="Source Path" Binding="{Binding FilePath}" Width="360">
                             <DataGridTextColumn.ElementStyle>
                                 <Style TargetType="TextBlock">

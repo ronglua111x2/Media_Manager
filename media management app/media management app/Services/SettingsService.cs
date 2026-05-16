@@ -6,6 +6,8 @@ namespace media_management_app.Services;
 
 public sealed class SettingsService : ISettingsService
 {
+    private const string SettingsFileName = "settings.json";
+    private const string SettingsLoadLogFileName = "settings-load.log";
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
     public SettingsService()
@@ -15,22 +17,61 @@ public sealed class SettingsService : ISettingsService
 
     public AppSettings Current { get; private set; }
 
-    public string SettingsFilePath => Path.Combine(Current.StateFolder, "settings.json");
+    public string SettingsFilePath => Path.Combine(Current.StateFolder, SettingsFileName);
 
     public void Load()
     {
+        var initialStateFolder = Current.StateFolder;
+        var initialSettingsFilePath = SettingsFilePath;
+        WriteBootstrapLog(initialStateFolder, $"Starting settings load. InitialStateFolder='{initialStateFolder}', SettingsFilePath='{initialSettingsFilePath}'");
+
         Directory.CreateDirectory(Current.StateFolder);
 
-        if (!File.Exists(SettingsFilePath))
+        if (!File.Exists(initialSettingsFilePath))
         {
+            WriteBootstrapLog(initialStateFolder, $"Settings file does not exist. Creating default settings at '{initialSettingsFilePath}'.");
             Save();
             return;
         }
 
-        var json = File.ReadAllText(SettingsFilePath);
-        var loaded = JsonSerializer.Deserialize<AppSettings>(json, JsonOptions);
-        Current = loaded ?? new AppSettings();
-        EnsureDefaults();
+        try
+        {
+            var json = File.ReadAllText(initialSettingsFilePath);
+            WriteBootstrapLog(initialStateFolder, $"Read settings file. Length={json.Length} character(s).");
+
+            var loaded = JsonSerializer.Deserialize<AppSettings>(json, JsonOptions);
+            if (loaded is null)
+            {
+                WriteBootstrapLog(initialStateFolder, "Settings JSON deserialized to null. Falling back to default settings.");
+                Current = new AppSettings();
+            }
+            else
+            {
+                Current = loaded;
+            }
+
+            EnsureDefaults();
+            WriteBootstrapLog(
+                Current.StateFolder,
+                $"Loaded settings. StateFolder='{Current.StateFolder}', SourceFolders={Current.SourceFolders.Count}, DefaultLibraryFolderName='{Current.DefaultLibraryFolderName}', TokenConfigured={!string.IsNullOrWhiteSpace(Current.TmdbReadAccessToken)}.");
+
+            foreach (var folder in Current.SourceFolders)
+            {
+                WriteBootstrapLog(Current.StateFolder, $"Loaded source folder: {folder}");
+            }
+
+            if (!string.Equals(initialStateFolder, Current.StateFolder, StringComparison.OrdinalIgnoreCase))
+            {
+                WriteBootstrapLog(
+                    Current.StateFolder,
+                    $"Settings changed StateFolder from '{initialStateFolder}' to '{Current.StateFolder}'. Startup settings were read from '{initialSettingsFilePath}'.");
+            }
+        }
+        catch (Exception ex)
+        {
+            WriteBootstrapLog(initialStateFolder, $"Failed to load settings from '{initialSettingsFilePath}'. {ex}");
+            throw;
+        }
     }
 
     public void Save()
@@ -39,6 +80,7 @@ public sealed class SettingsService : ISettingsService
         Directory.CreateDirectory(Current.StateFolder);
         var json = JsonSerializer.Serialize(Current, JsonOptions);
         File.WriteAllText(SettingsFilePath, json);
+        WriteBootstrapLog(Current.StateFolder, $"Saved settings to '{SettingsFilePath}'. SourceFolders={Current.SourceFolders.Count}, TokenConfigured={!string.IsNullOrWhiteSpace(Current.TmdbReadAccessToken)}.");
     }
 
     private void EnsureDefaults()
@@ -63,5 +105,22 @@ public sealed class SettingsService : ISettingsService
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
         Current.DriveLibraryRoots ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static void WriteBootstrapLog(string stateFolder, string message)
+    {
+        var line = $"[{DateTime.Now.ToString(AppConstants.LogTimestampFormat)}] [SET] [SettingsService.cs] {message}";
+        Console.WriteLine(line);
+        System.Diagnostics.Debug.WriteLine(line);
+
+        try
+        {
+            Directory.CreateDirectory(stateFolder);
+            File.AppendAllText(Path.Combine(stateFolder, SettingsLoadLogFileName), line + Environment.NewLine);
+        }
+        catch
+        {
+            // Settings diagnostics must never prevent app startup.
+        }
     }
 }

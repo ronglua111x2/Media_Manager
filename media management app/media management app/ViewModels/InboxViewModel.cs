@@ -207,6 +207,16 @@ public partial class InboxViewModel : ViewModelBase
                 await Task.Yield();
                 processedCount++;
                 _progressService.Report(processedCount, $"Removing hardlinks: {item.DisplayTitle}");
+
+                if (string.IsNullOrWhiteSpace(item.LinkedPath))
+                {
+                    successCount++;
+                    item.State = CanLink(item) ? ItemState.Parsed : ItemState.NeedsReview;
+                    item.Notes = "No linked path is currently recorded. Nothing to remove.";
+                    _databaseService.UpdateSourceItem(item);
+                    continue;
+                }
+
                 if (_hardlinkService.RemoveHardLink(item, out _, out var errorMessage))
                 {
                     successCount++;
@@ -269,10 +279,22 @@ public partial class InboxViewModel : ViewModelBase
 
                 item.MatchAccepted = true;
                 item.RequiresManualReview = false;
-                item.UseAbsoluteAnimeMapping = item.ParserPattern == ParserPattern.AnimeAbsolute || item.UseAbsoluteAnimeMapping;
+                item.UseAbsoluteAnimeMapping = false;
+
+                if (item.ParserPattern == ParserPattern.AnimeAbsolute && !HasMappedEpisode(item))
+                {
+                    await ResolveEpisodeMappingAsync(item);
+                    if (!HasMappedEpisode(item))
+                    {
+                        skippedCount++;
+                        _databaseService.UpdateSourceItem(item);
+                        continue;
+                    }
+                }
+
                 item.State = ItemState.Parsed;
                 item.Notes = item.ParserPattern == ParserPattern.AnimeAbsolute
-                    ? "Accepted suggested identity. Using absolute anime numbering as Season 01."
+                    ? $"Accepted suggested identity. Using TMDb episode mapping S{item.MappedSeasonNumber:00}E{item.MappedEpisodeNumber:00}."
                     : null;
                 _databaseService.UpdateSourceItem(item);
                 _databaseService.UpsertSeriesMapping(new SeriesMapping
@@ -283,7 +305,7 @@ public partial class InboxViewModel : ViewModelBase
                     MatchedYear = item.MatchedYear,
                     Provider = item.Provider ?? "tmdb",
                     ProviderId = item.ProviderId,
-                    UseAbsoluteAnimeMapping = item.UseAbsoluteAnimeMapping
+                    UseAbsoluteAnimeMapping = false
                 });
                 acceptedCount++;
             }
@@ -437,8 +459,7 @@ public partial class InboxViewModel : ViewModelBase
         return item.MediaKind switch
         {
             MediaKind.TvEpisode => !string.IsNullOrWhiteSpace(item.ShowTitle) &&
-                                   item.SeasonNumber is not null &&
-                                   item.EpisodeNumber is not null &&
+                                   HasOutputEpisodeNumber(item) &&
                                    !string.IsNullOrWhiteSpace(item.MatchedTitle) &&
                                    !string.IsNullOrWhiteSpace(item.ProviderId) &&
                                    !item.RequiresManualReview &&
@@ -469,6 +490,7 @@ public partial class InboxViewModel : ViewModelBase
             if (savedMapping is not null)
             {
                 ApplyMapping(item, savedMapping);
+                await ResolveEpisodeMappingAsync(item);
                 continue;
             }
 
@@ -484,6 +506,7 @@ public partial class InboxViewModel : ViewModelBase
             }
 
             ApplyCandidate(item, matchResult.BestCandidate);
+            await ResolveEpisodeMappingAsync(item);
         }
     }
 
@@ -524,6 +547,62 @@ public partial class InboxViewModel : ViewModelBase
                 ? $"Suggested {candidate.Name} ({candidate.FirstAirYear}) [tmdbid-{candidate.Id}], but absolute anime season mapping must be accepted manually."
                 : $"Low-confidence match suggestion: {candidate.Name} ({candidate.FirstAirYear}) [tmdbid-{candidate.Id}]. {candidate.MatchReason}"
             : $"Auto-matched {candidate.Name} ({candidate.FirstAirYear}) [tmdbid-{candidate.Id}].";
+    }
+
+    private async Task ResolveEpisodeMappingAsync(SourceItem item)
+    {
+        if (item.ParserPattern != ParserPattern.AnimeAbsolute ||
+            item.MediaKind != MediaKind.TvEpisode ||
+            string.IsNullOrWhiteSpace(item.ProviderId))
+        {
+            return;
+        }
+
+        var mappingResult = await _metadataProvider.MapTvEpisodeAsync(item);
+        if (mappingResult.IsMapped &&
+            mappingResult.SeasonNumber is not null &&
+            mappingResult.EpisodeNumber is not null)
+        {
+            item.MappedSeasonNumber = mappingResult.SeasonNumber;
+            item.MappedEpisodeNumber = mappingResult.EpisodeNumber;
+            item.EpisodeMappingSource = mappingResult.Source;
+            item.EpisodeMappingConfidence = mappingResult.Confidence;
+            item.EpisodeMappingReason = mappingResult.Reason;
+            item.UseAbsoluteAnimeMapping = false;
+
+            var highSeriesConfidence = item.MatchConfidence >= 75;
+            var highMappingConfidence = mappingResult.Confidence >= 75;
+            item.RequiresManualReview = !highSeriesConfidence || !highMappingConfidence;
+            item.MatchAccepted = highSeriesConfidence && highMappingConfidence;
+            item.State = item.MatchAccepted ? ItemState.Parsed : ItemState.NeedsReview;
+            item.Notes = item.MatchAccepted
+                ? $"Mapped absolute anime episode {item.EpisodeNumber} to TMDb S{item.MappedSeasonNumber:00}E{item.MappedEpisodeNumber:00}."
+                : $"Suggested episode mapping S{item.MappedSeasonNumber:00}E{item.MappedEpisodeNumber:00} needs review. {mappingResult.Reason}";
+            return;
+        }
+
+        item.MappedSeasonNumber = null;
+        item.MappedEpisodeNumber = null;
+        item.EpisodeMappingSource = null;
+        item.EpisodeMappingConfidence = null;
+        item.EpisodeMappingReason = mappingResult.Reason ?? mappingResult.ErrorMessage;
+        item.RequiresManualReview = true;
+        item.MatchAccepted = false;
+        item.UseAbsoluteAnimeMapping = false;
+        item.State = ItemState.NeedsReview;
+        item.Notes = $"Absolute anime episode detected, but TMDb season mapping is uncertain. {item.EpisodeMappingReason}";
+    }
+
+    private static bool HasOutputEpisodeNumber(SourceItem item)
+    {
+        return item.ParserPattern == ParserPattern.AnimeAbsolute
+            ? HasMappedEpisode(item)
+            : item.SeasonNumber is not null && item.EpisodeNumber is not null;
+    }
+
+    private static bool HasMappedEpisode(SourceItem item)
+    {
+        return item.MappedSeasonNumber is not null && item.MappedEpisodeNumber is not null;
     }
 
     private List<SourceItem> GetQueuedSelection()

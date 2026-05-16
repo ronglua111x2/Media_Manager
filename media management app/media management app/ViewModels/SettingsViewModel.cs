@@ -13,6 +13,7 @@ public partial class SettingsViewModel : ViewModelBase
     private readonly IDatabaseService _databaseService;
     private readonly ILibraryPathResolver _libraryPathResolver;
     private readonly IAppLogger _logger;
+    private bool _isLoadingSettings;
 
     [ObservableProperty]
     private string stateFolder = string.Empty;
@@ -107,23 +108,43 @@ public partial class SettingsViewModel : ViewModelBase
 
     partial void OnDefaultLibraryFolderNameChanged(string value)
     {
+        if (_isLoadingSettings)
+        {
+            return;
+        }
+
         RefreshLibraryRootPreview();
     }
 
     private void LoadFromSettings()
     {
-        StateFolder = _settingsService.Current.StateFolder;
-        DefaultLibraryFolderName = _settingsService.Current.DefaultLibraryFolderName;
-        TmdbReadAccessToken = _settingsService.Current.TmdbReadAccessToken;
+        _logger.Info(
+            $"Loading Settings UI from service. SettingsFile='{_settingsService.SettingsFilePath}', SourceFolders={_settingsService.Current.SourceFolders.Count}, StateFolder='{_settingsService.Current.StateFolder}'",
+            LogTarget.All);
 
-        SourceFolders.Clear();
-        foreach (var folder in _settingsService.Current.SourceFolders)
+        _isLoadingSettings = true;
+        try
         {
-            SourceFolders.Add(folder);
+            StateFolder = _settingsService.Current.StateFolder;
+            DefaultLibraryFolderName = _settingsService.Current.DefaultLibraryFolderName;
+            TmdbReadAccessToken = _settingsService.Current.TmdbReadAccessToken;
+
+            SourceFolders.Clear();
+            foreach (var folder in _settingsService.Current.SourceFolders)
+            {
+                _logger.Debug($"Adding source folder to Settings UI: {folder}", LogTarget.File | LogTarget.Console);
+                SourceFolders.Add(folder);
+            }
+
+            SelectedSourceFolder = SourceFolders.FirstOrDefault();
+        }
+        finally
+        {
+            _isLoadingSettings = false;
         }
 
-        SelectedSourceFolder = SourceFolders.FirstOrDefault();
         RefreshLibraryRootPreview();
+        _logger.Info($"Settings UI loaded. VisibleSourceFolders={SourceFolders.Count}, SelectedSourceFolder='{SelectedSourceFolder ?? "<none>"}'", LogTarget.All);
     }
 
     private void RefreshLibraryRootPreview()
@@ -131,14 +152,15 @@ public partial class SettingsViewModel : ViewModelBase
         _settingsService.Current.DefaultLibraryFolderName = string.IsNullOrWhiteSpace(DefaultLibraryFolderName)
             ? AppConstants.DefaultLibraryFolderName
             : DefaultLibraryFolderName.Trim();
-        _settingsService.Current.SourceFolders = SourceFolders.ToList();
 
         LibraryRootPreview.Clear();
+        _logger.Debug($"Refreshing library root preview for {SourceFolders.Count} source folder(s)", LogTarget.File | LogTarget.Console);
         foreach (var root in _libraryPathResolver.GetPreviewRoots(SourceFolders))
         {
             LibraryRootPreview.Add($"{Path.GetPathRoot(root)} -> {root}");
             LibraryRootPreview.Add($"    Shows: {Path.Combine(root, AppConstants.ShowsFolderName)}");
             LibraryRootPreview.Add($"    Movies: {Path.Combine(root, AppConstants.MoviesFolderName)}");
+            _logger.Debug($"Library root preview generated: {root}", LogTarget.File | LogTarget.Console);
         }
     }
 
