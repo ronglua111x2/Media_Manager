@@ -8,5 +8,5 @@ public interface IHardlinkService
 
     bool CreateHardLink(SourceItem item, string outputRoot, out string? createdPath, out string? errorMessage);
 
-    bool RemoveHardLink(SourceItem item, out string? removedPath, out string? errorMessage);
+    bool RemoveHardLink(SourceItem item, string outputRoot, out string? removedPath, out string? errorMessage);
 }

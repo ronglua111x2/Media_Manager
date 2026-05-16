@@ -185,7 +185,7 @@ public partial class InboxViewModel : ViewModelBase
             foreach (var item in queuedItems)
             {
                 await Task.Yield();
-                if (_hardlinkService.RemoveHardLink(item, out _, out var errorMessage))
+                if (_hardlinkService.RemoveHardLink(item, _settingsService.Current.OutputLibraryFolder, out _, out var errorMessage))
                 {
                     successCount++;
                     item.LinkedPath = null;
@@ -218,9 +218,32 @@ public partial class InboxViewModel : ViewModelBase
         IsBusy = true;
         try
         {
+            var deletedItems = _allItems
+                .Where(item => item.State == ItemState.Deleted)
+                .ToList();
+            var filesystemSuccessCount = 0;
+            var filesystemFailureCount = 0;
+
+            foreach (var item in deletedItems.Where(item => !string.IsNullOrWhiteSpace(item.LinkedPath)))
+            {
+                await Task.Yield();
+                if (_hardlinkService.RemoveHardLink(item, _settingsService.Current.OutputLibraryFolder, out _, out var errorMessage))
+                {
+                    filesystemSuccessCount++;
+                    item.LinkedPath = null;
+                    _databaseService.UpdateSourceItem(item);
+                    continue;
+                }
+
+                filesystemFailureCount++;
+                item.State = ItemState.Error;
+                item.Notes = $"Cleanup failed: {errorMessage}";
+                _databaseService.UpdateSourceItem(item);
+            }
+
             var deletedCount = _databaseService.DeleteSourceItemsByState(ItemState.Deleted);
             ReloadPersistedItems();
-            StatusMessage = $"Cleaned up {deletedCount} deleted item(s).";
+            StatusMessage = $"Cleaned up {deletedCount} deleted DB item(s). Removed library links/folders: {filesystemSuccessCount}. Failed filesystem cleanup: {filesystemFailureCount}.";
         }
         finally
         {

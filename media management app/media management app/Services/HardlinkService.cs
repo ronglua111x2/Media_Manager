@@ -58,7 +58,7 @@ public sealed class HardlinkService : IHardlinkService
         return true;
     }
 
-    public bool RemoveHardLink(SourceItem item, out string? removedPath, out string? errorMessage)
+    public bool RemoveHardLink(SourceItem item, string outputRoot, out string? removedPath, out string? errorMessage)
     {
         removedPath = null;
         errorMessage = null;
@@ -78,9 +78,18 @@ public sealed class HardlinkService : IHardlinkService
         }
 
         removedPath = item.LinkedPath;
+        if (!IsPathInsideRoot(item.LinkedPath, outputRoot))
+        {
+            errorMessage = "Linked path is outside the configured output library. Refusing to delete.";
+            _logger.Error($"Refusing to delete linked path outside output root. LinkedPath={item.LinkedPath}; OutputRoot={outputRoot}", targets: LogTarget.All);
+            return false;
+        }
+
+        var linkedDirectory = Path.GetDirectoryName(item.LinkedPath);
         if (!File.Exists(item.LinkedPath))
         {
             _logger.Warning($"Linked path no longer exists, clearing state only: {item.LinkedPath}", LogTarget.All);
+            CleanupEmptyLibraryFolders(linkedDirectory, outputRoot);
             return true;
         }
 
@@ -88,6 +97,7 @@ public sealed class HardlinkService : IHardlinkService
         {
             File.Delete(item.LinkedPath);
             _logger.Info($"Removed hardlink path: {item.LinkedPath}", LogTarget.All);
+            CleanupEmptyLibraryFolders(linkedDirectory, outputRoot);
             return true;
         }
         catch (Exception ex)
@@ -95,6 +105,34 @@ public sealed class HardlinkService : IHardlinkService
             errorMessage = ex.Message;
             _logger.Error($"Could not remove hardlink path: {item.LinkedPath}", ex, LogTarget.All);
             return false;
+        }
+    }
+
+    private void CleanupEmptyLibraryFolders(string? startDirectory, string outputRoot)
+    {
+        if (string.IsNullOrWhiteSpace(startDirectory) || !Directory.Exists(startDirectory))
+        {
+            return;
+        }
+
+        var root = Path.GetFullPath(outputRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var current = Path.GetFullPath(startDirectory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+        while (!string.Equals(current, root, StringComparison.OrdinalIgnoreCase) &&
+               IsPathInsideRoot(current, root) &&
+               Directory.Exists(current) &&
+               !Directory.EnumerateFileSystemEntries(current).Any())
+        {
+            Directory.Delete(current);
+            _logger.Info($"Removed empty library folder: {current}", LogTarget.File | LogTarget.Ui | LogTarget.Console);
+
+            var parent = Directory.GetParent(current);
+            if (parent is null)
+            {
+                break;
+            }
+
+            current = parent.FullName.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         }
     }
 
@@ -112,6 +150,15 @@ public sealed class HardlinkService : IHardlinkService
     {
         var title = Sanitize(item.MovieTitle ?? item.ShowTitle ?? "Unknown Movie");
         return item.MovieYear is null ? title : $"{title} ({item.MovieYear})";
+    }
+
+    private static bool IsPathInsideRoot(string path, string root)
+    {
+        var fullPath = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var fullRoot = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+        return string.Equals(fullPath, fullRoot, StringComparison.OrdinalIgnoreCase) ||
+               fullPath.StartsWith(fullRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
     }
 
     [DllImport("kernel32.dll", EntryPoint = "CreateHardLinkW", SetLastError = true, CharSet = CharSet.Unicode)]
