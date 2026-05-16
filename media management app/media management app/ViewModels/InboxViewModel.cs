@@ -14,6 +14,8 @@ public partial class InboxViewModel : ViewModelBase
     private readonly IDatabaseService _databaseService;
     private readonly IScannerService _scannerService;
     private readonly IHardlinkService _hardlinkService;
+    private readonly IMetadataProvider _metadataProvider;
+    private readonly IOperationProgressService _progressService;
     private readonly IAppLogger _logger;
     private readonly SemaphoreSlim _operationQueue = new(1, 1);
     private readonly List<SourceItem> _allItems = [];
@@ -39,12 +41,16 @@ public partial class InboxViewModel : ViewModelBase
         IDatabaseService databaseService,
         IScannerService scannerService,
         IHardlinkService hardlinkService,
+        IMetadataProvider metadataProvider,
+        IOperationProgressService progressService,
         IAppLogger logger)
     {
         _settingsService = settingsService;
         _databaseService = databaseService;
         _scannerService = scannerService;
         _hardlinkService = hardlinkService;
+        _metadataProvider = metadataProvider;
+        _progressService = progressService;
         _logger = logger;
         Items = new ObservableCollection<SourceItem>();
         StateFilterOptions = BuildStateFilterOptions();
@@ -68,16 +74,20 @@ public partial class InboxViewModel : ViewModelBase
     public IReadOnlyList<FilterOption<MediaKind>> KindFilterOptions { get; }
 
     [RelayCommand]
-    private void Scan()
+    private async Task Scan()
     {
         IsBusy = true;
         try
         {
+            _progressService.Start("Scanning source folders...", 1);
             var scanned = _scannerService.Scan(_settingsService.Current.SourceFolders);
+            _progressService.Report(1, $"Found {scanned.Count} video item(s)");
+            await ResolveTvIdentityAsync(scanned);
             _databaseService.UpsertSourceItems(scanned);
             var deletedCount = _databaseService.MarkMissingSourceItems(_settingsService.Current.SourceFolders, scanned.Select(item => item.FilePath));
             ReloadPersistedItems();
             StatusMessage = $"Scanned {scanned.Count} video item(s). Marked deleted: {deletedCount}.";
+            _progressService.Finish(StatusMessage);
         }
         finally
         {
@@ -121,23 +131,30 @@ public partial class InboxViewModel : ViewModelBase
         {
             var successCount = 0;
             var failureCount = 0;
+            var processedCount = 0;
             StatusMessage = $"Creating hardlinks for {queuedItems.Count} selected item(s)...";
+            _progressService.Start(StatusMessage, queuedItems.Count);
 
             foreach (var item in queuedItems)
             {
                 await Task.Yield();
-                if (item.State is ItemState.NeedsReview or ItemState.Deleted || !CanLink(item))
+                processedCount++;
+                _progressService.Report(processedCount, $"Creating hardlinks: {item.DisplayTitle}");
+                if (item.State is ItemState.Deleted or ItemState.Ignored || !CanLink(item))
                 {
                     failureCount++;
-                    item.Notes = item.State == ItemState.Deleted
-                        ? "Source file is deleted and cannot be linked."
-                        : "Item needs review before linking.";
+                    item.Notes = item.State switch
+                    {
+                        ItemState.Deleted => "Source file is deleted and cannot be linked.",
+                        ItemState.Ignored => "Ignored item cannot be linked.",
+                        _ => "Item needs accepted metadata identity before linking."
+                    };
                     _databaseService.UpdateSourceItem(item);
-                    _logger.Warning($"Skipped item that needs review before linking: {item.FilePath}", LogTarget.Ui | LogTarget.Console);
+                    _logger.Warning($"Skipped item before linking: {item.FilePath}. {item.Notes}", LogTarget.Ui | LogTarget.Console);
                     continue;
                 }
 
-                if (_hardlinkService.CreateHardLink(item, _settingsService.Current.OutputLibraryFolder, out var createdPath, out var errorMessage))
+                if (_hardlinkService.CreateHardLink(item, out var createdPath, out var errorMessage))
                 {
                     successCount++;
                     item.State = ItemState.Linked;
@@ -155,6 +172,7 @@ public partial class InboxViewModel : ViewModelBase
 
             ReloadPersistedItems();
             StatusMessage = $"Hardlink queue finished. Created: {successCount}. Failed/skipped: {failureCount}.";
+            _progressService.Finish(StatusMessage);
         }
         finally
         {
@@ -180,12 +198,16 @@ public partial class InboxViewModel : ViewModelBase
         {
             var successCount = 0;
             var failureCount = 0;
+            var processedCount = 0;
             StatusMessage = $"Removing hardlinks for {queuedItems.Count} selected item(s)...";
+            _progressService.Start(StatusMessage, queuedItems.Count);
 
             foreach (var item in queuedItems)
             {
                 await Task.Yield();
-                if (_hardlinkService.RemoveHardLink(item, _settingsService.Current.OutputLibraryFolder, out _, out var errorMessage))
+                processedCount++;
+                _progressService.Report(processedCount, $"Removing hardlinks: {item.DisplayTitle}");
+                if (_hardlinkService.RemoveHardLink(item, out _, out var errorMessage))
                 {
                     successCount++;
                     item.LinkedPath = null;
@@ -203,6 +225,127 @@ public partial class InboxViewModel : ViewModelBase
 
             ReloadPersistedItems();
             StatusMessage = $"Remove queue finished. Removed/cleared: {successCount}. Failed/skipped: {failureCount}.";
+            _progressService.Finish(StatusMessage);
+        }
+        finally
+        {
+            IsBusy = false;
+            _operationQueue.Release();
+        }
+    }
+
+    [RelayCommand]
+    private async Task AcceptSuggestedMatches()
+    {
+        var queuedItems = GetQueuedSelection();
+        if (queuedItems.Count == 0)
+        {
+            StatusMessage = "Select one or more items first.";
+            return;
+        }
+
+        await _operationQueue.WaitAsync();
+        IsBusy = true;
+        try
+        {
+            var acceptedCount = 0;
+            var skippedCount = 0;
+            var processedCount = 0;
+            _progressService.Start($"Accepting {queuedItems.Count} suggested match(es)...", queuedItems.Count);
+            foreach (var item in queuedItems)
+            {
+                await Task.Yield();
+                processedCount++;
+                _progressService.Report(processedCount, $"Accepting match: {item.DisplayTitle}");
+                if (item.State == ItemState.Ignored ||
+                    item.MediaKind != MediaKind.TvEpisode ||
+                    string.IsNullOrWhiteSpace(item.ShowTitle) ||
+                    string.IsNullOrWhiteSpace(item.MatchedTitle) ||
+                    string.IsNullOrWhiteSpace(item.ProviderId))
+                {
+                    skippedCount++;
+                    continue;
+                }
+
+                item.MatchAccepted = true;
+                item.RequiresManualReview = false;
+                item.UseAbsoluteAnimeMapping = item.ParserPattern == ParserPattern.AnimeAbsolute || item.UseAbsoluteAnimeMapping;
+                item.State = ItemState.Parsed;
+                item.Notes = item.ParserPattern == ParserPattern.AnimeAbsolute
+                    ? "Accepted suggested identity. Using absolute anime numbering as Season 01."
+                    : null;
+                _databaseService.UpdateSourceItem(item);
+                _databaseService.UpsertSeriesMapping(new SeriesMapping
+                {
+                    ParsedTitle = item.ShowTitle,
+                    ParserPattern = item.ParserPattern,
+                    MatchedTitle = item.MatchedTitle,
+                    MatchedYear = item.MatchedYear,
+                    Provider = item.Provider ?? "tmdb",
+                    ProviderId = item.ProviderId,
+                    UseAbsoluteAnimeMapping = item.UseAbsoluteAnimeMapping
+                });
+                acceptedCount++;
+            }
+
+            ReloadPersistedItems();
+            StatusMessage = $"Accepted {acceptedCount} suggested match(es). Skipped: {skippedCount}.";
+            _progressService.Finish(StatusMessage);
+        }
+        finally
+        {
+            IsBusy = false;
+            _operationQueue.Release();
+        }
+    }
+
+    [RelayCommand]
+    private async Task IgnoreSelected()
+    {
+        var queuedItems = GetQueuedSelection();
+        if (queuedItems.Count == 0)
+        {
+            StatusMessage = "Select one or more items first.";
+            return;
+        }
+
+        await _operationQueue.WaitAsync();
+        IsBusy = true;
+        try
+        {
+            var ignoredCount = 0;
+            var failedCount = 0;
+            var processedCount = 0;
+            _progressService.Start($"Ignoring {queuedItems.Count} selected item(s)...", queuedItems.Count);
+
+            foreach (var item in queuedItems)
+            {
+                await Task.Yield();
+                processedCount++;
+                _progressService.Report(processedCount, $"Ignoring: {item.DisplayTitle}");
+
+                if (!string.IsNullOrWhiteSpace(item.LinkedPath) &&
+                    !_hardlinkService.RemoveHardLink(item, out _, out var errorMessage))
+                {
+                    failedCount++;
+                    item.State = ItemState.Error;
+                    item.Notes = $"Could not ignore because linked file cleanup failed: {errorMessage}";
+                    _databaseService.UpdateSourceItem(item);
+                    continue;
+                }
+
+                item.LinkedPath = null;
+                item.State = ItemState.Ignored;
+                item.RequiresManualReview = false;
+                item.MatchAccepted = false;
+                item.Notes = "Ignored manually. Future scans preserve this state for the same file path.";
+                _databaseService.UpdateSourceItem(item);
+                ignoredCount++;
+            }
+
+            ReloadPersistedItems();
+            StatusMessage = $"Ignored {ignoredCount} item(s). Failed: {failedCount}.";
+            _progressService.Finish(StatusMessage);
         }
         finally
         {
@@ -223,11 +366,15 @@ public partial class InboxViewModel : ViewModelBase
                 .ToList();
             var filesystemSuccessCount = 0;
             var filesystemFailureCount = 0;
+            var processedCount = 0;
+            _progressService.Start($"Cleaning up {deletedItems.Count} deleted item(s)...", Math.Max(deletedItems.Count, 1));
 
             foreach (var item in deletedItems.Where(item => !string.IsNullOrWhiteSpace(item.LinkedPath)))
             {
                 await Task.Yield();
-                if (_hardlinkService.RemoveHardLink(item, _settingsService.Current.OutputLibraryFolder, out _, out var errorMessage))
+                processedCount++;
+                _progressService.Report(processedCount, $"Cleaning up: {item.DisplayTitle}");
+                if (_hardlinkService.RemoveHardLink(item, out _, out var errorMessage))
                 {
                     filesystemSuccessCount++;
                     item.LinkedPath = null;
@@ -244,6 +391,7 @@ public partial class InboxViewModel : ViewModelBase
             var deletedCount = _databaseService.DeleteSourceItemsByState(ItemState.Deleted);
             ReloadPersistedItems();
             StatusMessage = $"Cleaned up {deletedCount} deleted DB item(s). Removed library links/folders: {filesystemSuccessCount}. Failed filesystem cleanup: {filesystemFailureCount}.";
+            _progressService.Finish(StatusMessage);
         }
         finally
         {
@@ -290,10 +438,92 @@ public partial class InboxViewModel : ViewModelBase
         {
             MediaKind.TvEpisode => !string.IsNullOrWhiteSpace(item.ShowTitle) &&
                                    item.SeasonNumber is not null &&
-                                   item.EpisodeNumber is not null,
+                                   item.EpisodeNumber is not null &&
+                                   !string.IsNullOrWhiteSpace(item.MatchedTitle) &&
+                                   !string.IsNullOrWhiteSpace(item.ProviderId) &&
+                                   !item.RequiresManualReview &&
+                                   item.MatchAccepted,
             MediaKind.Movie => !string.IsNullOrWhiteSpace(item.MovieTitle),
             _ => false
         };
+    }
+
+    private async Task ResolveTvIdentityAsync(IReadOnlyList<SourceItem> scannedItems)
+    {
+        var tvItems = scannedItems.Where(item => item.MediaKind == MediaKind.TvEpisode).ToList();
+        var processedCount = 0;
+        _progressService.Start($"Resolving metadata for {tvItems.Count} TV item(s)...", Math.Max(tvItems.Count, 1));
+        foreach (var item in tvItems)
+        {
+            processedCount++;
+            _progressService.Report(processedCount, $"Resolving metadata: {item.DisplayTitle}");
+            if (string.IsNullOrWhiteSpace(item.ShowTitle))
+            {
+                item.State = ItemState.NeedsReview;
+                item.RequiresManualReview = true;
+                item.Notes = "TV item has no parsed show title.";
+                continue;
+            }
+
+            var savedMapping = _databaseService.GetSeriesMapping(item.ShowTitle, item.ParserPattern);
+            if (savedMapping is not null)
+            {
+                ApplyMapping(item, savedMapping);
+                continue;
+            }
+
+            var matchResult = await _metadataProvider.MatchTvSeriesAsync(item);
+            if (!matchResult.IsAvailable || matchResult.BestCandidate is null)
+            {
+                item.State = ItemState.NeedsReview;
+                item.RequiresManualReview = true;
+                item.MatchAccepted = false;
+                item.MatchReason = matchResult.ErrorMessage ?? "No TMDb match found.";
+                item.Notes = item.MatchReason;
+                continue;
+            }
+
+            ApplyCandidate(item, matchResult.BestCandidate);
+        }
+    }
+
+    private static void ApplyMapping(SourceItem item, SeriesMapping mapping)
+    {
+        item.MatchedTitle = mapping.MatchedTitle;
+        item.MatchedYear = mapping.MatchedYear;
+        item.Provider = mapping.Provider;
+        item.ProviderId = mapping.ProviderId;
+        item.MatchConfidence = 100;
+        item.MatchReason = "Accepted saved series mapping.";
+        item.RequiresManualReview = false;
+        item.MatchAccepted = true;
+        item.UseAbsoluteAnimeMapping = mapping.UseAbsoluteAnimeMapping;
+        item.State = ItemState.Parsed;
+        item.Notes = item.UseAbsoluteAnimeMapping
+            ? "Using saved anime absolute numbering mapping."
+            : null;
+    }
+
+    private static void ApplyCandidate(SourceItem item, TmdbTvCandidate candidate)
+    {
+        item.MatchedTitle = candidate.Name;
+        item.MatchedYear = candidate.FirstAirYear;
+        item.Provider = "tmdb";
+        item.ProviderId = candidate.Id.ToString();
+        item.MatchConfidence = candidate.Confidence;
+        item.MatchReason = candidate.MatchReason;
+
+        var highConfidence = candidate.Confidence >= 75;
+        var animeAbsoluteNeedsMappingChoice = item.ParserPattern == ParserPattern.AnimeAbsolute;
+        item.RequiresManualReview = !highConfidence || animeAbsoluteNeedsMappingChoice;
+        item.MatchAccepted = highConfidence && !animeAbsoluteNeedsMappingChoice;
+        item.UseAbsoluteAnimeMapping = false;
+        item.State = item.RequiresManualReview ? ItemState.NeedsReview : ItemState.Parsed;
+        item.Notes = item.RequiresManualReview
+            ? animeAbsoluteNeedsMappingChoice
+                ? $"Suggested {candidate.Name} ({candidate.FirstAirYear}) [tmdbid-{candidate.Id}], but absolute anime season mapping must be accepted manually."
+                : $"Low-confidence match suggestion: {candidate.Name} ({candidate.FirstAirYear}) [tmdbid-{candidate.Id}]. {candidate.MatchReason}"
+            : $"Auto-matched {candidate.Name} ({candidate.FirstAirYear}) [tmdbid-{candidate.Id}].";
     }
 
     private List<SourceItem> GetQueuedSelection()

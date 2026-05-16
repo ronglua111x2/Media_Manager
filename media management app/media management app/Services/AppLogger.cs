@@ -133,7 +133,7 @@ public sealed class AppLogger : IAppLogger, IDisposable
 
     private void WriteUiLog(string line)
     {
-        var dispatcher = Application.Current?.Dispatcher;
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
         if (dispatcher is null || dispatcher.CheckAccess())
         {
             AddUiLogLine(line);

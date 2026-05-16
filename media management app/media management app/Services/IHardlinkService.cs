@@ -4,9 +4,9 @@ namespace media_management_app.Services;
 
 public interface IHardlinkService
 {
-    string BuildOutputPath(SourceItem item, string outputRoot);
+    string BuildOutputPath(SourceItem item, string mediaRoot);
 
-    bool CreateHardLink(SourceItem item, string outputRoot, out string? createdPath, out string? errorMessage);
+    bool CreateHardLink(SourceItem item, out string? createdPath, out string? errorMessage);
 
-    bool RemoveHardLink(SourceItem item, string outputRoot, out string? removedPath, out string? errorMessage);
+    bool RemoveHardLink(SourceItem item, out string? removedPath, out string? errorMessage);
 }

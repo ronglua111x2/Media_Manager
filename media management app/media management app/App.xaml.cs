@@ -7,7 +7,7 @@ using media_management_app.ViewModels;
 
 namespace media_management_app;
 
-public partial class App : Application
+public partial class App : System.Windows.Application
 {
     private ServiceProvider? _serviceProvider;
 
@@ -42,9 +42,11 @@ public partial class App : Application
 
         services.AddSingleton<ISettingsService, SettingsService>();
         services.AddSingleton<IAppLogger, AppLogger>();
+        services.AddSingleton<IOperationProgressService, OperationProgressService>();
         services.AddSingleton<IDatabaseService, DatabaseService>();
         services.AddSingleton<IParserService, ParserService>();
         services.AddSingleton<IScannerService, ScannerService>();
+        services.AddSingleton<ILibraryPathResolver, LibraryPathResolver>();
         services.AddSingleton<IHardlinkService, HardlinkService>();
         services.AddSingleton<TmdbMetadataProvider>();
         services.AddSingleton<IMetadataProvider>(provider => provider.GetRequiredService<TmdbMetadataProvider>());

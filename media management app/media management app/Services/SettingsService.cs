@@ -48,9 +48,20 @@ public sealed class SettingsService : ISettingsService
             Current.StateFolder = AppConstants.DefaultStateFolder;
         }
 
+        if (string.IsNullOrWhiteSpace(Current.DefaultLibraryFolderName))
+        {
+            Current.DefaultLibraryFolderName = AppConstants.DefaultLibraryFolderName;
+        }
+
         if (string.IsNullOrWhiteSpace(Current.OutputLibraryFolder))
         {
-            Current.OutputLibraryFolder = Path.Combine(Current.StateFolder, AppConstants.DefaultLibraryFolderName);
+            Current.OutputLibraryFolder = null;
         }
+        Current.LibraryRootMode = LibraryRootMode.AutoPerDrive;
+        Current.SourceFolders = Current.SourceFolders
+            .Where(folder => !string.IsNullOrWhiteSpace(folder))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        Current.DriveLibraryRoots ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
     }
 }

@@ -8,14 +8,23 @@ namespace media_management_app.ViewModels;
 public partial class MainViewModel : ViewModelBase
 {
     private readonly IAppLogger _logger;
+    private readonly IOperationProgressService _progressService;
 
-    public MainViewModel(SettingsViewModel settingsViewModel, InboxViewModel inboxViewModel, ReviewViewModel reviewViewModel, IAppLogger logger)
+    public MainViewModel(
+        SettingsViewModel settingsViewModel,
+        InboxViewModel inboxViewModel,
+        ReviewViewModel reviewViewModel,
+        IAppLogger logger,
+        IOperationProgressService progressService)
     {
         _logger = logger;
+        _progressService = progressService;
         SettingsViewModel = settingsViewModel;
         InboxViewModel = inboxViewModel;
         ReviewViewModel = reviewViewModel;
         UiLogs = _logger.UiLogs;
+        _progressService.ProgressChanged += OnProgressChanged;
+        SyncProgress();
         CurrentView = InboxViewModel;
     }
 
@@ -30,6 +39,12 @@ public partial class MainViewModel : ViewModelBase
     [ObservableProperty]
     private ViewModelBase currentView;
 
+    [ObservableProperty]
+    private double operationProgressPercent;
+
+    [ObservableProperty]
+    private string operationProgressMessage = "Idle";
+
     [RelayCommand]
     private void ShowSettings() => CurrentView = SettingsViewModel;
 
@@ -38,4 +53,15 @@ public partial class MainViewModel : ViewModelBase
 
     [RelayCommand]
     private void ShowReview() => CurrentView = ReviewViewModel;
+
+    private void OnProgressChanged(object? sender, EventArgs e)
+    {
+        SyncProgress();
+    }
+
+    private void SyncProgress()
+    {
+        OperationProgressPercent = _progressService.Percent;
+        OperationProgressMessage = _progressService.Message;
+    }
 }

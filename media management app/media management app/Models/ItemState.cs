@@ -7,5 +7,6 @@ public enum ItemState
     NeedsReview = 2,
     Linked = 3,
     Error = 4,
-    Deleted = 5
+    Deleted = 5,
+    Ignored = 6
 }

@@ -6,6 +6,10 @@ public sealed class SourceItem
 {
     public int DisplayIndex { get; set; }
 
+    public string DisplayTitle => MediaKind == MediaKind.Movie
+        ? MovieTitle ?? MatchedTitle ?? ShowTitle ?? string.Empty
+        : ShowTitle ?? MatchedTitle ?? MovieTitle ?? string.Empty;
+
     public long Id { get; set; }
 
     public string SourceRootFolder { get; set; } = string.Empty;
@@ -20,6 +24,8 @@ public sealed class SourceItem
 
     public MediaKind MediaKind { get; set; } = MediaKind.Unknown;
 
+    public ParserPattern ParserPattern { get; set; } = ParserPattern.Unknown;
+
     public string? ShowTitle { get; set; }
 
     public string? MovieTitle { get; set; }
@@ -31,6 +37,24 @@ public sealed class SourceItem
     public int? EpisodeNumber { get; set; }
 
     public string? EpisodeTitle { get; set; }
+
+    public string? MatchedTitle { get; set; }
+
+    public int? MatchedYear { get; set; }
+
+    public string? Provider { get; set; }
+
+    public string? ProviderId { get; set; }
+
+    public double? MatchConfidence { get; set; }
+
+    public string? MatchReason { get; set; }
+
+    public bool RequiresManualReview { get; set; }
+
+    public bool MatchAccepted { get; set; }
+
+    public bool UseAbsoluteAnimeMapping { get; set; }
 
     public ItemState State { get; set; } = ItemState.Discovered;
 
