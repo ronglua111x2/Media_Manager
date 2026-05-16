@@ -14,6 +14,7 @@ public partial class InboxViewModel : ViewModelBase
     private readonly IScannerService _scannerService;
     private readonly IHardlinkService _hardlinkService;
     private readonly IAppLogger _logger;
+    private readonly SemaphoreSlim _operationQueue = new(1, 1);
 
     [ObservableProperty]
     private bool isBusy;
@@ -42,6 +43,8 @@ public partial class InboxViewModel : ViewModelBase
 
     public ObservableCollection<SourceItem> Items { get; }
 
+    public ObservableCollection<SourceItem> SelectedItems { get; } = [];
+
     [RelayCommand]
     private void Scan()
     {
@@ -59,42 +62,119 @@ public partial class InboxViewModel : ViewModelBase
         }
     }
 
-    [RelayCommand]
-    private void LinkSelected()
+    public void UpdateSelectedItems(IEnumerable<SourceItem> selectedItems)
     {
-        if (SelectedItem is null)
+        SelectedItems.Clear();
+        foreach (var item in selectedItems)
         {
-            StatusMessage = "Select an item first.";
-            _logger.Warning("Create hardlink requested without a selected item", LogTarget.Ui | LogTarget.Console);
+            SelectedItems.Add(item);
+        }
+    }
+
+    [RelayCommand]
+    private async Task CreateHardlinks()
+    {
+        var queuedItems = GetQueuedSelection();
+        if (queuedItems.Count == 0)
+        {
+            StatusMessage = "Select one or more items first.";
+            _logger.Warning("Create hardlink requested without selected items", LogTarget.Ui | LogTarget.Console);
             return;
         }
 
-        if (SelectedItem.State == ItemState.NeedsReview ||
-            string.IsNullOrWhiteSpace(SelectedItem.ShowTitle) ||
-            SelectedItem.SeasonNumber is null ||
-            SelectedItem.EpisodeNumber is null)
+        await _operationQueue.WaitAsync();
+        IsBusy = true;
+        try
         {
-            StatusMessage = "Selected item needs review before linking.";
-            _logger.Warning($"Selected item needs review before linking: {SelectedItem.FilePath}", LogTarget.Ui | LogTarget.Console);
-            return;
-        }
+            var successCount = 0;
+            var failureCount = 0;
+            StatusMessage = $"Creating hardlinks for {queuedItems.Count} selected item(s)...";
 
-        if (_hardlinkService.CreateHardLink(SelectedItem, _settingsService.Current.OutputLibraryFolder, out var createdPath, out var errorMessage))
-        {
-            SelectedItem.State = ItemState.Linked;
-            SelectedItem.LinkedPath = createdPath;
-            SelectedItem.Notes = null;
-            _databaseService.UpsertSourceItem(SelectedItem);
+            foreach (var item in queuedItems)
+            {
+                await Task.Yield();
+                if (item.State == ItemState.NeedsReview || !CanLink(item))
+                {
+                    failureCount++;
+                    item.State = ItemState.NeedsReview;
+                    item.Notes = "Item needs review before linking.";
+                    _databaseService.UpdateSourceItem(item);
+                    _logger.Warning($"Skipped item that needs review before linking: {item.FilePath}", LogTarget.Ui | LogTarget.Console);
+                    continue;
+                }
+
+                if (_hardlinkService.CreateHardLink(item, _settingsService.Current.OutputLibraryFolder, out var createdPath, out var errorMessage))
+                {
+                    successCount++;
+                    item.State = ItemState.Linked;
+                    item.LinkedPath = createdPath;
+                    item.Notes = null;
+                    _databaseService.UpdateSourceItem(item);
+                    continue;
+                }
+
+                failureCount++;
+                item.State = ItemState.Error;
+                item.Notes = errorMessage;
+                _databaseService.UpdateSourceItem(item);
+            }
+
             ReloadPersistedItems();
-            StatusMessage = $"Created hardlink: {createdPath}";
+            StatusMessage = $"Hardlink queue finished. Created: {successCount}. Failed/skipped: {failureCount}.";
+        }
+        finally
+        {
+            IsBusy = false;
+            _operationQueue.Release();
+        }
+    }
+
+    [RelayCommand]
+    private async Task RemoveHardlinks()
+    {
+        var queuedItems = GetQueuedSelection();
+        if (queuedItems.Count == 0)
+        {
+            StatusMessage = "Select one or more items first.";
+            _logger.Warning("Remove hardlink requested without selected items", LogTarget.Ui | LogTarget.Console);
             return;
         }
 
-        SelectedItem.State = ItemState.Error;
-        SelectedItem.Notes = errorMessage;
-        _databaseService.UpsertSourceItem(SelectedItem);
-        ReloadPersistedItems();
-        StatusMessage = $"Could not create hardlink: {errorMessage}";
+        await _operationQueue.WaitAsync();
+        IsBusy = true;
+        try
+        {
+            var successCount = 0;
+            var failureCount = 0;
+            StatusMessage = $"Removing hardlinks for {queuedItems.Count} selected item(s)...";
+
+            foreach (var item in queuedItems)
+            {
+                await Task.Yield();
+                if (_hardlinkService.RemoveHardLink(item, out _, out var errorMessage))
+                {
+                    successCount++;
+                    item.LinkedPath = null;
+                    item.State = CanLink(item) ? ItemState.Parsed : ItemState.NeedsReview;
+                    item.Notes = null;
+                    _databaseService.UpdateSourceItem(item);
+                    continue;
+                }
+
+                failureCount++;
+                item.State = ItemState.Error;
+                item.Notes = errorMessage;
+                _databaseService.UpdateSourceItem(item);
+            }
+
+            ReloadPersistedItems();
+            StatusMessage = $"Remove queue finished. Removed/cleared: {successCount}. Failed/skipped: {failureCount}.";
+        }
+        finally
+        {
+            IsBusy = false;
+            _operationQueue.Release();
+        }
     }
 
     public void ReloadPersistedItems()
@@ -104,5 +184,27 @@ public partial class InboxViewModel : ViewModelBase
         {
             Items.Add(item);
         }
+    }
+
+    private static bool CanLink(SourceItem item)
+    {
+        return item.MediaKind switch
+        {
+            MediaKind.TvEpisode => !string.IsNullOrWhiteSpace(item.ShowTitle) &&
+                                   item.SeasonNumber is not null &&
+                                   item.EpisodeNumber is not null,
+            MediaKind.Movie => !string.IsNullOrWhiteSpace(item.MovieTitle),
+            _ => false
+        };
+    }
+
+    private List<SourceItem> GetQueuedSelection()
+    {
+        if (SelectedItems.Count > 0)
+        {
+            return SelectedItems.ToList();
+        }
+
+        return SelectedItem is null ? [] : [SelectedItem];
     }
 }

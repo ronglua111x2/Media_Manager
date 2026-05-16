@@ -23,3 +23,14 @@ public enum AppLogLevel
 }
 
 #endregion
+
+#region Media
+
+public enum MediaKind
+{
+    Unknown = 0,
+    TvEpisode = 1,
+    Movie = 2
+}
+
+#endregion

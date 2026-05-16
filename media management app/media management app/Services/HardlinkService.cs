@@ -16,6 +16,13 @@ public sealed class HardlinkService : IHardlinkService
 
     public string BuildOutputPath(SourceItem item, string outputRoot)
     {
+        if (item.MediaKind == MediaKind.Movie)
+        {
+            var movieFolderName = BuildMovieFolderName(item);
+            var extension = Path.GetExtension(item.FilePath);
+            return Path.Combine(outputRoot, movieFolderName, $"{movieFolderName}{extension}");
+        }
+
         var showName = Sanitize(item.ShowTitle ?? "Unknown Show");
         var seasonFolder = $"Season {item.SeasonNumber.GetValueOrDefault():00}";
         var fileName = $"{showName} - S{item.SeasonNumber.GetValueOrDefault():00}E{item.EpisodeNumber.GetValueOrDefault():00}{Path.GetExtension(item.FilePath)}";
@@ -51,6 +58,46 @@ public sealed class HardlinkService : IHardlinkService
         return true;
     }
 
+    public bool RemoveHardLink(SourceItem item, out string? removedPath, out string? errorMessage)
+    {
+        removedPath = null;
+        errorMessage = null;
+
+        if (string.IsNullOrWhiteSpace(item.LinkedPath))
+        {
+            errorMessage = "Item does not have a linked path.";
+            _logger.Warning($"Remove hardlink skipped because item has no linked path: {item.FilePath}", LogTarget.Ui | LogTarget.Console);
+            return false;
+        }
+
+        if (string.Equals(Path.GetFullPath(item.LinkedPath), Path.GetFullPath(item.FilePath), StringComparison.OrdinalIgnoreCase))
+        {
+            errorMessage = "Linked path matches the source path. Refusing to delete.";
+            _logger.Error($"Refusing to delete source path while removing hardlink: {item.FilePath}", targets: LogTarget.All);
+            return false;
+        }
+
+        removedPath = item.LinkedPath;
+        if (!File.Exists(item.LinkedPath))
+        {
+            _logger.Warning($"Linked path no longer exists, clearing state only: {item.LinkedPath}", LogTarget.All);
+            return true;
+        }
+
+        try
+        {
+            File.Delete(item.LinkedPath);
+            _logger.Info($"Removed hardlink path: {item.LinkedPath}", LogTarget.All);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+            _logger.Error($"Could not remove hardlink path: {item.LinkedPath}", ex, LogTarget.All);
+            return false;
+        }
+    }
+
     private static string Sanitize(string value)
     {
         foreach (var ch in Path.GetInvalidFileNameChars())
@@ -59,6 +106,12 @@ public sealed class HardlinkService : IHardlinkService
         }
 
         return string.Join(' ', value.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+    }
+
+    private static string BuildMovieFolderName(SourceItem item)
+    {
+        var title = Sanitize(item.MovieTitle ?? item.ShowTitle ?? "Unknown Movie");
+        return item.MovieYear is null ? title : $"{title} ({item.MovieYear})";
     }
 
     [DllImport("kernel32.dll", EntryPoint = "CreateHardLinkW", SetLastError = true, CharSet = CharSet.Unicode)]

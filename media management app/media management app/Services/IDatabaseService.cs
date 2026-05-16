@@ -11,4 +11,6 @@ public interface IDatabaseService
     void UpsertSourceItem(SourceItem item);
 
     void UpsertSourceItems(IEnumerable<SourceItem> items);
+
+    void UpdateSourceItem(SourceItem item);
 }

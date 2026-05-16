@@ -33,7 +33,10 @@ public sealed class DatabaseService : IDatabaseService
                 FilePath TEXT NOT NULL UNIQUE,
                 FileName TEXT NOT NULL,
                 ScanText TEXT NOT NULL,
+                MediaKind INTEGER NOT NULL DEFAULT 0,
                 ShowTitle TEXT NULL,
+                MovieTitle TEXT NULL,
+                MovieYear INTEGER NULL,
                 SeasonNumber INTEGER NULL,
                 EpisodeNumber INTEGER NULL,
                 EpisodeTitle TEXT NULL,
@@ -44,6 +47,9 @@ public sealed class DatabaseService : IDatabaseService
             );
             """;
         command.ExecuteNonQuery();
+        EnsureColumn(connection, "SourceItems", "MediaKind", "INTEGER NOT NULL DEFAULT 0");
+        EnsureColumn(connection, "SourceItems", "MovieTitle", "TEXT NULL");
+        EnsureColumn(connection, "SourceItems", "MovieYear", "INTEGER NULL");
         EnsureColumn(connection, "SourceItems", "LinkedPath", "TEXT NULL");
         _logger.Info("SQLite database is ready", LogTarget.File | LogTarget.Ui | LogTarget.Console);
     }
@@ -55,7 +61,7 @@ public sealed class DatabaseService : IDatabaseService
         connection.Open();
 
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT Id, SourceRootFolder, ParentFolder, FilePath, FileName, ScanText, ShowTitle, SeasonNumber, EpisodeNumber, EpisodeTitle, State, Notes, LinkedPath, LastSeenUtc FROM SourceItems ORDER BY LastSeenUtc DESC;";
+        command.CommandText = "SELECT Id, SourceRootFolder, ParentFolder, FilePath, FileName, ScanText, MediaKind, ShowTitle, MovieTitle, MovieYear, SeasonNumber, EpisodeNumber, EpisodeTitle, State, Notes, LinkedPath, LastSeenUtc FROM SourceItems ORDER BY LastSeenUtc DESC;";
         using var reader = command.ExecuteReader();
         while (reader.Read())
         {
@@ -68,25 +74,45 @@ public sealed class DatabaseService : IDatabaseService
 
     public void UpsertSourceItem(SourceItem item)
     {
+        UpsertSourceItem(item, preserveLinkedState: true);
+    }
+
+    public void UpdateSourceItem(SourceItem item)
+    {
+        UpsertSourceItem(item, preserveLinkedState: false);
+    }
+
+    private void UpsertSourceItem(SourceItem item, bool preserveLinkedState)
+    {
         using var connection = new SqliteConnection(_connectionString);
         connection.Open();
 
         using var command = connection.CreateCommand();
-        command.CommandText = """
-            INSERT INTO SourceItems (SourceRootFolder, ParentFolder, FilePath, FileName, ScanText, ShowTitle, SeasonNumber, EpisodeNumber, EpisodeTitle, State, Notes, LinkedPath, LastSeenUtc)
-            VALUES ($SourceRootFolder, $ParentFolder, $FilePath, $FileName, $ScanText, $ShowTitle, $SeasonNumber, $EpisodeNumber, $EpisodeTitle, $State, $Notes, $LinkedPath, $LastSeenUtc)
+        var stateUpdateSql = preserveLinkedState
+            ? "State = CASE WHEN SourceItems.State = 3 THEN SourceItems.State ELSE excluded.State END,"
+            : "State = excluded.State,";
+        var linkedPathUpdateSql = preserveLinkedState
+            ? "LinkedPath = COALESCE(excluded.LinkedPath, SourceItems.LinkedPath),"
+            : "LinkedPath = excluded.LinkedPath,";
+
+        command.CommandText = $"""
+            INSERT INTO SourceItems (SourceRootFolder, ParentFolder, FilePath, FileName, ScanText, MediaKind, ShowTitle, MovieTitle, MovieYear, SeasonNumber, EpisodeNumber, EpisodeTitle, State, Notes, LinkedPath, LastSeenUtc)
+            VALUES ($SourceRootFolder, $ParentFolder, $FilePath, $FileName, $ScanText, $MediaKind, $ShowTitle, $MovieTitle, $MovieYear, $SeasonNumber, $EpisodeNumber, $EpisodeTitle, $State, $Notes, $LinkedPath, $LastSeenUtc)
             ON CONFLICT(FilePath) DO UPDATE SET
                 SourceRootFolder = excluded.SourceRootFolder,
                 ParentFolder = excluded.ParentFolder,
                 FileName = excluded.FileName,
                 ScanText = excluded.ScanText,
+                MediaKind = excluded.MediaKind,
                 ShowTitle = excluded.ShowTitle,
+                MovieTitle = excluded.MovieTitle,
+                MovieYear = excluded.MovieYear,
                 SeasonNumber = excluded.SeasonNumber,
                 EpisodeNumber = excluded.EpisodeNumber,
                 EpisodeTitle = excluded.EpisodeTitle,
-                State = CASE WHEN SourceItems.State = 3 THEN SourceItems.State ELSE excluded.State END,
+                {stateUpdateSql}
                 Notes = excluded.Notes,
-                LinkedPath = COALESCE(excluded.LinkedPath, SourceItems.LinkedPath),
+                {linkedPathUpdateSql}
                 LastSeenUtc = excluded.LastSeenUtc;
             """;
         AddParameters(command, item);
@@ -98,7 +124,7 @@ public sealed class DatabaseService : IDatabaseService
         var count = 0;
         foreach (var item in items)
         {
-            UpsertSourceItem(item);
+            UpsertSourceItem(item, preserveLinkedState: true);
             count++;
         }
 
@@ -112,7 +138,10 @@ public sealed class DatabaseService : IDatabaseService
         command.Parameters.AddWithValue("$FilePath", item.FilePath);
         command.Parameters.AddWithValue("$FileName", item.FileName);
         command.Parameters.AddWithValue("$ScanText", item.ScanText);
+        command.Parameters.AddWithValue("$MediaKind", (int)item.MediaKind);
         command.Parameters.AddWithValue("$ShowTitle", (object?)item.ShowTitle ?? DBNull.Value);
+        command.Parameters.AddWithValue("$MovieTitle", (object?)item.MovieTitle ?? DBNull.Value);
+        command.Parameters.AddWithValue("$MovieYear", (object?)item.MovieYear ?? DBNull.Value);
         command.Parameters.AddWithValue("$SeasonNumber", (object?)item.SeasonNumber ?? DBNull.Value);
         command.Parameters.AddWithValue("$EpisodeNumber", (object?)item.EpisodeNumber ?? DBNull.Value);
         command.Parameters.AddWithValue("$EpisodeTitle", (object?)item.EpisodeTitle ?? DBNull.Value);
@@ -150,14 +179,17 @@ public sealed class DatabaseService : IDatabaseService
             FilePath = reader.GetString(3),
             FileName = reader.GetString(4),
             ScanText = reader.GetString(5),
-            ShowTitle = reader.IsDBNull(6) ? null : reader.GetString(6),
-            SeasonNumber = reader.IsDBNull(7) ? null : reader.GetInt32(7),
-            EpisodeNumber = reader.IsDBNull(8) ? null : reader.GetInt32(8),
-            EpisodeTitle = reader.IsDBNull(9) ? null : reader.GetString(9),
-            State = (ItemState)reader.GetInt32(10),
-            Notes = reader.IsDBNull(11) ? null : reader.GetString(11),
-            LinkedPath = reader.IsDBNull(12) ? null : reader.GetString(12),
-            LastSeenUtc = DateTime.Parse(reader.GetString(13), null, System.Globalization.DateTimeStyles.RoundtripKind)
+            MediaKind = (MediaKind)reader.GetInt32(6),
+            ShowTitle = reader.IsDBNull(7) ? null : reader.GetString(7),
+            MovieTitle = reader.IsDBNull(8) ? null : reader.GetString(8),
+            MovieYear = reader.IsDBNull(9) ? null : reader.GetInt32(9),
+            SeasonNumber = reader.IsDBNull(10) ? null : reader.GetInt32(10),
+            EpisodeNumber = reader.IsDBNull(11) ? null : reader.GetInt32(11),
+            EpisodeTitle = reader.IsDBNull(12) ? null : reader.GetString(12),
+            State = (ItemState)reader.GetInt32(13),
+            Notes = reader.IsDBNull(14) ? null : reader.GetString(14),
+            LinkedPath = reader.IsDBNull(15) ? null : reader.GetString(15),
+            LastSeenUtc = DateTime.Parse(reader.GetString(16), null, System.Globalization.DateTimeStyles.RoundtripKind)
         };
     }
 }
