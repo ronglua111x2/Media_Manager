@@ -4,6 +4,8 @@ namespace media_management_app.Models;
 
 public sealed class SourceItem
 {
+    public int DisplayIndex { get; set; }
+
     public long Id { get; set; }
 
     public string SourceRootFolder { get; set; } = string.Empty;

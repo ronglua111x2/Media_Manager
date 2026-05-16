@@ -52,12 +52,33 @@
 
         <DataTemplate DataType="{x:Type vm:InboxViewModel}">
             <DockPanel Margin="24">
-                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,12">
-                    <Button Content="Scan Sources" Command="{Binding ScanCommand}" />
-                    <Button Content="Create Hardlinks" Command="{Binding CreateHardlinksCommand}" />
-                    <Button Content="Remove Hardlinks" Command="{Binding RemoveHardlinksCommand}" />
-                    <TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center" Margin="8,0,0,0" />
-                </StackPanel>
+                <DockPanel DockPanel.Dock="Top" Margin="0,0,0,12">
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
+                        <Button Content="Scan Sources" Command="{Binding ScanCommand}" />
+                        <Button Content="Create Hardlinks" Command="{Binding CreateHardlinksCommand}" />
+                        <Button Content="Remove Hardlinks" Command="{Binding RemoveHardlinksCommand}" />
+                        <Button Content="Cleanup Deleted" Command="{Binding CleanupDeletedCommand}" />
+                    </StackPanel>
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal">
+                        <TextBlock Text="State" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <ComboBox ItemsSource="{Binding StateFilterOptions}"
+                                  SelectedItem="{Binding SelectedStateFilter, Mode=TwoWay}"
+                                  DisplayMemberPath="Label"
+                                  Width="140"
+                                  Margin="0,0,16,0" />
+                        <TextBlock Text="Kind" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <ComboBox ItemsSource="{Binding KindFilterOptions}"
+                                  SelectedItem="{Binding SelectedKindFilter, Mode=TwoWay}"
+                                  DisplayMemberPath="Label"
+                                  Width="140"
+                                  Margin="0,0,16,0" />
+                        <Button Content="Reset Filters"
+                                Command="{Binding ResetFiltersCommand}"
+                                Padding="8,4"
+                                Margin="0,0,16,0" />
+                        <TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center" />
+                    </StackPanel>
+                </DockPanel>
 
                 <DataGrid x:Name="InboxGrid"
                           ItemsSource="{Binding Items}"
@@ -76,6 +97,7 @@
                           EnableColumnVirtualization="True"
                           ColumnWidth="SizeToHeader">
                     <DataGrid.Columns>
+                        <DataGridTextColumn Header="#" Binding="{Binding DisplayIndex}" Width="48" />
                         <DataGridTextColumn Header="State" Binding="{Binding State}" Width="90" />
                         <DataGridTextColumn Header="Kind" Binding="{Binding MediaKind}" Width="90" />
                         <DataGridTextColumn Header="Show" Binding="{Binding ShowTitle}" Width="180">

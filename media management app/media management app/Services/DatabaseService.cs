@@ -131,6 +131,60 @@ public sealed class DatabaseService : IDatabaseService
         _logger.Info($"Persisted {count} source item(s)", LogTarget.File | LogTarget.Console);
     }
 
+    public int MarkMissingSourceItems(IEnumerable<string> sourceFolders, IEnumerable<string> seenFilePaths)
+    {
+        var roots = sourceFolders
+            .Where(Directory.Exists)
+            .Select(NormalizePath)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var seen = seenFilePaths
+            .Select(NormalizePath)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if (roots.Count == 0)
+        {
+            return 0;
+        }
+
+        var missingCount = 0;
+        foreach (var item in GetSourceItems())
+        {
+            if (!roots.Contains(NormalizePath(item.SourceRootFolder)) ||
+                seen.Contains(NormalizePath(item.FilePath)) ||
+                item.State == ItemState.Deleted)
+            {
+                continue;
+            }
+
+            item.State = ItemState.Deleted;
+            item.Notes = "Source file was not found during the latest scan.";
+            item.LastSeenUtc = DateTime.UtcNow;
+            UpdateSourceItem(item);
+            missingCount++;
+        }
+
+        if (missingCount > 0)
+        {
+            _logger.Warning($"Marked {missingCount} source item(s) as deleted because their source files were not found", LogTarget.All);
+        }
+
+        return missingCount;
+    }
+
+    public int DeleteSourceItemsByState(ItemState state)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM SourceItems WHERE State = $State;";
+        command.Parameters.AddWithValue("$State", (int)state);
+        var deletedCount = command.ExecuteNonQuery();
+
+        _logger.Info($"Deleted {deletedCount} item(s) with state {state} from SQLite", LogTarget.All);
+        return deletedCount;
+    }
+
     private static void AddParameters(SqliteCommand command, SourceItem item)
     {
         command.Parameters.AddWithValue("$SourceRootFolder", item.SourceRootFolder);
@@ -191,5 +245,10 @@ public sealed class DatabaseService : IDatabaseService
             LinkedPath = reader.IsDBNull(15) ? null : reader.GetString(15),
             LastSeenUtc = DateTime.Parse(reader.GetString(16), null, System.Globalization.DateTimeStyles.RoundtripKind)
         };
+    }
+
+    private static string NormalizePath(string path)
+    {
+        return Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
     }
 }

@@ -13,4 +13,8 @@ public interface IDatabaseService
     void UpsertSourceItems(IEnumerable<SourceItem> items);
 
     void UpdateSourceItem(SourceItem item);
+
+    int MarkMissingSourceItems(IEnumerable<string> sourceFolders, IEnumerable<string> seenFilePaths);
+
+    int DeleteSourceItemsByState(ItemState state);
 }

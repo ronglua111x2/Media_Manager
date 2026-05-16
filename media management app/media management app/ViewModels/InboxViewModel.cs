@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.Input;
 using media_management_app.Common;
 using media_management_app.Models;
 using media_management_app.Services;
+using media_management_app.ViewModels.Filters;
 
 namespace media_management_app.ViewModels;
 
@@ -15,6 +16,8 @@ public partial class InboxViewModel : ViewModelBase
     private readonly IHardlinkService _hardlinkService;
     private readonly IAppLogger _logger;
     private readonly SemaphoreSlim _operationQueue = new(1, 1);
+    private readonly List<SourceItem> _allItems = [];
+    private readonly List<ISourceItemFilter> _filters;
 
     [ObservableProperty]
     private bool isBusy;
@@ -24,6 +27,12 @@ public partial class InboxViewModel : ViewModelBase
 
     [ObservableProperty]
     private string statusMessage = string.Empty;
+
+    [ObservableProperty]
+    private FilterOption<ItemState>? selectedStateFilter;
+
+    [ObservableProperty]
+    private FilterOption<MediaKind>? selectedKindFilter;
 
     public InboxViewModel(
         ISettingsService settingsService,
@@ -38,12 +47,25 @@ public partial class InboxViewModel : ViewModelBase
         _hardlinkService = hardlinkService;
         _logger = logger;
         Items = new ObservableCollection<SourceItem>();
+        StateFilterOptions = BuildStateFilterOptions();
+        KindFilterOptions = BuildKindFilterOptions();
+        SelectedStateFilter = StateFilterOptions[0];
+        SelectedKindFilter = KindFilterOptions[0];
+        _filters =
+        [
+            new SourceItemStateFilter(() => SelectedStateFilter?.Value),
+            new SourceItemKindFilter(() => SelectedKindFilter?.Value)
+        ];
         ReloadPersistedItems();
     }
 
     public ObservableCollection<SourceItem> Items { get; }
 
     public ObservableCollection<SourceItem> SelectedItems { get; } = [];
+
+    public IReadOnlyList<FilterOption<ItemState>> StateFilterOptions { get; }
+
+    public IReadOnlyList<FilterOption<MediaKind>> KindFilterOptions { get; }
 
     [RelayCommand]
     private void Scan()
@@ -53,8 +75,9 @@ public partial class InboxViewModel : ViewModelBase
         {
             var scanned = _scannerService.Scan(_settingsService.Current.SourceFolders);
             _databaseService.UpsertSourceItems(scanned);
+            var deletedCount = _databaseService.MarkMissingSourceItems(_settingsService.Current.SourceFolders, scanned.Select(item => item.FilePath));
             ReloadPersistedItems();
-            StatusMessage = $"Scanned {scanned.Count} video item(s).";
+            StatusMessage = $"Scanned {scanned.Count} video item(s). Marked deleted: {deletedCount}.";
         }
         finally
         {
@@ -69,6 +92,16 @@ public partial class InboxViewModel : ViewModelBase
         {
             SelectedItems.Add(item);
         }
+    }
+
+    partial void OnSelectedStateFilterChanged(FilterOption<ItemState>? value)
+    {
+        ApplyFilters();
+    }
+
+    partial void OnSelectedKindFilterChanged(FilterOption<MediaKind>? value)
+    {
+        ApplyFilters();
     }
 
     [RelayCommand]
@@ -93,11 +126,12 @@ public partial class InboxViewModel : ViewModelBase
             foreach (var item in queuedItems)
             {
                 await Task.Yield();
-                if (item.State == ItemState.NeedsReview || !CanLink(item))
+                if (item.State is ItemState.NeedsReview or ItemState.Deleted || !CanLink(item))
                 {
                     failureCount++;
-                    item.State = ItemState.NeedsReview;
-                    item.Notes = "Item needs review before linking.";
+                    item.Notes = item.State == ItemState.Deleted
+                        ? "Source file is deleted and cannot be linked."
+                        : "Item needs review before linking.";
                     _databaseService.UpdateSourceItem(item);
                     _logger.Warning($"Skipped item that needs review before linking: {item.FilePath}", LogTarget.Ui | LogTarget.Console);
                     continue;
@@ -177,13 +211,54 @@ public partial class InboxViewModel : ViewModelBase
         }
     }
 
+    [RelayCommand]
+    private async Task CleanupDeleted()
+    {
+        await _operationQueue.WaitAsync();
+        IsBusy = true;
+        try
+        {
+            var deletedCount = _databaseService.DeleteSourceItemsByState(ItemState.Deleted);
+            ReloadPersistedItems();
+            StatusMessage = $"Cleaned up {deletedCount} deleted item(s).";
+        }
+        finally
+        {
+            IsBusy = false;
+            _operationQueue.Release();
+        }
+    }
+
+    [RelayCommand]
+    private void ResetFilters()
+    {
+        SelectedStateFilter = StateFilterOptions[0];
+        SelectedKindFilter = KindFilterOptions[0];
+        ApplyFilters();
+    }
+
     public void ReloadPersistedItems()
     {
+        _allItems.Clear();
+        _allItems.AddRange(_databaseService.GetSourceItems());
+        ApplyFilters();
+    }
+
+    private void ApplyFilters()
+    {
         Items.Clear();
-        foreach (var item in _databaseService.GetSourceItems())
+        SelectedItems.Clear();
+        SelectedItem = null;
+
+        var filtered = _allItems.Where(item => _filters.All(filter => !filter.IsActive || filter.Matches(item)));
+        var displayIndex = 1;
+        foreach (var item in filtered)
         {
+            item.DisplayIndex = displayIndex++;
             Items.Add(item);
         }
+
+        StatusMessage = $"Showing {Items.Count} of {_allItems.Count} item(s).";
     }
 
     private static bool CanLink(SourceItem item)
@@ -206,5 +281,33 @@ public partial class InboxViewModel : ViewModelBase
         }
 
         return SelectedItem is null ? [] : [SelectedItem];
+    }
+
+    private static IReadOnlyList<FilterOption<ItemState>> BuildStateFilterOptions()
+    {
+        var options = new List<FilterOption<ItemState>>
+        {
+            new() { Label = "All states", Value = null }
+        };
+        options.AddRange(Enum.GetValues<ItemState>().Select(state => new FilterOption<ItemState>
+        {
+            Label = state.ToString(),
+            Value = state
+        }));
+        return options;
+    }
+
+    private static IReadOnlyList<FilterOption<MediaKind>> BuildKindFilterOptions()
+    {
+        var options = new List<FilterOption<MediaKind>>
+        {
+            new() { Label = "All kinds", Value = null }
+        };
+        options.AddRange(Enum.GetValues<MediaKind>().Select(kind => new FilterOption<MediaKind>
+        {
+            Label = kind.ToString(),
+            Value = kind
+        }));
+        return options;
     }
 }
