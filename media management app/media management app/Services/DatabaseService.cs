@@ -241,6 +241,24 @@ public sealed class DatabaseService : IDatabaseService
         return deletedCount;
     }
 
+    public int DeleteSourceItem(long id)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM SourceItems WHERE Id = $Id;";
+        command.Parameters.AddWithValue("$Id", id);
+        var deletedCount = command.ExecuteNonQuery();
+
+        if (deletedCount > 0)
+        {
+            _logger.Info($"Deleted stale source item id={id} from SQLite", LogTarget.All);
+        }
+
+        return deletedCount;
+    }
+
     private static void AddParameters(SqliteCommand command, SourceItem item)
     {
         command.Parameters.AddWithValue("$SourceRootFolder", item.SourceRootFolder);

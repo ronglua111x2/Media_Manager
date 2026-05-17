@@ -14,6 +14,7 @@ public partial class InboxViewModel : ViewModelBase
     private readonly IDatabaseService _databaseService;
     private readonly IScannerService _scannerService;
     private readonly IHardlinkService _hardlinkService;
+    private readonly ISourceReconciliationService _sourceReconciliationService;
     private readonly IMetadataProvider _metadataProvider;
     private readonly IOperationProgressService _progressService;
     private readonly IAppLogger _logger;
@@ -36,11 +37,15 @@ public partial class InboxViewModel : ViewModelBase
     [ObservableProperty]
     private FilterOption<MediaKind>? selectedKindFilter;
 
+    [ObservableProperty]
+    private string searchText = string.Empty;
+
     public InboxViewModel(
         ISettingsService settingsService,
         IDatabaseService databaseService,
         IScannerService scannerService,
         IHardlinkService hardlinkService,
+        ISourceReconciliationService sourceReconciliationService,
         IMetadataProvider metadataProvider,
         IOperationProgressService progressService,
         IAppLogger logger)
@@ -49,6 +54,7 @@ public partial class InboxViewModel : ViewModelBase
         _databaseService = databaseService;
         _scannerService = scannerService;
         _hardlinkService = hardlinkService;
+        _sourceReconciliationService = sourceReconciliationService;
         _metadataProvider = metadataProvider;
         _progressService = progressService;
         _logger = logger;
@@ -60,7 +66,8 @@ public partial class InboxViewModel : ViewModelBase
         _filters =
         [
             new SourceItemStateFilter(() => SelectedStateFilter?.Value),
-            new SourceItemKindFilter(() => SelectedKindFilter?.Value)
+            new SourceItemKindFilter(() => SelectedKindFilter?.Value),
+            new SourceItemTextFilter(() => SearchText)
         ];
         ReloadPersistedItems();
     }
@@ -84,9 +91,9 @@ public partial class InboxViewModel : ViewModelBase
             _progressService.Report(1, $"Found {scanned.Count} video item(s)");
             await ResolveTvIdentityAsync(scanned);
             _databaseService.UpsertSourceItems(scanned);
-            var deletedCount = _databaseService.MarkMissingSourceItems(_settingsService.Current.SourceFolders, scanned.Select(item => item.FilePath));
+            var reconciliation = _sourceReconciliationService.ReconcileMissingSourceItems(_settingsService.Current.SourceFolders, scanned.Select(item => item.FilePath));
             ReloadPersistedItems();
-            StatusMessage = $"Scanned {scanned.Count} video item(s). Marked deleted: {deletedCount}.";
+            StatusMessage = $"Scanned {scanned.Count} video item(s). Marked deleted: {reconciliation.MarkedDeletedCount}. Purged stale: {reconciliation.PurgedStaleCount}. Cleanup failures: {reconciliation.CleanupFailureCount}.";
             _progressService.Finish(StatusMessage);
         }
         finally
@@ -110,6 +117,11 @@ public partial class InboxViewModel : ViewModelBase
     }
 
     partial void OnSelectedKindFilterChanged(FilterOption<MediaKind>? value)
+    {
+        ApplyFilters();
+    }
+
+    partial void OnSearchTextChanged(string value)
     {
         ApplyFilters();
     }
@@ -198,6 +210,7 @@ public partial class InboxViewModel : ViewModelBase
         {
             var successCount = 0;
             var failureCount = 0;
+            var purgedCount = 0;
             var processedCount = 0;
             StatusMessage = $"Removing hardlinks for {queuedItems.Count} selected item(s)...";
             _progressService.Start(StatusMessage, queuedItems.Count);
@@ -210,6 +223,13 @@ public partial class InboxViewModel : ViewModelBase
 
                 if (string.IsNullOrWhiteSpace(item.LinkedPath))
                 {
+                    if (!File.Exists(item.FilePath))
+                    {
+                        purgedCount += _databaseService.DeleteSourceItem(item.Id);
+                        _logger.Info($"Removed stale table entry because both source and linked path are absent: {item.FilePath}", LogTarget.All);
+                        continue;
+                    }
+
                     successCount++;
                     item.State = CanLink(item) ? ItemState.Parsed : ItemState.NeedsReview;
                     item.Notes = "No linked path is currently recorded. Nothing to remove.";
@@ -219,6 +239,13 @@ public partial class InboxViewModel : ViewModelBase
 
                 if (_hardlinkService.RemoveHardLink(item, out _, out var errorMessage))
                 {
+                    if (!File.Exists(item.FilePath))
+                    {
+                        purgedCount += _databaseService.DeleteSourceItem(item.Id);
+                        _logger.Info($"Removed hardlink and purged table entry because source is missing: {item.FilePath}", LogTarget.All);
+                        continue;
+                    }
+
                     successCount++;
                     item.LinkedPath = null;
                     item.State = CanLink(item) ? ItemState.Parsed : ItemState.NeedsReview;
@@ -234,7 +261,7 @@ public partial class InboxViewModel : ViewModelBase
             }
 
             ReloadPersistedItems();
-            StatusMessage = $"Remove queue finished. Removed/cleared: {successCount}. Failed/skipped: {failureCount}.";
+            StatusMessage = $"Remove queue finished. Removed/cleared: {successCount}. Purged stale rows: {purgedCount}. Failed/skipped: {failureCount}.";
             _progressService.Finish(StatusMessage);
         }
         finally
@@ -388,14 +415,23 @@ public partial class InboxViewModel : ViewModelBase
                 .ToList();
             var filesystemSuccessCount = 0;
             var filesystemFailureCount = 0;
+            var noLinkedPathCount = 0;
             var processedCount = 0;
             _progressService.Start($"Cleaning up {deletedItems.Count} deleted item(s)...", Math.Max(deletedItems.Count, 1));
 
-            foreach (var item in deletedItems.Where(item => !string.IsNullOrWhiteSpace(item.LinkedPath)))
+            foreach (var item in deletedItems)
             {
                 await Task.Yield();
                 processedCount++;
                 _progressService.Report(processedCount, $"Cleaning up: {item.DisplayTitle}");
+
+                if (string.IsNullOrWhiteSpace(item.LinkedPath))
+                {
+                    noLinkedPathCount++;
+                    _logger.Info($"Deleted item has no linked path; database record will be removed directly: {item.FilePath}", LogTarget.All);
+                    continue;
+                }
+
                 if (_hardlinkService.RemoveHardLink(item, out _, out var errorMessage))
                 {
                     filesystemSuccessCount++;
@@ -412,7 +448,7 @@ public partial class InboxViewModel : ViewModelBase
 
             var deletedCount = _databaseService.DeleteSourceItemsByState(ItemState.Deleted);
             ReloadPersistedItems();
-            StatusMessage = $"Cleaned up {deletedCount} deleted DB item(s). Removed library links/folders: {filesystemSuccessCount}. Failed filesystem cleanup: {filesystemFailureCount}.";
+            StatusMessage = $"Cleaned up {deletedCount} deleted DB item(s). Removed library links/folders: {filesystemSuccessCount}. Direct DB cleanup: {noLinkedPathCount}. Failed filesystem cleanup: {filesystemFailureCount}.";
             _progressService.Finish(StatusMessage);
         }
         finally
@@ -427,6 +463,7 @@ public partial class InboxViewModel : ViewModelBase
     {
         SelectedStateFilter = StateFilterOptions[0];
         SelectedKindFilter = KindFilterOptions[0];
+        SearchText = string.Empty;
         ApplyFilters();
     }
 

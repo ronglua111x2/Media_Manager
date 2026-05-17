@@ -48,6 +48,7 @@ public partial class App : System.Windows.Application
         services.AddSingleton<IScannerService, ScannerService>();
         services.AddSingleton<ILibraryPathResolver, LibraryPathResolver>();
         services.AddSingleton<IHardlinkService, HardlinkService>();
+        services.AddSingleton<ISourceReconciliationService, SourceReconciliationService>();
         services.AddSingleton<TmdbMetadataProvider>();
         services.AddSingleton<IMetadataProvider>(provider => provider.GetRequiredService<TmdbMetadataProvider>());
 

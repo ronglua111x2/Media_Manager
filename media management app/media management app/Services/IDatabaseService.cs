@@ -19,6 +19,8 @@ public interface IDatabaseService
 
     int DeleteSourceItemsByState(ItemState state);
 
+    int DeleteSourceItem(long id);
+
     SeriesMapping? GetSeriesMapping(string parsedTitle, ParserPattern parserPattern);
 
     void UpsertSeriesMapping(SeriesMapping mapping);

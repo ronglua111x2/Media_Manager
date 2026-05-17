@@ -197,6 +197,11 @@
                                   DisplayMemberPath="Label"
                                   Width="140"
                                   Margin="0,0,16,0" />
+                        <TextBlock Text="Search" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                                 Width="260"
+                                 Margin="0,0,16,0"
+                                 ToolTip="Filter by show, movie, matched title, file name, source path, linked path, or notes." />
                         <Button Command="{Binding ResetFiltersCommand}"
                                 Padding="8,4"
                                 Margin="0,0,16,0">
