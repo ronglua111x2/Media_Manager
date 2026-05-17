@@ -5,7 +5,9 @@ public static class AppConstants
     #region Paths
 
     public const string DefaultStateFolder = @"D:\MediaManagerState";
-    public const string DefaultLibraryFolderName = "Library";
+    public const string DefaultLibraryFolderName = "MediaManagerLibrary";
+    public const string ShowsFolderName = "Shows";
+    public const string MoviesFolderName = "Movies";
     public const string LogFolderName = "logs";
 
     #endregion

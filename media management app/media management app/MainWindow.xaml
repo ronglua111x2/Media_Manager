@@ -6,7 +6,8 @@
         xmlns:vm="clr-namespace:media_management_app.ViewModels"
         mc:Ignorable="d"
         Title="Media Manager" Height="720" Width="1120"
-        MinHeight="560" MinWidth="920">
+        MinHeight="560" MinWidth="920"
+        Icon="Assets/app-icon.ico">
     <Window.Resources>
         <Style TargetType="TextBox">
             <Setter Property="Margin" Value="0,4,0,12" />
@@ -20,33 +21,125 @@
         <Style TargetType="TextBlock">
             <Setter Property="TextWrapping" Value="Wrap" />
         </Style>
+        <Style x:Key="ButtonIconPath" TargetType="Path">
+            <Setter Property="Width" Value="16" />
+            <Setter Property="Height" Value="16" />
+            <Setter Property="Stretch" Value="Uniform" />
+            <Setter Property="Stroke" Value="#111827" />
+            <Setter Property="StrokeThickness" Value="2" />
+            <Setter Property="StrokeStartLineCap" Value="Round" />
+            <Setter Property="StrokeEndLineCap" Value="Round" />
+            <Setter Property="StrokeLineJoin" Value="Round" />
+            <Setter Property="Margin" Value="0,0,6,0" />
+        </Style>
+        <Style x:Key="NavIconPath" TargetType="Path" BasedOn="{StaticResource ButtonIconPath}">
+            <Setter Property="Width" Value="15" />
+            <Setter Property="Height" Value="15" />
+        </Style>
+        <Style x:Key="OperationProgressBar" TargetType="ProgressBar">
+            <Setter Property="Height" Value="22" />
+            <Setter Property="Foreground" Value="#2563eb" />
+            <Setter Property="Background" Value="#243244" />
+            <Setter Property="BorderBrush" Value="#3b4a5f" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
 
         <DataTemplate DataType="{x:Type vm:SettingsViewModel}">
             <ScrollViewer VerticalScrollBarVisibility="Auto">
-                <StackPanel Margin="24" MaxWidth="820" HorizontalAlignment="Left">
+                <Grid Margin="24">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
                     <TextBlock Text="Settings" FontSize="24" FontWeight="SemiBold" Margin="0,0,0,20" />
 
-                    <TextBlock Text="State folder" FontWeight="SemiBold" />
-                    <TextBox Text="{Binding StateFolder, UpdateSourceTrigger=PropertyChanged}" />
+                    <TextBlock Grid.Row="1" Text="State folder" FontWeight="SemiBold" />
+                    <DockPanel Grid.Row="2" Margin="0,4,0,12" LastChildFill="True">
+                        <Button DockPanel.Dock="Right" Content="Browse" Command="{Binding BrowseStateFolderCommand}" Margin="8,0,0,0" />
+                        <TextBox Text="{Binding StateFolder, UpdateSourceTrigger=PropertyChanged}" Margin="0" />
+                    </DockPanel>
 
-                    <TextBlock Text="Source folders, one per line" FontWeight="SemiBold" />
-                    <TextBox Text="{Binding SourceFoldersText, UpdateSourceTrigger=PropertyChanged}"
-                             AcceptsReturn="True"
-                             MinHeight="110"
-                             VerticalContentAlignment="Top"
-                             VerticalScrollBarVisibility="Auto" />
+                    <TextBlock Grid.Row="3" Text="Source folders" FontWeight="SemiBold" />
+                    <Grid Grid.Row="4" Margin="0,4,0,16">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="150" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <ListBox Grid.Row="0"
+                                 ItemsSource="{Binding SourceFolders}"
+                                 SelectedItem="{Binding SelectedSourceFolder, Mode=TwoWay}"
+                                 HorizontalContentAlignment="Stretch"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                 ScrollViewer.VerticalScrollBarVisibility="Auto" />
+                        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,10,0,0">
+                            <Button Content="Add Source Folder" Command="{Binding AddSourceFolderCommand}" />
+                            <Button Content="Remove Selected Source Folder" Command="{Binding RemoveSelectedSourceFolderCommand}" />
+                        </StackPanel>
+                    </Grid>
 
-                    <TextBlock Text="Output library folder" FontWeight="SemiBold" />
-                    <TextBox Text="{Binding OutputLibraryFolder, UpdateSourceTrigger=PropertyChanged}" />
+                    <TextBlock Grid.Row="5" Text="Generated library folder name" FontWeight="SemiBold" />
+                    <TextBox Grid.Row="6" Text="{Binding DefaultLibraryFolderName, UpdateSourceTrigger=PropertyChanged}" />
 
-                    <TextBlock Text="TMDb API Read Access Token" FontWeight="SemiBold" />
-                    <TextBox Text="{Binding TmdbReadAccessToken, UpdateSourceTrigger=PropertyChanged}" />
+                    <Grid Grid.Row="7" Margin="0,0,0,16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" MinWidth="360" />
+                            <ColumnDefinition Width="20" />
+                            <ColumnDefinition Width="520" MinWidth="420" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="170" />
+                        </Grid.RowDefinitions>
 
-                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Auto per-drive Jellyfin output roots" FontWeight="SemiBold" />
+                        <ListBox Grid.Row="1"
+                                 Grid.Column="0"
+                                 ItemsSource="{Binding LibraryRootPreview}"
+                                 Margin="0,4,0,0"
+                                 FontFamily="Consolas"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                 ScrollViewer.VerticalScrollBarVisibility="Auto" />
+
+                        <Border Grid.Row="0"
+                                Grid.RowSpan="2"
+                                Grid.Column="2"
+                                Background="#f6f8fa"
+                                BorderBrush="#d0d7de"
+                                BorderThickness="1"
+                                Padding="14"
+                                Margin="0,4,0,0">
+                            <StackPanel>
+                                <TextBlock Text="How multi-drive output works" FontWeight="SemiBold" Margin="0,0,0,8" />
+                                <TextBlock TextWrapping="Wrap"
+                                           Margin="0,0,0,8"
+                                           Text="Hardlinks only work when the source file and linked file are on the same drive. This app creates a Jellyfin library root on each source drive." />
+                                <TextBlock TextWrapping="Wrap"
+                                           Margin="0,0,0,8"
+                                           Text="Example: files from D:\ go to D:\MediaManagerLibrary. Files from E:\ go to E:\MediaManagerLibrary." />
+                                <TextBlock TextWrapping="Wrap"
+                                           Text="In Jellyfin, add every generated Shows path to one Shows library. Add every generated Movies path to one Movies library." />
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+
+                    <TextBlock Grid.Row="8" Text="TMDb API Read Access Token" FontWeight="SemiBold" />
+                    <TextBox Grid.Row="9" Text="{Binding TmdbReadAccessToken, UpdateSourceTrigger=PropertyChanged}" />
+
+                    <StackPanel Grid.Row="10" Orientation="Horizontal">
                         <Button Content="Save Settings" Command="{Binding SaveCommand}" />
                     </StackPanel>
-                    <TextBlock Text="{Binding StatusMessage}" Margin="0,16,0,0" Foreground="#2f6f3e" />
-                </StackPanel>
+                    <TextBlock Grid.Row="10" Text="{Binding StatusMessage}" Margin="140,7,0,0" Foreground="#2f6f3e" />
+                </Grid>
             </ScrollViewer>
         </DataTemplate>
 
@@ -54,10 +147,42 @@
             <DockPanel Margin="24">
                 <DockPanel DockPanel.Dock="Top" Margin="0,0,0,12">
                     <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
-                        <Button Content="Scan Sources" Command="{Binding ScanCommand}" />
-                        <Button Content="Create Hardlinks" Command="{Binding CreateHardlinksCommand}" />
-                        <Button Content="Remove Hardlinks" Command="{Binding RemoveHardlinksCommand}" />
-                        <Button Content="Cleanup Deleted" Command="{Binding CleanupDeletedCommand}" />
+                        <Button Command="{Binding ScanCommand}">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Style="{StaticResource ButtonIconPath}" Data="M4,7 L4,5 A1,1 0 0 1 5,4 L7,4 M17,4 L19,4 A1,1 0 0 1 20,5 L20,7 M20,17 L20,19 A1,1 0 0 1 19,20 L17,20 M7,20 L5,20 A1,1 0 0 1 4,19 L4,17 M7,12 L17,12 M9,8 L15,8 M9,16 L15,16" />
+                                <TextBlock Text="Scan Sources" />
+                            </StackPanel>
+                        </Button>
+                        <Button Command="{Binding AcceptSuggestedMatchesCommand}">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Style="{StaticResource ButtonIconPath}" Data="M20,6 L9,17 L4,12" />
+                                <TextBlock Text="Accept Suggested Match" />
+                            </StackPanel>
+                        </Button>
+                        <Button Command="{Binding CreateHardlinksCommand}">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Style="{StaticResource ButtonIconPath}" Data="M10,13 A5,5 0 0 0 17.07,13 L19.07,11 A5,5 0 0 0 12,3.93 L10.85,5.08 M14,11 A5,5 0 0 0 6.93,11 L4.93,13 A5,5 0 0 0 12,20.07 L13.15,18.92" />
+                                <TextBlock Text="Create Hardlinks" />
+                            </StackPanel>
+                        </Button>
+                        <Button Command="{Binding RemoveHardlinksCommand}">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Style="{StaticResource ButtonIconPath}" Data="M9,7 L6.93,9.07 A5,5 0 0 0 6.93,16.14 A5,5 0 0 0 14,16.14 L16,14 M15,17 L17.07,14.93 A5,5 0 0 0 17.07,7.86 A5,5 0 0 0 10,7.86 L8,10 M5,5 L19,19" />
+                                <TextBlock Text="Remove Hardlinks" />
+                            </StackPanel>
+                        </Button>
+                        <Button Command="{Binding CleanupDeletedCommand}">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Style="{StaticResource ButtonIconPath}" Data="M3,6 L21,6 M8,6 L8,4 L16,4 L16,6 M6,6 L7,20 L17,20 L18,6 M10,11 L10,16 M14,11 L14,16" />
+                                <TextBlock Text="Cleanup Deleted" />
+                            </StackPanel>
+                        </Button>
+                        <Button Command="{Binding IgnoreSelectedCommand}">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Style="{StaticResource ButtonIconPath}" Data="M4,4 L20,20 M20,4 L4,20 M12,3 A9,9 0 1 1 12,21 A9,9 0 0 1 12,3" />
+                                <TextBlock Text="Ignore Selected" />
+                            </StackPanel>
+                        </Button>
                     </StackPanel>
                     <StackPanel DockPanel.Dock="Top" Orientation="Horizontal">
                         <TextBlock Text="State" VerticalAlignment="Center" Margin="0,0,6,0" />
@@ -72,10 +197,19 @@
                                   DisplayMemberPath="Label"
                                   Width="140"
                                   Margin="0,0,16,0" />
-                        <Button Content="Reset Filters"
-                                Command="{Binding ResetFiltersCommand}"
+                        <TextBlock Text="Search" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                                 Width="260"
+                                 Margin="0,0,16,0"
+                                 ToolTip="Filter by show, movie, matched title, file name, source path, linked path, or notes." />
+                        <Button Command="{Binding ResetFiltersCommand}"
                                 Padding="8,4"
-                                Margin="0,0,16,0" />
+                                Margin="0,0,16,0">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Style="{StaticResource ButtonIconPath}" Data="M4,4 L4,10 L10,10 M20,20 L20,14 L14,14 M20,9 A8,8 0 0 0 6.34,4.34 L4,6 M4,15 A8,8 0 0 0 17.66,19.66 L20,18" />
+                                <TextBlock Text="Reset Filters" />
+                            </StackPanel>
+                        </Button>
                         <TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center" />
                     </StackPanel>
                 </DockPanel>
@@ -86,7 +220,11 @@
                           AutoGenerateColumns="False"
                           IsReadOnly="True"
                           CanUserAddRows="False"
-                          GridLinesVisibility="Horizontal"
+                          GridLinesVisibility="All"
+                          HorizontalGridLinesBrush="#9ca3af"
+                          VerticalGridLinesBrush="#d1d5db"
+                          AlternatingRowBackground="#f8fafc"
+                          RowHeight="24"
                           HeadersVisibility="Column"
                           SelectionMode="Extended"
                           SelectionUnit="FullRow"
@@ -100,25 +238,40 @@
                         <DataGridTextColumn Header="#" Binding="{Binding DisplayIndex}" Width="48" />
                         <DataGridTextColumn Header="State" Binding="{Binding State}" Width="90" />
                         <DataGridTextColumn Header="Kind" Binding="{Binding MediaKind}" Width="90" />
-                        <DataGridTextColumn Header="Show" Binding="{Binding ShowTitle}" Width="180">
+                        <DataGridTextColumn Header="Show/Movie" Binding="{Binding DisplayTitle}" Width="240">
                             <DataGridTextColumn.ElementStyle>
                                 <Style TargetType="TextBlock">
                                     <Setter Property="TextTrimming" Value="CharacterEllipsis" />
-                                    <Setter Property="ToolTip" Value="{Binding ShowTitle}" />
-                                </Style>
-                            </DataGridTextColumn.ElementStyle>
-                        </DataGridTextColumn>
-                        <DataGridTextColumn Header="Movie" Binding="{Binding MovieTitle}" Width="210">
-                            <DataGridTextColumn.ElementStyle>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
-                                    <Setter Property="ToolTip" Value="{Binding MovieTitle}" />
+                                    <Setter Property="ToolTip" Value="{Binding DisplayTitle}" />
                                 </Style>
                             </DataGridTextColumn.ElementStyle>
                         </DataGridTextColumn>
                         <DataGridTextColumn Header="Year" Binding="{Binding MovieYear}" Width="65" />
                         <DataGridTextColumn Header="Season" Binding="{Binding SeasonNumber}" Width="70" />
                         <DataGridTextColumn Header="Episode" Binding="{Binding EpisodeNumber}" Width="75" />
+                        <DataGridTextColumn Header="Mapped S" Binding="{Binding MappedSeasonNumber}" Width="85" />
+                        <DataGridTextColumn Header="Mapped E" Binding="{Binding MappedEpisodeNumber}" Width="85" />
+                        <DataGridTextColumn Header="Pattern" Binding="{Binding ParserPattern}" Width="120" />
+                        <DataGridTextColumn Header="Matched" Binding="{Binding MatchedTitle}" Width="190">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+                                    <Setter Property="ToolTip" Value="{Binding MatchedTitle}" />
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Header="Match Year" Binding="{Binding MatchedYear}" Width="85" />
+                        <DataGridTextColumn Header="Provider ID" Binding="{Binding ProviderId}" Width="95" />
+                        <DataGridTextColumn Header="Confidence" Binding="{Binding MatchConfidence, StringFormat={}{0:0}}" Width="90" />
+                        <DataGridCheckBoxColumn Header="Review" Binding="{Binding RequiresManualReview}" Width="70" />
+                        <DataGridTextColumn Header="Episode Mapping" Binding="{Binding EpisodeMappingReason}" Width="260">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+                                    <Setter Property="ToolTip" Value="{Binding EpisodeMappingReason}" />
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
                         <DataGridTextColumn Header="Source Path" Binding="{Binding FilePath}" Width="360">
                             <DataGridTextColumn.ElementStyle>
                                 <Style TargetType="TextBlock">
@@ -159,20 +312,49 @@
         <Border DockPanel.Dock="Left" Width="180" Background="#f3f3f3" BorderBrush="#d0d0d0" BorderThickness="0,0,1,0">
             <StackPanel Margin="12">
                 <TextBlock Text="Media Manager" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,16" />
-                <Button Content="Inbox" Command="{Binding ShowInboxCommand}" Margin="0,0,0,8" />
-                <Button Content="Review" Command="{Binding ShowReviewCommand}" Margin="0,0,0,8" />
-                <Button Content="Settings" Command="{Binding ShowSettingsCommand}" Margin="0,0,0,8" />
+                <Button Command="{Binding ShowInboxCommand}" Margin="0,0,0,8">
+                    <StackPanel Orientation="Horizontal">
+                        <Path Style="{StaticResource NavIconPath}" Data="M4,4 L20,4 L20,20 L4,20 Z M4,13 L9,13 A3,3 0 0 0 15,13 L20,13" />
+                        <TextBlock Text="Inbox" />
+                    </StackPanel>
+                </Button>
+                <Button Command="{Binding ShowReviewCommand}" Margin="0,0,0,8">
+                    <StackPanel Orientation="Horizontal">
+                        <Path Style="{StaticResource NavIconPath}" Data="M12,3 L20,7.5 L20,16.5 L12,21 L4,16.5 L4,7.5 Z M9,12 L11,14 L15,10" />
+                        <TextBlock Text="Review" />
+                    </StackPanel>
+                </Button>
+                <Button Command="{Binding ShowSettingsCommand}" Margin="0,0,0,8">
+                    <StackPanel Orientation="Horizontal">
+                        <Path Style="{StaticResource NavIconPath}" Data="M12,8 A4,4 0 1 1 12,16 A4,4 0 0 1 12,8 M12,2 L14,5 L18,5 L19,9 L22,11 L20,15 L21,19 L17,20 L14,23 L10,23 L7,20 L3,19 L4,15 L2,11 L5,9 L6,5 L10,5 Z" />
+                        <TextBlock Text="Settings" />
+                    </StackPanel>
+                </Button>
             </StackPanel>
         </Border>
 
-        <Border DockPanel.Dock="Bottom" Height="170" Background="#111111" BorderBrush="#303030" BorderThickness="0,1,0,0">
+        <Border DockPanel.Dock="Bottom" Height="205" Background="#111111" BorderBrush="#303030" BorderThickness="0,1,0,0">
             <DockPanel>
+                <Grid DockPanel.Dock="Top" Margin="10,8,10,4">
+                    <ProgressBar Style="{StaticResource OperationProgressBar}"
+                                 Minimum="0"
+                                 Maximum="100"
+                                 Value="{Binding OperationProgressPercent}" />
+                    <TextBlock Text="{Binding OperationProgressMessage}"
+                               Foreground="#f8fafc"
+                               FontSize="12"
+                               FontWeight="SemiBold"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis" />
+                </Grid>
                 <TextBlock DockPanel.Dock="Top"
                            Text="Console Log"
                            Foreground="#d6d6d6"
                            FontWeight="SemiBold"
                            Margin="10,8,10,4" />
-                <ListBox ItemsSource="{Binding UiLogs}"
+                <ListBox x:Name="ConsoleLogList"
+                         ItemsSource="{Binding UiLogs}"
                          Background="#111111"
                          BorderThickness="0"
                          Foreground="#d6d6d6"

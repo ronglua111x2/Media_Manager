@@ -34,12 +34,27 @@ public sealed class DatabaseService : IDatabaseService
                 FileName TEXT NOT NULL,
                 ScanText TEXT NOT NULL,
                 MediaKind INTEGER NOT NULL DEFAULT 0,
+                ParserPattern INTEGER NOT NULL DEFAULT 0,
                 ShowTitle TEXT NULL,
                 MovieTitle TEXT NULL,
                 MovieYear INTEGER NULL,
                 SeasonNumber INTEGER NULL,
                 EpisodeNumber INTEGER NULL,
+                MappedSeasonNumber INTEGER NULL,
+                MappedEpisodeNumber INTEGER NULL,
+                EpisodeMappingSource TEXT NULL,
+                EpisodeMappingConfidence REAL NULL,
+                EpisodeMappingReason TEXT NULL,
                 EpisodeTitle TEXT NULL,
+                MatchedTitle TEXT NULL,
+                MatchedYear INTEGER NULL,
+                Provider TEXT NULL,
+                ProviderId TEXT NULL,
+                MatchConfidence REAL NULL,
+                MatchReason TEXT NULL,
+                RequiresManualReview INTEGER NOT NULL DEFAULT 0,
+                MatchAccepted INTEGER NOT NULL DEFAULT 0,
+                UseAbsoluteAnimeMapping INTEGER NOT NULL DEFAULT 0,
                 State INTEGER NOT NULL,
                 Notes TEXT NULL,
                 LinkedPath TEXT NULL,
@@ -48,9 +63,25 @@ public sealed class DatabaseService : IDatabaseService
             """;
         command.ExecuteNonQuery();
         EnsureColumn(connection, "SourceItems", "MediaKind", "INTEGER NOT NULL DEFAULT 0");
+        EnsureColumn(connection, "SourceItems", "ParserPattern", "INTEGER NOT NULL DEFAULT 0");
         EnsureColumn(connection, "SourceItems", "MovieTitle", "TEXT NULL");
         EnsureColumn(connection, "SourceItems", "MovieYear", "INTEGER NULL");
+        EnsureColumn(connection, "SourceItems", "MappedSeasonNumber", "INTEGER NULL");
+        EnsureColumn(connection, "SourceItems", "MappedEpisodeNumber", "INTEGER NULL");
+        EnsureColumn(connection, "SourceItems", "EpisodeMappingSource", "TEXT NULL");
+        EnsureColumn(connection, "SourceItems", "EpisodeMappingConfidence", "REAL NULL");
+        EnsureColumn(connection, "SourceItems", "EpisodeMappingReason", "TEXT NULL");
+        EnsureColumn(connection, "SourceItems", "MatchedTitle", "TEXT NULL");
+        EnsureColumn(connection, "SourceItems", "MatchedYear", "INTEGER NULL");
+        EnsureColumn(connection, "SourceItems", "Provider", "TEXT NULL");
+        EnsureColumn(connection, "SourceItems", "ProviderId", "TEXT NULL");
+        EnsureColumn(connection, "SourceItems", "MatchConfidence", "REAL NULL");
+        EnsureColumn(connection, "SourceItems", "MatchReason", "TEXT NULL");
+        EnsureColumn(connection, "SourceItems", "RequiresManualReview", "INTEGER NOT NULL DEFAULT 0");
+        EnsureColumn(connection, "SourceItems", "MatchAccepted", "INTEGER NOT NULL DEFAULT 0");
+        EnsureColumn(connection, "SourceItems", "UseAbsoluteAnimeMapping", "INTEGER NOT NULL DEFAULT 0");
         EnsureColumn(connection, "SourceItems", "LinkedPath", "TEXT NULL");
+        InitializeSeriesMappings(connection);
         _logger.Info("SQLite database is ready", LogTarget.File | LogTarget.Ui | LogTarget.Console);
     }
 
@@ -61,7 +92,17 @@ public sealed class DatabaseService : IDatabaseService
         connection.Open();
 
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT Id, SourceRootFolder, ParentFolder, FilePath, FileName, ScanText, MediaKind, ShowTitle, MovieTitle, MovieYear, SeasonNumber, EpisodeNumber, EpisodeTitle, State, Notes, LinkedPath, LastSeenUtc FROM SourceItems ORDER BY LastSeenUtc DESC;";
+        command.CommandText = """
+            SELECT Id, SourceRootFolder, ParentFolder, FilePath, FileName, ScanText, MediaKind, ParserPattern,
+                   ShowTitle, MovieTitle, MovieYear, SeasonNumber, EpisodeNumber,
+                   MappedSeasonNumber, MappedEpisodeNumber, EpisodeMappingSource, EpisodeMappingConfidence, EpisodeMappingReason,
+                   EpisodeTitle,
+                   MatchedTitle, MatchedYear, Provider, ProviderId, MatchConfidence, MatchReason,
+                   RequiresManualReview, MatchAccepted, UseAbsoluteAnimeMapping,
+                   State, Notes, LinkedPath, LastSeenUtc
+            FROM SourceItems
+            ORDER BY LastSeenUtc DESC;
+            """;
         using var reader = command.ExecuteReader();
         while (reader.Read())
         {
@@ -89,27 +130,42 @@ public sealed class DatabaseService : IDatabaseService
 
         using var command = connection.CreateCommand();
         var stateUpdateSql = preserveLinkedState
-            ? "State = CASE WHEN SourceItems.State = 3 THEN SourceItems.State ELSE excluded.State END,"
+            ? "State = CASE WHEN SourceItems.State IN (3, 6) THEN SourceItems.State ELSE excluded.State END,"
             : "State = excluded.State,";
         var linkedPathUpdateSql = preserveLinkedState
             ? "LinkedPath = COALESCE(excluded.LinkedPath, SourceItems.LinkedPath),"
             : "LinkedPath = excluded.LinkedPath,";
 
         command.CommandText = $"""
-            INSERT INTO SourceItems (SourceRootFolder, ParentFolder, FilePath, FileName, ScanText, MediaKind, ShowTitle, MovieTitle, MovieYear, SeasonNumber, EpisodeNumber, EpisodeTitle, State, Notes, LinkedPath, LastSeenUtc)
-            VALUES ($SourceRootFolder, $ParentFolder, $FilePath, $FileName, $ScanText, $MediaKind, $ShowTitle, $MovieTitle, $MovieYear, $SeasonNumber, $EpisodeNumber, $EpisodeTitle, $State, $Notes, $LinkedPath, $LastSeenUtc)
+            INSERT INTO SourceItems (SourceRootFolder, ParentFolder, FilePath, FileName, ScanText, MediaKind, ParserPattern, ShowTitle, MovieTitle, MovieYear, SeasonNumber, EpisodeNumber, MappedSeasonNumber, MappedEpisodeNumber, EpisodeMappingSource, EpisodeMappingConfidence, EpisodeMappingReason, EpisodeTitle, MatchedTitle, MatchedYear, Provider, ProviderId, MatchConfidence, MatchReason, RequiresManualReview, MatchAccepted, UseAbsoluteAnimeMapping, State, Notes, LinkedPath, LastSeenUtc)
+            VALUES ($SourceRootFolder, $ParentFolder, $FilePath, $FileName, $ScanText, $MediaKind, $ParserPattern, $ShowTitle, $MovieTitle, $MovieYear, $SeasonNumber, $EpisodeNumber, $MappedSeasonNumber, $MappedEpisodeNumber, $EpisodeMappingSource, $EpisodeMappingConfidence, $EpisodeMappingReason, $EpisodeTitle, $MatchedTitle, $MatchedYear, $Provider, $ProviderId, $MatchConfidence, $MatchReason, $RequiresManualReview, $MatchAccepted, $UseAbsoluteAnimeMapping, $State, $Notes, $LinkedPath, $LastSeenUtc)
             ON CONFLICT(FilePath) DO UPDATE SET
                 SourceRootFolder = excluded.SourceRootFolder,
                 ParentFolder = excluded.ParentFolder,
                 FileName = excluded.FileName,
                 ScanText = excluded.ScanText,
                 MediaKind = excluded.MediaKind,
+                ParserPattern = excluded.ParserPattern,
                 ShowTitle = excluded.ShowTitle,
                 MovieTitle = excluded.MovieTitle,
                 MovieYear = excluded.MovieYear,
                 SeasonNumber = excluded.SeasonNumber,
                 EpisodeNumber = excluded.EpisodeNumber,
+                MappedSeasonNumber = excluded.MappedSeasonNumber,
+                MappedEpisodeNumber = excluded.MappedEpisodeNumber,
+                EpisodeMappingSource = excluded.EpisodeMappingSource,
+                EpisodeMappingConfidence = excluded.EpisodeMappingConfidence,
+                EpisodeMappingReason = excluded.EpisodeMappingReason,
                 EpisodeTitle = excluded.EpisodeTitle,
+                MatchedTitle = excluded.MatchedTitle,
+                MatchedYear = excluded.MatchedYear,
+                Provider = excluded.Provider,
+                ProviderId = excluded.ProviderId,
+                MatchConfidence = excluded.MatchConfidence,
+                MatchReason = excluded.MatchReason,
+                RequiresManualReview = excluded.RequiresManualReview,
+                MatchAccepted = excluded.MatchAccepted,
+                UseAbsoluteAnimeMapping = excluded.UseAbsoluteAnimeMapping,
                 {stateUpdateSql}
                 Notes = excluded.Notes,
                 {linkedPathUpdateSql}
@@ -151,7 +207,7 @@ public sealed class DatabaseService : IDatabaseService
         {
             if (!roots.Contains(NormalizePath(item.SourceRootFolder)) ||
                 seen.Contains(NormalizePath(item.FilePath)) ||
-                item.State == ItemState.Deleted)
+                item.State is ItemState.Deleted or ItemState.Ignored)
             {
                 continue;
             }
@@ -185,6 +241,24 @@ public sealed class DatabaseService : IDatabaseService
         return deletedCount;
     }
 
+    public int DeleteSourceItem(long id)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM SourceItems WHERE Id = $Id;";
+        command.Parameters.AddWithValue("$Id", id);
+        var deletedCount = command.ExecuteNonQuery();
+
+        if (deletedCount > 0)
+        {
+            _logger.Info($"Deleted stale source item id={id} from SQLite", LogTarget.All);
+        }
+
+        return deletedCount;
+    }
+
     private static void AddParameters(SqliteCommand command, SourceItem item)
     {
         command.Parameters.AddWithValue("$SourceRootFolder", item.SourceRootFolder);
@@ -193,12 +267,27 @@ public sealed class DatabaseService : IDatabaseService
         command.Parameters.AddWithValue("$FileName", item.FileName);
         command.Parameters.AddWithValue("$ScanText", item.ScanText);
         command.Parameters.AddWithValue("$MediaKind", (int)item.MediaKind);
+        command.Parameters.AddWithValue("$ParserPattern", (int)item.ParserPattern);
         command.Parameters.AddWithValue("$ShowTitle", (object?)item.ShowTitle ?? DBNull.Value);
         command.Parameters.AddWithValue("$MovieTitle", (object?)item.MovieTitle ?? DBNull.Value);
         command.Parameters.AddWithValue("$MovieYear", (object?)item.MovieYear ?? DBNull.Value);
         command.Parameters.AddWithValue("$SeasonNumber", (object?)item.SeasonNumber ?? DBNull.Value);
         command.Parameters.AddWithValue("$EpisodeNumber", (object?)item.EpisodeNumber ?? DBNull.Value);
+        command.Parameters.AddWithValue("$MappedSeasonNumber", (object?)item.MappedSeasonNumber ?? DBNull.Value);
+        command.Parameters.AddWithValue("$MappedEpisodeNumber", (object?)item.MappedEpisodeNumber ?? DBNull.Value);
+        command.Parameters.AddWithValue("$EpisodeMappingSource", (object?)item.EpisodeMappingSource ?? DBNull.Value);
+        command.Parameters.AddWithValue("$EpisodeMappingConfidence", (object?)item.EpisodeMappingConfidence ?? DBNull.Value);
+        command.Parameters.AddWithValue("$EpisodeMappingReason", (object?)item.EpisodeMappingReason ?? DBNull.Value);
         command.Parameters.AddWithValue("$EpisodeTitle", (object?)item.EpisodeTitle ?? DBNull.Value);
+        command.Parameters.AddWithValue("$MatchedTitle", (object?)item.MatchedTitle ?? DBNull.Value);
+        command.Parameters.AddWithValue("$MatchedYear", (object?)item.MatchedYear ?? DBNull.Value);
+        command.Parameters.AddWithValue("$Provider", (object?)item.Provider ?? DBNull.Value);
+        command.Parameters.AddWithValue("$ProviderId", (object?)item.ProviderId ?? DBNull.Value);
+        command.Parameters.AddWithValue("$MatchConfidence", (object?)item.MatchConfidence ?? DBNull.Value);
+        command.Parameters.AddWithValue("$MatchReason", (object?)item.MatchReason ?? DBNull.Value);
+        command.Parameters.AddWithValue("$RequiresManualReview", item.RequiresManualReview ? 1 : 0);
+        command.Parameters.AddWithValue("$MatchAccepted", item.MatchAccepted ? 1 : 0);
+        command.Parameters.AddWithValue("$UseAbsoluteAnimeMapping", item.UseAbsoluteAnimeMapping ? 1 : 0);
         command.Parameters.AddWithValue("$State", (int)item.State);
         command.Parameters.AddWithValue("$Notes", (object?)item.Notes ?? DBNull.Value);
         command.Parameters.AddWithValue("$LinkedPath", (object?)item.LinkedPath ?? DBNull.Value);
@@ -234,21 +323,132 @@ public sealed class DatabaseService : IDatabaseService
             FileName = reader.GetString(4),
             ScanText = reader.GetString(5),
             MediaKind = (MediaKind)reader.GetInt32(6),
-            ShowTitle = reader.IsDBNull(7) ? null : reader.GetString(7),
-            MovieTitle = reader.IsDBNull(8) ? null : reader.GetString(8),
-            MovieYear = reader.IsDBNull(9) ? null : reader.GetInt32(9),
-            SeasonNumber = reader.IsDBNull(10) ? null : reader.GetInt32(10),
-            EpisodeNumber = reader.IsDBNull(11) ? null : reader.GetInt32(11),
-            EpisodeTitle = reader.IsDBNull(12) ? null : reader.GetString(12),
-            State = (ItemState)reader.GetInt32(13),
-            Notes = reader.IsDBNull(14) ? null : reader.GetString(14),
-            LinkedPath = reader.IsDBNull(15) ? null : reader.GetString(15),
-            LastSeenUtc = DateTime.Parse(reader.GetString(16), null, System.Globalization.DateTimeStyles.RoundtripKind)
+            ParserPattern = (ParserPattern)reader.GetInt32(7),
+            ShowTitle = reader.IsDBNull(8) ? null : reader.GetString(8),
+            MovieTitle = reader.IsDBNull(9) ? null : reader.GetString(9),
+            MovieYear = reader.IsDBNull(10) ? null : reader.GetInt32(10),
+            SeasonNumber = reader.IsDBNull(11) ? null : reader.GetInt32(11),
+            EpisodeNumber = reader.IsDBNull(12) ? null : reader.GetInt32(12),
+            MappedSeasonNumber = reader.IsDBNull(13) ? null : reader.GetInt32(13),
+            MappedEpisodeNumber = reader.IsDBNull(14) ? null : reader.GetInt32(14),
+            EpisodeMappingSource = reader.IsDBNull(15) ? null : reader.GetString(15),
+            EpisodeMappingConfidence = reader.IsDBNull(16) ? null : reader.GetDouble(16),
+            EpisodeMappingReason = reader.IsDBNull(17) ? null : reader.GetString(17),
+            EpisodeTitle = reader.IsDBNull(18) ? null : reader.GetString(18),
+            MatchedTitle = reader.IsDBNull(19) ? null : reader.GetString(19),
+            MatchedYear = reader.IsDBNull(20) ? null : reader.GetInt32(20),
+            Provider = reader.IsDBNull(21) ? null : reader.GetString(21),
+            ProviderId = reader.IsDBNull(22) ? null : reader.GetString(22),
+            MatchConfidence = reader.IsDBNull(23) ? null : reader.GetDouble(23),
+            MatchReason = reader.IsDBNull(24) ? null : reader.GetString(24),
+            RequiresManualReview = reader.GetInt32(25) == 1,
+            MatchAccepted = reader.GetInt32(26) == 1,
+            UseAbsoluteAnimeMapping = reader.GetInt32(27) == 1,
+            State = (ItemState)reader.GetInt32(28),
+            Notes = reader.IsDBNull(29) ? null : reader.GetString(29),
+            LinkedPath = reader.IsDBNull(30) ? null : reader.GetString(30),
+            LastSeenUtc = DateTime.Parse(reader.GetString(31), null, System.Globalization.DateTimeStyles.RoundtripKind)
         };
+    }
+
+    public SeriesMapping? GetSeriesMapping(string parsedTitle, ParserPattern parserPattern)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT Id, ParsedTitle, ParserPattern, MatchedTitle, MatchedYear, Provider, ProviderId, UseAbsoluteAnimeMapping, CreatedUtc, UpdatedUtc
+            FROM SeriesMappings
+            WHERE NormalizedParsedTitle = $NormalizedParsedTitle AND ParserPattern = $ParserPattern
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$NormalizedParsedTitle", NormalizeTitleKey(parsedTitle));
+        command.Parameters.AddWithValue("$ParserPattern", (int)parserPattern);
+
+        using var reader = command.ExecuteReader();
+        if (!reader.Read())
+        {
+            return null;
+        }
+
+        return new SeriesMapping
+        {
+            Id = reader.GetInt64(0),
+            ParsedTitle = reader.GetString(1),
+            ParserPattern = (ParserPattern)reader.GetInt32(2),
+            MatchedTitle = reader.GetString(3),
+            MatchedYear = reader.IsDBNull(4) ? null : reader.GetInt32(4),
+            Provider = reader.GetString(5),
+            ProviderId = reader.GetString(6),
+            UseAbsoluteAnimeMapping = reader.GetInt32(7) == 1,
+            CreatedUtc = DateTime.Parse(reader.GetString(8), null, System.Globalization.DateTimeStyles.RoundtripKind),
+            UpdatedUtc = DateTime.Parse(reader.GetString(9), null, System.Globalization.DateTimeStyles.RoundtripKind)
+        };
+    }
+
+    public void UpsertSeriesMapping(SeriesMapping mapping)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO SeriesMappings (ParsedTitle, NormalizedParsedTitle, ParserPattern, MatchedTitle, MatchedYear, Provider, ProviderId, UseAbsoluteAnimeMapping, CreatedUtc, UpdatedUtc)
+            VALUES ($ParsedTitle, $NormalizedParsedTitle, $ParserPattern, $MatchedTitle, $MatchedYear, $Provider, $ProviderId, $UseAbsoluteAnimeMapping, $CreatedUtc, $UpdatedUtc)
+            ON CONFLICT(NormalizedParsedTitle, ParserPattern) DO UPDATE SET
+                ParsedTitle = excluded.ParsedTitle,
+                MatchedTitle = excluded.MatchedTitle,
+                MatchedYear = excluded.MatchedYear,
+                Provider = excluded.Provider,
+                ProviderId = excluded.ProviderId,
+                UseAbsoluteAnimeMapping = excluded.UseAbsoluteAnimeMapping,
+                UpdatedUtc = excluded.UpdatedUtc;
+            """;
+        var now = DateTime.UtcNow;
+        command.Parameters.AddWithValue("$ParsedTitle", mapping.ParsedTitle);
+        command.Parameters.AddWithValue("$NormalizedParsedTitle", NormalizeTitleKey(mapping.ParsedTitle));
+        command.Parameters.AddWithValue("$ParserPattern", (int)mapping.ParserPattern);
+        command.Parameters.AddWithValue("$MatchedTitle", mapping.MatchedTitle);
+        command.Parameters.AddWithValue("$MatchedYear", (object?)mapping.MatchedYear ?? DBNull.Value);
+        command.Parameters.AddWithValue("$Provider", mapping.Provider);
+        command.Parameters.AddWithValue("$ProviderId", mapping.ProviderId);
+        command.Parameters.AddWithValue("$UseAbsoluteAnimeMapping", mapping.UseAbsoluteAnimeMapping ? 1 : 0);
+        command.Parameters.AddWithValue("$CreatedUtc", (mapping.CreatedUtc == default ? now : mapping.CreatedUtc).ToString("O"));
+        command.Parameters.AddWithValue("$UpdatedUtc", now.ToString("O"));
+        command.ExecuteNonQuery();
+        _logger.Info($"Saved series mapping: {mapping.ParsedTitle} => {mapping.MatchedTitle} [{mapping.Provider}-{mapping.ProviderId}]", LogTarget.All);
+    }
+
+    private static void InitializeSeriesMappings(SqliteConnection connection)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            CREATE TABLE IF NOT EXISTS SeriesMappings (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ParsedTitle TEXT NOT NULL,
+                NormalizedParsedTitle TEXT NOT NULL,
+                ParserPattern INTEGER NOT NULL,
+                MatchedTitle TEXT NOT NULL,
+                MatchedYear INTEGER NULL,
+                Provider TEXT NOT NULL,
+                ProviderId TEXT NOT NULL,
+                UseAbsoluteAnimeMapping INTEGER NOT NULL DEFAULT 0,
+                CreatedUtc TEXT NOT NULL,
+                UpdatedUtc TEXT NOT NULL,
+                UNIQUE(NormalizedParsedTitle, ParserPattern)
+            );
+            """;
+        command.ExecuteNonQuery();
     }
 
     private static string NormalizePath(string path)
     {
         return Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+    }
+
+    private static string NormalizeTitleKey(string value)
+    {
+        return string.Join(' ', value.Trim().ToLowerInvariant().Split(' ', StringSplitOptions.RemoveEmptyEntries));
     }
 }

@@ -52,13 +52,16 @@ public sealed class ScannerService : IScannerService
                     FileName = fileName,
                     ScanText = scanText,
                     MediaKind = parsed.MediaKind,
+                    ParserPattern = parsed.ParserPattern,
                     ShowTitle = parsed.ShowTitle,
                     MovieTitle = parsed.MovieTitle,
                     MovieYear = parsed.MovieYear,
                     SeasonNumber = parsed.SeasonNumber,
                     EpisodeNumber = parsed.EpisodeNumber,
                     EpisodeTitle = parsed.EpisodeTitle,
-                    State = parsed.NeedsReview ? ItemState.NeedsReview : ItemState.Parsed,
+                    State = parsed.ParserPattern == ParserPattern.Ignored
+                        ? ItemState.Ignored
+                        : parsed.NeedsReview ? ItemState.NeedsReview : ItemState.Parsed,
                     Notes = parsed.Reason,
                     LastSeenUtc = DateTime.UtcNow
                 };

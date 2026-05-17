@@ -8,7 +8,13 @@ public sealed class AppSettings
 
     public List<string> SourceFolders { get; set; } = [];
 
-    public string OutputLibraryFolder { get; set; } = Path.Combine(AppConstants.DefaultStateFolder, AppConstants.DefaultLibraryFolderName);
+    public LibraryRootMode LibraryRootMode { get; set; } = LibraryRootMode.AutoPerDrive;
+
+    public string DefaultLibraryFolderName { get; set; } = AppConstants.DefaultLibraryFolderName;
+
+    public Dictionary<string, string> DriveLibraryRoots { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    public string? OutputLibraryFolder { get; set; }
 
     public string? TmdbReadAccessToken { get; set; }
 }

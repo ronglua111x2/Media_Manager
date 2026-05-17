@@ -8,10 +8,14 @@ namespace media_management_app.Services;
 public sealed class HardlinkService : IHardlinkService
 {
     private readonly IAppLogger _logger;
+    private readonly ILibraryPathResolver _libraryPathResolver;
+    private readonly ISettingsService _settingsService;
 
-    public HardlinkService(IAppLogger logger)
+    public HardlinkService(IAppLogger logger, ILibraryPathResolver libraryPathResolver, ISettingsService settingsService)
     {
         _logger = logger;
+        _libraryPathResolver = libraryPathResolver;
+        _settingsService = settingsService;
     }
 
     public string BuildOutputPath(SourceItem item, string outputRoot)
@@ -23,18 +27,54 @@ public sealed class HardlinkService : IHardlinkService
             return Path.Combine(outputRoot, movieFolderName, $"{movieFolderName}{extension}");
         }
 
-        var showName = Sanitize(item.ShowTitle ?? "Unknown Show");
-        var seasonFolder = $"Season {item.SeasonNumber.GetValueOrDefault():00}";
-        var fileName = $"{showName} - S{item.SeasonNumber.GetValueOrDefault():00}E{item.EpisodeNumber.GetValueOrDefault():00}{Path.GetExtension(item.FilePath)}";
+        var showName = BuildSeriesFolderName(item);
+        var seasonNumber = item.MappedSeasonNumber ?? item.SeasonNumber.GetValueOrDefault();
+        var episodeNumber = item.MappedEpisodeNumber ?? item.EpisodeNumber.GetValueOrDefault();
+        var seasonFolder = $"Season {seasonNumber:00}";
+        var fileTitle = Sanitize(item.MatchedTitle ?? item.ShowTitle ?? "Unknown Show");
+        var fileName = $"{fileTitle} - S{seasonNumber:00}E{episodeNumber:00}{Path.GetExtension(item.FilePath)}";
         return Path.Combine(outputRoot, showName, seasonFolder, fileName);
     }
 
-    public bool CreateHardLink(SourceItem item, string outputRoot, out string? createdPath, out string? errorMessage)
+    public bool CreateHardLink(SourceItem item, out string? createdPath, out string? errorMessage)
     {
         createdPath = null;
         errorMessage = null;
 
-        var targetPath = BuildOutputPath(item, outputRoot);
+        if (item.MediaKind == MediaKind.TvEpisode &&
+            (string.IsNullOrWhiteSpace(item.MatchedTitle) ||
+             string.IsNullOrWhiteSpace(item.ProviderId) ||
+             item.RequiresManualReview ||
+             !item.MatchAccepted))
+        {
+            errorMessage = "TV item does not have an accepted metadata identity. Refusing to create an ambiguous Jellyfin folder.";
+            _logger.Warning($"Hardlink blocked for unresolved TV identity: {item.FilePath}", LogTarget.All);
+            return false;
+        }
+
+        if (item.MediaKind == MediaKind.TvEpisode &&
+            item.ParserPattern == ParserPattern.AnimeAbsolute &&
+            (item.MappedSeasonNumber is null || item.MappedEpisodeNumber is null))
+        {
+            errorMessage = "Anime absolute episode does not have a TMDb season mapping. Refusing to create Season 01 absolute fallback.";
+            _logger.Warning($"Hardlink blocked for unmapped anime absolute episode: {item.FilePath}", LogTarget.All);
+            return false;
+        }
+
+        if (!_libraryPathResolver.TryResolveMediaRoot(item, out var mediaRoot, out errorMessage))
+        {
+            _logger.Warning($"Hardlink blocked because media root could not be resolved: {errorMessage}", LogTarget.All);
+            return false;
+        }
+
+        var targetPath = BuildOutputPath(item, mediaRoot);
+        if (!IsSameVolume(item.FilePath, targetPath))
+        {
+            errorMessage = $"Source and target are on different drives. Source={Path.GetPathRoot(item.FilePath)}, Target={Path.GetPathRoot(targetPath)}";
+            _logger.Error(errorMessage, targets: LogTarget.All);
+            return false;
+        }
+
         if (File.Exists(targetPath))
         {
             errorMessage = "Output already exists.";
@@ -78,9 +118,25 @@ public sealed class HardlinkService : IHardlinkService
         }
 
         removedPath = item.LinkedPath;
+        if (!_libraryPathResolver.TryResolveGeneratedLibraryRoot(item, out var libraryRoot, out errorMessage))
+        {
+            _logger.Warning($"Could not resolve generated library root while removing hardlink: {errorMessage}", LogTarget.All);
+            return false;
+        }
+
+        var cleanupRoot = ResolveCleanupRoot(item.LinkedPath, libraryRoot);
+        if (cleanupRoot is null)
+        {
+            errorMessage = "Linked path is outside the configured output library. Refusing to delete.";
+            _logger.Error($"Refusing to delete linked path outside output root. LinkedPath={item.LinkedPath}; LibraryRoot={libraryRoot}", targets: LogTarget.All);
+            return false;
+        }
+
+        var linkedDirectory = Path.GetDirectoryName(item.LinkedPath);
         if (!File.Exists(item.LinkedPath))
         {
             _logger.Warning($"Linked path no longer exists, clearing state only: {item.LinkedPath}", LogTarget.All);
+            CleanupEmptyLibraryFolders(linkedDirectory, cleanupRoot);
             return true;
         }
 
@@ -88,6 +144,7 @@ public sealed class HardlinkService : IHardlinkService
         {
             File.Delete(item.LinkedPath);
             _logger.Info($"Removed hardlink path: {item.LinkedPath}", LogTarget.All);
+            CleanupEmptyLibraryFolders(linkedDirectory, cleanupRoot);
             return true;
         }
         catch (Exception ex)
@@ -96,6 +153,50 @@ public sealed class HardlinkService : IHardlinkService
             _logger.Error($"Could not remove hardlink path: {item.LinkedPath}", ex, LogTarget.All);
             return false;
         }
+    }
+
+    private void CleanupEmptyLibraryFolders(string? startDirectory, string outputRoot)
+    {
+        if (string.IsNullOrWhiteSpace(startDirectory) || !Directory.Exists(startDirectory))
+        {
+            return;
+        }
+
+        var root = Path.GetFullPath(outputRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var current = Path.GetFullPath(startDirectory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+        while (!string.Equals(current, root, StringComparison.OrdinalIgnoreCase) &&
+               IsPathInsideRoot(current, root) &&
+               Directory.Exists(current) &&
+               !Directory.EnumerateFileSystemEntries(current).Any())
+        {
+            Directory.Delete(current);
+            _logger.Info($"Removed empty library folder: {current}", LogTarget.File | LogTarget.Ui | LogTarget.Console);
+
+            var parent = Directory.GetParent(current);
+            if (parent is null)
+            {
+                break;
+            }
+
+            current = parent.FullName.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        }
+    }
+
+    private string? ResolveCleanupRoot(string linkedPath, string generatedLibraryRoot)
+    {
+        if (IsPathInsideRoot(linkedPath, generatedLibraryRoot))
+        {
+            return generatedLibraryRoot;
+        }
+
+        var legacyRoot = _settingsService.Current.OutputLibraryFolder;
+        if (!string.IsNullOrWhiteSpace(legacyRoot) && IsPathInsideRoot(linkedPath, legacyRoot))
+        {
+            return legacyRoot;
+        }
+
+        return null;
     }
 
     private static string Sanitize(string value)
@@ -112,6 +213,34 @@ public sealed class HardlinkService : IHardlinkService
     {
         var title = Sanitize(item.MovieTitle ?? item.ShowTitle ?? "Unknown Movie");
         return item.MovieYear is null ? title : $"{title} ({item.MovieYear})";
+    }
+
+    private static string BuildSeriesFolderName(SourceItem item)
+    {
+        var title = Sanitize(item.MatchedTitle ?? item.ShowTitle ?? "Unknown Show");
+        var yearSuffix = item.MatchedYear is null ? string.Empty : $" ({item.MatchedYear})";
+        var providerSuffix = !string.IsNullOrWhiteSpace(item.ProviderId)
+            ? $" [{(item.Provider ?? "tmdb").ToLowerInvariant()}id-{item.ProviderId}]"
+            : string.Empty;
+        return $"{title}{yearSuffix}{providerSuffix}";
+    }
+
+    private static bool IsPathInsideRoot(string path, string root)
+    {
+        var fullPath = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var fullRoot = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+        return string.Equals(fullPath, fullRoot, StringComparison.OrdinalIgnoreCase) ||
+               fullPath.StartsWith(fullRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsSameVolume(string sourcePath, string targetPath)
+    {
+        var sourceRoot = Path.GetPathRoot(Path.GetFullPath(sourcePath));
+        var targetRoot = Path.GetPathRoot(Path.GetFullPath(targetPath));
+        return !string.IsNullOrWhiteSpace(sourceRoot) &&
+               !string.IsNullOrWhiteSpace(targetRoot) &&
+               string.Equals(sourceRoot, targetRoot, StringComparison.OrdinalIgnoreCase);
     }
 
     [DllImport("kernel32.dll", EntryPoint = "CreateHardLinkW", SetLastError = true, CharSet = CharSet.Unicode)]

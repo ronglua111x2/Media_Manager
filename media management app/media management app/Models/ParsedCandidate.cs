@@ -8,6 +8,8 @@ public sealed class ParsedCandidate
 
     public MediaKind MediaKind { get; set; } = MediaKind.Unknown;
 
+    public ParserPattern ParserPattern { get; set; } = ParserPattern.Unknown;
+
     public string? ShowTitle { get; set; }
 
     public string? MovieTitle { get; set; }

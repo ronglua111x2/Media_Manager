@@ -33,4 +33,18 @@ public enum MediaKind
     Movie = 2
 }
 
+public enum ParserPattern
+{
+    Unknown = 0,
+    StandardTv = 1,
+    AnimeAbsolute = 2,
+    MovieWithYear = 3,
+    Ignored = 4
+}
+
+public enum LibraryRootMode
+{
+    AutoPerDrive = 0
+}
+
 #endregion
