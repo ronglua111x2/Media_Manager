@@ -82,13 +82,22 @@ public sealed class HardlinkService : IHardlinkService
             return false;
         }
 
+        if (!File.Exists(item.FilePath))
+        {
+            errorMessage = $"Source file does not exist: {item.FilePath}";
+            _logger.Error($"Hardlink failed before native call: {errorMessage}", targets: LogTarget.All);
+            return false;
+        }
+
         Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
         _logger.Info($"Creating hardlink from {item.FilePath} to {targetPath}", LogTarget.File | LogTarget.Console);
-        var ok = CreateHardLinkNative(targetPath, item.FilePath, IntPtr.Zero);
+        var nativeTargetPath = ToExtendedLengthPath(targetPath);
+        var nativeSourcePath = ToExtendedLengthPath(item.FilePath);
+        var ok = CreateHardLinkNative(nativeTargetPath, nativeSourcePath, IntPtr.Zero);
         if (!ok)
         {
             var errorCode = Marshal.GetLastWin32Error();
-            errorMessage = new Win32Exception(errorCode).Message;
+            errorMessage = $"{new Win32Exception(errorCode).Message} (Win32 error {errorCode})";
             _logger.Error($"Hardlink failed: {errorMessage}", targets: LogTarget.All);
             return false;
         }
@@ -241,6 +250,22 @@ public sealed class HardlinkService : IHardlinkService
         return !string.IsNullOrWhiteSpace(sourceRoot) &&
                !string.IsNullOrWhiteSpace(targetRoot) &&
                string.Equals(sourceRoot, targetRoot, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string ToExtendedLengthPath(string path)
+    {
+        if (path.StartsWith(@"\\?\", StringComparison.Ordinal))
+        {
+            return path;
+        }
+
+        var fullPath = Path.GetFullPath(path);
+        if (fullPath.StartsWith(@"\\", StringComparison.Ordinal))
+        {
+            return $@"\\?\UNC\{fullPath[2..]}";
+        }
+
+        return $@"\\?\{fullPath}";
     }
 
     [DllImport("kernel32.dll", EntryPoint = "CreateHardLinkW", SetLastError = true, CharSet = CharSet.Unicode)]

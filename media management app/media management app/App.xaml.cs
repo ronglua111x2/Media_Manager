@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Net.Http;
+using System.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using media_management_app.Services;
@@ -9,10 +10,26 @@ namespace media_management_app;
 
 public partial class App : System.Windows.Application
 {
+    private const string SingleInstanceMutexName = @"Local\MediaManager.SingleInstance";
+
     private ServiceProvider? _serviceProvider;
+    private Mutex? _singleInstanceMutex;
+    private bool _ownsSingleInstanceMutex;
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        _singleInstanceMutex = new Mutex(true, SingleInstanceMutexName, out _ownsSingleInstanceMutex);
+        if (!_ownsSingleInstanceMutex)
+        {
+            System.Windows.MessageBox.Show(
+                "Media Manager is already running.",
+                "Media Manager",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            Shutdown();
+            return;
+        }
+
         base.OnStartup(e);
 
         var services = new ServiceCollection();
@@ -32,6 +49,12 @@ public partial class App : System.Windows.Application
     protected override void OnExit(ExitEventArgs e)
     {
         _serviceProvider?.Dispose();
+        if (_ownsSingleInstanceMutex)
+        {
+            _singleInstanceMutex?.ReleaseMutex();
+        }
+
+        _singleInstanceMutex?.Dispose();
         base.OnExit(e);
     }
 
