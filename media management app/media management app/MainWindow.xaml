@@ -45,102 +45,262 @@
         </Style>
 
         <DataTemplate DataType="{x:Type vm:SettingsViewModel}">
-            <ScrollViewer VerticalScrollBarVisibility="Auto">
-                <Grid Margin="24">
+            <Grid Margin="24">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <TextBlock Text="Settings" FontSize="24" FontWeight="SemiBold" Margin="0,0,0,20" />
+
+                <TabControl Grid.Row="1">
+                    <TabItem Header="Media Manager">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <Grid Margin="0,16,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
+                                <TextBlock Grid.Row="0" Text="State folder" FontWeight="SemiBold" />
+                                <DockPanel Grid.Row="1" Margin="0,4,0,12" LastChildFill="True">
+                                    <Button DockPanel.Dock="Right" Content="Browse" Command="{Binding BrowseStateFolderCommand}" Margin="8,0,0,0" />
+                                    <TextBox Text="{Binding StateFolder, UpdateSourceTrigger=PropertyChanged}" Margin="0" />
+                                </DockPanel>
+
+                                <TextBlock Grid.Row="2" Text="Source folders" FontWeight="SemiBold" />
+                                <Grid Grid.Row="3" Margin="0,4,0,16">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="150" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <ListBox Grid.Row="0"
+                                             ItemsSource="{Binding SourceFolders}"
+                                             SelectedItem="{Binding SelectedSourceFolder, Mode=TwoWay}"
+                                             HorizontalContentAlignment="Stretch"
+                                             ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                             ScrollViewer.VerticalScrollBarVisibility="Auto" />
+                                    <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,10,0,0">
+                                        <Button Content="Add Source Folder" Command="{Binding AddSourceFolderCommand}" />
+                                        <Button Content="Remove Selected Source Folder" Command="{Binding RemoveSelectedSourceFolderCommand}" />
+                                    </StackPanel>
+                                </Grid>
+
+                                <TextBlock Grid.Row="4" Text="Generated library folder name" FontWeight="SemiBold" />
+                                <TextBox Grid.Row="5" Text="{Binding DefaultLibraryFolderName, UpdateSourceTrigger=PropertyChanged}" />
+
+                                <Grid Grid.Row="6" Margin="0,0,0,16">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" MinWidth="360" />
+                                        <ColumnDefinition Width="20" />
+                                        <ColumnDefinition Width="520" MinWidth="420" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="170" />
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Auto per-drive Jellyfin output roots" FontWeight="SemiBold" />
+                                    <ListBox Grid.Row="1"
+                                             Grid.Column="0"
+                                             ItemsSource="{Binding LibraryRootPreview}"
+                                             Margin="0,4,0,0"
+                                             FontFamily="Consolas"
+                                             ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                             ScrollViewer.VerticalScrollBarVisibility="Auto" />
+
+                                    <Border Grid.Row="0"
+                                            Grid.RowSpan="2"
+                                            Grid.Column="2"
+                                            Background="#f6f8fa"
+                                            BorderBrush="#d0d7de"
+                                            BorderThickness="1"
+                                            Padding="14"
+                                            Margin="0,4,0,0">
+                                        <StackPanel>
+                                            <TextBlock Text="How multi-drive output works" FontWeight="SemiBold" Margin="0,0,0,8" />
+                                            <TextBlock TextWrapping="Wrap"
+                                                       Margin="0,0,0,8"
+                                                       Text="Hardlinks only work when the source file and linked file are on the same drive. This app creates a Jellyfin library root on each source drive." />
+                                            <TextBlock TextWrapping="Wrap"
+                                                       Margin="0,0,0,8"
+                                                       Text="Example: files from D:\ go to D:\MediaManagerLibrary. Files from E:\ go to E:\MediaManagerLibrary." />
+                                            <TextBlock TextWrapping="Wrap"
+                                                       Text="In Jellyfin, add every generated Shows path to one Shows library. Add every generated Movies path to one Movies library." />
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
+
+                                <TextBlock Grid.Row="7" Text="TMDb API Read Access Token" FontWeight="SemiBold" />
+                                <TextBox Grid.Row="8" Text="{Binding TmdbReadAccessToken, UpdateSourceTrigger=PropertyChanged}" />
+
+                                <StackPanel Grid.Row="9" Orientation="Horizontal">
+                                    <Button Content="Save Settings" Command="{Binding SaveCommand}" />
+                                    <TextBlock Text="{Binding StatusMessage}" Margin="12,7,0,0" Foreground="#2f6f3e" />
+                                </StackPanel>
+                            </Grid>
+                        </ScrollViewer>
+                    </TabItem>
+
+                    <TabItem Header="Auto Torrent">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <Grid Margin="0,16,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
+                                <TextBlock Grid.Row="0" Text="qBittorrent Web UI URL" FontWeight="SemiBold" />
+                                <TextBox Grid.Row="1" Text="{Binding QbittorrentWebUiUrl, UpdateSourceTrigger=PropertyChanged}" />
+
+                                <TextBlock Grid.Row="2" Text="Username" FontWeight="SemiBold" />
+                                <TextBox Grid.Row="3" Text="{Binding QbittorrentUsername, UpdateSourceTrigger=PropertyChanged}" />
+
+                                <TextBlock Grid.Row="4" Text="Password" FontWeight="SemiBold" />
+                                <TextBox Grid.Row="5" Text="{Binding QbittorrentPassword, UpdateSourceTrigger=PropertyChanged}" />
+
+                                <TextBlock Grid.Row="6" Text="Download folder" FontWeight="SemiBold" />
+                                <DockPanel Grid.Row="7" Margin="0,4,0,12" LastChildFill="True">
+                                    <Button DockPanel.Dock="Right" Content="Browse" Command="{Binding BrowseAutoTorrentDownloadFolderCommand}" Margin="8,0,0,0" />
+                                    <TextBox Text="{Binding AutoTorrentDownloadFolder, UpdateSourceTrigger=PropertyChanged}" Margin="0" />
+                                </DockPanel>
+
+                                <TextBlock Grid.Row="8" Text="Category name" FontWeight="SemiBold" />
+                                <TextBox Grid.Row="9" Text="{Binding AutoTorrentCategoryName, UpdateSourceTrigger=PropertyChanged}" />
+
+                                <StackPanel Grid.Row="10" Orientation="Horizontal">
+                                    <Button Content="Test Connection" Command="{Binding TestQbittorrentConnectionCommand}" />
+                                    <Button Content="Save Settings" Command="{Binding SaveCommand}" />
+                                    <TextBlock Text="{Binding StatusMessage}" Margin="12,7,0,0" Foreground="#2f6f3e" />
+                                </StackPanel>
+                            </Grid>
+                        </ScrollViewer>
+                    </TabItem>
+                </TabControl>
+            </Grid>
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type vm:AutoTorrentViewModel}">
+            <DockPanel Margin="24">
+                <Grid DockPanel.Dock="Top" Margin="0,0,0,12">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" Text="Auto Torrent" FontSize="24" FontWeight="SemiBold" Margin="0,0,0,16" />
 
-                    <TextBlock Text="Settings" FontSize="24" FontWeight="SemiBold" Margin="0,0,0,20" />
-
-                    <TextBlock Grid.Row="1" Text="State folder" FontWeight="SemiBold" />
-                    <DockPanel Grid.Row="2" Margin="0,4,0,12" LastChildFill="True">
-                        <Button DockPanel.Dock="Right" Content="Browse" Command="{Binding BrowseStateFolderCommand}" Margin="8,0,0,0" />
-                        <TextBox Text="{Binding StateFolder, UpdateSourceTrigger=PropertyChanged}" Margin="0" />
-                    </DockPanel>
-
-                    <TextBlock Grid.Row="3" Text="Source folders" FontWeight="SemiBold" />
-                    <Grid Grid.Row="4" Margin="0,4,0,16">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="150" />
-                            <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
-                        <ListBox Grid.Row="0"
-                                 ItemsSource="{Binding SourceFolders}"
-                                 SelectedItem="{Binding SelectedSourceFolder, Mode=TwoWay}"
-                                 HorizontalContentAlignment="Stretch"
-                                 ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                                 ScrollViewer.VerticalScrollBarVisibility="Auto" />
-                        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,10,0,0">
-                            <Button Content="Add Source Folder" Command="{Binding AddSourceFolderCommand}" />
-                            <Button Content="Remove Selected Source Folder" Command="{Binding RemoveSelectedSourceFolderCommand}" />
-                        </StackPanel>
-                    </Grid>
-
-                    <TextBlock Grid.Row="5" Text="Generated library folder name" FontWeight="SemiBold" />
-                    <TextBox Grid.Row="6" Text="{Binding DefaultLibraryFolderName, UpdateSourceTrigger=PropertyChanged}" />
-
-                    <Grid Grid.Row="7" Margin="0,0,0,16">
+                    <Grid Grid.Row="1" Margin="0,0,0,8">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" MinWidth="360" />
-                            <ColumnDefinition Width="20" />
-                            <ColumnDefinition Width="520" MinWidth="420" />
+                            <ColumnDefinition Width="2*" />
+                            <ColumnDefinition Width="12" />
+                            <ColumnDefinition Width="90" />
+                            <ColumnDefinition Width="12" />
+                            <ColumnDefinition Width="90" />
+                            <ColumnDefinition Width="12" />
+                            <ColumnDefinition Width="120" />
                         </Grid.ColumnDefinitions>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
-                            <RowDefinition Height="170" />
+                            <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
 
-                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Auto per-drive Jellyfin output roots" FontWeight="SemiBold" />
-                        <ListBox Grid.Row="1"
-                                 Grid.Column="0"
-                                 ItemsSource="{Binding LibraryRootPreview}"
-                                 Margin="0,4,0,0"
-                                 FontFamily="Consolas"
-                                 ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                                 ScrollViewer.VerticalScrollBarVisibility="Auto" />
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Title" FontWeight="SemiBold" />
+                        <TextBox Grid.Row="1" Grid.Column="0" Text="{Binding Title, UpdateSourceTrigger=PropertyChanged}" />
 
-                        <Border Grid.Row="0"
-                                Grid.RowSpan="2"
-                                Grid.Column="2"
-                                Background="#f6f8fa"
-                                BorderBrush="#d0d7de"
-                                BorderThickness="1"
-                                Padding="14"
-                                Margin="0,4,0,0">
-                            <StackPanel>
-                                <TextBlock Text="How multi-drive output works" FontWeight="SemiBold" Margin="0,0,0,8" />
-                                <TextBlock TextWrapping="Wrap"
-                                           Margin="0,0,0,8"
-                                           Text="Hardlinks only work when the source file and linked file are on the same drive. This app creates a Jellyfin library root on each source drive." />
-                                <TextBlock TextWrapping="Wrap"
-                                           Margin="0,0,0,8"
-                                           Text="Example: files from D:\ go to D:\MediaManagerLibrary. Files from E:\ go to E:\MediaManagerLibrary." />
-                                <TextBlock TextWrapping="Wrap"
-                                           Text="In Jellyfin, add every generated Shows path to one Shows library. Add every generated Movies path to one Movies library." />
-                            </StackPanel>
-                        </Border>
+                        <TextBlock Grid.Row="0" Grid.Column="2" Text="Season" FontWeight="SemiBold" />
+                        <TextBox Grid.Row="1" Grid.Column="2" Text="{Binding SeasonNumber, UpdateSourceTrigger=PropertyChanged}" />
+
+                        <TextBlock Grid.Row="0" Grid.Column="4" Text="Episode" FontWeight="SemiBold" />
+                        <TextBox Grid.Row="1" Grid.Column="4" Text="{Binding EpisodeNumber, UpdateSourceTrigger=PropertyChanged}" />
+
+                        <TextBlock Grid.Row="0" Grid.Column="6" Text="Quality" FontWeight="SemiBold" />
+                        <TextBox Grid.Row="1" Grid.Column="6" Text="{Binding Quality, UpdateSourceTrigger=PropertyChanged}" />
                     </Grid>
 
-                    <TextBlock Grid.Row="8" Text="TMDb API Read Access Token" FontWeight="SemiBold" />
-                    <TextBox Grid.Row="9" Text="{Binding TmdbReadAccessToken, UpdateSourceTrigger=PropertyChanged}" />
+                    <DockPanel Grid.Row="2" Margin="0,0,0,8" LastChildFill="True">
+                        <TextBlock DockPanel.Dock="Left" Text="Raw query" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,8,12" />
+                        <TextBox Text="{Binding RawQuery, UpdateSourceTrigger=PropertyChanged}" />
+                    </DockPanel>
 
-                    <StackPanel Grid.Row="10" Orientation="Horizontal">
-                        <Button Content="Save Settings" Command="{Binding SaveCommand}" />
+                    <StackPanel Grid.Row="3" Orientation="Horizontal">
+                        <Button Content="Test Connection" Command="{Binding TestConnectionCommand}" />
+                        <Button Content="Search" Command="{Binding SearchCommand}" />
+                        <Button Content="Add Selected" Command="{Binding AddSelectedCommand}" />
+                        <TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center" Margin="8,0,0,0" />
                     </StackPanel>
-                    <TextBlock Grid.Row="10" Text="{Binding StatusMessage}" Margin="140,7,0,0" Foreground="#2f6f3e" />
                 </Grid>
-            </ScrollViewer>
+
+                <DataGrid ItemsSource="{Binding Results}"
+                          SelectedItem="{Binding SelectedResult, Mode=TwoWay}"
+                          AutoGenerateColumns="False"
+                          IsReadOnly="True"
+                          CanUserAddRows="False"
+                          GridLinesVisibility="All"
+                          HorizontalGridLinesBrush="#9ca3af"
+                          VerticalGridLinesBrush="#d1d5db"
+                          AlternatingRowBackground="#f8fafc"
+                          RowHeight="24"
+                          HeadersVisibility="Column"
+                          SelectionMode="Single"
+                          SelectionUnit="FullRow"
+                          ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                          ScrollViewer.VerticalScrollBarVisibility="Auto"
+                          EnableRowVirtualization="True"
+                          EnableColumnVirtualization="True"
+                          ColumnWidth="SizeToHeader">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Name" Binding="{Binding FileName}" Width="360">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+                                    <Setter Property="ToolTip" Value="{Binding FileName}" />
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Header="Size" Binding="{Binding FileSizeDisplay}" Width="90" />
+                        <DataGridTextColumn Header="Seeders" Binding="{Binding Seeders}" Width="80" />
+                        <DataGridTextColumn Header="Leechers" Binding="{Binding Leechers}" Width="80" />
+                        <DataGridTextColumn Header="Link Type" Binding="{Binding LinkType}" Width="90" />
+                        <DataGridCheckBoxColumn Header="Can Add" Binding="{Binding CanAdd, Mode=OneWay}" Width="75" />
+                        <DataGridTextColumn Header="Plugin" Binding="{Binding EngineName}" Width="140" />
+                        <DataGridTextColumn Header="Site" Binding="{Binding SiteUrl}" Width="180">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+                                    <Setter Property="ToolTip" Value="{Binding SiteUrl}" />
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Header="URL" Binding="{Binding FileUrl}" Width="420">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+                                    <Setter Property="ToolTip" Value="{Binding FileUrl}" />
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </DockPanel>
         </DataTemplate>
 
         <DataTemplate DataType="{x:Type vm:InboxViewModel}">
@@ -316,6 +476,12 @@
                     <StackPanel Orientation="Horizontal">
                         <Path Style="{StaticResource NavIconPath}" Data="M4,4 L20,4 L20,20 L4,20 Z M4,13 L9,13 A3,3 0 0 0 15,13 L20,13" />
                         <TextBlock Text="Inbox" />
+                    </StackPanel>
+                </Button>
+                <Button Command="{Binding ShowAutoTorrentCommand}" Margin="0,0,0,8">
+                    <StackPanel Orientation="Horizontal">
+                        <Path Style="{StaticResource NavIconPath}" Data="M3,11 L21,11 M12,3 L12,19 M7,7 L12,3 L17,7 M7,17 L12,21 L17,17" />
+                        <TextBlock Text="Auto Torrent" />
                     </StackPanel>
                 </Button>
                 <Button Command="{Binding ShowReviewCommand}" Margin="0,0,0,8">

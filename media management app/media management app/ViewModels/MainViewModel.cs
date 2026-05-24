@@ -13,6 +13,7 @@ public partial class MainViewModel : ViewModelBase
     public MainViewModel(
         SettingsViewModel settingsViewModel,
         InboxViewModel inboxViewModel,
+        AutoTorrentViewModel autoTorrentViewModel,
         ReviewViewModel reviewViewModel,
         IAppLogger logger,
         IOperationProgressService progressService)
@@ -21,6 +22,7 @@ public partial class MainViewModel : ViewModelBase
         _progressService = progressService;
         SettingsViewModel = settingsViewModel;
         InboxViewModel = inboxViewModel;
+        AutoTorrentViewModel = autoTorrentViewModel;
         ReviewViewModel = reviewViewModel;
         UiLogs = _logger.UiLogs;
         _progressService.ProgressChanged += OnProgressChanged;
@@ -31,6 +33,8 @@ public partial class MainViewModel : ViewModelBase
     public SettingsViewModel SettingsViewModel { get; }
 
     public InboxViewModel InboxViewModel { get; }
+
+    public AutoTorrentViewModel AutoTorrentViewModel { get; }
 
     public ReviewViewModel ReviewViewModel { get; }
 
@@ -50,6 +54,9 @@ public partial class MainViewModel : ViewModelBase
 
     [RelayCommand]
     private void ShowInbox() => CurrentView = InboxViewModel;
+
+    [RelayCommand]
+    private void ShowAutoTorrent() => CurrentView = AutoTorrentViewModel;
 
     [RelayCommand]
     private void ShowReview() => CurrentView = ReviewViewModel;

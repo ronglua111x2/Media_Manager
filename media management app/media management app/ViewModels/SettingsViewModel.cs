@@ -12,6 +12,7 @@ public partial class SettingsViewModel : ViewModelBase
     private readonly ISettingsService _settingsService;
     private readonly IDatabaseService _databaseService;
     private readonly ILibraryPathResolver _libraryPathResolver;
+    private readonly IQbittorrentClient _qbittorrentClient;
     private readonly IAppLogger _logger;
     private bool _isLoadingSettings;
 
@@ -25,6 +26,21 @@ public partial class SettingsViewModel : ViewModelBase
     private string? tmdbReadAccessToken;
 
     [ObservableProperty]
+    private string qbittorrentWebUiUrl = "http://localhost:8080";
+
+    [ObservableProperty]
+    private string? qbittorrentUsername;
+
+    [ObservableProperty]
+    private string? qbittorrentPassword;
+
+    [ObservableProperty]
+    private string autoTorrentDownloadFolder = string.Empty;
+
+    [ObservableProperty]
+    private string autoTorrentCategoryName = "AutoTorrent";
+
+    [ObservableProperty]
     private string? selectedSourceFolder;
 
     [ObservableProperty]
@@ -34,11 +50,13 @@ public partial class SettingsViewModel : ViewModelBase
         ISettingsService settingsService,
         IDatabaseService databaseService,
         ILibraryPathResolver libraryPathResolver,
+        IQbittorrentClient qbittorrentClient,
         IAppLogger logger)
     {
         _settingsService = settingsService;
         _databaseService = databaseService;
         _libraryPathResolver = libraryPathResolver;
+        _qbittorrentClient = qbittorrentClient;
         _logger = logger;
         SourceFolders = [];
         LibraryRootPreview = [];
@@ -99,11 +117,41 @@ public partial class SettingsViewModel : ViewModelBase
             ? AppConstants.DefaultLibraryFolderName
             : DefaultLibraryFolderName.Trim();
         _settingsService.Current.TmdbReadAccessToken = string.IsNullOrWhiteSpace(TmdbReadAccessToken) ? null : TmdbReadAccessToken;
+        ApplyAutoTorrentSettings();
         _settingsService.Save();
         _databaseService.Initialize(_settingsService.Current.StateFolder);
         RefreshLibraryRootPreview();
         StatusMessage = $"Saved settings to {_settingsService.SettingsFilePath}";
         _logger.Info($"Saved settings to {_settingsService.SettingsFilePath}", LogTarget.All);
+    }
+
+    [RelayCommand]
+    private async Task TestQbittorrentConnection()
+    {
+        ApplyAutoTorrentSettings();
+        try
+        {
+            StatusMessage = "Testing qBittorrent connection...";
+            var version = await _qbittorrentClient.TestConnectionAsync();
+            StatusMessage = $"Connected to qBittorrent {version}. Save settings to persist this connection.";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = ex.Message;
+            _logger.Error($"qBittorrent connection test failed: {ex.Message}", ex, LogTarget.All);
+        }
+    }
+
+    [RelayCommand]
+    private void BrowseAutoTorrentDownloadFolder()
+    {
+        var selected = BrowseFolder(AutoTorrentDownloadFolder, "Select Auto Torrent download folder");
+        if (string.IsNullOrWhiteSpace(selected))
+        {
+            return;
+        }
+
+        AutoTorrentDownloadFolder = selected;
     }
 
     partial void OnDefaultLibraryFolderNameChanged(string value)
@@ -128,6 +176,11 @@ public partial class SettingsViewModel : ViewModelBase
             StateFolder = _settingsService.Current.StateFolder;
             DefaultLibraryFolderName = _settingsService.Current.DefaultLibraryFolderName;
             TmdbReadAccessToken = _settingsService.Current.TmdbReadAccessToken;
+            QbittorrentWebUiUrl = _settingsService.Current.AutoTorrent.QbittorrentWebUiUrl;
+            QbittorrentUsername = _settingsService.Current.AutoTorrent.Username;
+            QbittorrentPassword = _settingsService.Current.AutoTorrent.Password;
+            AutoTorrentDownloadFolder = _settingsService.Current.AutoTorrent.DownloadFolder ?? string.Empty;
+            AutoTorrentCategoryName = _settingsService.Current.AutoTorrent.CategoryName;
 
             SourceFolders.Clear();
             foreach (var folder in _settingsService.Current.SourceFolders)
@@ -145,6 +198,21 @@ public partial class SettingsViewModel : ViewModelBase
 
         RefreshLibraryRootPreview();
         _logger.Info($"Settings UI loaded. VisibleSourceFolders={SourceFolders.Count}, SelectedSourceFolder='{SelectedSourceFolder ?? "<none>"}'", LogTarget.All);
+    }
+
+    private void ApplyAutoTorrentSettings()
+    {
+        _settingsService.Current.AutoTorrent.QbittorrentWebUiUrl = string.IsNullOrWhiteSpace(QbittorrentWebUiUrl)
+            ? "http://localhost:8080"
+            : QbittorrentWebUiUrl.Trim();
+        _settingsService.Current.AutoTorrent.Username = string.IsNullOrWhiteSpace(QbittorrentUsername) ? null : QbittorrentUsername.Trim();
+        _settingsService.Current.AutoTorrent.Password = string.IsNullOrWhiteSpace(QbittorrentPassword) ? null : QbittorrentPassword;
+        _settingsService.Current.AutoTorrent.DownloadFolder = string.IsNullOrWhiteSpace(AutoTorrentDownloadFolder)
+            ? null
+            : AutoTorrentDownloadFolder.Trim();
+        _settingsService.Current.AutoTorrent.CategoryName = string.IsNullOrWhiteSpace(AutoTorrentCategoryName)
+            ? "AutoTorrent"
+            : AutoTorrentCategoryName.Trim();
     }
 
     private void RefreshLibraryRootPreview()

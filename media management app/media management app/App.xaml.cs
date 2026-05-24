@@ -72,11 +72,13 @@ public partial class App : System.Windows.Application
         services.AddSingleton<ILibraryPathResolver, LibraryPathResolver>();
         services.AddSingleton<IHardlinkService, HardlinkService>();
         services.AddSingleton<ISourceReconciliationService, SourceReconciliationService>();
+        services.AddSingleton<IQbittorrentClient, QbittorrentClient>();
         services.AddSingleton<TmdbMetadataProvider>();
         services.AddSingleton<IMetadataProvider>(provider => provider.GetRequiredService<TmdbMetadataProvider>());
 
         services.AddSingleton<SettingsViewModel>();
         services.AddSingleton<InboxViewModel>();
+        services.AddSingleton<AutoTorrentViewModel>();
         services.AddSingleton<ReviewViewModel>();
         services.AddSingleton<MainViewModel>();
         services.AddSingleton<MainWindow>();

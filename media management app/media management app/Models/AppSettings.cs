@@ -6,6 +6,8 @@ public sealed class AppSettings
 {
     public string StateFolder { get; set; } = AppConstants.DefaultStateFolder;
 
+    public AutoTorrentSettings AutoTorrent { get; set; } = new();
+
     public List<string> SourceFolders { get; set; } = [];
 
     public LibraryRootMode LibraryRootMode { get; set; } = LibraryRootMode.AutoPerDrive;

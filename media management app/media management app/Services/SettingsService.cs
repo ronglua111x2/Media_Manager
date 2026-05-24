@@ -95,6 +95,16 @@ public sealed class SettingsService : ISettingsService
             Current.DefaultLibraryFolderName = AppConstants.DefaultLibraryFolderName;
         }
 
+        Current.AutoTorrent ??= new AutoTorrentSettings();
+        if (string.IsNullOrWhiteSpace(Current.AutoTorrent.QbittorrentWebUiUrl))
+        {
+            Current.AutoTorrent.QbittorrentWebUiUrl = "http://localhost:8080";
+        }
+        if (string.IsNullOrWhiteSpace(Current.AutoTorrent.CategoryName))
+        {
+            Current.AutoTorrent.CategoryName = "AutoTorrent";
+        }
+
         if (string.IsNullOrWhiteSpace(Current.OutputLibraryFolder))
         {
             Current.OutputLibraryFolder = null;
