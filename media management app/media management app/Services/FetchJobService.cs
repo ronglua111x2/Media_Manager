@@ -5,8 +5,6 @@ namespace media_management_app.Services;
 
 public sealed class FetchJobService : IFetchJobService
 {
-    private const int QualityScoreBoost = 100000;
-    private const int AudioScoreBoost = 25000;
     private const int SearchCapacityRetryCount = 3;
     private const int SearchCapacityRetryDelayMilliseconds = 2000;
 
@@ -358,20 +356,14 @@ public sealed class FetchJobService : IFetchJobService
         var query = string.Join(" | ", queries);
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         _logger.Info($"Worker {workerId} fetching candidates for {query}", LogTarget.All);
-        var searchResults = await SearchManyAsync(queries, cancellationToken);
         var selectedQualities = ParseQualities(show.PreferredQuality);
-        var candidates = searchResults
-            .Where(result => IsUsableCandidate(result, episode, query, show.MinimumSeeders, selectedQualities))
-            .Select(result => ToCandidate(episode.Id, result, show.PreferredQuality, show.PreferredAudioCodec))
-            .OrderByDescending(candidate => candidate.TotalScore)
-            .ThenByDescending(candidate => candidate.Seeders)
-            .Take(GetMaxCandidatesPerFetch())
-            .ToList();
+        var searchSummary = await SearchEpisodeCandidatesSequentialAsync(episode, show, queries, selectedQualities, cancellationToken);
+        var candidates = searchSummary.Candidates;
 
         stopwatch.Stop();
-        LogCandidateSummary(query, episode, searchResults, candidates);
+        LogCandidateSummary(query, episode, searchSummary.SearchResults, candidates);
         _logger.Info(
-            $"Worker {workerId} finished {query}. Duration={stopwatch.Elapsed.TotalSeconds:0.0}s, RawResults={searchResults.Count}, AcceptedCandidates={candidates.Count}, Rejected={Math.Max(0, searchResults.Count - candidates.Count)}.",
+            $"Worker {workerId} finished {query}. Duration={stopwatch.Elapsed.TotalSeconds:0.0}s, RawResults={searchSummary.SearchResults.Count}, AcceptedCandidates={candidates.Count}, Rejected={Math.Max(0, searchSummary.SearchResults.Count - candidates.Count)}.",
             LogTarget.All);
 
         lock (_gate)
@@ -408,8 +400,9 @@ public sealed class FetchJobService : IFetchJobService
         var query = string.Join(" | ", queries);
         _logger.Info($"Fetching movie candidates for {query}", LogTarget.All);
         var searchResults = await SearchManyAsync(queries, cancellationToken);
-        var candidates = searchResults
-            .Where(result => IsUsableMovieCandidate(result, movie, query))
+        var filteredResults = searchResults
+            .Where(result => IsUsableMovieCandidate(result, movie, query));
+        var candidates = filteredResults
             .Select(result => ToMovieCandidate(movie.Id, result, movie.PreferredQuality, movie.PreferredAudioCodec))
             .OrderByDescending(candidate => candidate.TotalScore)
             .ThenByDescending(candidate => candidate.Seeders)
@@ -443,16 +436,37 @@ public sealed class FetchJobService : IFetchJobService
 
     private static IEnumerable<string> BuildQueries(TrackedShow show, TrackedEpisode episode)
     {
-        var qualities = ParseQualities(show.PreferredQuality).DefaultIfEmpty(string.Empty);
+        var qualities = ParseQualities(show.PreferredQuality).DefaultIfEmpty(string.Empty).ToList();
         foreach (var quality in qualities)
         {
-            yield return string.Join(' ', new[]
+            var baseParts = new List<string>
             {
                 show.Title,
                 $"S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00}",
                 quality,
                 show.PreferredAudioCodec
-            }.Where(part => !string.IsNullOrWhiteSpace(part))).Trim();
+            };
+            yield return string.Join(' ', baseParts.Where(part => !string.IsNullOrWhiteSpace(part))).Trim();
+
+            if (show.FirstAirYear is not null)
+            {
+                var yearParts = new List<string>
+                {
+                    show.Title,
+                    show.FirstAirYear.Value.ToString(),
+                    $"S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00}",
+                    quality,
+                    show.PreferredAudioCodec
+                };
+                yield return string.Join(' ', yearParts.Where(part => !string.IsNullOrWhiteSpace(part))).Trim();
+            }
+
+            var simpleParts = new List<string>
+            {
+                show.Title,
+                $"S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00}"
+            };
+            yield return string.Join(' ', simpleParts.Where(part => !string.IsNullOrWhiteSpace(part))).Trim();
         }
     }
 
@@ -500,56 +514,105 @@ public sealed class FetchJobService : IFetchJobService
             .ToList();
     }
 
-    private bool IsUsableCandidate(TorrentSearchResult result, TrackedEpisode episode, string query, int minimumSeeders, IReadOnlyList<string> selectedQualities)
+    private sealed class EpisodeSearchSummary
     {
-        var rejectionReason = GetCandidateRejectionReason(result, episode, minimumSeeders, selectedQualities);
-        if (rejectionReason is null)
+        public EpisodeSearchSummary(IReadOnlyList<EpisodeFetchCandidate> candidates, IReadOnlyList<TorrentSearchResult> searchResults)
         {
-            return true;
+            Candidates = candidates;
+            SearchResults = searchResults;
         }
 
-        var message =
-            $"Rejected search candidate for '{query}'. Reason='{rejectionReason}', Engine='{result.EngineName}', Name='{result.FileName}', Url='{result.FileUrl}'.";
-        if (rejectionReason.Contains("plugin error", StringComparison.OrdinalIgnoreCase))
-        {
-            _logger.Warning(message, LogTarget.All);
-        }
-        else
-        {
-            _logger.Debug(message, LogTarget.File | LogTarget.Console);
-        }
+        public IReadOnlyList<EpisodeFetchCandidate> Candidates { get; }
 
-        return false;
+        public IReadOnlyList<TorrentSearchResult> SearchResults { get; }
     }
 
-    private static string? GetCandidateRejectionReason(TorrentSearchResult result, TrackedEpisode episode, int minimumSeeders, IReadOnlyList<string> selectedQualities)
+    private async Task<EpisodeSearchSummary> SearchEpisodeCandidatesSequentialAsync(
+        TrackedEpisode episode,
+        TrackedShow show,
+        IReadOnlyList<string> queries,
+        IReadOnlyList<string> selectedQualities,
+        CancellationToken cancellationToken)
     {
-        if (!result.CanAdd)
+        var maxCandidates = GetMaxCandidatesPerFetch();
+        var resultsByUrl = new Dictionary<string, TorrentSearchResult>(StringComparer.OrdinalIgnoreCase);
+        var matchedCandidates = new List<(EpisodeFetchCandidate Candidate, CandidateMatchResult Match)>();
+
+        foreach (var query in queries.Where(query => !string.IsNullOrWhiteSpace(query)).Distinct(StringComparer.OrdinalIgnoreCase))
         {
-            return $"not addable link type '{result.LinkType}'";
+            cancellationToken.ThrowIfCancellationRequested();
+            var queryResults = await SearchSingleQueryAsync(query, cancellationToken);
+            foreach (var result in queryResults)
+            {
+                if (!string.IsNullOrWhiteSpace(result.FileUrl))
+                {
+                    resultsByUrl[result.FileUrl] = result;
+                }
+
+                if (matchedCandidates.Count >= maxCandidates)
+                {
+                    continue;
+                }
+
+                var match = CandidateMatcher.MatchEpisodeCandidate(show, episode, result, selectedQualities);
+                if (!match.IsAccepted)
+                {
+                    var message =
+                        $"Rejected search candidate for '{query}'. Reason='{match.RejectReason}', Engine='{result.EngineName}', Name='{result.FileName}', Url='{result.FileUrl}'.";
+                    if (match.RejectReason?.Contains("plugin error", StringComparison.OrdinalIgnoreCase) == true)
+                    {
+                        _logger.Warning(message, LogTarget.All);
+                    }
+                    else
+                    {
+                        _logger.Debug(message, LogTarget.File | LogTarget.Console);
+                    }
+                    continue;
+                }
+
+                var candidate = ToCandidate(episode.Id, result, match.QualityScore, match.TotalScore);
+                matchedCandidates.Add((candidate, match));
+            }
+
+            if (matchedCandidates.Count >= maxCandidates)
+            {
+                break;
+            }
         }
 
-        if (LooksLikePluginError(result.FileName))
+        var candidates = matchedCandidates
+            .OrderByDescending(entry => entry.Match.TotalScore)
+            .ThenByDescending(entry => entry.Candidate.Seeders)
+            .Take(maxCandidates)
+            .Select(entry => entry.Candidate)
+            .ToList();
+
+        var searchResults = resultsByUrl.Values
+            .OrderByDescending(result => result.Seeders)
+            .ToList();
+
+        return new EpisodeSearchSummary(candidates, searchResults);
+    }
+
+    private async Task<IReadOnlyList<TorrentSearchResult>> SearchSingleQueryAsync(string query, CancellationToken cancellationToken)
+    {
+        for (var attempt = 1; attempt <= SearchCapacityRetryCount; attempt++)
         {
-            return "search plugin error row";
+            try
+            {
+                return await _qbittorrentClient.SearchAsync(new TorrentSearchRequest { Query = query }, cancellationToken);
+            }
+            catch (QbittorrentSearchCapacityException) when (attempt < SearchCapacityRetryCount)
+            {
+                var delay = TimeSpan.FromMilliseconds(SearchCapacityRetryDelayMilliseconds * attempt);
+                _logger.Warning(
+                    $"qBittorrent search capacity is full. Retrying query '{query}' in {delay.TotalSeconds:0}s. Attempt={attempt}/{SearchCapacityRetryCount}.",
+                    LogTarget.All);
+                await Task.Delay(delay, cancellationToken);
+            }
         }
 
-        if (!LooksLikeEpisodeMatch(result.FileName, episode))
-        {
-            return $"does not contain S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00} or {episode.SeasonNumber}x{episode.EpisodeNumber:00}";
-        }
-
-        if (result.Seeders < minimumSeeders)
-        {
-            return $"seeders below threshold {minimumSeeders}";
-        }
-
-        if (selectedQualities.Count > 0 && !selectedQualities.Any(quality => result.FileName.Contains(quality, StringComparison.OrdinalIgnoreCase)))
-        {
-            return $"does not match selected quality options: {string.Join(", ", selectedQualities)}";
-        }
-
-        return null;
+        return [];
     }
 
     private bool IsUsableMovieCandidate(TorrentSearchResult result, TrackedMovie movie, string query)
@@ -642,20 +705,6 @@ public sealed class FetchJobService : IFetchJobService
                fileName.Contains("jackett:", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool LooksLikeEpisodeMatch(string fileName, TrackedEpisode episode)
-    {
-        if (string.IsNullOrWhiteSpace(fileName))
-        {
-            return false;
-        }
-
-        var normalized = fileName.Replace(" ", ".", StringComparison.Ordinal);
-        var standardCode = $"S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00}";
-        var alternateCode = $"{episode.SeasonNumber}x{episode.EpisodeNumber:00}";
-        return normalized.Contains(standardCode, StringComparison.OrdinalIgnoreCase) ||
-               normalized.Contains(alternateCode, StringComparison.OrdinalIgnoreCase);
-    }
-
     private static bool LooksLikeMovieTitleMatch(string fileName, string title)
     {
         var fileTokens = Tokenize(fileName).ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -665,12 +714,74 @@ public sealed class FetchJobService : IFetchJobService
             return true;
         }
 
-        var matched = titleTokens.Count(fileTokens.Contains);
+        var matched = titleTokens.Count(token => fileTokens.Contains(token));
         return matched >= Math.Min(2, titleTokens.Count);
+    }
+
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("CodeQuality", "IDE0051:Remove unused private members", Justification = "Kept for potential reuse after sequential search refactor.")]
+    private List<EpisodeFetchCandidate> MapEpisodeCandidates(
+        TrackedEpisode episode,
+        TrackedShow show,
+        string query,
+        IReadOnlyList<TorrentSearchResult> searchResults,
+        IReadOnlyList<string> selectedQualities)
+    {
+        var matchedCandidates = new List<(EpisodeFetchCandidate Candidate, CandidateMatchResult Match)>();
+        foreach (var result in searchResults)
+        {
+            var match = CandidateMatcher.MatchEpisodeCandidate(show, episode, result, selectedQualities);
+            if (!match.IsAccepted)
+            {
+                var message =
+                    $"Rejected search candidate for '{query}'. Reason='{match.RejectReason}', Engine='{result.EngineName}', Name='{result.FileName}', Url='{result.FileUrl}'.";
+                if (match.RejectReason?.Contains("plugin error", StringComparison.OrdinalIgnoreCase) == true)
+                {
+                    _logger.Warning(message, LogTarget.All);
+                }
+                else
+                {
+                    _logger.Debug(message, LogTarget.File | LogTarget.Console);
+                }
+
+                continue;
+            }
+
+            var candidate = ToCandidate(episode.Id, result, match.QualityScore, match.TotalScore);
+            matchedCandidates.Add((candidate, match));
+        }
+
+        return matchedCandidates
+            .OrderByDescending(entry => entry.Match.TotalScore)
+            .ThenByDescending(entry => entry.Candidate.Seeders)
+            .Take(GetMaxCandidatesPerFetch())
+            .Select(entry => entry.Candidate)
+            .ToList();
     }
 
     private static EpisodeFetchCandidate ToCandidate(
         long episodeId,
+        TorrentSearchResult result,
+        int qualityScore,
+        int totalScore)
+    {
+        return new EpisodeFetchCandidate
+        {
+            EpisodeId = episodeId,
+            FileName = result.FileName,
+            FileSize = result.FileSize,
+            FileUrl = result.FileUrl,
+            QualityLabel = DetectQuality(result.FileName),
+            AudioCodecLabel = DetectAudioCodec(result.FileName),
+            Seeders = result.Seeders,
+            Leechers = result.Leechers,
+            PluginName = result.EngineName,
+            QualityScore = qualityScore,
+            TotalScore = totalScore
+        };
+    }
+
+    private static EpisodeFetchCandidate ToMovieCandidate(
+        long movieId,
         TorrentSearchResult result,
         string preferredQuality,
         string preferredAudioCodec)
@@ -684,30 +795,8 @@ public sealed class FetchJobService : IFetchJobService
                          result.FileName.Contains(preferredAudioCodec, StringComparison.OrdinalIgnoreCase)
             ? 1
             : 0;
-
-        return new EpisodeFetchCandidate
-        {
-            EpisodeId = episodeId,
-            FileName = result.FileName,
-            FileSize = result.FileSize,
-            FileUrl = result.FileUrl,
-            QualityLabel = DetectQuality(result.FileName),
-            AudioCodecLabel = DetectAudioCodec(result.FileName),
-            Seeders = result.Seeders,
-            Leechers = result.Leechers,
-            PluginName = result.EngineName,
-            QualityScore = qualityScore,
-            TotalScore = qualityScore * QualityScoreBoost + audioScore * AudioScoreBoost + result.Seeders
-        };
-    }
-
-    private static EpisodeFetchCandidate ToMovieCandidate(
-        long movieId,
-        TorrentSearchResult result,
-        string preferredQuality,
-        string preferredAudioCodec)
-    {
-        var candidate = ToCandidate(0, result, preferredQuality, preferredAudioCodec);
+        var totalScore = qualityScore * 100000 + audioScore * 25000 + result.Seeders;
+        var candidate = ToCandidate(0, result, qualityScore, totalScore);
         candidate.MovieId = movieId;
         return candidate;
     }
