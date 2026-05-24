@@ -10,5 +10,11 @@ public sealed class AutoTorrentSettings
 
     public string? DownloadFolder { get; set; }
 
+    public List<string> DownloadFolders { get; set; } = [];
+
     public string CategoryName { get; set; } = "AutoTorrent";
+
+    public int MaxCandidatesPerFetch { get; set; } = 3;
+
+    public int MaxParallelSearches { get; set; } = 3;
 }

@@ -75,6 +75,11 @@ public partial class App : System.Windows.Application
         services.AddSingleton<IQbittorrentClient, QbittorrentClient>();
         services.AddSingleton<TmdbMetadataProvider>();
         services.AddSingleton<IMetadataProvider>(provider => provider.GetRequiredService<TmdbMetadataProvider>());
+        services.AddSingleton<ITmdbShowCatalogService>(provider => provider.GetRequiredService<TmdbMetadataProvider>());
+        services.AddSingleton<ITmdbMovieCatalogService>(provider => provider.GetRequiredService<TmdbMetadataProvider>());
+        services.AddSingleton<ITrackedShowService, TrackedShowService>();
+        services.AddSingleton<ITrackedMovieService, TrackedMovieService>();
+        services.AddSingleton<IFetchJobService, FetchJobService>();
 
         services.AddSingleton<SettingsViewModel>();
         services.AddSingleton<InboxViewModel>();

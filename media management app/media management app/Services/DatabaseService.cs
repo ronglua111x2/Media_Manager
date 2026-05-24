@@ -82,6 +82,9 @@ public sealed class DatabaseService : IDatabaseService
         EnsureColumn(connection, "SourceItems", "UseAbsoluteAnimeMapping", "INTEGER NOT NULL DEFAULT 0");
         EnsureColumn(connection, "SourceItems", "LinkedPath", "TEXT NULL");
         InitializeSeriesMappings(connection);
+        InitializeTrackedShows(connection);
+        InitializeTrackedMovies(connection);
+        InitializeFetchJobs(connection);
         _logger.Info("SQLite database is ready", LogTarget.File | LogTarget.Ui | LogTarget.Console);
     }
 
@@ -420,6 +423,599 @@ public sealed class DatabaseService : IDatabaseService
         _logger.Info($"Saved series mapping: {mapping.ParsedTitle} => {mapping.MatchedTitle} [{mapping.Provider}-{mapping.ProviderId}]", LogTarget.All);
     }
 
+    public IReadOnlyList<TrackedShow> GetTrackedShows()
+    {
+        var shows = new List<TrackedShow>();
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT s.Id, s.TmdbId, s.Title, s.FirstAirYear, s.Overview, s.PosterPath, s.PreferredQuality, s.PreferredAudioCodec, s.MinimumSeeders, s.CreatedUtc, s.UpdatedUtc,
+                   COUNT(e.Id), SUM(CASE WHEN e.Availability = 1 THEN 1 ELSE 0 END), SUM(CASE WHEN e.IsWanted = 1 THEN 1 ELSE 0 END)
+            FROM TrackedShows s
+            LEFT JOIN TrackedEpisodes e ON e.ShowId = s.Id
+            GROUP BY s.Id
+            ORDER BY s.Title;
+            """;
+
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            shows.Add(ReadTrackedShow(reader));
+        }
+
+        return shows;
+    }
+
+    public TrackedShow? GetTrackedShow(long id)
+    {
+        return GetTrackedShowCore("s.Id = $Value", id);
+    }
+
+    public TrackedShow? GetTrackedShowByTmdbId(int tmdbId)
+    {
+        return GetTrackedShowCore("s.TmdbId = $Value", tmdbId);
+    }
+
+    public long UpsertTrackedShow(TrackedShow show)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+
+        var now = DateTime.UtcNow;
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO TrackedShows (TmdbId, Title, FirstAirYear, Overview, PosterPath, PreferredQuality, PreferredAudioCodec, MinimumSeeders, CreatedUtc, UpdatedUtc)
+            VALUES ($TmdbId, $Title, $FirstAirYear, $Overview, $PosterPath, $PreferredQuality, $PreferredAudioCodec, $MinimumSeeders, $CreatedUtc, $UpdatedUtc)
+            ON CONFLICT(TmdbId) DO UPDATE SET
+                Title = excluded.Title,
+                FirstAirYear = excluded.FirstAirYear,
+                Overview = excluded.Overview,
+                PosterPath = excluded.PosterPath,
+                PreferredQuality = CASE WHEN TrackedShows.PreferredQuality = '' THEN excluded.PreferredQuality ELSE TrackedShows.PreferredQuality END,
+                PreferredAudioCodec = TrackedShows.PreferredAudioCodec,
+                MinimumSeeders = TrackedShows.MinimumSeeders,
+                UpdatedUtc = excluded.UpdatedUtc;
+            """;
+        command.Parameters.AddWithValue("$TmdbId", show.TmdbId);
+        command.Parameters.AddWithValue("$Title", show.Title);
+        command.Parameters.AddWithValue("$FirstAirYear", (object?)show.FirstAirYear ?? DBNull.Value);
+        command.Parameters.AddWithValue("$Overview", (object?)show.Overview ?? DBNull.Value);
+        command.Parameters.AddWithValue("$PosterPath", (object?)show.PosterPath ?? DBNull.Value);
+        command.Parameters.AddWithValue("$PreferredQuality", string.IsNullOrWhiteSpace(show.PreferredQuality) ? "1080p" : show.PreferredQuality);
+        command.Parameters.AddWithValue("$PreferredAudioCodec", (object?)show.PreferredAudioCodec?.Trim() ?? string.Empty);
+        command.Parameters.AddWithValue("$MinimumSeeders", Math.Max(0, show.MinimumSeeders));
+        command.Parameters.AddWithValue("$CreatedUtc", (show.CreatedUtc == default ? now : show.CreatedUtc).ToString("O"));
+        command.Parameters.AddWithValue("$UpdatedUtc", now.ToString("O"));
+        command.ExecuteNonQuery();
+
+        using var idCommand = connection.CreateCommand();
+        idCommand.CommandText = "SELECT Id FROM TrackedShows WHERE TmdbId = $TmdbId;";
+        idCommand.Parameters.AddWithValue("$TmdbId", show.TmdbId);
+        return (long)(idCommand.ExecuteScalar() ?? 0L);
+    }
+
+    public void DeleteTrackedSeasonsAndEpisodes(long showId)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            DELETE FROM TrackedEpisodes WHERE ShowId = $ShowId;
+            DELETE FROM TrackedSeasons WHERE ShowId = $ShowId;
+            """;
+        command.Parameters.AddWithValue("$ShowId", showId);
+        command.ExecuteNonQuery();
+    }
+
+    public void UpsertTrackedSeason(TrackedSeason season)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO TrackedSeasons (ShowId, SeasonNumber, EpisodeCount, DownloadFolder)
+            VALUES ($ShowId, $SeasonNumber, $EpisodeCount, $DownloadFolder)
+            ON CONFLICT(ShowId, SeasonNumber) DO UPDATE SET
+                EpisodeCount = excluded.EpisodeCount,
+                DownloadFolder = COALESCE(TrackedSeasons.DownloadFolder, excluded.DownloadFolder);
+            """;
+        command.Parameters.AddWithValue("$ShowId", season.ShowId);
+        command.Parameters.AddWithValue("$SeasonNumber", season.SeasonNumber);
+        command.Parameters.AddWithValue("$EpisodeCount", season.EpisodeCount);
+        command.Parameters.AddWithValue("$DownloadFolder", (object?)season.DownloadFolder ?? DBNull.Value);
+        command.ExecuteNonQuery();
+    }
+
+    public IReadOnlyList<TrackedSeason> GetTrackedSeasons(long showId)
+    {
+        var seasons = new List<TrackedSeason>();
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT Id, ShowId, SeasonNumber, EpisodeCount, DownloadFolder
+            FROM TrackedSeasons
+            WHERE ShowId = $ShowId
+            ORDER BY SeasonNumber;
+            """;
+        command.Parameters.AddWithValue("$ShowId", showId);
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            seasons.Add(new TrackedSeason
+            {
+                Id = reader.GetInt64(0),
+                ShowId = reader.GetInt64(1),
+                SeasonNumber = reader.GetInt32(2),
+                EpisodeCount = reader.GetInt32(3),
+                DownloadFolder = reader.IsDBNull(4) ? null : reader.GetString(4)
+            });
+        }
+
+        return seasons;
+    }
+
+    public void UpdateTrackedSeasonDownloadFolder(long showId, int seasonNumber, string? downloadFolder)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE TrackedSeasons
+            SET DownloadFolder = $DownloadFolder
+            WHERE ShowId = $ShowId AND SeasonNumber = $SeasonNumber;
+            """;
+        command.Parameters.AddWithValue("$DownloadFolder", string.IsNullOrWhiteSpace(downloadFolder) ? DBNull.Value : downloadFolder.Trim());
+        command.Parameters.AddWithValue("$ShowId", showId);
+        command.Parameters.AddWithValue("$SeasonNumber", seasonNumber);
+        command.ExecuteNonQuery();
+    }
+
+    public void UpsertTrackedEpisode(TrackedEpisode episode)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        var now = DateTime.UtcNow;
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO TrackedEpisodes (ShowId, SeasonNumber, EpisodeNumber, Title, AirDate, Availability, IsWanted, TorrentHash, TorrentName, TorrentState, TorrentProgress, TorrentUpdatedUtc, SelectedCandidateName, SelectedCandidateUrl, SelectedCandidatePlugin, SelectedCandidateFileSize, SelectedCandidateSeeders, SelectedCandidateQuality, SelectedCandidateAudioCodec, CreatedUtc, UpdatedUtc)
+            VALUES ($ShowId, $SeasonNumber, $EpisodeNumber, $Title, $AirDate, $Availability, $IsWanted, $TorrentHash, $TorrentName, $TorrentState, $TorrentProgress, $TorrentUpdatedUtc, $SelectedCandidateName, $SelectedCandidateUrl, $SelectedCandidatePlugin, $SelectedCandidateFileSize, $SelectedCandidateSeeders, $SelectedCandidateQuality, $SelectedCandidateAudioCodec, $CreatedUtc, $UpdatedUtc)
+            ON CONFLICT(ShowId, SeasonNumber, EpisodeNumber) DO UPDATE SET
+                Title = excluded.Title,
+                AirDate = excluded.AirDate,
+                Availability = excluded.Availability,
+                IsWanted = TrackedEpisodes.IsWanted,
+                TorrentHash = TrackedEpisodes.TorrentHash,
+                TorrentName = TrackedEpisodes.TorrentName,
+                TorrentState = TrackedEpisodes.TorrentState,
+                TorrentProgress = TrackedEpisodes.TorrentProgress,
+                TorrentUpdatedUtc = TrackedEpisodes.TorrentUpdatedUtc,
+                SelectedCandidateName = TrackedEpisodes.SelectedCandidateName,
+                SelectedCandidateUrl = TrackedEpisodes.SelectedCandidateUrl,
+                SelectedCandidatePlugin = TrackedEpisodes.SelectedCandidatePlugin,
+                SelectedCandidateFileSize = TrackedEpisodes.SelectedCandidateFileSize,
+                SelectedCandidateSeeders = TrackedEpisodes.SelectedCandidateSeeders,
+                SelectedCandidateQuality = TrackedEpisodes.SelectedCandidateQuality,
+                SelectedCandidateAudioCodec = TrackedEpisodes.SelectedCandidateAudioCodec,
+                UpdatedUtc = excluded.UpdatedUtc;
+            """;
+        command.Parameters.AddWithValue("$ShowId", episode.ShowId);
+        command.Parameters.AddWithValue("$SeasonNumber", episode.SeasonNumber);
+        command.Parameters.AddWithValue("$EpisodeNumber", episode.EpisodeNumber);
+        command.Parameters.AddWithValue("$Title", episode.Title);
+        command.Parameters.AddWithValue("$AirDate", (object?)episode.AirDate?.ToString("yyyy-MM-dd") ?? DBNull.Value);
+        command.Parameters.AddWithValue("$Availability", (int)episode.Availability);
+        command.Parameters.AddWithValue("$IsWanted", episode.IsWanted ? 1 : 0);
+        command.Parameters.AddWithValue("$TorrentHash", (object?)episode.TorrentHash ?? DBNull.Value);
+        command.Parameters.AddWithValue("$TorrentName", (object?)episode.TorrentName ?? DBNull.Value);
+        command.Parameters.AddWithValue("$TorrentState", (object?)episode.TorrentState ?? DBNull.Value);
+        command.Parameters.AddWithValue("$TorrentProgress", episode.TorrentProgress);
+        command.Parameters.AddWithValue("$TorrentUpdatedUtc", (object?)episode.TorrentUpdatedUtc?.ToString("O") ?? DBNull.Value);
+        command.Parameters.AddWithValue("$SelectedCandidateName", (object?)episode.SelectedCandidateName ?? DBNull.Value);
+        command.Parameters.AddWithValue("$SelectedCandidateUrl", (object?)episode.SelectedCandidateUrl ?? DBNull.Value);
+        command.Parameters.AddWithValue("$SelectedCandidatePlugin", (object?)episode.SelectedCandidatePlugin ?? DBNull.Value);
+        command.Parameters.AddWithValue("$SelectedCandidateFileSize", episode.SelectedCandidateFileSize);
+        command.Parameters.AddWithValue("$SelectedCandidateSeeders", episode.SelectedCandidateSeeders);
+        command.Parameters.AddWithValue("$SelectedCandidateQuality", (object?)episode.SelectedCandidateQuality ?? DBNull.Value);
+        command.Parameters.AddWithValue("$SelectedCandidateAudioCodec", (object?)episode.SelectedCandidateAudioCodec ?? DBNull.Value);
+        command.Parameters.AddWithValue("$CreatedUtc", (episode.CreatedUtc == default ? now : episode.CreatedUtc).ToString("O"));
+        command.Parameters.AddWithValue("$UpdatedUtc", now.ToString("O"));
+        command.ExecuteNonQuery();
+    }
+
+    public IReadOnlyList<TrackedEpisode> GetTrackedEpisodes(long showId)
+    {
+        var episodes = new List<TrackedEpisode>();
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT Id, ShowId, SeasonNumber, EpisodeNumber, Title, AirDate, Availability, IsWanted,
+                   TorrentHash, TorrentName, TorrentState, TorrentProgress, TorrentUpdatedUtc,
+                   SelectedCandidateName, SelectedCandidateUrl, SelectedCandidatePlugin, SelectedCandidateFileSize,
+                   SelectedCandidateSeeders, SelectedCandidateQuality, SelectedCandidateAudioCodec,
+                   CreatedUtc, UpdatedUtc
+            FROM TrackedEpisodes
+            WHERE ShowId = $ShowId
+            ORDER BY SeasonNumber, EpisodeNumber;
+            """;
+        command.Parameters.AddWithValue("$ShowId", showId);
+
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            episodes.Add(ReadTrackedEpisode(reader));
+        }
+
+        return episodes;
+    }
+
+    public void UpdateTrackedEpisodeWanted(long episodeId, bool isWanted)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE TrackedEpisodes SET IsWanted = $IsWanted, UpdatedUtc = $UpdatedUtc WHERE Id = $Id;";
+        command.Parameters.AddWithValue("$IsWanted", isWanted ? 1 : 0);
+        command.Parameters.AddWithValue("$UpdatedUtc", DateTime.UtcNow.ToString("O"));
+        command.Parameters.AddWithValue("$Id", episodeId);
+        command.ExecuteNonQuery();
+    }
+
+    public void UpdateTrackedEpisodeAvailability(long episodeId, EpisodeAvailability availability)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE TrackedEpisodes SET Availability = $Availability, UpdatedUtc = $UpdatedUtc WHERE Id = $Id;";
+        command.Parameters.AddWithValue("$Availability", (int)availability);
+        command.Parameters.AddWithValue("$UpdatedUtc", DateTime.UtcNow.ToString("O"));
+        command.Parameters.AddWithValue("$Id", episodeId);
+        command.ExecuteNonQuery();
+    }
+
+    public void UpdateTrackedEpisodeTorrent(
+        long episodeId,
+        string torrentHash,
+        string torrentName,
+        string torrentState,
+        double torrentProgress)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE TrackedEpisodes
+            SET TorrentHash = $TorrentHash,
+                TorrentName = $TorrentName,
+                TorrentState = $TorrentState,
+                TorrentProgress = $TorrentProgress,
+                TorrentUpdatedUtc = $TorrentUpdatedUtc,
+                UpdatedUtc = $UpdatedUtc
+            WHERE Id = $Id;
+            """;
+        command.Parameters.AddWithValue("$TorrentHash", string.IsNullOrWhiteSpace(torrentHash) ? DBNull.Value : torrentHash.Trim());
+        command.Parameters.AddWithValue("$TorrentName", string.IsNullOrWhiteSpace(torrentName) ? DBNull.Value : torrentName.Trim());
+        command.Parameters.AddWithValue("$TorrentState", string.IsNullOrWhiteSpace(torrentState) ? DBNull.Value : torrentState.Trim());
+        command.Parameters.AddWithValue("$TorrentProgress", Math.Clamp(torrentProgress, 0, 1));
+        command.Parameters.AddWithValue("$TorrentUpdatedUtc", DateTime.UtcNow.ToString("O"));
+        command.Parameters.AddWithValue("$UpdatedUtc", DateTime.UtcNow.ToString("O"));
+        command.Parameters.AddWithValue("$Id", episodeId);
+        command.ExecuteNonQuery();
+    }
+
+    public void UpdateTrackedEpisodeSelectedCandidate(long episodeId, EpisodeFetchCandidate candidate)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE TrackedEpisodes
+            SET SelectedCandidateName = $Name,
+                SelectedCandidateUrl = $Url,
+                SelectedCandidatePlugin = $Plugin,
+                SelectedCandidateFileSize = $FileSize,
+                SelectedCandidateSeeders = $Seeders,
+                SelectedCandidateQuality = $Quality,
+                SelectedCandidateAudioCodec = $AudioCodec,
+                UpdatedUtc = $UpdatedUtc
+            WHERE Id = $Id;
+            """;
+        AddSelectedCandidateParameters(command, candidate);
+        command.Parameters.AddWithValue("$UpdatedUtc", DateTime.UtcNow.ToString("O"));
+        command.Parameters.AddWithValue("$Id", episodeId);
+        command.ExecuteNonQuery();
+    }
+
+    public void UpdateTrackedShowPreferredQuality(long showId, string preferredQuality)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE TrackedShows SET PreferredQuality = $PreferredQuality, UpdatedUtc = $UpdatedUtc WHERE Id = $Id;";
+        command.Parameters.AddWithValue("$PreferredQuality", string.IsNullOrWhiteSpace(preferredQuality) ? "1080p" : preferredQuality.Trim());
+        command.Parameters.AddWithValue("$UpdatedUtc", DateTime.UtcNow.ToString("O"));
+        command.Parameters.AddWithValue("$Id", showId);
+        command.ExecuteNonQuery();
+    }
+
+    public void UpdateTrackedShowPreferences(long showId, string preferredQuality, string preferredAudioCodec, int minimumSeeders)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE TrackedShows
+            SET PreferredQuality = $PreferredQuality,
+                PreferredAudioCodec = $PreferredAudioCodec,
+                MinimumSeeders = $MinimumSeeders,
+                UpdatedUtc = $UpdatedUtc
+            WHERE Id = $Id;
+            """;
+        command.Parameters.AddWithValue("$PreferredQuality", string.IsNullOrWhiteSpace(preferredQuality) ? "1080p" : preferredQuality.Trim());
+        command.Parameters.AddWithValue("$PreferredAudioCodec", string.IsNullOrWhiteSpace(preferredAudioCodec) ? string.Empty : preferredAudioCodec.Trim());
+        command.Parameters.AddWithValue("$MinimumSeeders", Math.Max(0, minimumSeeders));
+        command.Parameters.AddWithValue("$UpdatedUtc", DateTime.UtcNow.ToString("O"));
+        command.Parameters.AddWithValue("$Id", showId);
+        command.ExecuteNonQuery();
+    }
+
+    public IReadOnlyList<TrackedMovie> GetTrackedMovies()
+    {
+        var movies = new List<TrackedMovie>();
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT Id, TmdbId, Title, ReleaseYear, Overview, PosterPath, PreferredQuality, PreferredAudioCodec,
+                   MinimumSeeders, Availability, IsWanted, TorrentHash, TorrentName, TorrentState,
+                   TorrentProgress, TorrentUpdatedUtc, SelectedCandidateName, SelectedCandidateUrl,
+                   SelectedCandidatePlugin, SelectedCandidateFileSize, SelectedCandidateSeeders,
+                   SelectedCandidateQuality, SelectedCandidateAudioCodec, CreatedUtc, UpdatedUtc
+            FROM TrackedMovies
+            ORDER BY Title;
+            """;
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            movies.Add(ReadTrackedMovie(reader));
+        }
+
+        return movies;
+    }
+
+    public TrackedMovie? GetTrackedMovie(long id)
+    {
+        return GetTrackedMovieCore("Id = $Value", id);
+    }
+
+    public TrackedMovie? GetTrackedMovieByTmdbId(int tmdbId)
+    {
+        return GetTrackedMovieCore("TmdbId = $Value", tmdbId);
+    }
+
+    public long UpsertTrackedMovie(TrackedMovie movie)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        var now = DateTime.UtcNow;
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO TrackedMovies (TmdbId, Title, ReleaseYear, Overview, PosterPath, PreferredQuality, PreferredAudioCodec, MinimumSeeders, Availability, IsWanted, TorrentHash, TorrentName, TorrentState, TorrentProgress, TorrentUpdatedUtc, SelectedCandidateName, SelectedCandidateUrl, SelectedCandidatePlugin, SelectedCandidateFileSize, SelectedCandidateSeeders, SelectedCandidateQuality, SelectedCandidateAudioCodec, CreatedUtc, UpdatedUtc)
+            VALUES ($TmdbId, $Title, $ReleaseYear, $Overview, $PosterPath, $PreferredQuality, $PreferredAudioCodec, $MinimumSeeders, $Availability, $IsWanted, $TorrentHash, $TorrentName, $TorrentState, $TorrentProgress, $TorrentUpdatedUtc, $SelectedCandidateName, $SelectedCandidateUrl, $SelectedCandidatePlugin, $SelectedCandidateFileSize, $SelectedCandidateSeeders, $SelectedCandidateQuality, $SelectedCandidateAudioCodec, $CreatedUtc, $UpdatedUtc)
+            ON CONFLICT(TmdbId) DO UPDATE SET
+                Title = excluded.Title,
+                ReleaseYear = excluded.ReleaseYear,
+                Overview = excluded.Overview,
+                PosterPath = excluded.PosterPath,
+                PreferredQuality = TrackedMovies.PreferredQuality,
+                PreferredAudioCodec = TrackedMovies.PreferredAudioCodec,
+                MinimumSeeders = TrackedMovies.MinimumSeeders,
+                Availability = TrackedMovies.Availability,
+                IsWanted = TrackedMovies.IsWanted,
+                TorrentHash = TrackedMovies.TorrentHash,
+                TorrentName = TrackedMovies.TorrentName,
+                TorrentState = TrackedMovies.TorrentState,
+                TorrentProgress = TrackedMovies.TorrentProgress,
+                TorrentUpdatedUtc = TrackedMovies.TorrentUpdatedUtc,
+                SelectedCandidateName = TrackedMovies.SelectedCandidateName,
+                SelectedCandidateUrl = TrackedMovies.SelectedCandidateUrl,
+                SelectedCandidatePlugin = TrackedMovies.SelectedCandidatePlugin,
+                SelectedCandidateFileSize = TrackedMovies.SelectedCandidateFileSize,
+                SelectedCandidateSeeders = TrackedMovies.SelectedCandidateSeeders,
+                SelectedCandidateQuality = TrackedMovies.SelectedCandidateQuality,
+                SelectedCandidateAudioCodec = TrackedMovies.SelectedCandidateAudioCodec,
+                UpdatedUtc = excluded.UpdatedUtc;
+            """;
+        AddTrackedMovieParameters(command, movie, now);
+        command.ExecuteNonQuery();
+
+        using var idCommand = connection.CreateCommand();
+        idCommand.CommandText = "SELECT Id FROM TrackedMovies WHERE TmdbId = $TmdbId;";
+        idCommand.Parameters.AddWithValue("$TmdbId", movie.TmdbId);
+        return (long)(idCommand.ExecuteScalar() ?? 0L);
+    }
+
+    public void UpdateTrackedMovieWanted(long movieId, bool isWanted)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE TrackedMovies SET IsWanted = $IsWanted, UpdatedUtc = $UpdatedUtc WHERE Id = $Id;";
+        command.Parameters.AddWithValue("$IsWanted", isWanted ? 1 : 0);
+        command.Parameters.AddWithValue("$UpdatedUtc", DateTime.UtcNow.ToString("O"));
+        command.Parameters.AddWithValue("$Id", movieId);
+        command.ExecuteNonQuery();
+    }
+
+    public void UpdateTrackedMovieAvailability(long movieId, EpisodeAvailability availability)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE TrackedMovies SET Availability = $Availability, UpdatedUtc = $UpdatedUtc WHERE Id = $Id;";
+        command.Parameters.AddWithValue("$Availability", (int)availability);
+        command.Parameters.AddWithValue("$UpdatedUtc", DateTime.UtcNow.ToString("O"));
+        command.Parameters.AddWithValue("$Id", movieId);
+        command.ExecuteNonQuery();
+    }
+
+    public void UpdateTrackedMovieTorrent(long movieId, string torrentHash, string torrentName, string torrentState, double torrentProgress)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE TrackedMovies
+            SET TorrentHash = $TorrentHash,
+                TorrentName = $TorrentName,
+                TorrentState = $TorrentState,
+                TorrentProgress = $TorrentProgress,
+                TorrentUpdatedUtc = $TorrentUpdatedUtc,
+                UpdatedUtc = $UpdatedUtc
+            WHERE Id = $Id;
+            """;
+        command.Parameters.AddWithValue("$TorrentHash", string.IsNullOrWhiteSpace(torrentHash) ? DBNull.Value : torrentHash.Trim());
+        command.Parameters.AddWithValue("$TorrentName", string.IsNullOrWhiteSpace(torrentName) ? DBNull.Value : torrentName.Trim());
+        command.Parameters.AddWithValue("$TorrentState", string.IsNullOrWhiteSpace(torrentState) ? DBNull.Value : torrentState.Trim());
+        command.Parameters.AddWithValue("$TorrentProgress", Math.Clamp(torrentProgress, 0, 1));
+        command.Parameters.AddWithValue("$TorrentUpdatedUtc", DateTime.UtcNow.ToString("O"));
+        command.Parameters.AddWithValue("$UpdatedUtc", DateTime.UtcNow.ToString("O"));
+        command.Parameters.AddWithValue("$Id", movieId);
+        command.ExecuteNonQuery();
+    }
+
+    public void UpdateTrackedMovieSelectedCandidate(long movieId, EpisodeFetchCandidate candidate)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE TrackedMovies
+            SET SelectedCandidateName = $Name,
+                SelectedCandidateUrl = $Url,
+                SelectedCandidatePlugin = $Plugin,
+                SelectedCandidateFileSize = $FileSize,
+                SelectedCandidateSeeders = $Seeders,
+                SelectedCandidateQuality = $Quality,
+                SelectedCandidateAudioCodec = $AudioCodec,
+                UpdatedUtc = $UpdatedUtc
+            WHERE Id = $Id;
+            """;
+        AddSelectedCandidateParameters(command, candidate);
+        command.Parameters.AddWithValue("$UpdatedUtc", DateTime.UtcNow.ToString("O"));
+        command.Parameters.AddWithValue("$Id", movieId);
+        command.ExecuteNonQuery();
+    }
+
+    public void UpdateTrackedMoviePreferences(long movieId, string preferredQuality, string preferredAudioCodec, int minimumSeeders)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE TrackedMovies
+            SET PreferredQuality = $PreferredQuality,
+                PreferredAudioCodec = $PreferredAudioCodec,
+                MinimumSeeders = $MinimumSeeders,
+                UpdatedUtc = $UpdatedUtc
+            WHERE Id = $Id;
+            """;
+        command.Parameters.AddWithValue("$PreferredQuality", string.IsNullOrWhiteSpace(preferredQuality) ? "1080p" : preferredQuality.Trim());
+        command.Parameters.AddWithValue("$PreferredAudioCodec", string.IsNullOrWhiteSpace(preferredAudioCodec) ? string.Empty : preferredAudioCodec.Trim());
+        command.Parameters.AddWithValue("$MinimumSeeders", Math.Max(0, minimumSeeders));
+        command.Parameters.AddWithValue("$UpdatedUtc", DateTime.UtcNow.ToString("O"));
+        command.Parameters.AddWithValue("$Id", movieId);
+        command.ExecuteNonQuery();
+    }
+
+    public long CreateFetchJob(FetchJob job)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO FetchJobs (ShowId, TargetKind, ShowTitle, Status, TotalEpisodes, ProcessedEpisodes, ErrorSummary, CreatedUtc, StartedUtc, FinishedUtc)
+            VALUES ($ShowId, $TargetKind, $ShowTitle, $Status, $TotalEpisodes, $ProcessedEpisodes, $ErrorSummary, $CreatedUtc, $StartedUtc, $FinishedUtc);
+            SELECT last_insert_rowid();
+            """;
+        AddFetchJobParameters(command, job);
+        return (long)(command.ExecuteScalar() ?? 0L);
+    }
+
+    public IReadOnlyList<FetchJob> GetFetchJobs()
+    {
+        var jobs = new List<FetchJob>();
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT Id, ShowId, TargetKind, ShowTitle, Status, TotalEpisodes, ProcessedEpisodes, ErrorSummary, CreatedUtc, StartedUtc, FinishedUtc
+            FROM FetchJobs
+            ORDER BY CreatedUtc DESC;
+            """;
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            jobs.Add(ReadFetchJob(reader));
+        }
+
+        return jobs;
+    }
+
+    public FetchJob? GetFetchJob(long id)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT Id, ShowId, TargetKind, ShowTitle, Status, TotalEpisodes, ProcessedEpisodes, ErrorSummary, CreatedUtc, StartedUtc, FinishedUtc
+            FROM FetchJobs
+            WHERE Id = $Id
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$Id", id);
+        using var reader = command.ExecuteReader();
+        return reader.Read() ? ReadFetchJob(reader) : null;
+    }
+
+    public void UpdateFetchJob(FetchJob job)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE FetchJobs
+            SET ShowId = $ShowId,
+                TargetKind = $TargetKind,
+                ShowTitle = $ShowTitle,
+                Status = $Status,
+                TotalEpisodes = $TotalEpisodes,
+                ProcessedEpisodes = $ProcessedEpisodes,
+                ErrorSummary = $ErrorSummary,
+                CreatedUtc = $CreatedUtc,
+                StartedUtc = $StartedUtc,
+                FinishedUtc = $FinishedUtc
+            WHERE Id = $Id;
+            """;
+        AddFetchJobParameters(command, job);
+        command.Parameters.AddWithValue("$Id", job.Id);
+        command.ExecuteNonQuery();
+    }
+
+    public void DeleteFetchJob(long id)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM FetchJobs WHERE Id = $Id;";
+        command.Parameters.AddWithValue("$Id", id);
+        command.ExecuteNonQuery();
+    }
+
     private static void InitializeSeriesMappings(SqliteConnection connection)
     {
         using var command = connection.CreateCommand();
@@ -438,8 +1034,348 @@ public sealed class DatabaseService : IDatabaseService
                 UpdatedUtc TEXT NOT NULL,
                 UNIQUE(NormalizedParsedTitle, ParserPattern)
             );
+        """;
+        command.ExecuteNonQuery();
+    }
+
+    private static void InitializeTrackedShows(SqliteConnection connection)
+    {
+        using var shows = connection.CreateCommand();
+        shows.CommandText = """
+            CREATE TABLE IF NOT EXISTS TrackedShows (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                TmdbId INTEGER NOT NULL UNIQUE,
+                Title TEXT NOT NULL,
+                FirstAirYear INTEGER NULL,
+                Overview TEXT NULL,
+                PosterPath TEXT NULL,
+                PreferredQuality TEXT NOT NULL DEFAULT '1080p',
+                PreferredAudioCodec TEXT NOT NULL DEFAULT '',
+                MinimumSeeders INTEGER NOT NULL DEFAULT 0,
+                CreatedUtc TEXT NOT NULL,
+                UpdatedUtc TEXT NOT NULL
+            );
+            """;
+        shows.ExecuteNonQuery();
+        EnsureColumn(connection, "TrackedShows", "PreferredAudioCodec", "TEXT NOT NULL DEFAULT ''");
+        EnsureColumn(connection, "TrackedShows", "MinimumSeeders", "INTEGER NOT NULL DEFAULT 0");
+
+        using var seasons = connection.CreateCommand();
+        seasons.CommandText = """
+            CREATE TABLE IF NOT EXISTS TrackedSeasons (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ShowId INTEGER NOT NULL,
+                SeasonNumber INTEGER NOT NULL,
+                EpisodeCount INTEGER NOT NULL DEFAULT 0,
+                DownloadFolder TEXT NULL,
+                UNIQUE(ShowId, SeasonNumber),
+                FOREIGN KEY(ShowId) REFERENCES TrackedShows(Id) ON DELETE CASCADE
+            );
+            """;
+        seasons.ExecuteNonQuery();
+        EnsureColumn(connection, "TrackedSeasons", "DownloadFolder", "TEXT NULL");
+
+        using var episodes = connection.CreateCommand();
+        episodes.CommandText = """
+            CREATE TABLE IF NOT EXISTS TrackedEpisodes (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ShowId INTEGER NOT NULL,
+                SeasonNumber INTEGER NOT NULL,
+                EpisodeNumber INTEGER NOT NULL,
+                Title TEXT NOT NULL,
+                AirDate TEXT NULL,
+                Availability INTEGER NOT NULL DEFAULT 0,
+                IsWanted INTEGER NOT NULL DEFAULT 0,
+                TorrentHash TEXT NULL,
+                TorrentName TEXT NULL,
+                TorrentState TEXT NULL,
+                TorrentProgress REAL NOT NULL DEFAULT 0,
+                TorrentUpdatedUtc TEXT NULL,
+                SelectedCandidateName TEXT NULL,
+                SelectedCandidateUrl TEXT NULL,
+                SelectedCandidatePlugin TEXT NULL,
+                SelectedCandidateFileSize INTEGER NOT NULL DEFAULT 0,
+                SelectedCandidateSeeders INTEGER NOT NULL DEFAULT 0,
+                SelectedCandidateQuality TEXT NULL,
+                SelectedCandidateAudioCodec TEXT NULL,
+                CreatedUtc TEXT NOT NULL,
+                UpdatedUtc TEXT NOT NULL,
+                UNIQUE(ShowId, SeasonNumber, EpisodeNumber),
+                FOREIGN KEY(ShowId) REFERENCES TrackedShows(Id) ON DELETE CASCADE
+            );
+            """;
+        episodes.ExecuteNonQuery();
+        EnsureColumn(connection, "TrackedEpisodes", "TorrentHash", "TEXT NULL");
+        EnsureColumn(connection, "TrackedEpisodes", "TorrentName", "TEXT NULL");
+        EnsureColumn(connection, "TrackedEpisodes", "TorrentState", "TEXT NULL");
+        EnsureColumn(connection, "TrackedEpisodes", "TorrentProgress", "REAL NOT NULL DEFAULT 0");
+        EnsureColumn(connection, "TrackedEpisodes", "TorrentUpdatedUtc", "TEXT NULL");
+        EnsureColumn(connection, "TrackedEpisodes", "SelectedCandidateName", "TEXT NULL");
+        EnsureColumn(connection, "TrackedEpisodes", "SelectedCandidateUrl", "TEXT NULL");
+        EnsureColumn(connection, "TrackedEpisodes", "SelectedCandidatePlugin", "TEXT NULL");
+        EnsureColumn(connection, "TrackedEpisodes", "SelectedCandidateFileSize", "INTEGER NOT NULL DEFAULT 0");
+        EnsureColumn(connection, "TrackedEpisodes", "SelectedCandidateSeeders", "INTEGER NOT NULL DEFAULT 0");
+        EnsureColumn(connection, "TrackedEpisodes", "SelectedCandidateQuality", "TEXT NULL");
+        EnsureColumn(connection, "TrackedEpisodes", "SelectedCandidateAudioCodec", "TEXT NULL");
+    }
+
+    private static void InitializeTrackedMovies(SqliteConnection connection)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            CREATE TABLE IF NOT EXISTS TrackedMovies (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                TmdbId INTEGER NOT NULL UNIQUE,
+                Title TEXT NOT NULL,
+                ReleaseYear INTEGER NULL,
+                Overview TEXT NULL,
+                PosterPath TEXT NULL,
+                PreferredQuality TEXT NOT NULL DEFAULT '1080p',
+                PreferredAudioCodec TEXT NOT NULL DEFAULT '',
+                MinimumSeeders INTEGER NOT NULL DEFAULT 0,
+                Availability INTEGER NOT NULL DEFAULT 0,
+                IsWanted INTEGER NOT NULL DEFAULT 1,
+                TorrentHash TEXT NULL,
+                TorrentName TEXT NULL,
+                TorrentState TEXT NULL,
+                TorrentProgress REAL NOT NULL DEFAULT 0,
+                TorrentUpdatedUtc TEXT NULL,
+                SelectedCandidateName TEXT NULL,
+                SelectedCandidateUrl TEXT NULL,
+                SelectedCandidatePlugin TEXT NULL,
+                SelectedCandidateFileSize INTEGER NOT NULL DEFAULT 0,
+                SelectedCandidateSeeders INTEGER NOT NULL DEFAULT 0,
+                SelectedCandidateQuality TEXT NULL,
+                SelectedCandidateAudioCodec TEXT NULL,
+                CreatedUtc TEXT NOT NULL,
+                UpdatedUtc TEXT NOT NULL
+            );
             """;
         command.ExecuteNonQuery();
+        EnsureColumn(connection, "TrackedMovies", "SelectedCandidateName", "TEXT NULL");
+        EnsureColumn(connection, "TrackedMovies", "SelectedCandidateUrl", "TEXT NULL");
+        EnsureColumn(connection, "TrackedMovies", "SelectedCandidatePlugin", "TEXT NULL");
+        EnsureColumn(connection, "TrackedMovies", "SelectedCandidateFileSize", "INTEGER NOT NULL DEFAULT 0");
+        EnsureColumn(connection, "TrackedMovies", "SelectedCandidateSeeders", "INTEGER NOT NULL DEFAULT 0");
+        EnsureColumn(connection, "TrackedMovies", "SelectedCandidateQuality", "TEXT NULL");
+        EnsureColumn(connection, "TrackedMovies", "SelectedCandidateAudioCodec", "TEXT NULL");
+    }
+
+    private static void InitializeFetchJobs(SqliteConnection connection)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            CREATE TABLE IF NOT EXISTS FetchJobs (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ShowId INTEGER NOT NULL,
+                TargetKind INTEGER NOT NULL DEFAULT 1,
+                ShowTitle TEXT NOT NULL,
+                Status INTEGER NOT NULL DEFAULT 0,
+                TotalEpisodes INTEGER NOT NULL DEFAULT 0,
+                ProcessedEpisodes INTEGER NOT NULL DEFAULT 0,
+                ErrorSummary TEXT NULL,
+                CreatedUtc TEXT NOT NULL,
+                StartedUtc TEXT NULL,
+                FinishedUtc TEXT NULL
+            );
+            """;
+        command.ExecuteNonQuery();
+        EnsureColumn(connection, "FetchJobs", "TargetKind", "INTEGER NOT NULL DEFAULT 1");
+    }
+
+    private TrackedShow? GetTrackedShowCore(string whereClause, object value)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT s.Id, s.TmdbId, s.Title, s.FirstAirYear, s.Overview, s.PosterPath, s.PreferredQuality, s.PreferredAudioCodec, s.MinimumSeeders, s.CreatedUtc, s.UpdatedUtc,
+                   COUNT(e.Id), SUM(CASE WHEN e.Availability = 1 THEN 1 ELSE 0 END), SUM(CASE WHEN e.IsWanted = 1 THEN 1 ELSE 0 END)
+            FROM TrackedShows s
+            LEFT JOIN TrackedEpisodes e ON e.ShowId = s.Id
+            WHERE {whereClause}
+            GROUP BY s.Id
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$Value", value);
+
+        using var reader = command.ExecuteReader();
+        return reader.Read() ? ReadTrackedShow(reader) : null;
+    }
+
+    private static TrackedShow ReadTrackedShow(SqliteDataReader reader)
+    {
+        return new TrackedShow
+        {
+            Id = reader.GetInt64(0),
+            TmdbId = reader.GetInt32(1),
+            Title = reader.GetString(2),
+            FirstAirYear = reader.IsDBNull(3) ? null : reader.GetInt32(3),
+            Overview = reader.IsDBNull(4) ? null : reader.GetString(4),
+            PosterPath = reader.IsDBNull(5) ? null : reader.GetString(5),
+            PreferredQuality = reader.GetString(6),
+            PreferredAudioCodec = reader.IsDBNull(7) ? string.Empty : reader.GetString(7),
+            MinimumSeeders = reader.IsDBNull(8) ? 0 : reader.GetInt32(8),
+            CreatedUtc = DateTime.Parse(reader.GetString(9), null, System.Globalization.DateTimeStyles.RoundtripKind),
+            UpdatedUtc = DateTime.Parse(reader.GetString(10), null, System.Globalization.DateTimeStyles.RoundtripKind),
+            TotalEpisodes = reader.IsDBNull(11) ? 0 : Convert.ToInt32(reader.GetValue(11)),
+            AvailableEpisodes = reader.IsDBNull(12) ? 0 : Convert.ToInt32(reader.GetValue(12)),
+            WantedEpisodes = reader.IsDBNull(13) ? 0 : Convert.ToInt32(reader.GetValue(13))
+        };
+    }
+
+    private static TrackedEpisode ReadTrackedEpisode(SqliteDataReader reader)
+    {
+        var airDateText = reader.IsDBNull(5) ? null : reader.GetString(5);
+        return new TrackedEpisode
+        {
+            Id = reader.GetInt64(0),
+            ShowId = reader.GetInt64(1),
+            SeasonNumber = reader.GetInt32(2),
+            EpisodeNumber = reader.GetInt32(3),
+            Title = reader.GetString(4),
+            AirDate = DateTime.TryParse(airDateText, out var airDate) ? airDate : null,
+            Availability = (EpisodeAvailability)reader.GetInt32(6),
+            IsWanted = reader.GetInt32(7) == 1,
+            TorrentHash = reader.IsDBNull(8) ? null : reader.GetString(8),
+            TorrentName = reader.IsDBNull(9) ? null : reader.GetString(9),
+            TorrentState = reader.IsDBNull(10) ? null : reader.GetString(10),
+            TorrentProgress = reader.IsDBNull(11) ? 0 : reader.GetDouble(11),
+            TorrentUpdatedUtc = reader.IsDBNull(12) ? null : DateTime.Parse(reader.GetString(12), null, System.Globalization.DateTimeStyles.RoundtripKind),
+            SelectedCandidateName = reader.IsDBNull(13) ? null : reader.GetString(13),
+            SelectedCandidateUrl = reader.IsDBNull(14) ? null : reader.GetString(14),
+            SelectedCandidatePlugin = reader.IsDBNull(15) ? null : reader.GetString(15),
+            SelectedCandidateFileSize = reader.IsDBNull(16) ? 0 : reader.GetInt64(16),
+            SelectedCandidateSeeders = reader.IsDBNull(17) ? 0 : reader.GetInt32(17),
+            SelectedCandidateQuality = reader.IsDBNull(18) ? null : reader.GetString(18),
+            SelectedCandidateAudioCodec = reader.IsDBNull(19) ? null : reader.GetString(19),
+            CreatedUtc = DateTime.Parse(reader.GetString(20), null, System.Globalization.DateTimeStyles.RoundtripKind),
+            UpdatedUtc = DateTime.Parse(reader.GetString(21), null, System.Globalization.DateTimeStyles.RoundtripKind)
+        };
+    }
+
+    private TrackedMovie? GetTrackedMovieCore(string whereClause, object value)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT Id, TmdbId, Title, ReleaseYear, Overview, PosterPath, PreferredQuality, PreferredAudioCodec,
+                   MinimumSeeders, Availability, IsWanted, TorrentHash, TorrentName, TorrentState,
+                   TorrentProgress, TorrentUpdatedUtc, SelectedCandidateName, SelectedCandidateUrl,
+                   SelectedCandidatePlugin, SelectedCandidateFileSize, SelectedCandidateSeeders,
+                   SelectedCandidateQuality, SelectedCandidateAudioCodec, CreatedUtc, UpdatedUtc
+            FROM TrackedMovies
+            WHERE {whereClause}
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$Value", value);
+        using var reader = command.ExecuteReader();
+        return reader.Read() ? ReadTrackedMovie(reader) : null;
+    }
+
+    private static TrackedMovie ReadTrackedMovie(SqliteDataReader reader)
+    {
+        return new TrackedMovie
+        {
+            Id = reader.GetInt64(0),
+            TmdbId = reader.GetInt32(1),
+            Title = reader.GetString(2),
+            ReleaseYear = reader.IsDBNull(3) ? null : reader.GetInt32(3),
+            Overview = reader.IsDBNull(4) ? null : reader.GetString(4),
+            PosterPath = reader.IsDBNull(5) ? null : reader.GetString(5),
+            PreferredQuality = reader.GetString(6),
+            PreferredAudioCodec = reader.IsDBNull(7) ? string.Empty : reader.GetString(7),
+            MinimumSeeders = reader.IsDBNull(8) ? 0 : reader.GetInt32(8),
+            Availability = (EpisodeAvailability)reader.GetInt32(9),
+            IsWanted = reader.GetInt32(10) == 1,
+            TorrentHash = reader.IsDBNull(11) ? null : reader.GetString(11),
+            TorrentName = reader.IsDBNull(12) ? null : reader.GetString(12),
+            TorrentState = reader.IsDBNull(13) ? null : reader.GetString(13),
+            TorrentProgress = reader.IsDBNull(14) ? 0 : reader.GetDouble(14),
+            TorrentUpdatedUtc = reader.IsDBNull(15) ? null : DateTime.Parse(reader.GetString(15), null, System.Globalization.DateTimeStyles.RoundtripKind),
+            SelectedCandidateName = reader.IsDBNull(16) ? null : reader.GetString(16),
+            SelectedCandidateUrl = reader.IsDBNull(17) ? null : reader.GetString(17),
+            SelectedCandidatePlugin = reader.IsDBNull(18) ? null : reader.GetString(18),
+            SelectedCandidateFileSize = reader.IsDBNull(19) ? 0 : reader.GetInt64(19),
+            SelectedCandidateSeeders = reader.IsDBNull(20) ? 0 : reader.GetInt32(20),
+            SelectedCandidateQuality = reader.IsDBNull(21) ? null : reader.GetString(21),
+            SelectedCandidateAudioCodec = reader.IsDBNull(22) ? null : reader.GetString(22),
+            CreatedUtc = DateTime.Parse(reader.GetString(23), null, System.Globalization.DateTimeStyles.RoundtripKind),
+            UpdatedUtc = DateTime.Parse(reader.GetString(24), null, System.Globalization.DateTimeStyles.RoundtripKind)
+        };
+    }
+
+    private static void AddTrackedMovieParameters(SqliteCommand command, TrackedMovie movie, DateTime now)
+    {
+        command.Parameters.AddWithValue("$TmdbId", movie.TmdbId);
+        command.Parameters.AddWithValue("$Title", movie.Title);
+        command.Parameters.AddWithValue("$ReleaseYear", (object?)movie.ReleaseYear ?? DBNull.Value);
+        command.Parameters.AddWithValue("$Overview", (object?)movie.Overview ?? DBNull.Value);
+        command.Parameters.AddWithValue("$PosterPath", (object?)movie.PosterPath ?? DBNull.Value);
+        command.Parameters.AddWithValue("$PreferredQuality", string.IsNullOrWhiteSpace(movie.PreferredQuality) ? "1080p" : movie.PreferredQuality);
+        command.Parameters.AddWithValue("$PreferredAudioCodec", string.IsNullOrWhiteSpace(movie.PreferredAudioCodec) ? string.Empty : movie.PreferredAudioCodec.Trim());
+        command.Parameters.AddWithValue("$MinimumSeeders", Math.Max(0, movie.MinimumSeeders));
+        command.Parameters.AddWithValue("$Availability", (int)movie.Availability);
+        command.Parameters.AddWithValue("$IsWanted", movie.IsWanted ? 1 : 0);
+        command.Parameters.AddWithValue("$TorrentHash", (object?)movie.TorrentHash ?? DBNull.Value);
+        command.Parameters.AddWithValue("$TorrentName", (object?)movie.TorrentName ?? DBNull.Value);
+        command.Parameters.AddWithValue("$TorrentState", (object?)movie.TorrentState ?? DBNull.Value);
+        command.Parameters.AddWithValue("$TorrentProgress", Math.Clamp(movie.TorrentProgress, 0, 1));
+        command.Parameters.AddWithValue("$TorrentUpdatedUtc", (object?)movie.TorrentUpdatedUtc?.ToString("O") ?? DBNull.Value);
+        command.Parameters.AddWithValue("$SelectedCandidateName", (object?)movie.SelectedCandidateName ?? DBNull.Value);
+        command.Parameters.AddWithValue("$SelectedCandidateUrl", (object?)movie.SelectedCandidateUrl ?? DBNull.Value);
+        command.Parameters.AddWithValue("$SelectedCandidatePlugin", (object?)movie.SelectedCandidatePlugin ?? DBNull.Value);
+        command.Parameters.AddWithValue("$SelectedCandidateFileSize", movie.SelectedCandidateFileSize);
+        command.Parameters.AddWithValue("$SelectedCandidateSeeders", movie.SelectedCandidateSeeders);
+        command.Parameters.AddWithValue("$SelectedCandidateQuality", (object?)movie.SelectedCandidateQuality ?? DBNull.Value);
+        command.Parameters.AddWithValue("$SelectedCandidateAudioCodec", (object?)movie.SelectedCandidateAudioCodec ?? DBNull.Value);
+        command.Parameters.AddWithValue("$CreatedUtc", (movie.CreatedUtc == default ? now : movie.CreatedUtc).ToString("O"));
+        command.Parameters.AddWithValue("$UpdatedUtc", now.ToString("O"));
+    }
+
+    private static void AddSelectedCandidateParameters(SqliteCommand command, EpisodeFetchCandidate candidate)
+    {
+        command.Parameters.AddWithValue("$Name", candidate.FileName);
+        command.Parameters.AddWithValue("$Url", candidate.FileUrl);
+        command.Parameters.AddWithValue("$Plugin", candidate.PluginName);
+        command.Parameters.AddWithValue("$FileSize", candidate.FileSize);
+        command.Parameters.AddWithValue("$Seeders", candidate.Seeders);
+        command.Parameters.AddWithValue("$Quality", string.IsNullOrWhiteSpace(candidate.QualityLabel) ? DBNull.Value : candidate.QualityLabel);
+        command.Parameters.AddWithValue("$AudioCodec", string.IsNullOrWhiteSpace(candidate.AudioCodecLabel) ? DBNull.Value : candidate.AudioCodecLabel);
+    }
+
+    private static void AddFetchJobParameters(SqliteCommand command, FetchJob job)
+    {
+        command.Parameters.AddWithValue("$ShowId", job.ShowId);
+        command.Parameters.AddWithValue("$TargetKind", (int)job.TargetKind);
+        command.Parameters.AddWithValue("$ShowTitle", job.ShowTitle);
+        command.Parameters.AddWithValue("$Status", (int)job.Status);
+        command.Parameters.AddWithValue("$TotalEpisodes", job.TotalEpisodes);
+        command.Parameters.AddWithValue("$ProcessedEpisodes", job.ProcessedEpisodes);
+        command.Parameters.AddWithValue("$ErrorSummary", (object?)job.ErrorSummary ?? DBNull.Value);
+        command.Parameters.AddWithValue("$CreatedUtc", (job.CreatedUtc == default ? DateTime.UtcNow : job.CreatedUtc).ToString("O"));
+        command.Parameters.AddWithValue("$StartedUtc", (object?)job.StartedUtc?.ToString("O") ?? DBNull.Value);
+        command.Parameters.AddWithValue("$FinishedUtc", (object?)job.FinishedUtc?.ToString("O") ?? DBNull.Value);
+    }
+
+    private static FetchJob ReadFetchJob(SqliteDataReader reader)
+    {
+        return new FetchJob
+        {
+            Id = reader.GetInt64(0),
+            ShowId = reader.GetInt64(1),
+            TargetKind = (MediaKind)reader.GetInt32(2),
+            ShowTitle = reader.GetString(3),
+            Status = (FetchJobStatus)reader.GetInt32(4),
+            TotalEpisodes = reader.GetInt32(5),
+            ProcessedEpisodes = reader.GetInt32(6),
+            ErrorSummary = reader.IsDBNull(7) ? null : reader.GetString(7),
+            CreatedUtc = DateTime.Parse(reader.GetString(8), null, System.Globalization.DateTimeStyles.RoundtripKind),
+            StartedUtc = reader.IsDBNull(9) ? null : DateTime.Parse(reader.GetString(9), null, System.Globalization.DateTimeStyles.RoundtripKind),
+            FinishedUtc = reader.IsDBNull(10) ? null : DateTime.Parse(reader.GetString(10), null, System.Globalization.DateTimeStyles.RoundtripKind)
+        };
     }
 
     private static string NormalizePath(string path)

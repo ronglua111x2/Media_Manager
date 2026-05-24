@@ -20,6 +20,9 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
     private readonly IAppLogger _logger;
     private readonly CookieContainer _cookies = new();
     private readonly HttpClient _httpClient;
+    private readonly SemaphoreSlim _loginGate = new(1, 1);
+    private bool _isLoggedIn;
+    private string? _loginSessionKey;
 
     public QbittorrentClient(ISettingsService settingsService, IAppLogger logger)
     {
@@ -54,33 +57,49 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
         }
 
         await LoginAsync(cancellationToken);
-        var searchId = await StartSearchAsync(request, cancellationToken);
+        int? searchId = null;
         var deadline = DateTimeOffset.UtcNow.AddSeconds(SearchTimeoutSeconds);
         IReadOnlyList<TorrentSearchResult> latestResults = [];
         var latestStatus = "Running";
 
-        while (DateTimeOffset.UtcNow < deadline)
+        try
         {
-            var response = await GetSearchResultsAsync(searchId, request.Limit, cancellationToken);
-            latestResults = response.Results;
-            latestStatus = response.Status;
-
-            if (!string.Equals(latestStatus, "Running", StringComparison.OrdinalIgnoreCase))
+            searchId = await StartSearchAsync(request, cancellationToken);
+            while (DateTimeOffset.UtcNow < deadline)
             {
-                break;
+                var response = await GetSearchResultsAsync(searchId.Value, request.Limit, cancellationToken);
+                latestResults = response.Results;
+                latestStatus = response.Status;
+
+                if (!string.Equals(latestStatus, "Running", StringComparison.OrdinalIgnoreCase))
+                {
+                    break;
+                }
+
+                await Task.Delay(SearchPollDelayMilliseconds, cancellationToken);
             }
 
-            await Task.Delay(SearchPollDelayMilliseconds, cancellationToken);
+            _logger.Info(
+                $"qBittorrent search completed. Query='{request.Query}', Status='{latestStatus}', Results={latestResults.Count}.",
+                LogTarget.All);
+
+            return latestResults
+                .OrderByDescending(result => result.Seeders)
+                .ThenBy(result => result.FileSize)
+                .ToList();
         }
+        finally
+        {
+            if (searchId is not null)
+            {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    await StopSearchAsync(searchId.Value, CancellationToken.None);
+                }
 
-        _logger.Info(
-            $"qBittorrent search completed. Query='{request.Query}', Status='{latestStatus}', Results={latestResults.Count}.",
-            LogTarget.All);
-
-        return latestResults
-            .OrderByDescending(result => result.Seeders)
-            .ThenBy(result => result.FileSize)
-            .ToList();
+                await DeleteSearchAsync(searchId.Value, CancellationToken.None);
+            }
+        }
     }
 
     public async Task<AddedTorrentResult> AddTorrentAsync(AddTorrentRequest request, CancellationToken cancellationToken = default)
@@ -149,26 +168,100 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
 
     public void Dispose()
     {
+        _loginGate.Dispose();
         _httpClient.Dispose();
     }
 
-    private async Task LoginAsync(CancellationToken cancellationToken)
+    private async Task LoginAsync(CancellationToken cancellationToken, bool force = false)
     {
-        _cookies.GetCookies(GetBaseUri()).Clear();
-
         var settings = _settingsService.Current.AutoTorrent;
-        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        var sessionKey = $"{settings.QbittorrentWebUiUrl}|{settings.Username}|{settings.Password}";
+        await _loginGate.WaitAsync(cancellationToken);
+        try
         {
-            ["username"] = settings.Username ?? string.Empty,
-            ["password"] = settings.Password ?? string.Empty
-        });
+            if (!force && _isLoggedIn && string.Equals(_loginSessionKey, sessionKey, StringComparison.Ordinal))
+            {
+                return;
+            }
 
-        using var response = await _httpClient.PostAsync(CreateUri("api/v2/auth/login"), content, cancellationToken);
-        var body = (await response.Content.ReadAsStringAsync(cancellationToken)).Trim();
-        if (!response.IsSuccessStatusCode || !body.Equals("Ok.", StringComparison.OrdinalIgnoreCase))
-        {
-            throw new InvalidOperationException("qBittorrent login failed. Check Web UI URL, username, password, and Web UI settings.");
+            _cookies.GetCookies(GetBaseUri()).Clear();
+            using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["username"] = settings.Username ?? string.Empty,
+                ["password"] = settings.Password ?? string.Empty
+            });
+
+            using var response = await _httpClient.PostAsync(CreateUri("api/v2/auth/login"), content, cancellationToken);
+            var body = (await response.Content.ReadAsStringAsync(cancellationToken)).Trim();
+            if (!response.IsSuccessStatusCode || !body.Equals("Ok.", StringComparison.OrdinalIgnoreCase))
+            {
+                MarkLoggedOut();
+                throw new InvalidOperationException("qBittorrent login failed. Check Web UI URL, username, password, and Web UI settings.");
+            }
+
+            _isLoggedIn = true;
+            _loginSessionKey = sessionKey;
         }
+        finally
+        {
+            _loginGate.Release();
+        }
+    }
+
+    private void MarkLoggedOut()
+    {
+        _isLoggedIn = false;
+        _loginSessionKey = null;
+    }
+
+    private static bool IsAuthenticationFailure(HttpStatusCode statusCode)
+    {
+        return statusCode is HttpStatusCode.Forbidden or HttpStatusCode.Unauthorized;
+    }
+
+    private static bool IsSearchCapacityFailure(HttpStatusCode statusCode)
+    {
+        return statusCode == HttpStatusCode.Conflict;
+    }
+
+    private async Task<HttpResponseMessage> PostFormWithAuthRetryAsync(
+        string relativePath,
+        Dictionary<string, string> form,
+        CancellationToken cancellationToken)
+    {
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            using var content = new FormUrlEncodedContent(form);
+            var response = await _httpClient.PostAsync(CreateUri(relativePath), content, cancellationToken);
+            if (!IsAuthenticationFailure(response.StatusCode))
+            {
+                return response;
+            }
+
+            response.Dispose();
+            MarkLoggedOut();
+            await LoginAsync(cancellationToken, force: true);
+        }
+
+        throw new InvalidOperationException("qBittorrent authentication failed after retry.");
+    }
+
+    private async Task<HttpResponseMessage> GetWithAuthRetryAsync(string relativePath, CancellationToken cancellationToken)
+    {
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            var response = await _httpClient.GetAsync(CreateUri(relativePath), cancellationToken);
+            if (!IsAuthenticationFailure(response.StatusCode))
+            {
+                return response;
+            }
+
+            response.Dispose();
+            MarkLoggedOut();
+            await LoginAsync(cancellationToken, force: true);
+        }
+
+        throw new InvalidOperationException("qBittorrent authentication failed after retry.");
     }
 
     private async Task<string?> TryPrepareCategoryAsync(string categoryName, string? savePath, CancellationToken cancellationToken)
@@ -257,8 +350,9 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
         return null;
     }
 
-    private async Task<IReadOnlyList<AddedTorrentResult>> GetTorrentsAsync(CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<AddedTorrentResult>> GetTorrentsAsync(CancellationToken cancellationToken = default)
     {
+        await LoginAsync(cancellationToken);
         using var response = await _httpClient.GetAsync(CreateUri("api/v2/torrents/info"), cancellationToken);
         response.EnsureSuccessStatusCode();
 
@@ -284,6 +378,7 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
                 Hash = hash,
                 Name = GetString(torrentElement, "name") ?? string.Empty,
                 State = GetString(torrentElement, "state") ?? string.Empty,
+                Progress = GetDouble(torrentElement, "progress"),
                 SavePath = GetString(torrentElement, "save_path") ?? string.Empty,
                 Category = GetString(torrentElement, "category") ?? string.Empty
             });
@@ -300,14 +395,17 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
 
     private async Task<int> StartSearchAsync(TorrentSearchRequest request, CancellationToken cancellationToken)
     {
-        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        using var response = await PostFormWithAuthRetryAsync("api/v2/search/start", new Dictionary<string, string>
         {
             ["pattern"] = request.Query,
             ["plugins"] = request.Plugins,
             ["category"] = request.Category
-        });
+        }, cancellationToken);
+        if (IsSearchCapacityFailure(response.StatusCode))
+        {
+            throw new QbittorrentSearchCapacityException();
+        }
 
-        using var response = await _httpClient.PostAsync(CreateUri("api/v2/search/start"), content, cancellationToken);
         response.EnsureSuccessStatusCode();
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
         using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
@@ -323,7 +421,7 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
     private async Task<SearchResultsResponse> GetSearchResultsAsync(int searchId, int limit, CancellationToken cancellationToken)
     {
         var path = $"api/v2/search/results?id={searchId}&limit={Math.Max(limit, 1)}&offset=0";
-        using var response = await _httpClient.GetAsync(CreateUri(path), cancellationToken);
+        using var response = await GetWithAuthRetryAsync(path, cancellationToken);
         response.EnsureSuccessStatusCode();
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
@@ -356,6 +454,44 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
         }
 
         return new SearchResultsResponse(status, results);
+    }
+
+    private async Task StopSearchAsync(int searchId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var response = await PostFormWithAuthRetryAsync("api/v2/search/stop", new Dictionary<string, string>
+            {
+                ["id"] = searchId.ToString()
+            }, cancellationToken);
+            if (!response.IsSuccessStatusCode && response.StatusCode != HttpStatusCode.NotFound)
+            {
+                _logger.Warning($"Failed to stop qBittorrent search {searchId}: {(int)response.StatusCode} {response.ReasonPhrase}", LogTarget.All);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning($"Failed to stop qBittorrent search {searchId}: {ex.Message}", LogTarget.All);
+        }
+    }
+
+    private async Task DeleteSearchAsync(int searchId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var response = await PostFormWithAuthRetryAsync("api/v2/search/delete", new Dictionary<string, string>
+            {
+                ["id"] = searchId.ToString()
+            }, cancellationToken);
+            if (!response.IsSuccessStatusCode && response.StatusCode != HttpStatusCode.NotFound)
+            {
+                _logger.Warning($"Failed to delete qBittorrent search {searchId}: {(int)response.StatusCode} {response.ReasonPhrase}", LogTarget.All);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning($"Failed to delete qBittorrent search {searchId}: {ex.Message}", LogTarget.All);
+        }
     }
 
     private async Task<IReadOnlyList<TorrentAddSource>> ResolveAddSourcesAsync(string url, CancellationToken cancellationToken)
@@ -541,6 +677,13 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
     private static long GetLong(JsonElement element, string propertyName)
     {
         return element.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.Number && property.TryGetInt64(out var value)
+            ? value
+            : 0;
+    }
+
+    private static double GetDouble(JsonElement element, string propertyName)
+    {
+        return element.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.Number && property.TryGetDouble(out var value)
             ? value
             : 0;
     }

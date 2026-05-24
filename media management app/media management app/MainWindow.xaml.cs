@@ -1,7 +1,7 @@
 using System.Collections.Specialized;
+using System.ComponentModel;
 using System.Windows;
-using System.Windows.Controls;
-using media_management_app.Models;
+using media_management_app.Services;
 using media_management_app.ViewModels;
 
 namespace media_management_app;
@@ -9,11 +9,13 @@ namespace media_management_app;
 public partial class MainWindow : Window
 {
     private readonly MainViewModel _viewModel;
+    private readonly IFetchJobService _fetchJobService;
 
-    public MainWindow(MainViewModel viewModel)
+    public MainWindow(MainViewModel viewModel, IFetchJobService fetchJobService)
     {
         InitializeComponent();
         _viewModel = viewModel;
+        _fetchJobService = fetchJobService;
         DataContext = viewModel;
         _viewModel.UiLogs.CollectionChanged += UiLogs_CollectionChanged;
     }
@@ -32,13 +34,24 @@ public partial class MainWindow : Window
         });
     }
 
-    private void InboxGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private void Window_Closing(object? sender, CancelEventArgs e)
     {
-        if (sender is not DataGrid { DataContext: InboxViewModel inboxViewModel } dataGrid)
+        if (!_fetchJobService.HasActiveJobs())
         {
             return;
         }
 
-        inboxViewModel.UpdateSelectedItems(dataGrid.SelectedItems.OfType<SourceItem>());
+        var result = System.Windows.MessageBox.Show(
+            "Auto Torrent has running or queued fetch jobs. Closing the app will cancel them. Do you want to exit?",
+            "Cancel fetch jobs?",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+        if (result != MessageBoxResult.Yes)
+        {
+            e.Cancel = true;
+            return;
+        }
+
+        _fetchJobService.CancelActiveJobs();
     }
 }

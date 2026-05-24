@@ -24,4 +24,74 @@ public interface IDatabaseService
     SeriesMapping? GetSeriesMapping(string parsedTitle, ParserPattern parserPattern);
 
     void UpsertSeriesMapping(SeriesMapping mapping);
+
+    IReadOnlyList<TrackedShow> GetTrackedShows();
+
+    TrackedShow? GetTrackedShow(long id);
+
+    TrackedShow? GetTrackedShowByTmdbId(int tmdbId);
+
+    long UpsertTrackedShow(TrackedShow show);
+
+    void DeleteTrackedSeasonsAndEpisodes(long showId);
+
+    void UpsertTrackedSeason(TrackedSeason season);
+
+    IReadOnlyList<TrackedSeason> GetTrackedSeasons(long showId);
+
+    void UpdateTrackedSeasonDownloadFolder(long showId, int seasonNumber, string? downloadFolder);
+
+    void UpsertTrackedEpisode(TrackedEpisode episode);
+
+    IReadOnlyList<TrackedEpisode> GetTrackedEpisodes(long showId);
+
+    void UpdateTrackedEpisodeWanted(long episodeId, bool isWanted);
+
+    void UpdateTrackedEpisodeAvailability(long episodeId, EpisodeAvailability availability);
+
+    void UpdateTrackedEpisodeTorrent(
+        long episodeId,
+        string torrentHash,
+        string torrentName,
+        string torrentState,
+        double torrentProgress);
+
+    void UpdateTrackedEpisodeSelectedCandidate(long episodeId, EpisodeFetchCandidate candidate);
+
+    void UpdateTrackedShowPreferredQuality(long showId, string preferredQuality);
+
+    void UpdateTrackedShowPreferences(long showId, string preferredQuality, string preferredAudioCodec, int minimumSeeders);
+
+    IReadOnlyList<TrackedMovie> GetTrackedMovies();
+
+    TrackedMovie? GetTrackedMovie(long id);
+
+    TrackedMovie? GetTrackedMovieByTmdbId(int tmdbId);
+
+    long UpsertTrackedMovie(TrackedMovie movie);
+
+    void UpdateTrackedMovieWanted(long movieId, bool isWanted);
+
+    void UpdateTrackedMovieAvailability(long movieId, EpisodeAvailability availability);
+
+    void UpdateTrackedMovieTorrent(
+        long movieId,
+        string torrentHash,
+        string torrentName,
+        string torrentState,
+        double torrentProgress);
+
+    void UpdateTrackedMovieSelectedCandidate(long movieId, EpisodeFetchCandidate candidate);
+
+    void UpdateTrackedMoviePreferences(long movieId, string preferredQuality, string preferredAudioCodec, int minimumSeeders);
+
+    long CreateFetchJob(FetchJob job);
+
+    IReadOnlyList<FetchJob> GetFetchJobs();
+
+    FetchJob? GetFetchJob(long id);
+
+    void UpdateFetchJob(FetchJob job);
+
+    void DeleteFetchJob(long id);
 }

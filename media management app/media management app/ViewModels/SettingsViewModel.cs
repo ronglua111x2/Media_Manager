@@ -38,7 +38,16 @@ public partial class SettingsViewModel : ViewModelBase
     private string autoTorrentDownloadFolder = string.Empty;
 
     [ObservableProperty]
+    private string? selectedAutoTorrentDownloadFolder;
+
+    [ObservableProperty]
     private string autoTorrentCategoryName = "AutoTorrent";
+
+    [ObservableProperty]
+    private string autoTorrentMaxCandidatesPerFetch = "3";
+
+    [ObservableProperty]
+    private string autoTorrentMaxParallelSearches = "3";
 
     [ObservableProperty]
     private string? selectedSourceFolder;
@@ -59,11 +68,14 @@ public partial class SettingsViewModel : ViewModelBase
         _qbittorrentClient = qbittorrentClient;
         _logger = logger;
         SourceFolders = [];
+        AutoTorrentDownloadFolders = [];
         LibraryRootPreview = [];
         LoadFromSettings();
     }
 
     public ObservableCollection<string> SourceFolders { get; }
+
+    public ObservableCollection<string> AutoTorrentDownloadFolders { get; }
 
     public ObservableCollection<string> LibraryRootPreview { get; }
 
@@ -152,6 +164,36 @@ public partial class SettingsViewModel : ViewModelBase
         }
 
         AutoTorrentDownloadFolder = selected;
+        if (!AutoTorrentDownloadFolders.Contains(selected, StringComparer.OrdinalIgnoreCase))
+        {
+            AutoTorrentDownloadFolders.Add(selected);
+        }
+    }
+
+    [RelayCommand]
+    private void AddAutoTorrentDownloadFolder()
+    {
+        var selected = BrowseFolder(AutoTorrentDownloadFolder, "Add Auto Torrent download folder option");
+        if (string.IsNullOrWhiteSpace(selected) ||
+            AutoTorrentDownloadFolders.Contains(selected, StringComparer.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        AutoTorrentDownloadFolders.Add(selected);
+        SelectedAutoTorrentDownloadFolder = selected;
+    }
+
+    [RelayCommand]
+    private void RemoveSelectedAutoTorrentDownloadFolder()
+    {
+        if (string.IsNullOrWhiteSpace(SelectedAutoTorrentDownloadFolder))
+        {
+            return;
+        }
+
+        AutoTorrentDownloadFolders.Remove(SelectedAutoTorrentDownloadFolder);
+        SelectedAutoTorrentDownloadFolder = AutoTorrentDownloadFolders.FirstOrDefault();
     }
 
     partial void OnDefaultLibraryFolderNameChanged(string value)
@@ -181,6 +223,15 @@ public partial class SettingsViewModel : ViewModelBase
             QbittorrentPassword = _settingsService.Current.AutoTorrent.Password;
             AutoTorrentDownloadFolder = _settingsService.Current.AutoTorrent.DownloadFolder ?? string.Empty;
             AutoTorrentCategoryName = _settingsService.Current.AutoTorrent.CategoryName;
+            AutoTorrentMaxCandidatesPerFetch = _settingsService.Current.AutoTorrent.MaxCandidatesPerFetch.ToString();
+            AutoTorrentMaxParallelSearches = _settingsService.Current.AutoTorrent.MaxParallelSearches.ToString();
+            AutoTorrentDownloadFolders.Clear();
+            foreach (var folder in _settingsService.Current.AutoTorrent.DownloadFolders)
+            {
+                AutoTorrentDownloadFolders.Add(folder);
+            }
+
+            SelectedAutoTorrentDownloadFolder = AutoTorrentDownloadFolders.FirstOrDefault();
 
             SourceFolders.Clear();
             foreach (var folder in _settingsService.Current.SourceFolders)
@@ -210,9 +261,27 @@ public partial class SettingsViewModel : ViewModelBase
         _settingsService.Current.AutoTorrent.DownloadFolder = string.IsNullOrWhiteSpace(AutoTorrentDownloadFolder)
             ? null
             : AutoTorrentDownloadFolder.Trim();
+        _settingsService.Current.AutoTorrent.DownloadFolders = AutoTorrentDownloadFolders
+            .Where(folder => !string.IsNullOrWhiteSpace(folder))
+            .Select(folder => folder.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (!string.IsNullOrWhiteSpace(_settingsService.Current.AutoTorrent.DownloadFolder) &&
+            !_settingsService.Current.AutoTorrent.DownloadFolders.Contains(_settingsService.Current.AutoTorrent.DownloadFolder, StringComparer.OrdinalIgnoreCase))
+        {
+            _settingsService.Current.AutoTorrent.DownloadFolders.Insert(0, _settingsService.Current.AutoTorrent.DownloadFolder);
+        }
         _settingsService.Current.AutoTorrent.CategoryName = string.IsNullOrWhiteSpace(AutoTorrentCategoryName)
             ? "AutoTorrent"
             : AutoTorrentCategoryName.Trim();
+        _settingsService.Current.AutoTorrent.MaxCandidatesPerFetch =
+            int.TryParse(AutoTorrentMaxCandidatesPerFetch, out var maxCandidates)
+                ? Math.Clamp(maxCandidates, 1, 10)
+                : 3;
+        _settingsService.Current.AutoTorrent.MaxParallelSearches =
+            int.TryParse(AutoTorrentMaxParallelSearches, out var maxParallelSearches)
+                ? Math.Clamp(maxParallelSearches, 1, 4)
+                : 3;
     }
 
     private void RefreshLibraryRootPreview()

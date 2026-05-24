@@ -47,4 +47,30 @@ public enum LibraryRootMode
     AutoPerDrive = 0
 }
 
+public enum EpisodeAvailability
+{
+    Missing = 0,
+    Available = 1
+}
+
+public enum FetchJobStatus
+{
+    Pending = 0,
+    Running = 1,
+    Completed = 2,
+    Failed = 3,
+    Canceled = 4
+}
+
+public enum EpisodeFetchStatus
+{
+    NotFetched = 0,
+    Pending = 1,
+    Searching = 2,
+    CandidatesFound = 3,
+    NoCandidates = 4,
+    Added = 5,
+    Error = 6
+}
+
 #endregion

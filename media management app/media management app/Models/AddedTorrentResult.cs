@@ -8,8 +8,13 @@ public sealed class AddedTorrentResult
 
     public string State { get; init; } = string.Empty;
 
+    public double Progress { get; init; }
+
+    public bool IsComplete => Progress >= 0.999;
+
+    public string ProgressDisplay => $"{Progress:P0}";
+
     public string SavePath { get; init; } = string.Empty;
 
     public string Category { get; init; } = string.Empty;
 }
-

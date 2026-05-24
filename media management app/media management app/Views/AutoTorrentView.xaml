@@ -1,0 +1,544 @@
+<UserControl x:Class="media_management_app.Views.AutoTorrentView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d">
+    <UserControl.Resources>
+        <Style x:Key="PanelBorder" TargetType="Border">
+            <Setter Property="Background" Value="#ffffff" />
+            <Setter Property="BorderBrush" Value="#dbe3ee" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="14" />
+        </Style>
+
+        <Style x:Key="ShowCardBorder" TargetType="Border" BasedOn="{StaticResource PanelBorder}">
+            <Setter Property="Margin" Value="0,0,0,12" />
+            <Setter Property="Padding" Value="0" />
+        </Style>
+
+        <Style x:Key="IconOnlyPath" TargetType="Path" BasedOn="{StaticResource ButtonIconPath}">
+            <Setter Property="Margin" Value="0,0,7,0" />
+        </Style>
+
+        <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Background" Value="#2563eb" />
+            <Setter Property="BorderBrush" Value="#1d4ed8" />
+            <Setter Property="Foreground" Value="#ffffff" />
+        </Style>
+
+        <Style x:Key="SectionLabel" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="#475569" />
+            <Setter Property="Margin" Value="0,0,0,6" />
+        </Style>
+    </UserControl.Resources>
+
+    <Grid Background="#f8fafc" Margin="0">
+        <Grid Margin="24">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="330" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <DockPanel Grid.Row="0" Margin="0,0,0,18">
+                <TextBlock DockPanel.Dock="Right"
+                           Text="{Binding StatusMessage}"
+                           Foreground="#475569"
+                           VerticalAlignment="Bottom"
+                           TextTrimming="CharacterEllipsis" />
+                <StackPanel>
+                    <TextBlock Text="Auto Torrent" FontSize="26" FontWeight="SemiBold" />
+                    <TextBlock Text="Track shows, fetch wanted episodes, and approve qBittorrent candidates." Foreground="#64748b" />
+                </StackPanel>
+            </DockPanel>
+
+            <Grid Grid.Row="1" Margin="0,0,0,16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="2*" />
+                    <ColumnDefinition Width="16" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <Border Grid.Column="0" Style="{StaticResource PanelBorder}">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="95" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0" Text="Add tracked show" Style="{StaticResource SectionLabel}" />
+                        <DockPanel Grid.Row="1" LastChildFill="True">
+                            <Button DockPanel.Dock="Right" Style="{StaticResource PrimaryButton}" Command="{Binding SearchShowsCommand}">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Style="{StaticResource IconOnlyPath}" Stroke="#ffffff" Data="M21,21 L16.65,16.65 M19,11 A8,8 0 1 1 3,11 A8,8 0 0 1 19,11" />
+                                    <TextBlock Text="Search TMDb" Foreground="#ffffff" />
+                                </StackPanel>
+                            </Button>
+                            <Button DockPanel.Dock="Right" Command="{Binding AddSelectedShowCommand}">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Style="{StaticResource IconOnlyPath}" Data="M12,5 L12,19 M5,12 L19,12" />
+                                    <TextBlock Text="Add Show" />
+                                </StackPanel>
+                            </Button>
+                            <TextBox Text="{Binding ShowSearchText, UpdateSourceTrigger=PropertyChanged}"
+                                     Margin="0,0,8,0"
+                                     ToolTip="Search TV shows from TMDb." />
+                        </DockPanel>
+
+                        <DataGrid Grid.Row="2"
+                                  ItemsSource="{Binding ShowSearchResults}"
+                                  SelectedItem="{Binding SelectedShowSearchResult, Mode=TwoWay}"
+                                  AutoGenerateColumns="False"
+                                  IsReadOnly="True"
+                                  CanUserAddRows="False"
+                                  SelectionMode="Single"
+                                  SelectionUnit="FullRow"
+                                  Margin="0,12,0,0">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Title" Binding="{Binding DisplayTitle}" Width="220" />
+                                <DataGridTextColumn Header="Seasons" Binding="{Binding SeasonCount}" Width="70" />
+                                <DataGridTextColumn Header="Episodes" Binding="{Binding EpisodeCount}" Width="78" />
+                                <DataGridTextColumn Header="Overview" Binding="{Binding Overview}" Width="*" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+
+                        <TextBlock Grid.Row="3" Text="Add tracked movie" Style="{StaticResource SectionLabel}" Margin="0,10,0,6" />
+                        <DockPanel Grid.Row="4" LastChildFill="True">
+                            <Button DockPanel.Dock="Right" Style="{StaticResource PrimaryButton}" Command="{Binding SearchMoviesCommand}">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Style="{StaticResource IconOnlyPath}" Stroke="#ffffff" Data="M21,21 L16.65,16.65 M19,11 A8,8 0 1 1 3,11 A8,8 0 0 1 19,11" />
+                                    <TextBlock Text="Search Movies" Foreground="#ffffff" />
+                                </StackPanel>
+                            </Button>
+                            <Button DockPanel.Dock="Right" Command="{Binding AddSelectedMovieCommand}">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Style="{StaticResource IconOnlyPath}" Data="M12,5 L12,19 M5,12 L19,12" />
+                                    <TextBlock Text="Add Movie" />
+                                </StackPanel>
+                            </Button>
+                            <TextBox Text="{Binding MovieSearchText, UpdateSourceTrigger=PropertyChanged}"
+                                     Margin="0,0,8,0"
+                                     ToolTip="Search movies from TMDb." />
+                        </DockPanel>
+
+                        <DataGrid Grid.Row="5"
+                                  ItemsSource="{Binding MovieSearchResults}"
+                                  SelectedItem="{Binding SelectedMovieSearchResult, Mode=TwoWay}"
+                                  AutoGenerateColumns="False"
+                                  IsReadOnly="True"
+                                  CanUserAddRows="False"
+                                  SelectionMode="Single"
+                                  SelectionUnit="FullRow"
+                                  Margin="0,12,0,0">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Title" Binding="{Binding DisplayTitle}" Width="220" />
+                                <DataGridTextColumn Header="Overview" Binding="{Binding Overview}" Width="*" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Grid>
+                </Border>
+
+                <Border Grid.Column="2" Style="{StaticResource PanelBorder}">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="115" />
+                        </Grid.RowDefinitions>
+
+                        <DockPanel Grid.Row="0" LastChildFill="True">
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                <Button Command="{Binding CancelSelectedJobCommand}" ToolTip="Cancel selected job">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Path Style="{StaticResource IconOnlyPath}" Data="M6,6 L18,18 M18,6 L6,18" />
+                                        <TextBlock Text="Cancel" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Command="{Binding RetrySelectedJobCommand}" ToolTip="Retry selected job">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Path Style="{StaticResource IconOnlyPath}" Data="M4,4 L4,10 L10,10 M20,20 L20,14 L14,14 M20,9 A8,8 0 0 0 6.34,4.34 L4,6 M4,15 A8,8 0 0 0 17.66,19.66 L20,18" />
+                                        <TextBlock Text="Retry" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Command="{Binding DeleteSelectedJobCommand}" ToolTip="Delete selected job">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Path Style="{StaticResource IconOnlyPath}" Data="M3,6 L21,6 M8,6 L8,4 L16,4 L16,6 M6,6 L7,20 L17,20 L18,6" />
+                                        <TextBlock Text="Delete" />
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+                            <TextBlock Text="Fetch jobs" Style="{StaticResource SectionLabel}" VerticalAlignment="Center" />
+                        </DockPanel>
+
+                        <DataGrid Grid.Row="1"
+                                  ItemsSource="{Binding FetchJobs}"
+                                  SelectedItem="{Binding SelectedFetchJob, Mode=TwoWay}"
+                                  AutoGenerateColumns="False"
+                                  IsReadOnly="True"
+                                  CanUserAddRows="False"
+                                  SelectionMode="Single"
+                                  SelectionUnit="FullRow"
+                                  Margin="0,12,0,0">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="#" Binding="{Binding Id}" Width="45" />
+                                <DataGridTextColumn Header="Job" Binding="{Binding StatusIcon}" Width="70" />
+                                <DataGridTextColumn Header="Show" Binding="{Binding ShowTitle}" Width="160" />
+                                <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="80" />
+                                <DataGridTextColumn Header="Progress" Binding="{Binding Progress}" Width="75" />
+                                <DataGridTextColumn Header="Error" Binding="{Binding ErrorSummary}" Width="*" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+
+                        <DockPanel Grid.Row="2" LastChildFill="True" Margin="0,12,0,0">
+                            <TextBlock Text="Storage status" Style="{StaticResource SectionLabel}" VerticalAlignment="Center" />
+                        </DockPanel>
+
+                        <DataGrid Grid.Row="3"
+                                  ItemsSource="{Binding StorageStatuses}"
+                                  AutoGenerateColumns="False"
+                                  IsReadOnly="True"
+                                  CanUserAddRows="False"
+                                  SelectionMode="Single"
+                                  SelectionUnit="FullRow"
+                                  Margin="0,8,0,0">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Drive" Binding="{Binding DriveRoot}" Width="60" />
+                                <DataGridTextColumn Header="Free" Binding="{Binding FreeDisplay}" Width="85" />
+                                <DataGridTextColumn Header="Total" Binding="{Binding TotalDisplay}" Width="85" />
+                                <DataGridTextColumn Header="Free %" Binding="{Binding FreePercentDisplay}" Width="70" />
+                                <DataGridTextColumn Header="Folder" Binding="{Binding Folder}" Width="*" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Grid>
+                </Border>
+            </Grid>
+
+            <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+                <StackPanel>
+                    <TextBlock Text="Tracked Movies" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,8" />
+                    <ItemsControl ItemsSource="{Binding MovieCards}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Style="{StaticResource ShowCardBorder}" Padding="14">
+                                    <DockPanel LastChildFill="True">
+                                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top">
+                                            <Button Command="{Binding DataContext.RefreshMovieTmdbCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    CommandParameter="{Binding}">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Path Style="{StaticResource IconOnlyPath}" Data="M4,4 L4,10 L10,10 M20,20 L20,14 L14,14 M20,9 A8,8 0 0 0 6.34,4.34 L4,6 M4,15 A8,8 0 0 0 17.66,19.66 L20,18" />
+                                                    <TextBlock Text="Update TMDb" />
+                                                </StackPanel>
+                                            </Button>
+                                            <Button Command="{Binding DataContext.RefreshMovieQbittorrentCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    CommandParameter="{Binding}">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Path Style="{StaticResource IconOnlyPath}" Data="M4,4 L4,10 L10,10 M20,20 L20,14 L14,14 M20,9 A8,8 0 0 0 6.34,4.34 L4,6 M4,15 A8,8 0 0 0 17.66,19.66 L20,18" />
+                                                    <TextBlock Text="Update qBittorrent" />
+                                                </StackPanel>
+                                            </Button>
+                                            <Button Style="{StaticResource PrimaryButton}"
+                                                    Command="{Binding DataContext.FetchMovieWantedCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    CommandParameter="{Binding}">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Path Style="{StaticResource IconOnlyPath}" Stroke="#ffffff" Data="M12,3 L12,15 M7,10 L12,15 L17,10 M5,21 L19,21" />
+                                                    <TextBlock Text="Fetch Wanted" Foreground="#ffffff" />
+                                                </StackPanel>
+                                            </Button>
+                                            <Button Command="{Binding DataContext.AddMovieApprovedCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    CommandParameter="{Binding}">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Path Style="{StaticResource IconOnlyPath}" Data="M20,6 L9,17 L4,12" />
+                                                    <TextBlock Text="Add Approved" />
+                                                </StackPanel>
+                                            </Button>
+                                            <Button Command="{Binding DataContext.SaveMovieSelectedCandidateCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    CommandParameter="{Binding}">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Path Style="{StaticResource IconOnlyPath}" Data="M5,12 L10,17 L20,7" />
+                                                    <TextBlock Text="Save Candidate" />
+                                                </StackPanel>
+                                            </Button>
+                                        </StackPanel>
+
+                                        <StackPanel>
+                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                                <CheckBox IsChecked="{Binding IsWanted, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                          VerticalAlignment="Center"
+                                                          Margin="0,0,8,0" />
+                                                <TextBlock Text="{Binding Title}" FontSize="18" FontWeight="SemiBold" />
+                                                <TextBlock Text="{Binding Stats}" Foreground="#64748b" Margin="10,3,0,0" />
+                                            </StackPanel>
+                                            <TextBlock Text="{Binding Overview}" Foreground="#475569" Margin="0,0,0,10" />
+                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                                <TextBlock Text="Quality" VerticalAlignment="Center" Margin="0,0,6,0" />
+                                                <ComboBox ItemsSource="{Binding QualityOptions}"
+                                                          IsEditable="True"
+                                                          IsReadOnly="True"
+                                                          Text="{Binding SelectedQualitySummary, Mode=OneWay}"
+                                                          Width="135"
+                                                          Margin="0,0,16,0">
+                                                    <ComboBox.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <CheckBox Content="{Binding Label}"
+                                                                      IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                                        </DataTemplate>
+                                                    </ComboBox.ItemTemplate>
+                                                </ComboBox>
+                                                <TextBlock Text="Audio codec" VerticalAlignment="Center" Margin="0,0,6,0" />
+                                                <TextBox Text="{Binding PreferredAudioCodec, UpdateSourceTrigger=PropertyChanged}"
+                                                         Width="130"
+                                                         Margin="0,0,16,0" />
+                                                <TextBlock Text="Min seeders" VerticalAlignment="Center" Margin="0,0,6,0" />
+                                                <TextBox Text="{Binding MinimumSeedersText, UpdateSourceTrigger=PropertyChanged}"
+                                                         Width="70"
+                                                         Margin="0,0,16,0" />
+                                                <Button Command="{Binding SavePreferencesCommand}" Content="Save Preferences" />
+                                                <TextBlock Text="{Binding PreferenceStatus}" Foreground="#2563eb" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                            <StackPanel Orientation="Horizontal">
+                                                <ComboBox ItemsSource="{Binding Candidates}"
+                                                          SelectedItem="{Binding SelectedCandidate, Mode=TwoWay}"
+                                                          DisplayMemberPath="DisplayName"
+                                                          Width="520"
+                                                          Margin="0,0,12,0" />
+                                                <TextBlock Text="{Binding TorrentStatus}" Foreground="#475569" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </DockPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <TextBlock Text="Tracked TV Shows" FontSize="16" FontWeight="SemiBold" Margin="0,8,0,8" />
+                    <ItemsControl ItemsSource="{Binding ShowCards}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                            <Border Style="{StaticResource ShowCardBorder}">
+                                <Expander IsExpanded="{Binding IsExpanded, Mode=TwoWay}" Background="Transparent">
+                                    <Expander.Header>
+                                        <Border Padding="14" Background="#ffffff" CornerRadius="8">
+                                            <DockPanel LastChildFill="True">
+                                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                                    <Button Command="{Binding DataContext.RefreshShowCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                            CommandParameter="{Binding}"
+                                                            ToolTip="Update TMDb metadata and import newly aired episodes">
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <Path Style="{StaticResource IconOnlyPath}" Data="M4,4 L4,10 L10,10 M20,20 L20,14 L14,14 M20,9 A8,8 0 0 0 6.34,4.34 L4,6 M4,15 A8,8 0 0 0 17.66,19.66 L20,18" />
+                                                            <TextBlock Text="Update TMDb" />
+                                                        </StackPanel>
+                                                    </Button>
+                                                    <Button Command="{Binding DataContext.RefreshShowQbittorrentCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                            CommandParameter="{Binding}"
+                                                            ToolTip="Update mapped qBittorrent torrent states for this show">
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <Path Style="{StaticResource IconOnlyPath}" Data="M4,4 L4,10 L10,10 M20,20 L20,14 L14,14 M20,9 A8,8 0 0 0 6.34,4.34 L4,6 M4,15 A8,8 0 0 0 17.66,19.66 L20,18" />
+                                                            <TextBlock Text="Update qBittorrent" />
+                                                        </StackPanel>
+                                                    </Button>
+                                                    <Button Style="{StaticResource PrimaryButton}"
+                                                            Command="{Binding DataContext.FetchWantedCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                            CommandParameter="{Binding}"
+                                                            ToolTip="Fetch wanted missing episodes">
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <Path Style="{StaticResource IconOnlyPath}" Stroke="#ffffff" Data="M12,3 L12,15 M7,10 L12,15 L17,10 M5,21 L19,21" />
+                                                            <TextBlock Text="Fetch Wanted" Foreground="#ffffff" />
+                                                        </StackPanel>
+                                                    </Button>
+                                                    <Button Command="{Binding DataContext.AddApprovedCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                            CommandParameter="{Binding}"
+                                                            ToolTip="Add selected candidates">
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <Path Style="{StaticResource IconOnlyPath}" Data="M20,6 L9,17 L4,12" />
+                                                            <TextBlock Text="Add Approved" />
+                                                        </StackPanel>
+                                                    </Button>
+                                                    <Button Command="{Binding DataContext.AddWantedSelectedCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                            CommandParameter="{Binding}"
+                                                            ToolTip="Add selected candidates for wanted episodes only">
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <Path Style="{StaticResource IconOnlyPath}" Data="M12,5 L12,19 M5,12 L19,12 M20,6 L9,17 L4,12" />
+                                                            <TextBlock Text="Add Wanted Selected" />
+                                                        </StackPanel>
+                                                    </Button>
+                                                    <Button Command="{Binding DataContext.SaveSelectedCandidatesCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                            CommandParameter="{Binding}"
+                                                            ToolTip="Save selected candidates for this show">
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <Path Style="{StaticResource IconOnlyPath}" Data="M5,12 L10,17 L20,7" />
+                                                            <TextBlock Text="Save Candidates" />
+                                                        </StackPanel>
+                                                    </Button>
+                                                </StackPanel>
+
+                                                <StackPanel>
+                                                    <TextBlock Text="{Binding Title}" FontSize="18" FontWeight="SemiBold" />
+                                                    <TextBlock Text="{Binding Stats}" Foreground="#64748b" Margin="0,2,0,0" />
+                                                </StackPanel>
+                                            </DockPanel>
+                                        </Border>
+                                    </Expander.Header>
+
+                                    <Border Padding="14,0,14,14" Background="#ffffff" CornerRadius="0,0,8,8">
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding Overview}" Foreground="#475569" Margin="0,0,0,12" />
+                                            <Border BorderBrush="#e2e8f0"
+                                                    BorderThickness="1"
+                                                    CornerRadius="8"
+                                                    Background="#f8fafc"
+                                                    Padding="10"
+                                                    Margin="0,0,0,12">
+                                                <DockPanel LastChildFill="False">
+                                                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                                        <Button Command="{Binding SavePreferencesCommand}">
+                                                            <StackPanel Orientation="Horizontal">
+                                                                <Path Style="{StaticResource IconOnlyPath}" Data="M5,12 L10,17 L20,7" />
+                                                                <TextBlock Text="Save Preferences" />
+                                                            </StackPanel>
+                                                        </Button>
+                                                        <TextBlock Text="{Binding PreferenceStatus}" Foreground="#2563eb" VerticalAlignment="Center" />
+                                                    </StackPanel>
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <TextBlock Text="Quality" VerticalAlignment="Center" Margin="0,0,6,0" />
+                                                        <ComboBox ItemsSource="{Binding QualityOptions}"
+                                                                  IsEditable="True"
+                                                                  IsReadOnly="True"
+                                                                  Text="{Binding SelectedQualitySummary, Mode=OneWay}"
+                                                                  Width="135"
+                                                                  Margin="0,0,16,0">
+                                                            <ComboBox.ItemTemplate>
+                                                                <DataTemplate>
+                                                                    <CheckBox Content="{Binding Label}"
+                                                                              IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                                                </DataTemplate>
+                                                            </ComboBox.ItemTemplate>
+                                                        </ComboBox>
+                                                        <TextBlock Text="Audio codec" VerticalAlignment="Center" Margin="0,0,6,0" />
+                                                        <TextBox Text="{Binding PreferredAudioCodec, UpdateSourceTrigger=PropertyChanged}"
+                                                                 Width="130"
+                                                                 Margin="0,0,16,0"
+                                                                 ToolTip="Optional. Examples: DTS, DDP, AAC. Leave empty to search all audio codecs." />
+                                                        <TextBlock Text="Min seeders" VerticalAlignment="Center" Margin="0,0,6,0" />
+                                                        <TextBox Text="{Binding MinimumSeedersText, UpdateSourceTrigger=PropertyChanged}"
+                                                                 Width="70"
+                                                                 Margin="0,0,16,0" />
+                                                        <TextBlock Text="{Binding PreferencesSummary}" Foreground="#64748b" VerticalAlignment="Center" />
+                                                    </StackPanel>
+                                                </DockPanel>
+                                            </Border>
+                                            <ItemsControl ItemsSource="{Binding Seasons}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Border BorderBrush="#e2e8f0"
+                                                                BorderThickness="1"
+                                                                CornerRadius="8"
+                                                                Background="#f8fafc"
+                                                                Margin="0,0,0,8">
+                                                            <Expander Header="{Binding Header}"
+                                                                      IsExpanded="{Binding IsExpanded, Mode=TwoWay}"
+                                                                      Padding="10">
+                                                                <DockPanel Margin="0,8,0,0">
+                                                                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
+                                                                        <Button Command="{Binding MarkMissingWantedCommand}">
+                                                                            <StackPanel Orientation="Horizontal">
+                                                                                <Path Style="{StaticResource IconOnlyPath}" Data="M20,6 L9,17 L4,12" />
+                                                                                <TextBlock Text="Mark Missing Wanted" />
+                                                                            </StackPanel>
+                                                                        </Button>
+                                                                        <Button Command="{Binding MarkSelectedWantedCommand}">
+                                                                            <StackPanel Orientation="Horizontal">
+                                                                                <Path Style="{StaticResource IconOnlyPath}" Data="M12,5 L12,19 M5,12 L19,12" />
+                                                                                <TextBlock Text="Mark Selected Wanted" />
+                                                                            </StackPanel>
+                                                                        </Button>
+                                                                        <Button Command="{Binding ClearWantedCommand}">
+                                                                            <StackPanel Orientation="Horizontal">
+                                                                                <Path Style="{StaticResource IconOnlyPath}" Data="M6,6 L18,18 M18,6 L6,18" />
+                                                                                <TextBlock Text="Clear Wanted" />
+                                                                            </StackPanel>
+                                                                        </Button>
+                                                                    </StackPanel>
+
+                                                                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
+                                                                        <TextBlock Text="Download folder"
+                                                                                   VerticalAlignment="Center"
+                                                                                   FontWeight="SemiBold"
+                                                                                   Margin="0,0,8,0" />
+                                                                        <ComboBox ItemsSource="{Binding DownloadFolderOptions}"
+                                                                                  SelectedItem="{Binding SelectedSeasonDownloadFolder, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                                                  Width="420"
+                                                                                  MaxDropDownHeight="220"
+                                                                                  Margin="0,0,12,0" />
+                                                                        <TextBlock Text="{Binding SelectedDownloadFolderDisplay}"
+                                                                                   Foreground="#64748b"
+                                                                                   VerticalAlignment="Center"
+                                                                                   TextTrimming="CharacterEllipsis" />
+                                                                    </StackPanel>
+
+                                                                    <DataGrid ItemsSource="{Binding Episodes}"
+                                                                              AutoGenerateColumns="False"
+                                                                              CanUserAddRows="False"
+                                                                              RowHeight="30"
+                                                                              HeadersVisibility="Column"
+                                                                              SelectionMode="Extended"
+                                                                              SelectionUnit="FullRow"
+                                                                              SelectionChanged="EpisodesGrid_SelectionChanged"
+                                                                              EnableRowVirtualization="True"
+                                                                              ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                                                              ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                                                        <DataGrid.Columns>
+                                                                            <DataGridTemplateColumn Header="Wanted" Width="72">
+                                                                                <DataGridTemplateColumn.CellTemplate>
+                                                                                    <DataTemplate>
+                                                                                        <CheckBox IsChecked="{Binding IsWanted, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                                                                  HorizontalAlignment="Center"
+                                                                                                  VerticalAlignment="Center" />
+                                                                                    </DataTemplate>
+                                                                                </DataGridTemplateColumn.CellTemplate>
+                                                                            </DataGridTemplateColumn>
+                                                                            <DataGridTextColumn Header="Ep" Binding="{Binding EpisodeCode}" IsReadOnly="True" Width="70" />
+                                                                            <DataGridTextColumn Header="Title" Binding="{Binding Title}" IsReadOnly="True" Width="220" />
+                                                                            <DataGridTextColumn Header="Air Date" Binding="{Binding AirDateDisplay}" IsReadOnly="True" Width="95" />
+                                                                            <DataGridTextColumn Header="Availability" Binding="{Binding Availability}" IsReadOnly="True" Width="95" />
+                                                                            <DataGridTextColumn Header="Fetch" Binding="{Binding FetchStatus}" IsReadOnly="True" Width="*" MinWidth="110" />
+                                                                            <DataGridTemplateColumn Header="Selected Candidate" Width="2*" MinWidth="360">
+                                                                                <DataGridTemplateColumn.CellTemplate>
+                                                                                    <DataTemplate>
+                                                                                        <ComboBox ItemsSource="{Binding Candidates}"
+                                                                                                  SelectedItem="{Binding SelectedCandidate, Mode=TwoWay}"
+                                                                                                  DisplayMemberPath="DisplayName"
+                                                                                                  MinWidth="380" />
+                                                                                    </DataTemplate>
+                                                                                </DataGridTemplateColumn.CellTemplate>
+                                                                            </DataGridTemplateColumn>
+                                                                            <DataGridTextColumn Header="Torrent" Binding="{Binding TorrentStatus}" IsReadOnly="True" Width="*" MinWidth="220" />
+                                                                        </DataGrid.Columns>
+                                                                    </DataGrid>
+                                                                </DockPanel>
+                                                            </Expander>
+                                                        </Border>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </StackPanel>
+                                    </Border>
+                                </Expander>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+    </Grid>
+</UserControl>

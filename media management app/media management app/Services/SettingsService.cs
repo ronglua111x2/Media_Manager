@@ -104,6 +104,19 @@ public sealed class SettingsService : ISettingsService
         {
             Current.AutoTorrent.CategoryName = "AutoTorrent";
         }
+        Current.AutoTorrent.DownloadFolders ??= [];
+        Current.AutoTorrent.DownloadFolders = Current.AutoTorrent.DownloadFolders
+            .Where(folder => !string.IsNullOrWhiteSpace(folder))
+            .Select(folder => folder.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (!string.IsNullOrWhiteSpace(Current.AutoTorrent.DownloadFolder) &&
+            !Current.AutoTorrent.DownloadFolders.Contains(Current.AutoTorrent.DownloadFolder, StringComparer.OrdinalIgnoreCase))
+        {
+            Current.AutoTorrent.DownloadFolders.Insert(0, Current.AutoTorrent.DownloadFolder);
+        }
+        Current.AutoTorrent.MaxCandidatesPerFetch = Math.Clamp(Current.AutoTorrent.MaxCandidatesPerFetch, 1, 10);
+        Current.AutoTorrent.MaxParallelSearches = Math.Clamp(Current.AutoTorrent.MaxParallelSearches, 1, 4);
 
         if (string.IsNullOrWhiteSpace(Current.OutputLibraryFolder))
         {

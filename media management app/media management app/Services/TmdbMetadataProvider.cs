@@ -7,7 +7,7 @@ using media_management_app.Models;
 
 namespace media_management_app.Services;
 
-public sealed class TmdbMetadataProvider : IMetadataProvider
+public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogService, ITmdbMovieCatalogService
 {
     private const double HighConfidenceThreshold = 75;
     private readonly ISettingsService _settingsService;
@@ -89,6 +89,170 @@ public sealed class TmdbMetadataProvider : IMetadataProvider
             _logger.Error($"TMDb matching failed for {item.FilePath}", ex, LogTarget.All);
             return new MetadataMatchResult { IsAvailable = false, ErrorMessage = ex.Message };
         }
+    }
+
+    public async Task<IReadOnlyList<TmdbShowSearchResult>> SearchTvShowsAsync(string query, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return [];
+        }
+
+        if (string.IsNullOrWhiteSpace(_settingsService.Current.TmdbReadAccessToken))
+        {
+            throw new InvalidOperationException("TMDb read access token is not configured.");
+        }
+
+        ConfigureHeaders();
+        var searchPath = $"search/tv?query={Uri.EscapeDataString(query.Trim())}&include_adult=false&language=en-US&page=1";
+        using var response = await _httpClient.GetAsync(searchPath, cancellationToken);
+        response.EnsureSuccessStatusCode();
+
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+        if (!document.RootElement.TryGetProperty("results", out var results) || results.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        var searchResults = results.EnumerateArray()
+            .Take(12)
+            .Select(result =>
+            {
+                var firstAirDate = GetString(result, "first_air_date");
+                return new TmdbShowSearchResult
+                {
+                    TmdbId = GetInt(result, "id") ?? 0,
+                    Title = GetString(result, "name") ?? string.Empty,
+                    FirstAirYear = ParseYear(firstAirDate),
+                    Overview = GetString(result, "overview"),
+                    PosterPath = GetString(result, "poster_path")
+                };
+            })
+            .Where(result => result.TmdbId > 0 && !string.IsNullOrWhiteSpace(result.Title))
+            .ToList();
+
+        foreach (var result in searchResults)
+        {
+            await PopulateShowCountsAsync(result, cancellationToken);
+        }
+
+        return searchResults;
+    }
+
+    public async Task<TmdbShowDetails> GetTvShowDetailsAsync(int tmdbId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(_settingsService.Current.TmdbReadAccessToken))
+        {
+            throw new InvalidOperationException("TMDb read access token is not configured.");
+        }
+
+        ConfigureHeaders();
+        using var detailsResponse = await _httpClient.GetAsync($"tv/{tmdbId}?language=en-US", cancellationToken);
+        detailsResponse.EnsureSuccessStatusCode();
+
+        await using var detailsStream = await detailsResponse.Content.ReadAsStreamAsync(cancellationToken);
+        using var detailsDocument = await JsonDocument.ParseAsync(detailsStream, cancellationToken: cancellationToken);
+        var root = detailsDocument.RootElement;
+        var firstAirDate = GetString(root, "first_air_date");
+        var details = new TmdbShowDetails
+        {
+            TmdbId = tmdbId,
+            Title = GetString(root, "name") ?? string.Empty,
+            FirstAirYear = ParseYear(firstAirDate),
+            Overview = GetString(root, "overview"),
+            PosterPath = GetString(root, "poster_path")
+        };
+
+        if (!root.TryGetProperty("seasons", out var seasonsElement) || seasonsElement.ValueKind != JsonValueKind.Array)
+        {
+            return details;
+        }
+
+        var today = DateTime.Today;
+        foreach (var seasonElement in seasonsElement.EnumerateArray())
+        {
+            var seasonNumber = GetInt(seasonElement, "season_number") ?? 0;
+            if (seasonNumber <= 0)
+            {
+                continue;
+            }
+
+            var season = await GetTrackedSeasonDetailsAsync(tmdbId, seasonNumber, today, cancellationToken);
+            if (season.Episodes.Count > 0)
+            {
+                details.Seasons.Add(season);
+            }
+        }
+
+        return details;
+    }
+
+    public async Task<IReadOnlyList<TmdbMovieSearchResult>> SearchMoviesAsync(string query, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return [];
+        }
+
+        if (string.IsNullOrWhiteSpace(_settingsService.Current.TmdbReadAccessToken))
+        {
+            throw new InvalidOperationException("TMDb read access token is not configured.");
+        }
+
+        ConfigureHeaders();
+        var searchPath = $"search/movie?query={Uri.EscapeDataString(query.Trim())}&include_adult=false&language=en-US&page=1";
+        using var response = await _httpClient.GetAsync(searchPath, cancellationToken);
+        response.EnsureSuccessStatusCode();
+
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+        if (!document.RootElement.TryGetProperty("results", out var results) || results.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        return results.EnumerateArray()
+            .Take(12)
+            .Select(result =>
+            {
+                var releaseDate = GetString(result, "release_date");
+                return new TmdbMovieSearchResult
+                {
+                    TmdbId = GetInt(result, "id") ?? 0,
+                    Title = GetString(result, "title") ?? string.Empty,
+                    ReleaseYear = ParseYear(releaseDate),
+                    Overview = GetString(result, "overview"),
+                    PosterPath = GetString(result, "poster_path")
+                };
+            })
+            .Where(result => result.TmdbId > 0 && !string.IsNullOrWhiteSpace(result.Title))
+            .ToList();
+    }
+
+    public async Task<TmdbMovieDetails> GetMovieDetailsAsync(int tmdbId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(_settingsService.Current.TmdbReadAccessToken))
+        {
+            throw new InvalidOperationException("TMDb read access token is not configured.");
+        }
+
+        ConfigureHeaders();
+        using var response = await _httpClient.GetAsync($"movie/{tmdbId}?language=en-US", cancellationToken);
+        response.EnsureSuccessStatusCode();
+
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+        var root = document.RootElement;
+        var releaseDate = GetString(root, "release_date");
+        return new TmdbMovieDetails
+        {
+            TmdbId = tmdbId,
+            Title = GetString(root, "title") ?? string.Empty,
+            ReleaseYear = ParseYear(releaseDate),
+            Overview = GetString(root, "overview"),
+            PosterPath = GetString(root, "poster_path")
+        };
     }
 
     public async Task<EpisodeMappingResult> MapTvEpisodeAsync(SourceItem item, CancellationToken cancellationToken = default)
@@ -279,6 +443,62 @@ public sealed class TmdbMetadataProvider : IMetadataProvider
         return episodes;
     }
 
+    private async Task<TmdbSeasonDetails> GetTrackedSeasonDetailsAsync(int seriesId, int seasonNumber, DateTime today, CancellationToken cancellationToken)
+    {
+        using var seasonResponse = await _httpClient.GetAsync($"tv/{seriesId}/season/{seasonNumber}?language=en-US", cancellationToken);
+        if (!seasonResponse.IsSuccessStatusCode)
+        {
+            _logger.Warning($"TMDb tracked season lookup failed for series {seriesId}, season {seasonNumber}: {(int)seasonResponse.StatusCode}", LogTarget.File | LogTarget.Console);
+            return new TmdbSeasonDetails { SeasonNumber = seasonNumber };
+        }
+
+        await using var seasonStream = await seasonResponse.Content.ReadAsStreamAsync(cancellationToken);
+        using var seasonDocument = await JsonDocument.ParseAsync(seasonStream, cancellationToken: cancellationToken);
+        var root = seasonDocument.RootElement;
+        var details = new TmdbSeasonDetails { SeasonNumber = seasonNumber };
+
+        if (!root.TryGetProperty("episodes", out var episodesElement) || episodesElement.ValueKind != JsonValueKind.Array)
+        {
+            return details;
+        }
+
+        foreach (var episodeElement in episodesElement.EnumerateArray())
+        {
+            var episodeNumber = GetInt(episodeElement, "episode_number") ?? 0;
+            var airDate = ParseDate(GetString(episodeElement, "air_date"));
+            if (episodeNumber <= 0 || airDate is null || airDate.Value.Date > today)
+            {
+                continue;
+            }
+
+            details.Episodes.Add(new TmdbEpisodeDetails
+            {
+                SeasonNumber = seasonNumber,
+                EpisodeNumber = episodeNumber,
+                Title = GetString(episodeElement, "name") ?? $"Episode {episodeNumber}",
+                AirDate = airDate
+            });
+        }
+
+        details.EpisodeCount = details.Episodes.Count;
+        return details;
+    }
+
+    private async Task PopulateShowCountsAsync(TmdbShowSearchResult result, CancellationToken cancellationToken)
+    {
+        using var detailsResponse = await _httpClient.GetAsync($"tv/{result.TmdbId}?language=en-US", cancellationToken);
+        if (!detailsResponse.IsSuccessStatusCode)
+        {
+            return;
+        }
+
+        await using var detailsStream = await detailsResponse.Content.ReadAsStreamAsync(cancellationToken);
+        using var detailsDocument = await JsonDocument.ParseAsync(detailsStream, cancellationToken: cancellationToken);
+        var root = detailsDocument.RootElement;
+        result.SeasonCount = GetInt(root, "number_of_seasons") ?? 0;
+        result.EpisodeCount = GetInt(root, "number_of_episodes") ?? 0;
+    }
+
     private static void ScoreCandidate(TmdbTvCandidate candidate, SourceItem item, string queryTitle, int? parsedYear)
     {
         var reasons = new List<string>();
@@ -404,6 +624,13 @@ public sealed class TmdbMetadataProvider : IMetadataProvider
     {
         return !string.IsNullOrWhiteSpace(date) && date.Length >= 4 && int.TryParse(date[..4], out var year)
             ? year
+            : null;
+    }
+
+    private static DateTime? ParseDate(string? date)
+    {
+        return !string.IsNullOrWhiteSpace(date) && DateTime.TryParse(date, out var parsed)
+            ? parsed.Date
             : null;
     }
 
