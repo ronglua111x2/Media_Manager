@@ -51,7 +51,7 @@ public partial class TrackedMovieCardViewModel : ObservableObject
 
     public bool IsMissing => Movie.Availability == EpisodeAvailability.Missing;
 
-    public string Stats => $"{Availability} | {(IsWanted ? "wanted" : "not wanted")} | selected {SelectedCandidateSizeDisplay}";
+    public string Stats => $"{Availability} | {(IsWanted ? "wanted" : "not wanted")} | {LibraryLinkStatus} | selected {SelectedCandidateSizeDisplay}";
 
     public long SelectedCandidateBytes => SelectedCandidate?.Candidate.FileSize ?? 0;
 
@@ -96,6 +96,10 @@ public partial class TrackedMovieCardViewModel : ObservableObject
 
     [ObservableProperty]
     private string torrentStatus;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Stats))]
+    private string libraryLinkStatus = "Not linked";
 
     partial void OnIsWantedChanged(bool value)
     {

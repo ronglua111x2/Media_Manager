@@ -20,6 +20,8 @@ public sealed class TorrentCandidateParseResult
 
     public string AudioCodec { get; init; } = string.Empty;
 
+    public IReadOnlyList<int> CoveredSeasons { get; init; } = [];
+
     public IReadOnlyList<string> TitleTokens { get; init; } = [];
 }
 
@@ -29,6 +31,10 @@ public static class TorrentCandidateParser
         @"(?<title>.*?)(?:\bS(?<season>\d{1,3})E(?<episode>\d{1,4})\b|\b(?<season2>\d{1,3})x(?<episode2>\d{1,4})\b)(?<rest>.*)$",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex YearRegex = new(@"\b(19|20)\d{2}\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex YearRangeRegex = new(@"\b(?<from>(?:19|20)\d{2})\s*(?:-|to)\s*(?<to>(?:19|20)\d{2})\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex SeasonRangeRegex = new(@"\bS(?<from>\d{1,3})\s*(?:-|to)\s*S?(?<to>\d{1,3})\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex SeasonWordRangeRegex = new(@"\bSeasons?\s*(?<from>\d{1,3})(?:\s*(?:-|to)\s*(?<to>\d{1,3}))?\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex SeasonSingleRegex = new(@"\bS(?<season>\d{1,3})\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex ReleaseTokenRegex = new(
         @"\b(?:1080p|720p|2160p|480p|bluray|brrip|webrip|web-dl|webdl|hdtv|x264|x265|h264|h265|hevc|aac|dts|hdr|dv|proper|repack|extended|remux|yify|rarbg|truehd|atmos|ddp|dd\+|ac3|flac|opus)\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -60,6 +66,7 @@ public static class TorrentCandidateParser
         var explicitYear = ExtractYear(showPart);
         var normalizedTitle = NormalizeTitle(showPart);
         var episodeTitle = CleanEpisodeTitle(rest);
+        var coveredSeasons = ExtractCoveredSeasons(normalized).ToList();
 
         return new TorrentCandidateParseResult
         {
@@ -69,8 +76,9 @@ public static class TorrentCandidateParser
             SeasonNumber = season,
             EpisodeNumber = episode,
             EpisodeTitle = string.IsNullOrWhiteSpace(episodeTitle) ? null : episodeTitle,
-            Quality = DetectQuality(fileName),
+            Quality = TorrentQuality.Detect(fileName),
             AudioCodec = DetectAudioCodec(fileName),
+            CoveredSeasons = coveredSeasons,
             TitleTokens = Tokenize(normalizedTitle).ToList()
         };
     }
@@ -88,6 +96,12 @@ public static class TorrentCandidateParser
 
     private static int? ExtractYear(string value)
     {
+        var yearRangeMatch = YearRangeRegex.Match(value);
+        if (yearRangeMatch.Success)
+        {
+            return null;
+        }
+
         var match = YearRegex.Match(value);
         if (!match.Success)
         {
@@ -95,6 +109,62 @@ public static class TorrentCandidateParser
         }
 
         return int.TryParse(match.Value, out var year) ? year : null;
+    }
+
+    public static bool ContainsYearRangeIncluding(string value, int year)
+    {
+        var match = YearRangeRegex.Match(value);
+        return match.Success &&
+               int.TryParse(match.Groups["from"].Value, out var from) &&
+               int.TryParse(match.Groups["to"].Value, out var to) &&
+               year >= Math.Min(from, to) &&
+               year <= Math.Max(from, to);
+    }
+
+    private static IEnumerable<int> ExtractCoveredSeasons(string value)
+    {
+        var seasons = new SortedSet<int>();
+        foreach (Match match in SeasonRangeRegex.Matches(value))
+        {
+            AddSeasonRange(seasons, match.Groups["from"].Value, match.Groups["to"].Value);
+        }
+
+        foreach (Match match in SeasonWordRangeRegex.Matches(value))
+        {
+            if (match.Groups["to"].Success)
+            {
+                AddSeasonRange(seasons, match.Groups["from"].Value, match.Groups["to"].Value);
+            }
+            else if (int.TryParse(match.Groups["from"].Value, out var season))
+            {
+                seasons.Add(season);
+            }
+        }
+
+        foreach (Match match in SeasonSingleRegex.Matches(value))
+        {
+            if (int.TryParse(match.Groups["season"].Value, out var season))
+            {
+                seasons.Add(season);
+            }
+        }
+
+        return seasons;
+    }
+
+    private static void AddSeasonRange(SortedSet<int> seasons, string fromText, string toText)
+    {
+        if (!int.TryParse(fromText, out var from) || !int.TryParse(toText, out var to))
+        {
+            return;
+        }
+
+        var start = Math.Min(from, to);
+        var end = Math.Max(from, to);
+        for (var season = start; season <= end; season++)
+        {
+            seasons.Add(season);
+        }
     }
 
     private static string NormalizeTitle(string value)
@@ -123,12 +193,6 @@ public static class TorrentCandidateParser
     {
         value = value.Replace('.', ' ').Replace('_', ' ').Replace('-', ' ');
         return Regex.Replace(value, @"\s{2,}", " ").Trim();
-    }
-
-    private static string DetectQuality(string fileName)
-    {
-        string[] qualities = ["2160p", "1080p", "720p", "480p"];
-        return qualities.FirstOrDefault(quality => fileName.Contains(quality, StringComparison.OrdinalIgnoreCase)) ?? string.Empty;
     }
 
     private static string DetectAudioCodec(string fileName)

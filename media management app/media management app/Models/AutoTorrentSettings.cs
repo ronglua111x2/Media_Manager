@@ -17,4 +17,14 @@ public sealed class AutoTorrentSettings
     public int MaxCandidatesPerFetch { get; set; } = 3;
 
     public int MaxParallelSearches { get; set; } = 3;
+
+    public bool UseShowSnapshotSearch { get; set; } = true;
+
+    public int SnapshotTargetResults { get; set; } = 2000;
+
+    public int SnapshotTimeoutSeconds { get; set; } = 120;
+
+    public int LocalMatchWorkers { get; set; } = 3;
+
+    public bool EnableCandidateMetadataProbe { get; set; }
 }

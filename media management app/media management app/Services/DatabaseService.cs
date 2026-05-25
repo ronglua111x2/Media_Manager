@@ -58,6 +58,9 @@ public sealed class DatabaseService : IDatabaseService
                 State INTEGER NOT NULL,
                 Notes TEXT NULL,
                 LinkedPath TEXT NULL,
+                AutoTorrentLinkKind INTEGER NULL,
+                AutoTorrentTorrentHash TEXT NULL,
+                AutoTorrentPackOwnerSeasonNumber INTEGER NULL,
                 LastSeenUtc TEXT NOT NULL
             );
             """;
@@ -81,6 +84,9 @@ public sealed class DatabaseService : IDatabaseService
         EnsureColumn(connection, "SourceItems", "MatchAccepted", "INTEGER NOT NULL DEFAULT 0");
         EnsureColumn(connection, "SourceItems", "UseAbsoluteAnimeMapping", "INTEGER NOT NULL DEFAULT 0");
         EnsureColumn(connection, "SourceItems", "LinkedPath", "TEXT NULL");
+        EnsureColumn(connection, "SourceItems", "AutoTorrentLinkKind", "INTEGER NULL");
+        EnsureColumn(connection, "SourceItems", "AutoTorrentTorrentHash", "TEXT NULL");
+        EnsureColumn(connection, "SourceItems", "AutoTorrentPackOwnerSeasonNumber", "INTEGER NULL");
         InitializeSeriesMappings(connection);
         InitializeTrackedShows(connection);
         InitializeTrackedMovies(connection);
@@ -102,7 +108,8 @@ public sealed class DatabaseService : IDatabaseService
                    EpisodeTitle,
                    MatchedTitle, MatchedYear, Provider, ProviderId, MatchConfidence, MatchReason,
                    RequiresManualReview, MatchAccepted, UseAbsoluteAnimeMapping,
-                   State, Notes, LinkedPath, LastSeenUtc
+                   State, Notes, LinkedPath, AutoTorrentLinkKind, AutoTorrentTorrentHash,
+                   AutoTorrentPackOwnerSeasonNumber, LastSeenUtc
             FROM SourceItems
             ORDER BY LastSeenUtc DESC;
             """;
@@ -138,10 +145,21 @@ public sealed class DatabaseService : IDatabaseService
         var linkedPathUpdateSql = preserveLinkedState
             ? "LinkedPath = COALESCE(excluded.LinkedPath, SourceItems.LinkedPath),"
             : "LinkedPath = excluded.LinkedPath,";
+        var autoTorrentMetadataUpdateSql = preserveLinkedState
+            ? """
+                AutoTorrentLinkKind = COALESCE(excluded.AutoTorrentLinkKind, SourceItems.AutoTorrentLinkKind),
+                AutoTorrentTorrentHash = COALESCE(excluded.AutoTorrentTorrentHash, SourceItems.AutoTorrentTorrentHash),
+                AutoTorrentPackOwnerSeasonNumber = COALESCE(excluded.AutoTorrentPackOwnerSeasonNumber, SourceItems.AutoTorrentPackOwnerSeasonNumber),
+                """
+            : """
+                AutoTorrentLinkKind = excluded.AutoTorrentLinkKind,
+                AutoTorrentTorrentHash = excluded.AutoTorrentTorrentHash,
+                AutoTorrentPackOwnerSeasonNumber = excluded.AutoTorrentPackOwnerSeasonNumber,
+                """;
 
         command.CommandText = $"""
-            INSERT INTO SourceItems (SourceRootFolder, ParentFolder, FilePath, FileName, ScanText, MediaKind, ParserPattern, ShowTitle, MovieTitle, MovieYear, SeasonNumber, EpisodeNumber, MappedSeasonNumber, MappedEpisodeNumber, EpisodeMappingSource, EpisodeMappingConfidence, EpisodeMappingReason, EpisodeTitle, MatchedTitle, MatchedYear, Provider, ProviderId, MatchConfidence, MatchReason, RequiresManualReview, MatchAccepted, UseAbsoluteAnimeMapping, State, Notes, LinkedPath, LastSeenUtc)
-            VALUES ($SourceRootFolder, $ParentFolder, $FilePath, $FileName, $ScanText, $MediaKind, $ParserPattern, $ShowTitle, $MovieTitle, $MovieYear, $SeasonNumber, $EpisodeNumber, $MappedSeasonNumber, $MappedEpisodeNumber, $EpisodeMappingSource, $EpisodeMappingConfidence, $EpisodeMappingReason, $EpisodeTitle, $MatchedTitle, $MatchedYear, $Provider, $ProviderId, $MatchConfidence, $MatchReason, $RequiresManualReview, $MatchAccepted, $UseAbsoluteAnimeMapping, $State, $Notes, $LinkedPath, $LastSeenUtc)
+            INSERT INTO SourceItems (SourceRootFolder, ParentFolder, FilePath, FileName, ScanText, MediaKind, ParserPattern, ShowTitle, MovieTitle, MovieYear, SeasonNumber, EpisodeNumber, MappedSeasonNumber, MappedEpisodeNumber, EpisodeMappingSource, EpisodeMappingConfidence, EpisodeMappingReason, EpisodeTitle, MatchedTitle, MatchedYear, Provider, ProviderId, MatchConfidence, MatchReason, RequiresManualReview, MatchAccepted, UseAbsoluteAnimeMapping, State, Notes, LinkedPath, AutoTorrentLinkKind, AutoTorrentTorrentHash, AutoTorrentPackOwnerSeasonNumber, LastSeenUtc)
+            VALUES ($SourceRootFolder, $ParentFolder, $FilePath, $FileName, $ScanText, $MediaKind, $ParserPattern, $ShowTitle, $MovieTitle, $MovieYear, $SeasonNumber, $EpisodeNumber, $MappedSeasonNumber, $MappedEpisodeNumber, $EpisodeMappingSource, $EpisodeMappingConfidence, $EpisodeMappingReason, $EpisodeTitle, $MatchedTitle, $MatchedYear, $Provider, $ProviderId, $MatchConfidence, $MatchReason, $RequiresManualReview, $MatchAccepted, $UseAbsoluteAnimeMapping, $State, $Notes, $LinkedPath, $AutoTorrentLinkKind, $AutoTorrentTorrentHash, $AutoTorrentPackOwnerSeasonNumber, $LastSeenUtc)
             ON CONFLICT(FilePath) DO UPDATE SET
                 SourceRootFolder = excluded.SourceRootFolder,
                 ParentFolder = excluded.ParentFolder,
@@ -172,6 +190,7 @@ public sealed class DatabaseService : IDatabaseService
                 {stateUpdateSql}
                 Notes = excluded.Notes,
                 {linkedPathUpdateSql}
+                {autoTorrentMetadataUpdateSql}
                 LastSeenUtc = excluded.LastSeenUtc;
             """;
         AddParameters(command, item);
@@ -294,6 +313,9 @@ public sealed class DatabaseService : IDatabaseService
         command.Parameters.AddWithValue("$State", (int)item.State);
         command.Parameters.AddWithValue("$Notes", (object?)item.Notes ?? DBNull.Value);
         command.Parameters.AddWithValue("$LinkedPath", (object?)item.LinkedPath ?? DBNull.Value);
+        command.Parameters.AddWithValue("$AutoTorrentLinkKind", item.AutoTorrentLinkKind is null ? DBNull.Value : (int)item.AutoTorrentLinkKind.Value);
+        command.Parameters.AddWithValue("$AutoTorrentTorrentHash", (object?)item.AutoTorrentTorrentHash ?? DBNull.Value);
+        command.Parameters.AddWithValue("$AutoTorrentPackOwnerSeasonNumber", (object?)item.AutoTorrentPackOwnerSeasonNumber ?? DBNull.Value);
         command.Parameters.AddWithValue("$LastSeenUtc", item.LastSeenUtc.ToString("O"));
     }
 
@@ -350,7 +372,10 @@ public sealed class DatabaseService : IDatabaseService
             State = (ItemState)reader.GetInt32(28),
             Notes = reader.IsDBNull(29) ? null : reader.GetString(29),
             LinkedPath = reader.IsDBNull(30) ? null : reader.GetString(30),
-            LastSeenUtc = DateTime.Parse(reader.GetString(31), null, System.Globalization.DateTimeStyles.RoundtripKind)
+            AutoTorrentLinkKind = reader.IsDBNull(31) ? null : (AutoTorrentLinkKind)reader.GetInt32(31),
+            AutoTorrentTorrentHash = reader.IsDBNull(32) ? null : reader.GetString(32),
+            AutoTorrentPackOwnerSeasonNumber = reader.IsDBNull(33) ? null : reader.GetInt32(33),
+            LastSeenUtc = DateTime.Parse(reader.GetString(34), null, System.Globalization.DateTimeStyles.RoundtripKind)
         };
     }
 
@@ -515,16 +540,18 @@ public sealed class DatabaseService : IDatabaseService
         connection.Open();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            INSERT INTO TrackedSeasons (ShowId, SeasonNumber, EpisodeCount, DownloadFolder)
-            VALUES ($ShowId, $SeasonNumber, $EpisodeCount, $DownloadFolder)
+            INSERT INTO TrackedSeasons (ShowId, SeasonNumber, EpisodeCount, DownloadFolder, ManagementMode)
+            VALUES ($ShowId, $SeasonNumber, $EpisodeCount, $DownloadFolder, $ManagementMode)
             ON CONFLICT(ShowId, SeasonNumber) DO UPDATE SET
                 EpisodeCount = excluded.EpisodeCount,
-                DownloadFolder = COALESCE(TrackedSeasons.DownloadFolder, excluded.DownloadFolder);
+                DownloadFolder = COALESCE(TrackedSeasons.DownloadFolder, excluded.DownloadFolder),
+                ManagementMode = TrackedSeasons.ManagementMode;
             """;
         command.Parameters.AddWithValue("$ShowId", season.ShowId);
         command.Parameters.AddWithValue("$SeasonNumber", season.SeasonNumber);
         command.Parameters.AddWithValue("$EpisodeCount", season.EpisodeCount);
         command.Parameters.AddWithValue("$DownloadFolder", (object?)season.DownloadFolder ?? DBNull.Value);
+        command.Parameters.AddWithValue("$ManagementMode", (int)season.ManagementMode);
         command.ExecuteNonQuery();
     }
 
@@ -535,7 +562,11 @@ public sealed class DatabaseService : IDatabaseService
         connection.Open();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT Id, ShowId, SeasonNumber, EpisodeCount, DownloadFolder
+            SELECT Id, ShowId, SeasonNumber, EpisodeCount, DownloadFolder, ManagementMode,
+                   SelectedPackCandidateName, SelectedPackCandidateUrl, SelectedPackCandidatePlugin,
+                   SelectedPackCandidateFileSize, SelectedPackCandidateSeeders, SelectedPackCandidateQuality,
+                   SelectedPackCandidateAudioCodec, SelectedPackCoveredSeasons, SelectedPackOwnerSeasonNumber,
+                   PackTorrentHash, PackTorrentName, PackTorrentState, PackTorrentProgress
             FROM TrackedSeasons
             WHERE ShowId = $ShowId
             ORDER BY SeasonNumber;
@@ -550,7 +581,21 @@ public sealed class DatabaseService : IDatabaseService
                 ShowId = reader.GetInt64(1),
                 SeasonNumber = reader.GetInt32(2),
                 EpisodeCount = reader.GetInt32(3),
-                DownloadFolder = reader.IsDBNull(4) ? null : reader.GetString(4)
+                DownloadFolder = reader.IsDBNull(4) ? null : reader.GetString(4),
+                ManagementMode = (SeasonManagementMode)reader.GetInt32(5),
+                SelectedPackCandidateName = reader.IsDBNull(6) ? null : reader.GetString(6),
+                SelectedPackCandidateUrl = reader.IsDBNull(7) ? null : reader.GetString(7),
+                SelectedPackCandidatePlugin = reader.IsDBNull(8) ? null : reader.GetString(8),
+                SelectedPackCandidateFileSize = reader.GetInt64(9),
+                SelectedPackCandidateSeeders = reader.GetInt32(10),
+                SelectedPackCandidateQuality = reader.IsDBNull(11) ? null : reader.GetString(11),
+                SelectedPackCandidateAudioCodec = reader.IsDBNull(12) ? null : reader.GetString(12),
+                SelectedPackCoveredSeasons = reader.IsDBNull(13) ? null : reader.GetString(13),
+                SelectedPackOwnerSeasonNumber = reader.IsDBNull(14) ? null : reader.GetInt32(14),
+                PackTorrentHash = reader.IsDBNull(15) ? null : reader.GetString(15),
+                PackTorrentName = reader.IsDBNull(16) ? null : reader.GetString(16),
+                PackTorrentState = reader.IsDBNull(17) ? null : reader.GetString(17),
+                PackTorrentProgress = reader.GetDouble(18)
             });
         }
 
@@ -570,6 +615,199 @@ public sealed class DatabaseService : IDatabaseService
         command.Parameters.AddWithValue("$DownloadFolder", string.IsNullOrWhiteSpace(downloadFolder) ? DBNull.Value : downloadFolder.Trim());
         command.Parameters.AddWithValue("$ShowId", showId);
         command.Parameters.AddWithValue("$SeasonNumber", seasonNumber);
+        command.ExecuteNonQuery();
+    }
+
+    public void UpdateTrackedSeasonPackMode(long showId, int seasonNumber, SeasonManagementMode mode)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE TrackedSeasons
+            SET ManagementMode = $ManagementMode
+            WHERE ShowId = $ShowId AND SeasonNumber = $SeasonNumber;
+            """;
+        command.Parameters.AddWithValue("$ManagementMode", (int)mode);
+        command.Parameters.AddWithValue("$ShowId", showId);
+        command.Parameters.AddWithValue("$SeasonNumber", seasonNumber);
+        command.ExecuteNonQuery();
+    }
+
+    public void UpdateTrackedSeasonSelectedPack(long showId, int ownerSeasonNumber, SeasonPackCandidate candidate)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var transaction = connection.BeginTransaction();
+        var coveredSeasons = string.Join(",", candidate.CoveredSeasons);
+
+        foreach (var seasonNumber in candidate.CoveredSeasons.DefaultIfEmpty(ownerSeasonNumber))
+        {
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = """
+                UPDATE TrackedSeasons
+                SET SelectedPackCandidateName = $Name,
+                    SelectedPackCandidateUrl = $Url,
+                    SelectedPackCandidatePlugin = $Plugin,
+                    SelectedPackCandidateFileSize = $FileSize,
+                    SelectedPackCandidateSeeders = $Seeders,
+                    SelectedPackCandidateQuality = $Quality,
+                    SelectedPackCandidateAudioCodec = $AudioCodec,
+                    SelectedPackCoveredSeasons = $CoveredSeasons,
+                    SelectedPackOwnerSeasonNumber = $OwnerSeasonNumber
+                WHERE ShowId = $ShowId AND SeasonNumber = $SeasonNumber;
+                """;
+            command.Parameters.AddWithValue("$Name", candidate.FileName);
+            command.Parameters.AddWithValue("$Url", candidate.FileUrl);
+            command.Parameters.AddWithValue("$Plugin", candidate.PluginName);
+            command.Parameters.AddWithValue("$FileSize", candidate.FileSize);
+            command.Parameters.AddWithValue("$Seeders", candidate.Seeders);
+            command.Parameters.AddWithValue("$Quality", string.IsNullOrWhiteSpace(candidate.QualityLabel) ? DBNull.Value : candidate.QualityLabel);
+            command.Parameters.AddWithValue("$AudioCodec", string.IsNullOrWhiteSpace(candidate.AudioCodecLabel) ? DBNull.Value : candidate.AudioCodecLabel);
+            command.Parameters.AddWithValue("$CoveredSeasons", coveredSeasons);
+            command.Parameters.AddWithValue("$OwnerSeasonNumber", ownerSeasonNumber);
+            command.Parameters.AddWithValue("$ShowId", showId);
+            command.Parameters.AddWithValue("$SeasonNumber", seasonNumber);
+            command.ExecuteNonQuery();
+        }
+
+        transaction.Commit();
+    }
+
+    public void ClearTrackedSeasonSelectedPacksForSeasons(long showId, IReadOnlyList<int> seasonNumbers)
+    {
+        var seasons = seasonNumbers.Where(season => season > 0).Distinct().ToList();
+        if (seasons.Count == 0)
+        {
+            return;
+        }
+
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var transaction = connection.BeginTransaction();
+
+        var ownerNumbers = new HashSet<int>();
+        foreach (var seasonNumber in seasons)
+        {
+            using var selectCommand = connection.CreateCommand();
+            selectCommand.Transaction = transaction;
+            selectCommand.CommandText = """
+                SELECT SelectedPackOwnerSeasonNumber
+                FROM TrackedSeasons
+                WHERE ShowId = $ShowId
+                  AND SeasonNumber = $SeasonNumber
+                  AND SelectedPackOwnerSeasonNumber IS NOT NULL;
+                """;
+            selectCommand.Parameters.AddWithValue("$ShowId", showId);
+            selectCommand.Parameters.AddWithValue("$SeasonNumber", seasonNumber);
+            var ownerValue = selectCommand.ExecuteScalar();
+            if (ownerValue is not null && ownerValue != DBNull.Value && int.TryParse(ownerValue.ToString(), out var ownerNumber))
+            {
+                ownerNumbers.Add(ownerNumber);
+            }
+        }
+
+        if (ownerNumbers.Count == 0)
+        {
+            transaction.Commit();
+            return;
+        }
+
+        foreach (var ownerNumber in ownerNumbers)
+        {
+            using var clearCommand = connection.CreateCommand();
+            clearCommand.Transaction = transaction;
+            clearCommand.CommandText = """
+                UPDATE TrackedSeasons
+                SET SelectedPackCandidateName = NULL,
+                    SelectedPackCandidateUrl = NULL,
+                    SelectedPackCandidatePlugin = NULL,
+                    SelectedPackCandidateFileSize = 0,
+                    SelectedPackCandidateSeeders = 0,
+                    SelectedPackCandidateQuality = NULL,
+                    SelectedPackCandidateAudioCodec = NULL,
+                    SelectedPackCoveredSeasons = NULL,
+                    SelectedPackOwnerSeasonNumber = NULL,
+                    PackTorrentHash = NULL,
+                    PackTorrentName = NULL,
+                    PackTorrentState = NULL,
+                    PackTorrentProgress = 0
+                WHERE ShowId = $ShowId AND SelectedPackOwnerSeasonNumber = $OwnerSeasonNumber;
+                """;
+            clearCommand.Parameters.AddWithValue("$ShowId", showId);
+            clearCommand.Parameters.AddWithValue("$OwnerSeasonNumber", ownerNumber);
+            clearCommand.ExecuteNonQuery();
+        }
+
+        transaction.Commit();
+    }
+
+    public void ClearTrackedSeasonSelectedPack(long showId, int ownerSeasonNumber)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE TrackedSeasons
+            SET SelectedPackCandidateName = NULL,
+                SelectedPackCandidateUrl = NULL,
+                SelectedPackCandidatePlugin = NULL,
+                SelectedPackCandidateFileSize = 0,
+                SelectedPackCandidateSeeders = 0,
+                SelectedPackCandidateQuality = NULL,
+                SelectedPackCandidateAudioCodec = NULL,
+                SelectedPackCoveredSeasons = NULL,
+                SelectedPackOwnerSeasonNumber = NULL,
+                PackTorrentHash = NULL,
+                PackTorrentName = NULL,
+                PackTorrentState = NULL,
+                PackTorrentProgress = 0
+            WHERE ShowId = $ShowId AND SelectedPackOwnerSeasonNumber = $OwnerSeasonNumber;
+            """;
+        command.Parameters.AddWithValue("$ShowId", showId);
+        command.Parameters.AddWithValue("$OwnerSeasonNumber", ownerSeasonNumber);
+        command.ExecuteNonQuery();
+    }
+
+    public void UpdateTrackedSeasonPackTorrent(long showId, int ownerSeasonNumber, AddedTorrentResult torrent)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE TrackedSeasons
+            SET PackTorrentHash = $Hash,
+                PackTorrentName = $Name,
+                PackTorrentState = $State,
+                PackTorrentProgress = $Progress
+            WHERE ShowId = $ShowId AND SelectedPackOwnerSeasonNumber = $OwnerSeasonNumber;
+            """;
+        command.Parameters.AddWithValue("$Hash", torrent.Hash);
+        command.Parameters.AddWithValue("$Name", torrent.Name);
+        command.Parameters.AddWithValue("$State", torrent.IsComplete ? "Downloaded" : torrent.State);
+        command.Parameters.AddWithValue("$Progress", Math.Clamp(torrent.Progress, 0, 1));
+        command.Parameters.AddWithValue("$ShowId", showId);
+        command.Parameters.AddWithValue("$OwnerSeasonNumber", ownerSeasonNumber);
+        command.ExecuteNonQuery();
+    }
+
+    public void MarkTrackedSeasonPackTorrentRemoved(long showId, int ownerSeasonNumber, string torrentHash)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE TrackedSeasons
+            SET PackTorrentHash = $Hash,
+                PackTorrentName = '',
+                PackTorrentState = 'Removed from qBittorrent',
+                PackTorrentProgress = 0
+            WHERE ShowId = $ShowId AND SelectedPackOwnerSeasonNumber = $OwnerSeasonNumber;
+            """;
+        command.Parameters.AddWithValue("$Hash", string.IsNullOrWhiteSpace(torrentHash) ? DBNull.Value : torrentHash.Trim());
+        command.Parameters.AddWithValue("$ShowId", showId);
+        command.Parameters.AddWithValue("$OwnerSeasonNumber", ownerSeasonNumber);
         command.ExecuteNonQuery();
     }
 
@@ -932,6 +1170,66 @@ public sealed class DatabaseService : IDatabaseService
         command.ExecuteNonQuery();
     }
 
+    public void ClearSelectedEpisodeCandidates()
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE TrackedEpisodes
+            SET SelectedCandidateName = NULL,
+                SelectedCandidateUrl = NULL,
+                SelectedCandidatePlugin = NULL,
+                SelectedCandidateFileSize = 0,
+                SelectedCandidateSeeders = 0,
+                SelectedCandidateQuality = NULL,
+                SelectedCandidateAudioCodec = NULL;
+            """;
+        command.ExecuteNonQuery();
+    }
+
+    public void ClearSelectedSeasonPackCandidates()
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE TrackedSeasons
+            SET SelectedPackCandidateName = NULL,
+                SelectedPackCandidateUrl = NULL,
+                SelectedPackCandidatePlugin = NULL,
+                SelectedPackCandidateFileSize = 0,
+                SelectedPackCandidateSeeders = 0,
+                SelectedPackCandidateQuality = NULL,
+                SelectedPackCandidateAudioCodec = NULL,
+                SelectedPackCoveredSeasons = NULL,
+                SelectedPackOwnerSeasonNumber = NULL,
+                PackTorrentHash = NULL,
+                PackTorrentName = NULL,
+                PackTorrentState = NULL,
+                PackTorrentProgress = 0;
+            """;
+        command.ExecuteNonQuery();
+    }
+
+    public void ClearSelectedMovieCandidates()
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE TrackedMovies
+            SET SelectedCandidateName = NULL,
+                SelectedCandidateUrl = NULL,
+                SelectedCandidatePlugin = NULL,
+                SelectedCandidateFileSize = 0,
+                SelectedCandidateSeeders = 0,
+                SelectedCandidateQuality = NULL,
+                SelectedCandidateAudioCodec = NULL;
+            """;
+        command.ExecuteNonQuery();
+    }
+
     public long CreateFetchJob(FetchJob job)
     {
         using var connection = new SqliteConnection(_connectionString);
@@ -1068,12 +1366,40 @@ public sealed class DatabaseService : IDatabaseService
                 SeasonNumber INTEGER NOT NULL,
                 EpisodeCount INTEGER NOT NULL DEFAULT 0,
                 DownloadFolder TEXT NULL,
+                ManagementMode INTEGER NOT NULL DEFAULT 0,
+                SelectedPackCandidateName TEXT NULL,
+                SelectedPackCandidateUrl TEXT NULL,
+                SelectedPackCandidatePlugin TEXT NULL,
+                SelectedPackCandidateFileSize INTEGER NOT NULL DEFAULT 0,
+                SelectedPackCandidateSeeders INTEGER NOT NULL DEFAULT 0,
+                SelectedPackCandidateQuality TEXT NULL,
+                SelectedPackCandidateAudioCodec TEXT NULL,
+                SelectedPackCoveredSeasons TEXT NULL,
+                SelectedPackOwnerSeasonNumber INTEGER NULL,
+                PackTorrentHash TEXT NULL,
+                PackTorrentName TEXT NULL,
+                PackTorrentState TEXT NULL,
+                PackTorrentProgress REAL NOT NULL DEFAULT 0,
                 UNIQUE(ShowId, SeasonNumber),
                 FOREIGN KEY(ShowId) REFERENCES TrackedShows(Id) ON DELETE CASCADE
             );
             """;
         seasons.ExecuteNonQuery();
         EnsureColumn(connection, "TrackedSeasons", "DownloadFolder", "TEXT NULL");
+        EnsureColumn(connection, "TrackedSeasons", "ManagementMode", "INTEGER NOT NULL DEFAULT 0");
+        EnsureColumn(connection, "TrackedSeasons", "SelectedPackCandidateName", "TEXT NULL");
+        EnsureColumn(connection, "TrackedSeasons", "SelectedPackCandidateUrl", "TEXT NULL");
+        EnsureColumn(connection, "TrackedSeasons", "SelectedPackCandidatePlugin", "TEXT NULL");
+        EnsureColumn(connection, "TrackedSeasons", "SelectedPackCandidateFileSize", "INTEGER NOT NULL DEFAULT 0");
+        EnsureColumn(connection, "TrackedSeasons", "SelectedPackCandidateSeeders", "INTEGER NOT NULL DEFAULT 0");
+        EnsureColumn(connection, "TrackedSeasons", "SelectedPackCandidateQuality", "TEXT NULL");
+        EnsureColumn(connection, "TrackedSeasons", "SelectedPackCandidateAudioCodec", "TEXT NULL");
+        EnsureColumn(connection, "TrackedSeasons", "SelectedPackCoveredSeasons", "TEXT NULL");
+        EnsureColumn(connection, "TrackedSeasons", "SelectedPackOwnerSeasonNumber", "INTEGER NULL");
+        EnsureColumn(connection, "TrackedSeasons", "PackTorrentHash", "TEXT NULL");
+        EnsureColumn(connection, "TrackedSeasons", "PackTorrentName", "TEXT NULL");
+        EnsureColumn(connection, "TrackedSeasons", "PackTorrentState", "TEXT NULL");
+        EnsureColumn(connection, "TrackedSeasons", "PackTorrentProgress", "REAL NOT NULL DEFAULT 0");
 
         using var episodes = connection.CreateCommand();
         episodes.CommandText = """

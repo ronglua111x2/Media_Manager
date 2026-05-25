@@ -49,6 +49,12 @@ public partial class MainViewModel : ViewModelBase
     [ObservableProperty]
     private string operationProgressMessage = "Idle";
 
+    [ObservableProperty]
+    private bool isSidebarOpen = true;
+
+    [ObservableProperty]
+    private bool isConsoleVisible = true;
+
     [RelayCommand]
     private void ShowSettings() => CurrentView = SettingsViewModel;
 
@@ -60,6 +66,12 @@ public partial class MainViewModel : ViewModelBase
 
     [RelayCommand]
     private void ShowReview() => CurrentView = ReviewViewModel;
+
+    [RelayCommand]
+    private void ToggleSidebar() => IsSidebarOpen = !IsSidebarOpen;
+
+    [RelayCommand]
+    private void ToggleConsole() => IsConsoleVisible = !IsConsoleVisible;
 
     private void OnProgressChanged(object? sender, EventArgs e)
     {

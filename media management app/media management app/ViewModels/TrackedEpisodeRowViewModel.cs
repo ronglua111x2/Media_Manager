@@ -60,7 +60,12 @@ public partial class TrackedEpisodeRowViewModel : ObservableObject
     private bool isWanted;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(FetchStatusDisplay))]
     private EpisodeFetchStatus fetchStatus;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(FetchStatusDisplay))]
+    private bool isPackMode;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SelectedCandidateBytes))]
@@ -75,6 +80,11 @@ public partial class TrackedEpisodeRowViewModel : ObservableObject
 
     [ObservableProperty]
     private string torrentStatus = string.Empty;
+
+    [ObservableProperty]
+    private string libraryLinkStatus = "Not linked";
+
+    public string FetchStatusDisplay => IsPackMode ? "Pack mode" : FetchStatus.ToString();
 
     partial void OnIsWantedChanged(bool value)
     {

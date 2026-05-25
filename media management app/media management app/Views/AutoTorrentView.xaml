@@ -268,6 +268,27 @@
                                                     <TextBlock Text="Save Candidate" />
                                                 </StackPanel>
                                             </Button>
+                                            <Button Command="{Binding DataContext.LinkMovieCompletedCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    CommandParameter="{Binding}">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Path Style="{StaticResource IconOnlyPath}" Data="M10,13 A5,5 0 0 1 17,13 L20,16 A5,5 0 0 1 13,23 L10,20 M14,11 A5,5 0 0 0 7,11 L4,8 A5,5 0 0 0 11,1 L14,4" />
+                                                    <TextBlock Text="Link Completed" />
+                                                </StackPanel>
+                                            </Button>
+                                            <Button Command="{Binding DataContext.RefreshMovieLinksCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    CommandParameter="{Binding}">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Path Style="{StaticResource IconOnlyPath}" Data="M4,4 L4,10 L10,10 M20,20 L20,14 L14,14 M20,9 A8,8 0 0 0 6.34,4.34 L4,6 M4,15 A8,8 0 0 0 17.66,19.66 L20,18" />
+                                                    <TextBlock Text="Refresh Links" />
+                                                </StackPanel>
+                                            </Button>
+                                            <Button Command="{Binding DataContext.RemoveMovieLinksCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    CommandParameter="{Binding}">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Path Style="{StaticResource IconOnlyPath}" Data="M3,6 L21,6 M8,6 L8,4 L16,4 L16,6 M6,6 L7,21 L17,21 L18,6 M10,11 L10,17 M14,11 L14,17" />
+                                                    <TextBlock Text="Remove Links" />
+                                                </StackPanel>
+                                            </Button>
                                         </StackPanel>
 
                                         <StackPanel>
@@ -379,6 +400,30 @@
                                                             <TextBlock Text="Save Candidates" />
                                                         </StackPanel>
                                                     </Button>
+                                                    <Button Command="{Binding DataContext.LinkShowCompletedCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                            CommandParameter="{Binding}"
+                                                            ToolTip="Create library hardlinks for completed mapped torrents">
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <Path Style="{StaticResource IconOnlyPath}" Data="M10,13 A5,5 0 0 1 17,13 L20,16 A5,5 0 0 1 13,23 L10,20 M14,11 A5,5 0 0 0 7,11 L4,8 A5,5 0 0 0 11,1 L14,4" />
+                                                            <TextBlock Text="Link Completed" />
+                                                        </StackPanel>
+                                                    </Button>
+                                                    <Button Command="{Binding DataContext.RefreshShowLinksCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                            CommandParameter="{Binding}"
+                                                            ToolTip="Refresh link status from existing hardlink paths">
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <Path Style="{StaticResource IconOnlyPath}" Data="M4,4 L4,10 L10,10 M20,20 L20,14 L14,14 M20,9 A8,8 0 0 0 6.34,4.34 L4,6 M4,15 A8,8 0 0 0 17.66,19.66 L20,18" />
+                                                            <TextBlock Text="Refresh Links" />
+                                                        </StackPanel>
+                                                    </Button>
+                                                    <Button Command="{Binding DataContext.RemoveShowLinksCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                            CommandParameter="{Binding}"
+                                                            ToolTip="Remove library hardlinks for this show without deleting qBittorrent downloads">
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <Path Style="{StaticResource IconOnlyPath}" Data="M3,6 L21,6 M8,6 L8,4 L16,4 L16,6 M6,6 L7,21 L17,21 L18,6 M10,11 L10,17 M14,11 L14,17" />
+                                                            <TextBlock Text="Remove Links" />
+                                                        </StackPanel>
+                                                    </Button>
                                                 </StackPanel>
 
                                                 <StackPanel>
@@ -436,6 +481,125 @@
                                                     </StackPanel>
                                                 </DockPanel>
                                             </Border>
+                                            <Border BorderBrush="#cbd5e1"
+                                                    BorderThickness="1"
+                                                    CornerRadius="8"
+                                                    Background="#f8fafc"
+                                                    Padding="10"
+                                                    Margin="0,0,0,12">
+                                                <StackPanel>
+                                                    <DockPanel Margin="0,0,0,10">
+                                                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top">
+                                                            <Button Command="{Binding DataContext.SaveSeasonPackCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                                    CommandParameter="{Binding SelectedPackSeason}"
+                                                                    ToolTip="Save the selected pack row">
+                                                                <StackPanel Orientation="Horizontal">
+                                                                    <Path Style="{StaticResource IconOnlyPath}" Data="M19,21 L5,21 L5,3 L16,3 L19,6 Z M8,3 L8,9 L16,9 M8,17 L16,17" />
+                                                                    <TextBlock Text="Save Pack" />
+                                                                </StackPanel>
+                                                            </Button>
+                                                            <Button Command="{Binding DataContext.DeselectSeasonPackCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                                    CommandParameter="{Binding SelectedPackSeason}"
+                                                                    ToolTip="Clear the saved pack for the selected row">
+                                                                <StackPanel Orientation="Horizontal">
+                                                                    <Path Style="{StaticResource IconOnlyPath}" Data="M6,6 L18,18 M18,6 L6,18" />
+                                                                    <TextBlock Text="Deselect" />
+                                                                </StackPanel>
+                                                            </Button>
+                                                            <Button Command="{Binding DataContext.AddSeasonPackCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                                    CommandParameter="{Binding SelectedPackSeason}"
+                                                                    ToolTip="Add the selected pack row to qBittorrent">
+                                                                <StackPanel Orientation="Horizontal">
+                                                                    <Path Style="{StaticResource IconOnlyPath}" Data="M20,6 L9,17 L4,12" />
+                                                                    <TextBlock Text="Add Pack" />
+                                                                </StackPanel>
+                                                            </Button>
+                                                            <Button Command="{Binding DataContext.LinkSeasonPackCompletedCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                                    CommandParameter="{Binding SelectedPackSeason}"
+                                                                    ToolTip="Create library hardlinks for the selected pack owner">
+                                                                <StackPanel Orientation="Horizontal">
+                                                                    <Path Style="{StaticResource IconOnlyPath}" Data="M10,13 A5,5 0 0 1 17,13 L20,16 A5,5 0 0 1 13,23 L10,20 M14,11 A5,5 0 0 0 7,11 L4,8 A5,5 0 0 0 11,1 L14,4" />
+                                                                    <TextBlock Text="Link Pack" />
+                                                                </StackPanel>
+                                                            </Button>
+                                                            <Button Style="{StaticResource PrimaryButton}"
+                                                                    Command="{Binding DataContext.FetchPacksForSelectedCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                                    CommandParameter="{Binding}">
+                                                                <StackPanel Orientation="Horizontal">
+                                                                    <Path Style="{StaticResource IconOnlyPath}" Stroke="#ffffff" Data="M12,3 L12,15 M7,10 L12,15 L17,10 M5,21 L19,21" />
+                                                                    <TextBlock Text="Fetch Packs for Selected" Foreground="#ffffff" />
+                                                                </StackPanel>
+                                                            </Button>
+                                                            <Button Command="{Binding DataContext.AbortFetchPacksCommand, RelativeSource={RelativeSource AncestorType=UserControl}}">
+                                                                <StackPanel Orientation="Horizontal">
+                                                                    <Path Style="{StaticResource IconOnlyPath}" Data="M6,6 L18,18 M18,6 L6,18" />
+                                                                    <TextBlock Text="Abort" />
+                                                                </StackPanel>
+                                                            </Button>
+                                                        </StackPanel>
+                                                        <StackPanel>
+                                                            <TextBlock Text="Season Pack Mode" FontSize="15" FontWeight="SemiBold" />
+                                                            <TextBlock Text="{Binding Stats}"
+                                                                       Foreground="#64748b"
+                                                                       Margin="0,2,12,0"
+                                                                       TextTrimming="CharacterEllipsis" />
+                                                            <TextBlock Text="{Binding SelectedPackRowSummary}"
+                                                                       Foreground="#334155"
+                                                                       Margin="0,4,12,0"
+                                                                       TextTrimming="CharacterEllipsis" />
+                                                        </StackPanel>
+                                                    </DockPanel>
+                                                    <DataGrid ItemsSource="{Binding Seasons}"
+                                                              SelectedItem="{Binding SelectedPackSeason, Mode=TwoWay}"
+                                                              AutoGenerateColumns="False"
+                                                              CanUserAddRows="False"
+                                                              HeadersVisibility="Column"
+                                                              RowHeight="36"
+                                                              ScrollViewer.HorizontalScrollBarVisibility="Auto">
+                                                        <DataGrid.Columns>
+                                                            <DataGridTemplateColumn Header="Use Pack" Width="80">
+                                                                <DataGridTemplateColumn.CellTemplate>
+                                                                    <DataTemplate>
+                                                                        <CheckBox IsChecked="{Binding IsPackMode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                                                  HorizontalAlignment="Center"
+                                                                                  VerticalAlignment="Center" />
+                                                                    </DataTemplate>
+                                                                </DataGridTemplateColumn.CellTemplate>
+                                                            </DataGridTemplateColumn>
+                                                            <DataGridTextColumn Header="Season" Binding="{Binding SeasonNumber, StringFormat=S{0:00}}" IsReadOnly="True" Width="75" />
+                                                            <DataGridTextColumn Header="Episodes" Binding="{Binding TotalEpisodes}" IsReadOnly="True" Width="80" />
+                                                            <DataGridTextColumn Header="Owner" Binding="{Binding PackOwnerDisplay}" IsReadOnly="True" Width="70" />
+                                                            <DataGridTemplateColumn Header="Selected Pack" Width="2*" MinWidth="420">
+                                                                <DataGridTemplateColumn.CellTemplate>
+                                                                    <DataTemplate>
+                                                                        <ComboBox ItemsSource="{Binding PackCandidates}"
+                                                                                  SelectedItem="{Binding SelectedPackCandidate, Mode=TwoWay}"
+                                                                                  DisplayMemberPath="DisplayName"
+                                                                                  IsEnabled="{Binding IsPackCandidateEditable}"
+                                                                                  MinWidth="400" />
+                                                                    </DataTemplate>
+                                                                </DataGridTemplateColumn.CellTemplate>
+                                                            </DataGridTemplateColumn>
+                                                            <DataGridTemplateColumn Header="Download Folder" Width="300">
+                                                                <DataGridTemplateColumn.CellTemplate>
+                                                                    <DataTemplate>
+                                                                        <ComboBox ItemsSource="{Binding DownloadFolderOptions}"
+                                                                                  SelectedItem="{Binding SelectedSeasonDownloadFolder, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                                                  MaxDropDownHeight="220"
+                                                                                  MinWidth="280" />
+                                                                    </DataTemplate>
+                                                                </DataGridTemplateColumn.CellTemplate>
+                                                            </DataGridTemplateColumn>
+                                                            <DataGridTextColumn Header="Unique Size" Binding="{Binding UniquePackSizeDisplay}" IsReadOnly="True" Width="115" />
+                                                            <DataGridTextColumn Header="Storage" Binding="{Binding PackStorageSummary}" IsReadOnly="True" Width="220" />
+                                                            <DataGridTextColumn Header="Covered" Binding="{Binding SelectedPackCandidate.CoveredSeasonsDisplay}" IsReadOnly="True" Width="120" />
+                                                            <DataGridTextColumn Header="Warning" Binding="{Binding SelectedPackSummary}" IsReadOnly="True" Width="260" />
+                                                            <DataGridTextColumn Header="Link Status" Binding="{Binding PackLinkStatus}" IsReadOnly="True" Width="150" />
+                                                            <DataGridTextColumn Header="Torrent" Binding="{Binding PackTorrentStatus}" IsReadOnly="True" Width="160" />
+                                                        </DataGrid.Columns>
+                                                    </DataGrid>
+                                                </StackPanel>
+                                            </Border>
                                             <ItemsControl ItemsSource="{Binding Seasons}">
                                                 <ItemsControl.ItemTemplate>
                                                     <DataTemplate>
@@ -448,20 +612,42 @@
                                                                       IsExpanded="{Binding IsExpanded, Mode=TwoWay}"
                                                                       Padding="10">
                                                                 <DockPanel Margin="0,8,0,0">
+                                                                    <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                                                                        <StackPanel.Style>
+                                                                            <Style TargetType="StackPanel">
+                                                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                                                <Style.Triggers>
+                                                                                    <DataTrigger Binding="{Binding HasPackWarning}" Value="True">
+                                                                                        <Setter Property="Visibility" Value="Visible" />
+                                                                                    </DataTrigger>
+                                                                                </Style.Triggers>
+                                                                            </Style>
+                                                                        </StackPanel.Style>
+                                                                        <TextBlock Text="{Binding PackModeBannerTitle}"
+                                                                                   Foreground="#b45309"
+                                                                                   FontWeight="SemiBold"
+                                                                                   TextTrimming="CharacterEllipsis" />
+                                                                        <TextBlock Text="{Binding PackLinkSummary}"
+                                                                                   Foreground="#64748b"
+                                                                                   Margin="0,2,0,0" />
+                                                                    </StackPanel>
                                                                     <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
-                                                                        <Button Command="{Binding MarkMissingWantedCommand}">
+                                                                        <Button Command="{Binding MarkMissingWantedCommand}"
+                                                                                IsEnabled="{Binding IsEpisodeWorkflowEnabled}">
                                                                             <StackPanel Orientation="Horizontal">
                                                                                 <Path Style="{StaticResource IconOnlyPath}" Data="M20,6 L9,17 L4,12" />
                                                                                 <TextBlock Text="Mark Missing Wanted" />
                                                                             </StackPanel>
                                                                         </Button>
-                                                                        <Button Command="{Binding MarkSelectedWantedCommand}">
+                                                                        <Button Command="{Binding MarkSelectedWantedCommand}"
+                                                                                IsEnabled="{Binding IsEpisodeWorkflowEnabled}">
                                                                             <StackPanel Orientation="Horizontal">
                                                                                 <Path Style="{StaticResource IconOnlyPath}" Data="M12,5 L12,19 M5,12 L19,12" />
                                                                                 <TextBlock Text="Mark Selected Wanted" />
                                                                             </StackPanel>
                                                                         </Button>
-                                                                        <Button Command="{Binding ClearWantedCommand}">
+                                                                        <Button Command="{Binding ClearWantedCommand}"
+                                                                                IsEnabled="{Binding IsEpisodeWorkflowEnabled}">
                                                                             <StackPanel Orientation="Horizontal">
                                                                                 <Path Style="{StaticResource IconOnlyPath}" Data="M6,6 L18,18 M18,6 L6,18" />
                                                                                 <TextBlock Text="Clear Wanted" />
@@ -501,6 +687,7 @@
                                                                                 <DataGridTemplateColumn.CellTemplate>
                                                                                     <DataTemplate>
                                                                                         <CheckBox IsChecked="{Binding IsWanted, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                                                                  IsEnabled="{Binding DataContext.IsEpisodeWorkflowEnabled, RelativeSource={RelativeSource AncestorType=DataGrid}}"
                                                                                                   HorizontalAlignment="Center"
                                                                                                   VerticalAlignment="Center" />
                                                                                     </DataTemplate>
@@ -510,13 +697,15 @@
                                                                             <DataGridTextColumn Header="Title" Binding="{Binding Title}" IsReadOnly="True" Width="220" />
                                                                             <DataGridTextColumn Header="Air Date" Binding="{Binding AirDateDisplay}" IsReadOnly="True" Width="95" />
                                                                             <DataGridTextColumn Header="Availability" Binding="{Binding Availability}" IsReadOnly="True" Width="95" />
-                                                                            <DataGridTextColumn Header="Fetch" Binding="{Binding FetchStatus}" IsReadOnly="True" Width="*" MinWidth="110" />
+                                                                            <DataGridTextColumn Header="Link" Binding="{Binding LibraryLinkStatus}" IsReadOnly="True" Width="160" />
+                                                                            <DataGridTextColumn Header="Fetch" Binding="{Binding FetchStatusDisplay}" IsReadOnly="True" Width="*" MinWidth="110" />
                                                                             <DataGridTemplateColumn Header="Selected Candidate" Width="2*" MinWidth="360">
                                                                                 <DataGridTemplateColumn.CellTemplate>
                                                                                     <DataTemplate>
                                                                                         <ComboBox ItemsSource="{Binding Candidates}"
                                                                                                   SelectedItem="{Binding SelectedCandidate, Mode=TwoWay}"
                                                                                                   DisplayMemberPath="DisplayName"
+                                                                                                  IsEnabled="{Binding DataContext.IsEpisodeWorkflowEnabled, RelativeSource={RelativeSource AncestorType=DataGrid}}"
                                                                                                   MinWidth="380" />
                                                                                     </DataTemplate>
                                                                                 </DataGridTemplateColumn.CellTemplate>

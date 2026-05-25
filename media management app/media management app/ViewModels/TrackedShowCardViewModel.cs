@@ -56,16 +56,43 @@ public partial class TrackedShowCardViewModel : ObservableObject
 
     public string Overview => Show.Overview ?? string.Empty;
 
-    public string Stats => $"{Show.AvailableEpisodes}/{Show.TotalEpisodes} available | {Show.WantedEpisodes} wanted | selected {SelectedCandidateSizeDisplay}";
+    public string Stats => $"{Show.AvailableEpisodes}/{Show.TotalEpisodes} available | {Show.WantedEpisodes} wanted | episodes {SelectedCandidateSizeDisplay} | unique packs {SelectedPackSizeDisplay}";
 
     public long SelectedCandidateBytes => Seasons.Sum(season => season.SelectedCandidateBytes);
 
     public string SelectedCandidateSizeDisplay => StorageStatusViewModel.FormatSize(SelectedCandidateBytes);
 
+    public long SelectedPackBytes => Seasons.Sum(season => season.SelectedPackBytes);
+
+    public string SelectedPackSizeDisplay => StorageStatusViewModel.FormatSize(SelectedPackBytes);
+
+    public string SelectedPackRowSummary
+    {
+        get
+        {
+            if (SelectedPackSeason is null)
+            {
+                return "Select a pack row.";
+            }
+
+            var owner = string.IsNullOrWhiteSpace(SelectedPackSeason.PackOwnerDisplay)
+                ? $"S{SelectedPackSeason.SeasonNumber:00}"
+                : SelectedPackSeason.PackOwnerDisplay;
+            var covered = string.IsNullOrWhiteSpace(SelectedPackSeason.SelectedPackCandidate?.CoveredSeasonsDisplay)
+                ? SelectedPackSeason.SelectedPackSummary
+                : SelectedPackSeason.SelectedPackCandidate.CoveredSeasonsDisplay;
+            return $"Selected: S{SelectedPackSeason.SeasonNumber:00} | Owner: {owner} | Covers {covered}";
+        }
+    }
+
     public ObservableCollection<TrackedSeasonViewModel> Seasons { get; }
 
     [ObservableProperty]
     private bool isExpanded;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SelectedPackRowSummary))]
+    private TrackedSeasonViewModel? selectedPackSeason;
 
     [ObservableProperty]
     private string preferredAudioCodec;
@@ -109,11 +136,18 @@ public partial class TrackedShowCardViewModel : ObservableObject
     {
         if (e.PropertyName is nameof(TrackedSeasonViewModel.SelectedCandidateBytes) or
             nameof(TrackedSeasonViewModel.SelectedCandidateSizeDisplay) or
+            nameof(TrackedSeasonViewModel.SelectedPackBytes) or
+            nameof(TrackedSeasonViewModel.SelectedPackSizeDisplay) or
+            nameof(TrackedSeasonViewModel.PackStorageSummary) or
+            nameof(TrackedSeasonViewModel.SelectedPackSummary) or
             nameof(TrackedSeasonViewModel.SeasonStats))
         {
             OnPropertyChanged(nameof(Stats));
             OnPropertyChanged(nameof(SelectedCandidateBytes));
             OnPropertyChanged(nameof(SelectedCandidateSizeDisplay));
+            OnPropertyChanged(nameof(SelectedPackBytes));
+            OnPropertyChanged(nameof(SelectedPackSizeDisplay));
+            OnPropertyChanged(nameof(SelectedPackRowSummary));
         }
     }
 

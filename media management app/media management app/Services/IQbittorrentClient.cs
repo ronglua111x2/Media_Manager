@@ -8,7 +8,19 @@ public interface IQbittorrentClient
 
     Task<IReadOnlyList<TorrentSearchResult>> SearchAsync(TorrentSearchRequest request, CancellationToken cancellationToken = default);
 
+    Task<int> StartSearchAsync(TorrentSearchRequest request, CancellationToken cancellationToken = default);
+
+    Task<SearchJobResults> GetSearchResultsAsync(int searchId, int limit, CancellationToken cancellationToken = default);
+
+    Task StopSearchAsync(int searchId, CancellationToken cancellationToken = default);
+
+    Task DeleteSearchAsync(int searchId, CancellationToken cancellationToken = default);
+
     Task<AddedTorrentResult> AddTorrentAsync(AddTorrentRequest request, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<AddedTorrentResult>> GetTorrentsAsync(CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<TorrentContentFile>> GetTorrentFilesAsync(string hash, CancellationToken cancellationToken = default);
+
+    Task<TorrentMetadataProbeResult> ProbeTorrentMetadataAsync(TorrentSearchResult result, CancellationToken cancellationToken = default);
 }

@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using media_management_app.Common;
 using media_management_app.Models;
 
@@ -13,6 +14,8 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
     private readonly ISettingsService _settingsService;
     private readonly IAppLogger _logger;
     private readonly HttpClient _httpClient;
+    private readonly Dictionary<int, TmdbTvCandidate> _candidateDetailsCache = [];
+    private readonly Dictionary<string, IReadOnlyList<int>> _tvSearchIdsCache = [];
     private readonly Dictionary<int, IReadOnlyList<TmdbSeasonSummary>> _seasonSummaryCache = [];
     private readonly Dictionary<(int SeriesId, int SeasonNumber), IReadOnlyList<TmdbEpisodeSummary>> _seasonEpisodeCache = [];
 
@@ -26,7 +29,17 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
 
     public async Task<MetadataMatchResult> MatchTvSeriesAsync(SourceItem item, CancellationToken cancellationToken = default)
     {
-        if (item.MediaKind != MediaKind.TvEpisode || string.IsNullOrWhiteSpace(item.ShowTitle))
+        if (item.MediaKind != MediaKind.TvEpisode)
+        {
+            return new MetadataMatchResult { IsAvailable = false, ErrorMessage = "Item is not a parsed TV episode." };
+        }
+
+        return await MatchTvSeriesAsync(TvSeriesMatchRequest.FromSourceItem(item), cancellationToken);
+    }
+
+    public async Task<MetadataMatchResult> MatchTvSeriesAsync(TvSeriesMatchRequest request, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(request.ShowTitle))
         {
             return new MetadataMatchResult { IsAvailable = false, ErrorMessage = "Item is not a parsed TV episode." };
         }
@@ -40,41 +53,33 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
 
         try
         {
-            var (queryTitle, parsedYear) = SplitTrailingYear(item.ShowTitle);
-            var searchPath = $"search/tv?query={Uri.EscapeDataString(queryTitle)}&include_adult=false&language=en-US&page=1";
-            using var searchResponse = await _httpClient.GetAsync(searchPath, cancellationToken);
-            searchResponse.EnsureSuccessStatusCode();
-
-            await using var searchStream = await searchResponse.Content.ReadAsStreamAsync(cancellationToken);
-            using var searchDocument = await JsonDocument.ParseAsync(searchStream, cancellationToken: cancellationToken);
-            var searchResults = searchDocument.RootElement.GetProperty("results")
-                .EnumerateArray()
-                .Take(8)
-                .ToList();
+            var (queryTitle, parsedTitleYear) = SplitTrailingYear(request.ShowTitle);
+            var yearHints = ExtractYearHints(request, parsedTitleYear);
+            var resultIds = await SearchTvSeriesIdsAsync(queryTitle, cancellationToken);
 
             var candidates = new List<TmdbTvCandidate>();
-            foreach (var result in searchResults)
+            foreach (var id in resultIds)
             {
-                var id = result.GetProperty("id").GetInt32();
                 var candidate = await GetCandidateDetailsAsync(id, cancellationToken);
                 if (candidate is null)
                 {
                     continue;
                 }
 
-                ScoreCandidate(candidate, item, queryTitle, parsedYear);
+                await ScoreCandidateAsync(candidate, request, queryTitle, yearHints, cancellationToken);
                 candidates.Add(candidate);
             }
 
             candidates = candidates
                 .OrderByDescending(candidate => candidate.Confidence)
                 .ThenByDescending(candidate => candidate.NumberOfEpisodes ?? 0)
+                .ThenBy(candidate => candidate.FirstAirYear ?? int.MaxValue)
                 .ToList();
 
             var best = candidates.FirstOrDefault();
             _logger.Info(best is null
-                ? $"TMDb returned no candidates for '{item.ShowTitle}'"
-                : $"TMDb best match for '{item.ShowTitle}' is '{best.Name}' ({best.FirstAirYear}) id={best.Id} confidence={best.Confidence:0}. Reason: {best.MatchReason}",
+                ? $"TMDb returned no candidates for '{request.ShowTitle}'"
+                : $"TMDb best match for '{request.ShowTitle}' is '{best.Name}' ({best.FirstAirYear}) id={best.Id} confidence={best.Confidence:0}. Reason: {best.MatchReason}",
                 LogTarget.File | LogTarget.Ui | LogTarget.Console);
 
             return new MetadataMatchResult
@@ -86,8 +91,64 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
         }
         catch (Exception ex)
         {
-            _logger.Error($"TMDb matching failed for {item.FilePath}", ex, LogTarget.All);
+            _logger.Error($"TMDb matching failed for {request.FilePath ?? request.ShowTitle}", ex, LogTarget.All);
             return new MetadataMatchResult { IsAvailable = false, ErrorMessage = ex.Message };
+        }
+    }
+
+    public async Task<MetadataValidationResult> ValidateTvSeriesMatchAsync(TvSeriesMatchRequest request, string providerId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(request.ShowTitle) ||
+            string.IsNullOrWhiteSpace(providerId) ||
+            !int.TryParse(providerId, NumberStyles.None, CultureInfo.InvariantCulture, out var seriesId))
+        {
+            return new MetadataValidationResult
+            {
+                IsAvailable = false,
+                ErrorMessage = "TV validation requires a parsed title and numeric provider id."
+            };
+        }
+
+        if (string.IsNullOrWhiteSpace(_settingsService.Current.TmdbReadAccessToken))
+        {
+            return new MetadataValidationResult
+            {
+                IsAvailable = false,
+                ErrorMessage = "TMDb read access token is not configured."
+            };
+        }
+
+        ConfigureHeaders();
+
+        try
+        {
+            var candidate = await GetCandidateDetailsAsync(seriesId, cancellationToken);
+            if (candidate is null)
+            {
+                return new MetadataValidationResult
+                {
+                    IsAvailable = true,
+                    IsValid = false,
+                    Reason = $"TMDb series id {providerId} is no longer available."
+                };
+            }
+
+            var (queryTitle, parsedTitleYear) = SplitTrailingYear(request.ShowTitle);
+            var yearHints = ExtractYearHints(request, parsedTitleYear);
+            await ScoreCandidateAsync(candidate, request, queryTitle, yearHints, cancellationToken);
+
+            return new MetadataValidationResult
+            {
+                IsAvailable = true,
+                IsValid = candidate.Confidence >= HighConfidenceThreshold,
+                Confidence = candidate.Confidence,
+                Reason = candidate.MatchReason
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.Error($"TMDb validation failed for {request.FilePath ?? request.ShowTitle}", ex, LogTarget.All);
+            return new MetadataValidationResult { IsAvailable = false, ErrorMessage = ex.Message };
         }
     }
 
@@ -358,6 +419,11 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
 
     private async Task<TmdbTvCandidate?> GetCandidateDetailsAsync(int id, CancellationToken cancellationToken)
     {
+        if (_candidateDetailsCache.TryGetValue(id, out var cached))
+        {
+            return CloneCandidate(cached);
+        }
+
         using var detailsResponse = await _httpClient.GetAsync($"tv/{id}?language=en-US", cancellationToken);
         if (!detailsResponse.IsSuccessStatusCode)
         {
@@ -369,7 +435,7 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
         var root = detailsDocument.RootElement;
         var firstAirDate = GetString(root, "first_air_date");
 
-        return new TmdbTvCandidate
+        var candidate = new TmdbTvCandidate
         {
             Id = id,
             Name = GetString(root, "name") ?? string.Empty,
@@ -383,6 +449,34 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
                 ? genres.EnumerateArray().Select(genre => GetString(genre, "name")).Where(name => !string.IsNullOrWhiteSpace(name)).Cast<string>().ToList()
                 : []
         };
+
+        _candidateDetailsCache[id] = candidate;
+        return CloneCandidate(candidate);
+    }
+
+    private async Task<IReadOnlyList<int>> SearchTvSeriesIdsAsync(string queryTitle, CancellationToken cancellationToken)
+    {
+        var cacheKey = NormalizeTitle(queryTitle);
+        if (_tvSearchIdsCache.TryGetValue(cacheKey, out var cached))
+        {
+            return cached;
+        }
+
+        var searchPath = $"search/tv?query={Uri.EscapeDataString(queryTitle)}&include_adult=false&language=en-US&page=1";
+        using var searchResponse = await _httpClient.GetAsync(searchPath, cancellationToken);
+        searchResponse.EnsureSuccessStatusCode();
+
+        await using var searchStream = await searchResponse.Content.ReadAsStreamAsync(cancellationToken);
+        using var searchDocument = await JsonDocument.ParseAsync(searchStream, cancellationToken: cancellationToken);
+        var resultIds = searchDocument.RootElement.GetProperty("results")
+            .EnumerateArray()
+            .Take(8)
+            .Select(result => result.GetProperty("id").GetInt32())
+            .Distinct()
+            .ToList();
+
+        _tvSearchIdsCache[cacheKey] = resultIds;
+        return resultIds;
     }
 
     private async Task<IReadOnlyList<TmdbSeasonSummary>> GetSeasonSummariesAsync(int seriesId, CancellationToken cancellationToken)
@@ -499,7 +593,12 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
         result.EpisodeCount = GetInt(root, "number_of_episodes") ?? 0;
     }
 
-    private static void ScoreCandidate(TmdbTvCandidate candidate, SourceItem item, string queryTitle, int? parsedYear)
+    private async Task ScoreCandidateAsync(
+        TmdbTvCandidate candidate,
+        TvSeriesMatchRequest request,
+        string queryTitle,
+        IReadOnlySet<int> yearHints,
+        CancellationToken cancellationToken)
     {
         var reasons = new List<string>();
         var score = 0d;
@@ -518,13 +617,18 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
             reasons.Add("partial title match");
         }
 
-        if (parsedYear is not null && candidate.FirstAirYear == parsedYear)
+        if (candidate.FirstAirYear is not null && yearHints.Contains(candidate.FirstAirYear.Value))
         {
-            score += 20;
-            reasons.Add($"year matched {parsedYear}");
+            score += 30;
+            reasons.Add($"year hint matched {candidate.FirstAirYear}");
+        }
+        else if (candidate.FirstAirYear is not null && yearHints.Count > 0)
+        {
+            score -= 20;
+            reasons.Add($"year hint mismatch; hints={string.Join(", ", yearHints)}");
         }
 
-        if (item.ParserPattern == ParserPattern.AnimeAbsolute)
+        if (request.ParserPattern == ParserPattern.AnimeAbsolute)
         {
             if (string.Equals(candidate.OriginalLanguage, "ja", StringComparison.OrdinalIgnoreCase))
             {
@@ -544,11 +648,27 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
             }
         }
 
-        if (item.EpisodeNumber is not null && candidate.NumberOfEpisodes is not null)
+        if (request.SeasonNumber is not null && candidate.NumberOfSeasons is not null)
         {
-            var episode = item.EpisodeNumber.Value;
+            var season = request.SeasonNumber.Value;
+            var availableSeasons = candidate.NumberOfSeasons.Value;
+            if (season <= availableSeasons)
+            {
+                score += 15;
+                reasons.Add($"season count plausible ({availableSeasons} seasons)");
+            }
+            else
+            {
+                score -= 80;
+                reasons.Add($"parsed season {season} exceeds candidate season count {availableSeasons}");
+            }
+        }
+
+        if (request.EpisodeNumber is not null && candidate.NumberOfEpisodes is not null)
+        {
+            var episode = request.EpisodeNumber.Value;
             var availableEpisodes = candidate.NumberOfEpisodes.Value;
-            if (episode <= availableEpisodes + 20)
+            if (episode <= availableEpisodes)
             {
                 score += episode > 100 ? 25 : 10;
                 reasons.Add($"episode count plausible ({availableEpisodes} episodes)");
@@ -565,7 +685,21 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
             }
         }
 
-        if (candidate.Id == 37854 && item.ParserPattern == ParserPattern.AnimeAbsolute && normalizedQuery == "one piece")
+        if (request.ParserPattern == ParserPattern.StandardTv &&
+            request.SeasonNumber is not null &&
+            request.EpisodeNumber is not null)
+        {
+            var seasonValidation = await ValidateStandardEpisodeAsync(
+                candidate.Id,
+                request.SeasonNumber.Value,
+                request.EpisodeNumber.Value,
+                cancellationToken);
+
+            score += seasonValidation.ScoreDelta;
+            reasons.Add(seasonValidation.Reason);
+        }
+
+        if (candidate.Id == 37854 && request.ParserPattern == ParserPattern.AnimeAbsolute && normalizedQuery == "one piece")
         {
             score += 10;
             reasons.Add("known One Piece anime candidate");
@@ -578,6 +712,28 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
         {
             candidate.MatchReason += "; requires manual review";
         }
+    }
+
+    private async Task<(double ScoreDelta, string Reason)> ValidateStandardEpisodeAsync(
+        int seriesId,
+        int seasonNumber,
+        int episodeNumber,
+        CancellationToken cancellationToken)
+    {
+        var episodes = await GetSeasonEpisodesAsync(seriesId, seasonNumber, cancellationToken);
+        if (episodes.Count == 0)
+        {
+            return (-40, $"TMDb season {seasonNumber:00} has no episode data");
+        }
+
+        if (episodes.Any(episode => episode.EpisodeNumber == episodeNumber))
+        {
+            return (30, $"TMDb confirms S{seasonNumber:00}E{episodeNumber:00}");
+        }
+
+        var maxEpisode = episodes.Max(episode => episode.EpisodeNumber);
+        var penalty = episodeNumber > maxEpisode ? -80 : -35;
+        return (penalty, $"TMDb season {seasonNumber:00} does not contain episode {episodeNumber:00}; max episode is {maxEpisode:00}");
     }
 
     private void ConfigureHeaders()
@@ -601,9 +757,57 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
         return (title, null);
     }
 
+    private static IReadOnlySet<int> ExtractYearHints(TvSeriesMatchRequest request, int? parsedTitleYear)
+    {
+        var years = new HashSet<int>();
+        if (parsedTitleYear is not null)
+        {
+            years.Add(parsedTitleYear.Value);
+        }
+
+        AddYears(request.FileName, years);
+        AddYears(request.ParentFolder, years);
+        AddYears(request.ScanText, years);
+        AddYears(request.FilePath, years);
+        return years;
+    }
+
+    private static void AddYears(string? value, ISet<int> years)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        foreach (Match match in Regex.Matches(value, @"(?<!\d)(?:19|20)\d{2}(?!\d)"))
+        {
+            if (int.TryParse(match.Value, NumberStyles.None, CultureInfo.InvariantCulture, out var year))
+            {
+                years.Add(year);
+            }
+        }
+    }
+
     private static string NormalizeTitle(string value)
     {
-        return string.Join(' ', value.ToLowerInvariant().Split(' ', StringSplitOptions.RemoveEmptyEntries));
+        value = Regex.Replace(value.ToLowerInvariant(), @"[^\p{L}\p{Nd}]+", " ");
+        return string.Join(' ', value.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+    }
+
+    private static TmdbTvCandidate CloneCandidate(TmdbTvCandidate candidate)
+    {
+        return new TmdbTvCandidate
+        {
+            Id = candidate.Id,
+            Name = candidate.Name,
+            OriginalName = candidate.OriginalName,
+            FirstAirDate = candidate.FirstAirDate,
+            FirstAirYear = candidate.FirstAirYear,
+            OriginalLanguage = candidate.OriginalLanguage,
+            NumberOfEpisodes = candidate.NumberOfEpisodes,
+            NumberOfSeasons = candidate.NumberOfSeasons,
+            Genres = candidate.Genres.ToList()
+        };
     }
 
     private static string? GetString(JsonElement element, string propertyName)

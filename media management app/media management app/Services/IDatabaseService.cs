@@ -41,6 +41,24 @@ public interface IDatabaseService
 
     void UpdateTrackedSeasonDownloadFolder(long showId, int seasonNumber, string? downloadFolder);
 
+    void UpdateTrackedSeasonPackMode(long showId, int seasonNumber, SeasonManagementMode mode);
+
+    void UpdateTrackedSeasonSelectedPack(long showId, int ownerSeasonNumber, SeasonPackCandidate candidate);
+
+    void ClearTrackedSeasonSelectedPacksForSeasons(long showId, IReadOnlyList<int> seasonNumbers);
+
+    void ClearTrackedSeasonSelectedPack(long showId, int ownerSeasonNumber);
+
+    void UpdateTrackedSeasonPackTorrent(long showId, int ownerSeasonNumber, AddedTorrentResult torrent);
+
+    void MarkTrackedSeasonPackTorrentRemoved(long showId, int ownerSeasonNumber, string torrentHash);
+
+    void ClearSelectedEpisodeCandidates();
+
+    void ClearSelectedSeasonPackCandidates();
+
+    void ClearSelectedMovieCandidates();
+
     void UpsertTrackedEpisode(TrackedEpisode episode);
 
     IReadOnlyList<TrackedEpisode> GetTrackedEpisodes(long showId);

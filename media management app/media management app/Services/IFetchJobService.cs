@@ -18,11 +18,15 @@ public interface IFetchJobService
 
     bool TryGetMovieCandidates(long movieId, out IReadOnlyList<EpisodeFetchCandidate> candidates);
 
+    bool TryGetPackCandidates(long showId, int seasonNumber, out IReadOnlyList<SeasonPackCandidate> candidates);
+
     bool HasActiveJobs();
 
     Task<FetchJob> EnqueueShowFetchAsync(long showId, CancellationToken cancellationToken = default);
 
     Task<FetchJob> EnqueueMovieFetchAsync(long movieId, CancellationToken cancellationToken = default);
+
+    Task FetchSeasonPacksAsync(long showId, IReadOnlyList<int> seasonNumbers, CancellationToken cancellationToken = default);
 
     void CancelJob(long jobId);
 

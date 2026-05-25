@@ -72,5 +72,11 @@ public sealed class SourceItem
 
     public string? LinkedPath { get; set; }
 
+    public AutoTorrentLinkKind? AutoTorrentLinkKind { get; set; }
+
+    public string? AutoTorrentTorrentHash { get; set; }
+
+    public int? AutoTorrentPackOwnerSeasonNumber { get; set; }
+
     public DateTime LastSeenUtc { get; set; } = DateTime.UtcNow;
 }

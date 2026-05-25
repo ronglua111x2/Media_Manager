@@ -9,73 +9,189 @@
         WindowState="Maximized"
         Icon="Assets/app-icon.ico"
         Closing="Window_Closing">
+    <Window.Resources>
+        <Style x:Key="ExpandedSidebarStyle" TargetType="Border">
+            <Setter Property="Visibility" Value="Visible" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsSidebarOpen}" Value="False">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="CollapsedSidebarStyle" TargetType="Border">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsSidebarOpen}" Value="False">
+                    <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="ConsoleShellStyle" TargetType="Border">
+            <Setter Property="Height" Value="205" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsConsoleVisible}" Value="False">
+                    <Setter Property="Height" Value="38" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="ConsoleBodyStyle" TargetType="Grid">
+            <Setter Property="Visibility" Value="Visible" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsConsoleVisible}" Value="False">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="ConsoleToggleTextStyle" TargetType="TextBlock">
+            <Setter Property="Text" Value="Hide Console" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsConsoleVisible}" Value="False">
+                    <Setter Property="Text" Value="Show Console" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </Window.Resources>
+
     <DockPanel>
-        <Border DockPanel.Dock="Left" Width="180" Background="#f3f3f3" BorderBrush="#d0d0d0" BorderThickness="0,0,1,0">
-            <StackPanel Margin="12">
-                <TextBlock Text="Media Manager" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,16" />
-                <Button Command="{Binding ShowInboxCommand}" Margin="0,0,0,8">
-                    <StackPanel Orientation="Horizontal">
-                        <Path Style="{StaticResource NavIconPath}" Data="M4,4 L20,4 L20,20 L4,20 Z M4,13 L9,13 A3,3 0 0 0 15,13 L20,13" />
-                        <TextBlock Text="Inbox" />
-                    </StackPanel>
+        <Border DockPanel.Dock="Left"
+                Width="180"
+                Background="#f8fafc"
+                BorderBrush="#d8e0eb"
+                BorderThickness="0,0,1,0"
+                Style="{StaticResource ExpandedSidebarStyle}">
+            <DockPanel Margin="8">
+                <Button DockPanel.Dock="Top"
+                        Command="{Binding ToggleSidebarCommand}"
+                        HorizontalAlignment="Right"
+                        Padding="7"
+                        MinWidth="34"
+                        ToolTip="Collapse sidebar">
+                    <Path Style="{StaticResource ButtonIconPath}" Margin="0" Data="M15,6 L9,12 L15,18" />
                 </Button>
-                <Button Command="{Binding ShowAutoTorrentCommand}" Margin="0,0,0,8">
-                    <StackPanel Orientation="Horizontal">
-                        <Path Style="{StaticResource NavIconPath}" Data="M3,11 L21,11 M12,3 L12,19 M7,7 L12,3 L17,7 M7,17 L12,21 L17,17" />
-                        <TextBlock Text="Auto Torrent" />
-                    </StackPanel>
+                <TextBlock DockPanel.Dock="Top"
+                           Text="Media Manager"
+                           FontSize="18"
+                           FontWeight="SemiBold"
+                           Margin="0,6,0,16" />
+                <StackPanel DockPanel.Dock="Top">
+                    <Button Command="{Binding ShowInboxCommand}" Margin="0,0,0,8">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Style="{StaticResource NavIconPath}" Data="M4,4 L20,4 L20,20 L4,20 Z M4,13 L9,13 A3,3 0 0 0 15,13 L20,13" />
+                            <TextBlock Text="Inbox" />
+                        </StackPanel>
+                    </Button>
+                    <Button Command="{Binding ShowAutoTorrentCommand}" Margin="0,0,0,8">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Style="{StaticResource NavIconPath}" Data="M3,11 L21,11 M12,3 L12,19 M7,7 L12,3 L17,7 M7,17 L12,21 L17,17" />
+                            <TextBlock Text="Auto Torrent" />
+                        </StackPanel>
+                    </Button>
+                    <Button Command="{Binding ShowReviewCommand}" Margin="0,0,0,8">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Style="{StaticResource NavIconPath}" Data="M12,3 L20,7.5 L20,16.5 L12,21 L4,16.5 L4,7.5 Z M9,12 L11,14 L15,10" />
+                            <TextBlock Text="Review" />
+                        </StackPanel>
+                    </Button>
+                    <Button Command="{Binding ShowSettingsCommand}" Margin="0,0,0,8">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Style="{StaticResource NavIconPath}" Data="M12,8 A4,4 0 1 1 12,16 A4,4 0 0 1 12,8 M12,2 L14,5 L18,5 L19,9 L22,11 L20,15 L21,19 L17,20 L14,23 L10,23 L7,20 L3,19 L4,15 L2,11 L5,9 L6,5 L10,5 Z" />
+                            <TextBlock Text="Settings" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <Border DockPanel.Dock="Left"
+                Width="48"
+                Background="#f8fafc"
+                BorderBrush="#d8e0eb"
+                BorderThickness="0,0,1,0"
+                Style="{StaticResource CollapsedSidebarStyle}">
+            <StackPanel Margin="6">
+                <Button Command="{Binding ToggleSidebarCommand}" Padding="7" MinWidth="34" ToolTip="Expand sidebar">
+                    <Path Style="{StaticResource ButtonIconPath}" Margin="0" Data="M9,6 L15,12 L9,18" />
                 </Button>
-                <Button Command="{Binding ShowReviewCommand}" Margin="0,0,0,8">
-                    <StackPanel Orientation="Horizontal">
-                        <Path Style="{StaticResource NavIconPath}" Data="M12,3 L20,7.5 L20,16.5 L12,21 L4,16.5 L4,7.5 Z M9,12 L11,14 L15,10" />
-                        <TextBlock Text="Review" />
-                    </StackPanel>
+                <Button Command="{Binding ShowInboxCommand}" Padding="7" MinWidth="34" Margin="0,12,0,8" ToolTip="Inbox">
+                    <Path Style="{StaticResource NavIconPath}" Margin="0" Data="M4,4 L20,4 L20,20 L4,20 Z M4,13 L9,13 A3,3 0 0 0 15,13 L20,13" />
                 </Button>
-                <Button Command="{Binding ShowSettingsCommand}" Margin="0,0,0,8">
-                    <StackPanel Orientation="Horizontal">
-                        <Path Style="{StaticResource NavIconPath}" Data="M12,8 A4,4 0 1 1 12,16 A4,4 0 0 1 12,8 M12,2 L14,5 L18,5 L19,9 L22,11 L20,15 L21,19 L17,20 L14,23 L10,23 L7,20 L3,19 L4,15 L2,11 L5,9 L6,5 L10,5 Z" />
-                        <TextBlock Text="Settings" />
-                    </StackPanel>
+                <Button Command="{Binding ShowAutoTorrentCommand}" Padding="7" MinWidth="34" Margin="0,0,0,8" ToolTip="Auto Torrent">
+                    <Path Style="{StaticResource NavIconPath}" Margin="0" Data="M3,11 L21,11 M12,3 L12,19 M7,7 L12,3 L17,7 M7,17 L12,21 L17,17" />
+                </Button>
+                <Button Command="{Binding ShowReviewCommand}" Padding="7" MinWidth="34" Margin="0,0,0,8" ToolTip="Review">
+                    <Path Style="{StaticResource NavIconPath}" Margin="0" Data="M12,3 L20,7.5 L20,16.5 L12,21 L4,16.5 L4,7.5 Z M9,12 L11,14 L15,10" />
+                </Button>
+                <Button Command="{Binding ShowSettingsCommand}" Padding="7" MinWidth="34" Margin="0,0,0,8" ToolTip="Settings">
+                    <Path Style="{StaticResource NavIconPath}" Margin="0" Data="M12,8 A4,4 0 1 1 12,16 A4,4 0 0 1 12,8 M12,2 L14,5 L18,5 L19,9 L22,11 L20,15 L21,19 L17,20 L14,23 L10,23 L7,20 L3,19 L4,15 L2,11 L5,9 L6,5 L10,5 Z" />
                 </Button>
             </StackPanel>
         </Border>
 
-        <Border DockPanel.Dock="Bottom" Height="205" Background="#111111" BorderBrush="#303030" BorderThickness="0,1,0,0">
-            <DockPanel>
-                <Grid DockPanel.Dock="Top" Margin="10,8,10,4">
-                    <ProgressBar Style="{StaticResource OperationProgressBar}"
-                                 Minimum="0"
-                                 Maximum="100"
-                                 Value="{Binding OperationProgressPercent}" />
-                    <TextBlock Text="{Binding OperationProgressMessage}"
-                               Foreground="#f8fafc"
-                               FontSize="12"
-                               FontWeight="SemiBold"
-                               HorizontalAlignment="Center"
-                               VerticalAlignment="Center"
-                               TextTrimming="CharacterEllipsis" />
+        <Border DockPanel.Dock="Bottom"
+                Background="#111111"
+                BorderBrush="#303030"
+                BorderThickness="0,1,0,0"
+                Style="{StaticResource ConsoleShellStyle}">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="38" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <Grid Margin="10,7,10,6">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Grid Grid.Column="0" Margin="0,0,8,0">
+                        <ProgressBar Style="{StaticResource OperationProgressBar}"
+                                     Minimum="0"
+                                     Maximum="100"
+                                     Value="{Binding OperationProgressPercent}" />
+                        <TextBlock Text="{Binding OperationProgressMessage}"
+                                   Foreground="#f8fafc"
+                                   FontSize="12"
+                                   FontWeight="SemiBold"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis" />
+                    </Grid>
+                    <Button Grid.Column="1"
+                            Command="{Binding ToggleConsoleCommand}"
+                            Padding="10,4"
+                            MinHeight="24"
+                            MinWidth="108"
+                            ToolTip="Show or hide the console log">
+                        <TextBlock Style="{StaticResource ConsoleToggleTextStyle}" TextWrapping="NoWrap" />
+                    </Button>
                 </Grid>
-                <TextBlock DockPanel.Dock="Top"
-                           Text="Console Log"
-                           Foreground="#d6d6d6"
-                           FontWeight="SemiBold"
-                           Margin="10,8,10,4" />
-                <ListBox x:Name="ConsoleLogList"
-                         ItemsSource="{Binding UiLogs}"
-                         Background="#111111"
-                         BorderThickness="0"
-                         Foreground="#d6d6d6"
-                         FontFamily="Consolas"
-                         FontSize="12"
-                         ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                         ScrollViewer.VerticalScrollBarVisibility="Auto">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <TextBlock Text="{Binding}" Foreground="#d6d6d6" TextWrapping="NoWrap" />
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
-            </DockPanel>
+
+                <Grid Grid.Row="1" Style="{StaticResource ConsoleBodyStyle}">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <TextBlock Text="Console Log"
+                               Foreground="#d6d6d6"
+                               FontWeight="SemiBold"
+                               Margin="10,2,10,4" />
+                    <ListBox x:Name="ConsoleLogList"
+                             Grid.Row="1"
+                             ItemsSource="{Binding UiLogs}"
+                             Background="#111111"
+                             BorderThickness="0"
+                             Foreground="#d6d6d6"
+                             FontFamily="Consolas"
+                             FontSize="12"
+                             ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding}" Foreground="#d6d6d6" TextWrapping="NoWrap" />
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Grid>
+            </Grid>
         </Border>
 
         <ContentControl Content="{Binding CurrentView}" />

@@ -35,6 +35,7 @@
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
                                 </Grid.RowDefinitions>
 
                                 <TextBlock Grid.Row="0" Text="State folder" FontWeight="SemiBold" />
@@ -118,9 +119,25 @@
                     </TabItem>
 
                     <TabItem Header="Auto Torrent">
-                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="*" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
                             <Grid Margin="0,16,0,0">
                                 <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
@@ -182,13 +199,64 @@
                                          Text="{Binding AutoTorrentMaxParallelSearches, UpdateSourceTrigger=PropertyChanged}"
                                          ToolTip="1-4 qBittorrent searches. qBittorrent allows 5 running searches; this app caps at 4 and defaults to 3." />
 
-                                <StackPanel Grid.Row="16" Orientation="Horizontal">
-                                    <Button Content="Test Connection" Command="{Binding TestQbittorrentConnectionCommand}" />
-                                    <Button Content="Save Settings" Command="{Binding SaveCommand}" />
-                                    <TextBlock Text="{Binding StatusMessage}" Margin="12,7,0,0" Foreground="#2f6f3e" />
-                                </StackPanel>
+                                <TextBlock Grid.Row="16" Text="Use snapshot search" FontWeight="SemiBold" />
+                                <CheckBox Grid.Row="17"
+                                          IsChecked="{Binding AutoTorrentUseShowSnapshotSearch, UpdateSourceTrigger=PropertyChanged}"
+                                          Content="Enable show-level snapshot search for TV fetches" />
+
+                                <TextBlock Grid.Row="18" Text="Snapshot target results" FontWeight="SemiBold" />
+                                <TextBox Grid.Row="19"
+                                         Text="{Binding AutoTorrentSnapshotTargetResults, UpdateSourceTrigger=PropertyChanged}"
+                                         ToolTip="100-5000 results before stopping the snapshot search." />
+
+                                <TextBlock Grid.Row="20" Text="Snapshot timeout (seconds)" FontWeight="SemiBold" />
+                                <TextBox Grid.Row="21"
+                                         Text="{Binding AutoTorrentSnapshotTimeoutSeconds, UpdateSourceTrigger=PropertyChanged}"
+                                         ToolTip="30-300 seconds." />
+
+                                <TextBlock Grid.Row="22" Text="Local match workers" FontWeight="SemiBold" />
+                                <TextBox Grid.Row="23"
+                                         Text="{Binding AutoTorrentLocalMatchWorkers, UpdateSourceTrigger=PropertyChanged}"
+                                         ToolTip="1-8 local episode matching workers." />
+
+                                <TextBlock Grid.Row="24" Text="Candidate metadata probing" FontWeight="SemiBold" />
+                                <CheckBox Grid.Row="25"
+                                          IsChecked="{Binding AutoTorrentEnableCandidateMetadataProbe, UpdateSourceTrigger=PropertyChanged}"
+                                          Content="Probe .torrent file metadata for suspicious candidates before accepting them"
+                                          ToolTip="Best-effort filter for odd candidate names. Direct .torrent links and resolvable detail pages can be probed; magnets cannot be probed until added." />
+
+                                <Border Grid.Row="26" BorderBrush="#dbe3ee" BorderThickness="1" Padding="10" Margin="0,8,0,0">
+                                    <StackPanel>
+                                        <TextBlock Text="Candidate maintenance" FontWeight="SemiBold" Margin="0,0,0,8" />
+                                        <StackPanel Orientation="Horizontal">
+                                            <Button Content="Clear Episode Candidates" Command="{Binding ClearEpisodeSelectedCandidatesCommand}" />
+                                            <Button Content="Clear Pack Candidates" Command="{Binding ClearSeasonPackSelectedCandidatesCommand}" />
+                                            <Button Content="Clear Movie Candidates" Command="{Binding ClearMovieSelectedCandidatesCommand}" />
+                                            <Button Content="Clear All Candidates" Command="{Binding ClearAllSelectedCandidatesCommand}" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+
                             </Grid>
-                        </ScrollViewer>
+                            </ScrollViewer>
+
+                            <Border Grid.Row="1"
+                                    Background="White"
+                                    BorderBrush="#dbe3ee"
+                                    BorderThickness="0,1,0,0"
+                                    Padding="0,12,0,0">
+                                <DockPanel LastChildFill="True">
+                                    <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
+                                        <Button Content="Test Connection" Command="{Binding TestQbittorrentConnectionCommand}" />
+                                        <Button Content="Save Settings" Command="{Binding SaveCommand}" />
+                                    </StackPanel>
+                                    <TextBlock Text="{Binding StatusMessage}"
+                                               Margin="12,7,0,0"
+                                               Foreground="#2f6f3e"
+                                               TextWrapping="Wrap" />
+                                </DockPanel>
+                            </Border>
+                        </Grid>
                     </TabItem>
                 </TabControl>
             </Grid>

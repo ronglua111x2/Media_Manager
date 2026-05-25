@@ -16,8 +16,12 @@ public partial class AutoTorrentViewModel : ViewModelBase
     private readonly ITrackedMovieService _trackedMovieService;
     private readonly IFetchJobService _fetchJobService;
     private readonly IQbittorrentClient _qbittorrentClient;
+    private readonly IAutoTorrentLinkService _autoTorrentLinkService;
+    private readonly IDatabaseService _databaseService;
     private readonly IAppLogger _logger;
     private readonly DispatcherTimer _storageStatusTimer;
+    private CancellationTokenSource? _packFetchCancellation;
+    private bool _isQbittorrentRefreshRunning;
 
     [ObservableProperty]
     private string showSearchText = string.Empty;
@@ -40,12 +44,17 @@ public partial class AutoTorrentViewModel : ViewModelBase
     [ObservableProperty]
     private bool isBusy;
 
+    [ObservableProperty]
+    private bool isPackFetchRunning;
+
     public AutoTorrentViewModel(
         ISettingsService settingsService,
         ITrackedShowService trackedShowService,
         ITrackedMovieService trackedMovieService,
         IFetchJobService fetchJobService,
         IQbittorrentClient qbittorrentClient,
+        IAutoTorrentLinkService autoTorrentLinkService,
+        IDatabaseService databaseService,
         IAppLogger logger)
     {
         _settingsService = settingsService;
@@ -53,6 +62,8 @@ public partial class AutoTorrentViewModel : ViewModelBase
         _trackedMovieService = trackedMovieService;
         _fetchJobService = fetchJobService;
         _qbittorrentClient = qbittorrentClient;
+        _autoTorrentLinkService = autoTorrentLinkService;
+        _databaseService = databaseService;
         _logger = logger;
 
         ShowSearchResults = [];
@@ -272,6 +283,7 @@ public partial class AutoTorrentViewModel : ViewModelBase
         }
 
         var approvedEpisodes = card.Seasons
+            .Where(season => !season.IsPackMode)
             .SelectMany(season => season.Episodes)
             .Where(episode => episode.SelectedCandidate is not null)
             .ToList();
@@ -296,6 +308,7 @@ public partial class AutoTorrentViewModel : ViewModelBase
         }
 
         var wantedEpisodes = card.Seasons
+            .Where(season => !season.IsPackMode)
             .SelectMany(season => season.Episodes)
             .Where(episode => episode.IsWanted && episode.SelectedCandidate is not null)
             .ToList();
@@ -309,6 +322,168 @@ public partial class AutoTorrentViewModel : ViewModelBase
     }
 
     [RelayCommand]
+    private async Task FetchPacksForSelected(TrackedShowCardViewModel? card)
+    {
+        if (IsBusy || IsPackFetchRunning || card is null)
+        {
+            return;
+        }
+
+        var seasons = card.Seasons
+            .Where(season => season.IsPackMode)
+            .Select(season => season.SeasonNumber)
+            .ToList();
+        if (seasons.Count == 0)
+        {
+            StatusMessage = "Select at least one season in Pack mode.";
+            return;
+        }
+
+        using var cancellation = new CancellationTokenSource();
+        _packFetchCancellation = cancellation;
+        IsPackFetchRunning = true;
+        await RunAsync(async () =>
+        {
+            try
+            {
+                StatusMessage = $"Fetching pack candidates for {card.Title}.";
+                await _fetchJobService.FetchSeasonPacksAsync(card.Id, seasons, cancellation.Token);
+                RefreshCandidatesInPlace();
+                StatusMessage = $"Fetched pack candidates for {card.Title}.";
+            }
+            catch (OperationCanceledException)
+            {
+                StatusMessage = $"Canceled pack fetch for {card.Title}.";
+                _logger.Warning(StatusMessage, Common.LogTarget.All);
+            }
+        });
+        if (ReferenceEquals(_packFetchCancellation, cancellation))
+        {
+            _packFetchCancellation = null;
+        }
+
+        IsPackFetchRunning = false;
+    }
+
+    [RelayCommand]
+    private void AbortFetchPacks()
+    {
+        if (!IsPackFetchRunning || _packFetchCancellation is null)
+        {
+            StatusMessage = "No season pack fetch is running.";
+            return;
+        }
+
+        _packFetchCancellation.Cancel();
+        StatusMessage = "Abort requested for season pack fetch.";
+    }
+
+    [RelayCommand]
+    private void SaveSeasonPack(TrackedSeasonViewModel? season)
+    {
+        if (season?.SelectedPackCandidate is null)
+        {
+            StatusMessage = "Select a pack candidate first.";
+            return;
+        }
+        if (!season.IsPackMode)
+        {
+            StatusMessage = $"Enable Pack mode for S{season.SeasonNumber:00} before saving a pack.";
+            return;
+        }
+
+        var candidate = season.SelectedPackCandidate;
+        _trackedShowService.ClearSeasonSelectedPacksForSeasons(
+            candidate.ShowId,
+            candidate.CoveredSeasons.Count == 0 ? [season.SeasonNumber] : candidate.CoveredSeasons);
+        _trackedShowService.UpdateSeasonSelectedPack(candidate.ShowId, season.SeasonNumber, candidate);
+        ReloadShowCards(candidate.ShowId, season.SeasonNumber);
+        StatusMessage = $"Saved pack for S{season.SeasonNumber:00}.";
+    }
+
+    [RelayCommand]
+    private void DeselectSeasonPack(TrackedSeasonViewModel? season)
+    {
+        if (season is null)
+        {
+            return;
+        }
+
+        _trackedShowService.ClearSeasonSelectedPack(season.ShowId, season.SelectedPackOwnerSeasonNumber ?? season.SeasonNumber);
+        ReloadShowCards(season.ShowId, season.SelectedPackOwnerSeasonNumber ?? season.SeasonNumber);
+        StatusMessage = $"Cleared pack for S{season.SeasonNumber:00}.";
+    }
+
+    [RelayCommand]
+    private async Task AddSeasonPack(TrackedSeasonViewModel? season)
+    {
+        if (IsBusy || season is null)
+        {
+            StatusMessage = "Select a pack row first.";
+            return;
+        }
+
+        var ownerSeason = FindPackOwnerSeason(season);
+        if (ownerSeason is null)
+        {
+            StatusMessage = $"Select owner season S{season.SelectedPackOwnerSeasonNumber:00} to add this pack.";
+            return;
+        }
+
+        if (ownerSeason.SelectedPackCandidate is null)
+        {
+            StatusMessage = "Select a pack candidate first.";
+            return;
+        }
+        if (!string.IsNullOrWhiteSpace(ownerSeason.PackTorrentStatus))
+        {
+            StatusMessage = $"Pack for S{ownerSeason.SeasonNumber:00} is already mapped: {ownerSeason.PackTorrentStatus}.";
+            return;
+        }
+
+        var candidate = ownerSeason.SelectedPackCandidate;
+        await RunAsync(async () =>
+        {
+            var savePath = GetSeasonDownloadFolder(ownerSeason);
+            var addedTorrent = await _qbittorrentClient.AddTorrentAsync(new AddTorrentRequest
+            {
+                Url = candidate.FileUrl,
+                PluginName = candidate.PluginName,
+                SavePath = savePath,
+                Category = string.IsNullOrWhiteSpace(_settingsService.Current.AutoTorrent.CategoryName)
+                    ? "AutoTorrent"
+                    : _settingsService.Current.AutoTorrent.CategoryName,
+                Paused = false
+            });
+            _trackedShowService.UpdateSeasonSelectedPack(candidate.ShowId, ownerSeason.SeasonNumber, candidate);
+            _trackedShowService.UpdateSeasonPackTorrent(candidate.ShowId, ownerSeason.SeasonNumber, addedTorrent);
+            ReloadShowCards(candidate.ShowId, ownerSeason.SeasonNumber);
+            StatusMessage = $"Added pack torrent for S{ownerSeason.SeasonNumber:00} covering {candidate.CoveredSeasonsDisplay}: {addedTorrent.Name}. Save path: {savePath}";
+        });
+    }
+
+    [RelayCommand]
+    private async Task LinkSeasonPackCompleted(TrackedSeasonViewModel? season)
+    {
+        if (IsBusy || season is null)
+        {
+            StatusMessage = "Select a pack row first.";
+            return;
+        }
+
+        var ownerSeasonNumber = season.SelectedPackOwnerSeasonNumber ?? season.SeasonNumber;
+        await RunAsync(async () =>
+        {
+            StatusMessage = $"Creating library links for pack owner S{ownerSeasonNumber:00}...";
+            var result = await _autoTorrentLinkService.LinkSeasonPackAsync(season.ShowId, ownerSeasonNumber);
+            _trackedShowService.RefreshAvailability(season.ShowId);
+            ReloadShowCards(season.ShowId, ownerSeasonNumber);
+            StatusMessage = $"Pack library links for S{ownerSeasonNumber:00}: {result.Summary}.";
+            LogLinkMessages(result);
+        });
+    }
+
+    [RelayCommand]
     private void SaveSelectedCandidates(TrackedShowCardViewModel? card)
     {
         if (card is null)
@@ -318,7 +493,7 @@ public partial class AutoTorrentViewModel : ViewModelBase
         }
 
         var savedCount = 0;
-        foreach (var episode in card.Seasons.SelectMany(season => season.Episodes))
+        foreach (var episode in card.Seasons.Where(season => !season.IsPackMode).SelectMany(season => season.Episodes))
         {
             var candidate = episode.SelectedCandidate?.Candidate;
             if (candidate is null)
@@ -393,34 +568,61 @@ public partial class AutoTorrentViewModel : ViewModelBase
     {
         await RunAsync(async () =>
         {
-            _trackedShowService.RefreshAvailability();
-            var torrents = await _qbittorrentClient.GetTorrentsAsync();
-            var torrentsByHash = torrents.ToDictionary(torrent => torrent.Hash, StringComparer.OrdinalIgnoreCase);
-            var updatedCount = 0;
-            var removedCount = 0;
-            foreach (var episode in ShowCards.SelectMany(card => card.Seasons).SelectMany(season => season.Episodes))
-            {
-                if (string.IsNullOrWhiteSpace(episode.TorrentHash))
-                {
-                    continue;
-                }
-
-                if (torrentsByHash.TryGetValue(episode.TorrentHash, out var torrent))
-                {
-                    _trackedShowService.UpdateTorrentState(episode.Id, torrent);
-                    episode.UpdateTorrentStatus(torrent);
-                    updatedCount++;
-                    continue;
-                }
-
-                _trackedShowService.MarkTorrentRemoved(episode.Id, episode.TorrentHash);
-                episode.MarkTorrentRemoved();
-                removedCount++;
-            }
-
+            var result = await RefreshShowQbittorrentStateCoreAsync(showId: null, logDetails: false);
             ReloadShowCards();
-            StatusMessage = $"Refreshed availability and qBittorrent state: {updatedCount} tracked, {removedCount} removed.";
+            StatusMessage = result.Skipped
+                ? "qBittorrent refresh is already running."
+                : $"Refreshed availability and qBittorrent state: {result.UpdatedCount} tracked, {result.RemovedCount} removed.";
         });
+    }
+
+    [RelayCommand]
+    private async Task LinkShowCompleted(TrackedShowCardViewModel? card)
+    {
+        if (IsBusy || card is null)
+        {
+            return;
+        }
+
+        await RunAsync(async () =>
+        {
+            StatusMessage = $"Creating library links for {card.Title}...";
+            var result = await _autoTorrentLinkService.LinkShowAsync(card.Id);
+            _trackedShowService.RefreshAvailability(card.Id);
+            ReloadShowCards(card.Id);
+            StatusMessage = $"Library links for {card.Title}: {result.Summary}.";
+            LogLinkMessages(result);
+        });
+    }
+
+    [RelayCommand]
+    private void RemoveShowLinks(TrackedShowCardViewModel? card)
+    {
+        if (IsBusy || card is null)
+        {
+            return;
+        }
+
+        var result = _autoTorrentLinkService.RemoveShowLinks(card.Id);
+        _trackedShowService.RefreshAvailability(card.Id);
+        ReloadShowCards(card.Id);
+        StatusMessage = $"Removed library links for {card.Title}: {result.Summary}.";
+        LogLinkMessages(result);
+    }
+
+    [RelayCommand]
+    private void RefreshShowLinks(TrackedShowCardViewModel? card)
+    {
+        if (IsBusy || card is null)
+        {
+            return;
+        }
+
+        var result = _autoTorrentLinkService.RefreshLinkStatus(showId: card.Id);
+        _trackedShowService.RefreshAvailability(card.Id);
+        ReloadShowCards(card.Id);
+        StatusMessage = $"Refreshed library links for {card.Title}: {result.Summary}.";
+        LogLinkMessages(result);
     }
 
     [RelayCommand]
@@ -434,39 +636,11 @@ public partial class AutoTorrentViewModel : ViewModelBase
         await RunAsync(async () =>
         {
             StatusMessage = $"Updating qBittorrent state for {card.Title}...";
-            _trackedShowService.RefreshAvailability(card.Id);
-            var torrents = await _qbittorrentClient.GetTorrentsAsync();
-            var torrentsByHash = torrents.ToDictionary(torrent => torrent.Hash, StringComparer.OrdinalIgnoreCase);
-            var trackedEpisodes = card.Seasons
-                .SelectMany(season => season.Episodes)
-                .Where(episode => !string.IsNullOrWhiteSpace(episode.TorrentHash))
-                .ToList();
-            var updatedCount = 0;
-            var removedCount = 0;
-
-            foreach (var episode in trackedEpisodes)
-            {
-                if (torrentsByHash.TryGetValue(episode.TorrentHash, out var torrent))
-                {
-                    _trackedShowService.UpdateTorrentState(episode.Id, torrent);
-                    episode.UpdateTorrentStatus(torrent);
-                    updatedCount++;
-                    _logger.Info(
-                        $"qBittorrent state updated for {card.Title} {episode.EpisodeCode}: Hash={torrent.Hash}, State={torrent.State}, Progress={torrent.ProgressDisplay}",
-                        Common.LogTarget.All);
-                    continue;
-                }
-
-                _trackedShowService.MarkTorrentRemoved(episode.Id, episode.TorrentHash);
-                episode.MarkTorrentRemoved();
-                removedCount++;
-                _logger.Warning(
-                    $"Mapped torrent is no longer present in qBittorrent for {card.Title} {episode.EpisodeCode}: Hash={episode.TorrentHash}",
-                    Common.LogTarget.All);
-            }
-
+            var result = await RefreshShowQbittorrentStateCoreAsync(card.Id, logDetails: true);
             ReloadShowCards(card.Id);
-            StatusMessage = $"Updated qBittorrent for {card.Title}: {updatedCount} tracked, {removedCount} removed.";
+            StatusMessage = result.Skipped
+                ? "qBittorrent refresh is already running."
+                : $"Updated qBittorrent for {card.Title}: {result.UpdatedCount} tracked, {result.RemovedCount} removed.";
         });
     }
 
@@ -505,6 +679,55 @@ public partial class AutoTorrentViewModel : ViewModelBase
             ReloadMovieCards(card.Id);
             StatusMessage = $"Updated qBittorrent for {card.Title}: {torrent.State} {torrent.ProgressDisplay}.";
         });
+    }
+
+    [RelayCommand]
+    private async Task LinkMovieCompleted(TrackedMovieCardViewModel? card)
+    {
+        if (IsBusy || card is null)
+        {
+            return;
+        }
+
+        await RunAsync(async () =>
+        {
+            StatusMessage = $"Creating library link for {card.Title}...";
+            var result = await _autoTorrentLinkService.LinkMovieAsync(card.Id);
+            _trackedMovieService.RefreshAvailability(card.Id);
+            ReloadMovieCards(card.Id);
+            StatusMessage = $"Library links for {card.Title}: {result.Summary}.";
+            LogLinkMessages(result);
+        });
+    }
+
+    [RelayCommand]
+    private void RemoveMovieLinks(TrackedMovieCardViewModel? card)
+    {
+        if (IsBusy || card is null)
+        {
+            return;
+        }
+
+        var result = _autoTorrentLinkService.RemoveMovieLinks(card.Id);
+        _trackedMovieService.RefreshAvailability(card.Id);
+        ReloadMovieCards(card.Id);
+        StatusMessage = $"Removed library links for {card.Title}: {result.Summary}.";
+        LogLinkMessages(result);
+    }
+
+    [RelayCommand]
+    private void RefreshMovieLinks(TrackedMovieCardViewModel? card)
+    {
+        if (IsBusy || card is null)
+        {
+            return;
+        }
+
+        var result = _autoTorrentLinkService.RefreshLinkStatus(movieId: card.Id);
+        _trackedMovieService.RefreshAvailability(card.Id);
+        ReloadMovieCards(card.Id);
+        StatusMessage = $"Refreshed library links for {card.Title}: {result.Summary}.";
+        LogLinkMessages(result);
     }
 
     private async Task AddEpisodesToQbittorrent(IReadOnlyList<TrackedEpisodeRowViewModel> episodes)
@@ -671,7 +894,122 @@ public partial class AutoTorrentViewModel : ViewModelBase
         }
     }
 
-    private void ReloadShowCards(long? expandedShowId = null)
+    private void LogLinkMessages(AutoTorrentLinkResult result)
+    {
+        foreach (var message in result.Messages.Take(20))
+        {
+            _logger.Info(message, Common.LogTarget.All);
+        }
+
+        if (result.Messages.Count > 20)
+        {
+            _logger.Info($"Skipped logging {result.Messages.Count - 20} additional link message(s).", Common.LogTarget.All);
+        }
+    }
+
+    private async Task<ShowQbittorrentRefreshResult> RefreshShowQbittorrentStateCoreAsync(long? showId, bool logDetails)
+    {
+        if (_isQbittorrentRefreshRunning)
+        {
+            return new ShowQbittorrentRefreshResult(Skipped: true, EpisodeUpdatedCount: 0, PackUpdatedCount: 0, EpisodeRemovedCount: 0, PackRemovedCount: 0);
+        }
+
+        _isQbittorrentRefreshRunning = true;
+        try
+        {
+            if (showId is null)
+            {
+                _trackedShowService.RefreshAvailability();
+            }
+            else
+            {
+                _trackedShowService.RefreshAvailability(showId.Value);
+            }
+
+            var torrentsByHash = (await _qbittorrentClient.GetTorrentsAsync())
+                .ToDictionary(torrent => torrent.Hash, StringComparer.OrdinalIgnoreCase);
+            var showsById = _trackedShowService.GetShows().ToDictionary(show => show.Id);
+            var showIds = showId is null
+                ? showsById.Keys.ToList()
+                : [showId.Value];
+            var episodeUpdatedCount = 0;
+            var packUpdatedCount = 0;
+            var episodeRemovedCount = 0;
+            var packRemovedCount = 0;
+
+            foreach (var trackedShowId in showIds)
+            {
+                showsById.TryGetValue(trackedShowId, out var show);
+                foreach (var episode in _trackedShowService.GetEpisodes(trackedShowId)
+                             .Where(episode => !string.IsNullOrWhiteSpace(episode.TorrentHash)))
+                {
+                    if (torrentsByHash.TryGetValue(episode.TorrentHash!, out var torrent))
+                    {
+                        _trackedShowService.UpdateTorrentState(episode.Id, torrent);
+                        episodeUpdatedCount++;
+                        if (logDetails && show is not null)
+                        {
+                            _logger.Info(
+                                $"qBittorrent state updated for {show.DisplayTitle} S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00}: Hash={torrent.Hash}, State={torrent.State}, Progress={torrent.ProgressDisplay}",
+                                Common.LogTarget.All);
+                        }
+
+                        continue;
+                    }
+
+                    _trackedShowService.MarkTorrentRemoved(episode.Id, episode.TorrentHash!);
+                    episodeRemovedCount++;
+                    if (logDetails && show is not null)
+                    {
+                        _logger.Warning(
+                            $"Mapped torrent is no longer present in qBittorrent for {show.DisplayTitle} S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00}: Hash={episode.TorrentHash}",
+                            Common.LogTarget.All);
+                    }
+                }
+
+                foreach (var season in _trackedShowService.GetSeasons(trackedShowId)
+                             .Where(season => season.SelectedPackOwnerSeasonNumber == season.SeasonNumber &&
+                                              !string.IsNullOrWhiteSpace(season.PackTorrentHash)))
+                {
+                    if (torrentsByHash.TryGetValue(season.PackTorrentHash!, out var torrent))
+                    {
+                        _trackedShowService.UpdateSeasonPackTorrent(trackedShowId, season.SeasonNumber, torrent);
+                        packUpdatedCount++;
+                        if (logDetails && show is not null)
+                        {
+                            _logger.Info(
+                                $"qBittorrent state updated for {show.DisplayTitle} S{season.SeasonNumber:00} pack: Hash={torrent.Hash}, State={torrent.State}, Progress={torrent.ProgressDisplay}",
+                                Common.LogTarget.All);
+                        }
+
+                        continue;
+                    }
+
+                    _trackedShowService.MarkSeasonPackTorrentRemoved(trackedShowId, season.SeasonNumber, season.PackTorrentHash!);
+                    packRemovedCount++;
+                    if (logDetails && show is not null)
+                    {
+                        _logger.Warning(
+                            $"Mapped pack torrent is no longer present in qBittorrent for {show.DisplayTitle} S{season.SeasonNumber:00}: Hash={season.PackTorrentHash}",
+                            Common.LogTarget.All);
+                    }
+                }
+            }
+
+            return new ShowQbittorrentRefreshResult(
+                Skipped: false,
+                episodeUpdatedCount,
+                packUpdatedCount,
+                episodeRemovedCount,
+                packRemovedCount);
+        }
+        finally
+        {
+            _isQbittorrentRefreshRunning = false;
+        }
+    }
+
+    private void ReloadShowCards(long? expandedShowId = null, int? selectedPackSeasonNumber = null)
     {
         var existingExpandedIds = ShowCards
             .Where(card => card.IsExpanded)
@@ -686,9 +1024,17 @@ public partial class AutoTorrentViewModel : ViewModelBase
         ShowCards.Clear();
         foreach (var show in _trackedShowService.GetShows())
         {
+            var linkedEpisodeStatuses = GetLinkedEpisodeStatuses(show.TmdbId);
             var episodes = _trackedShowService.GetEpisodes(show.Id)
                 .Select(episode => new TrackedEpisodeRowViewModel(episode, UpdateWanted))
                 .ToList();
+            foreach (var episode in episodes)
+            {
+                episode.LibraryLinkStatus = linkedEpisodeStatuses.TryGetValue((episode.SeasonNumber, episode.EpisodeNumber), out var status)
+                    ? status
+                    : "Not linked";
+            }
+
             var seasonRecords = _trackedShowService.GetSeasons(show.Id)
                 .ToDictionary(season => season.SeasonNumber);
             var downloadFolderOptions = GetDownloadFolderOptions();
@@ -712,18 +1058,39 @@ public partial class AutoTorrentViewModel : ViewModelBase
                         group,
                         downloadFolderOptions,
                         seasonRecord?.DownloadFolder ?? GetDefaultDownloadFolder(),
-                        UpdateSeasonDownloadFolder)
+                        UpdateSeasonDownloadFolder,
+                        UpdateSeasonManagementMode,
+                        seasonRecord)
                     {
                         IsExpanded = existingExpandedSeasonKeys.Contains((show.Id, group.Key))
                     };
+                    if (_fetchJobService.TryGetPackCandidates(show.Id, group.Key, out var packCandidates))
+                    {
+                        season.ReplacePackCandidates(packCandidates);
+                    }
+
+                    ApplyPackLinkCounts(season, episodes, linkedEpisodeStatuses);
                     return season;
                 });
             var card = new TrackedShowCardViewModel(show, seasons, UpdateShowPreferences)
             {
                 IsExpanded = expandedShowId == show.Id || existingExpandedIds.Contains(show.Id)
             };
+            if (selectedPackSeasonNumber is not null && card.Id == expandedShowId)
+            {
+                card.SelectedPackSeason = card.Seasons.FirstOrDefault(season => season.SeasonNumber == selectedPackSeasonNumber.Value);
+            }
             ShowCards.Add(card);
         }
+    }
+
+    private TrackedSeasonViewModel? FindPackOwnerSeason(TrackedSeasonViewModel season)
+    {
+        var ownerSeasonNumber = season.SelectedPackOwnerSeasonNumber ?? season.SeasonNumber;
+        return ShowCards
+            .FirstOrDefault(card => card.Id == season.ShowId)?
+            .Seasons
+            .FirstOrDefault(item => item.SeasonNumber == ownerSeasonNumber);
     }
 
     private void ReloadMovieCards(long? expandedMovieId = null)
@@ -732,6 +1099,7 @@ public partial class AutoTorrentViewModel : ViewModelBase
         foreach (var movie in _trackedMovieService.GetMovies())
         {
             var card = new TrackedMovieCardViewModel(movie, UpdateMovieWanted, UpdateMoviePreferences);
+            card.LibraryLinkStatus = IsMovieLinked(movie.TmdbId) ? "Linked" : "Not linked";
             if (_fetchJobService.TryGetMovieCandidates(movie.Id, out var candidates))
             {
                 card.ReplaceCandidates(candidates);
@@ -739,6 +1107,110 @@ public partial class AutoTorrentViewModel : ViewModelBase
 
             MovieCards.Add(card);
         }
+    }
+
+    private Dictionary<(int SeasonNumber, int EpisodeNumber), string> GetLinkedEpisodeStatuses(int tmdbId)
+    {
+        var providerId = tmdbId.ToString();
+        var statuses = new Dictionary<(int SeasonNumber, int EpisodeNumber), string>();
+        foreach (var item in _databaseService.GetSourceItems()
+            .Where(item =>
+                item.MediaKind == Common.MediaKind.TvEpisode &&
+                item.MatchAccepted &&
+                item.State == ItemState.Linked &&
+                !string.IsNullOrWhiteSpace(item.LinkedPath) &&
+                File.Exists(item.LinkedPath) &&
+                string.Equals(item.Provider, "tmdb", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(item.ProviderId, providerId, StringComparison.OrdinalIgnoreCase)))
+        {
+            var season = item.MappedSeasonNumber ?? item.SeasonNumber;
+            var episode = item.MappedEpisodeNumber ?? item.EpisodeNumber;
+            if (season is null || episode is null)
+            {
+                continue;
+            }
+
+            var key = (season.Value, episode.Value);
+            var status = item.AutoTorrentLinkKind switch
+            {
+                Common.AutoTorrentLinkKind.SeasonPack when item.AutoTorrentPackOwnerSeasonNumber is not null =>
+                    $"Linked by pack S{item.AutoTorrentPackOwnerSeasonNumber.Value:00}",
+                Common.AutoTorrentLinkKind.Episode => "Linked by episode torrent",
+                _ => "Linked"
+            };
+
+            if (!statuses.TryGetValue(key, out var existingStatus) ||
+                GetLinkStatusPriority(status) > GetLinkStatusPriority(existingStatus))
+            {
+                statuses[key] = status;
+            }
+        }
+
+        return statuses;
+    }
+
+    private static int GetLinkStatusPriority(string status)
+    {
+        if (status.StartsWith("Linked by pack", StringComparison.OrdinalIgnoreCase))
+        {
+            return 3;
+        }
+
+        return string.Equals(status, "Linked by episode torrent", StringComparison.OrdinalIgnoreCase) ? 2 : 1;
+    }
+
+    private static void ApplyPackLinkCounts(
+        TrackedSeasonViewModel season,
+        IReadOnlyList<TrackedEpisodeRowViewModel> episodes,
+        IReadOnlyDictionary<(int SeasonNumber, int EpisodeNumber), string> linkedEpisodeStatuses)
+    {
+        if (!season.HasSavedPack || season.SelectedPackOwnerSeasonNumber is null)
+        {
+            season.PackLinkedEpisodeCount = 0;
+            season.PackTotalEpisodeCount = 0;
+            return;
+        }
+
+        var ownerSeasonNumber = season.SelectedPackOwnerSeasonNumber.Value;
+        var coveredSeasons = ParseCoveredSeasons(season.SelectedPackCoveredSeasons).ToHashSet();
+        if (coveredSeasons.Count == 0)
+        {
+            coveredSeasons.Add(ownerSeasonNumber);
+        }
+
+        var expectedPackStatus = $"Linked by pack S{ownerSeasonNumber:00}";
+        var coveredEpisodes = episodes
+            .Where(episode => coveredSeasons.Contains(episode.SeasonNumber))
+            .ToList();
+
+        season.PackTotalEpisodeCount = coveredEpisodes.Count;
+        season.PackLinkedEpisodeCount = coveredEpisodes.Count(episode =>
+            linkedEpisodeStatuses.TryGetValue((episode.SeasonNumber, episode.EpisodeNumber), out var status) &&
+            string.Equals(status, expectedPackStatus, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static IReadOnlyList<int> ParseCoveredSeasons(string? value)
+    {
+        return (value ?? string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(item => int.TryParse(item, out var season) ? season : 0)
+            .Where(season => season > 0)
+            .Distinct()
+            .Order()
+            .ToList();
+    }
+
+    private bool IsMovieLinked(int tmdbId)
+    {
+        var providerId = tmdbId.ToString();
+        return _databaseService.GetSourceItems().Any(item =>
+            item.MediaKind == Common.MediaKind.Movie &&
+            item.MatchAccepted &&
+            item.State == ItemState.Linked &&
+            !string.IsNullOrWhiteSpace(item.LinkedPath) &&
+            File.Exists(item.LinkedPath) &&
+            string.Equals(item.Provider, "tmdb", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(item.ProviderId, providerId, StringComparison.OrdinalIgnoreCase));
     }
 
     private void ReloadFetchJobs()
@@ -771,6 +1243,11 @@ public partial class AutoTorrentViewModel : ViewModelBase
         RefreshStorageStatus(updateStatusMessage: false);
     }
 
+    private void UpdateSeasonManagementMode(long showId, int seasonNumber, Common.SeasonManagementMode mode)
+    {
+        _trackedShowService.UpdateSeasonPackMode(showId, seasonNumber, mode);
+    }
+
     private void UpdateMovieWanted(long movieId, bool isWanted)
     {
         _trackedMovieService.UpdateWanted(movieId, isWanted);
@@ -795,6 +1272,13 @@ public partial class AutoTorrentViewModel : ViewModelBase
     private string GetEpisodeDownloadFolder(TrackedEpisodeRowViewModel episode)
     {
         return string.IsNullOrWhiteSpace(episode.DownloadFolder) ? GetDefaultDownloadFolder() : episode.DownloadFolder;
+    }
+
+    private string GetSeasonDownloadFolder(TrackedSeasonViewModel season)
+    {
+        return string.IsNullOrWhiteSpace(season.SelectedSeasonDownloadFolder)
+            ? GetDefaultDownloadFolder()
+            : season.SelectedSeasonDownloadFolder;
     }
 
     private IReadOnlyList<string> GetDownloadFolderOptions()
@@ -841,6 +1325,11 @@ public partial class AutoTorrentViewModel : ViewModelBase
 
         foreach (var season in ShowCards.SelectMany(card => card.Seasons))
         {
+            if (_fetchJobService.TryGetPackCandidates(season.ShowId, season.SeasonNumber, out var packCandidates))
+            {
+                season.ReplacePackCandidates(packCandidates);
+            }
+
             season.NotifyStatsChanged();
         }
 
@@ -863,5 +1352,17 @@ public partial class AutoTorrentViewModel : ViewModelBase
         }
 
         dispatcher.BeginInvoke(action);
+    }
+
+    private sealed record ShowQbittorrentRefreshResult(
+        bool Skipped,
+        int EpisodeUpdatedCount,
+        int PackUpdatedCount,
+        int EpisodeRemovedCount,
+        int PackRemovedCount)
+    {
+        public int UpdatedCount => EpisodeUpdatedCount + PackUpdatedCount;
+
+        public int RemovedCount => EpisodeRemovedCount + PackRemovedCount;
     }
 }

@@ -10,6 +10,8 @@ namespace media_management_app.ViewModels;
 
 public partial class InboxViewModel : ViewModelBase
 {
+    private const double MinAcceptedMatchConfidence = 75;
+
     private readonly ISettingsService _settingsService;
     private readonly IDatabaseService _databaseService;
     private readonly IScannerService _scannerService;
@@ -288,6 +290,7 @@ public partial class InboxViewModel : ViewModelBase
             var acceptedCount = 0;
             var skippedCount = 0;
             var processedCount = 0;
+            var savedMappings = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             _progressService.Start($"Accepting {queuedItems.Count} suggested match(es)...", queuedItems.Count);
             foreach (var item in queuedItems)
             {
@@ -301,6 +304,18 @@ public partial class InboxViewModel : ViewModelBase
                     string.IsNullOrWhiteSpace(item.ProviderId))
                 {
                     skippedCount++;
+                    continue;
+                }
+
+                if (item.MatchConfidence is null || item.MatchConfidence < MinAcceptedMatchConfidence)
+                {
+                    skippedCount++;
+                    item.MatchAccepted = false;
+                    item.RequiresManualReview = true;
+                    item.State = ItemState.NeedsReview;
+                    item.Notes = $"Low-confidence suggestion ({item.MatchConfidence:0}) was not accepted automatically. Use a manual match once candidate selection is available.";
+                    _databaseService.UpdateSourceItem(item);
+                    _logger.Warning($"Skipped accepting low-confidence match for {item.FilePath}: {item.MatchedTitle} ({item.MatchedYear}) [{item.ProviderId}] confidence={item.MatchConfidence:0}", LogTarget.All);
                     continue;
                 }
 
@@ -324,16 +339,21 @@ public partial class InboxViewModel : ViewModelBase
                     ? $"Accepted suggested identity. Using TMDb episode mapping S{item.MappedSeasonNumber:00}E{item.MappedEpisodeNumber:00}."
                     : null;
                 _databaseService.UpdateSourceItem(item);
-                _databaseService.UpsertSeriesMapping(new SeriesMapping
+                var mappingKey = $"{item.ShowTitle}|{item.ParserPattern}|{item.Provider ?? "tmdb"}|{item.ProviderId}";
+                if (savedMappings.Add(mappingKey))
                 {
-                    ParsedTitle = item.ShowTitle,
-                    ParserPattern = item.ParserPattern,
-                    MatchedTitle = item.MatchedTitle,
-                    MatchedYear = item.MatchedYear,
-                    Provider = item.Provider ?? "tmdb",
-                    ProviderId = item.ProviderId,
-                    UseAbsoluteAnimeMapping = false
-                });
+                    _databaseService.UpsertSeriesMapping(new SeriesMapping
+                    {
+                        ParsedTitle = item.ShowTitle,
+                        ParserPattern = item.ParserPattern,
+                        MatchedTitle = item.MatchedTitle,
+                        MatchedYear = item.MatchedYear,
+                        Provider = item.Provider ?? "tmdb",
+                        ProviderId = item.ProviderId,
+                        UseAbsoluteAnimeMapping = false
+                    });
+                }
+
                 acceptedCount++;
             }
 
@@ -526,9 +546,25 @@ public partial class InboxViewModel : ViewModelBase
             var savedMapping = _databaseService.GetSeriesMapping(item.ShowTitle, item.ParserPattern);
             if (savedMapping is not null)
             {
-                ApplyMapping(item, savedMapping);
-                await ResolveEpisodeMappingAsync(item);
-                continue;
+                var validation = await _metadataProvider.ValidateTvSeriesMatchAsync(TvSeriesMatchRequest.FromSourceItem(item), savedMapping.ProviderId);
+                if (validation.IsAvailable && validation.IsValid)
+                {
+                    ApplyMapping(item, savedMapping);
+                    await ResolveEpisodeMappingAsync(item);
+                    continue;
+                }
+
+                item.State = ItemState.NeedsReview;
+                item.RequiresManualReview = true;
+                item.MatchAccepted = false;
+                item.MatchReason = validation.Reason ?? validation.ErrorMessage ?? "Saved mapping failed validation.";
+                item.Notes = $"Saved mapping ignored: {savedMapping.MatchedTitle} ({savedMapping.MatchedYear}) [tmdbid-{savedMapping.ProviderId}]. {item.MatchReason}";
+                _logger.Warning($"Ignored saved series mapping for {item.FilePath}: {item.Notes}", LogTarget.All);
+
+                if (!validation.IsAvailable)
+                {
+                    continue;
+                }
             }
 
             var matchResult = await _metadataProvider.MatchTvSeriesAsync(item);

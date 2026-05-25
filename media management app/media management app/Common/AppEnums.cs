@@ -73,4 +73,17 @@ public enum EpisodeFetchStatus
     Error = 6
 }
 
+public enum SeasonManagementMode
+{
+    Episode = 0,
+    Pack = 1
+}
+
+public enum AutoTorrentLinkKind
+{
+    Episode = 1,
+    SeasonPack = 2,
+    Movie = 3
+}
+
 #endregion

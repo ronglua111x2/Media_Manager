@@ -50,6 +50,21 @@ public partial class SettingsViewModel : ViewModelBase
     private string autoTorrentMaxParallelSearches = "3";
 
     [ObservableProperty]
+    private bool autoTorrentUseShowSnapshotSearch;
+
+    [ObservableProperty]
+    private string autoTorrentSnapshotTargetResults = "2000";
+
+    [ObservableProperty]
+    private string autoTorrentSnapshotTimeoutSeconds = "120";
+
+    [ObservableProperty]
+    private string autoTorrentLocalMatchWorkers = "3";
+
+    [ObservableProperty]
+    private bool autoTorrentEnableCandidateMetadataProbe;
+
+    [ObservableProperty]
     private string? selectedSourceFolder;
 
     [ObservableProperty]
@@ -196,6 +211,36 @@ public partial class SettingsViewModel : ViewModelBase
         SelectedAutoTorrentDownloadFolder = AutoTorrentDownloadFolders.FirstOrDefault();
     }
 
+    [RelayCommand]
+    private void ClearEpisodeSelectedCandidates()
+    {
+        _databaseService.ClearSelectedEpisodeCandidates();
+        StatusMessage = "Cleared selected episode candidates.";
+    }
+
+    [RelayCommand]
+    private void ClearSeasonPackSelectedCandidates()
+    {
+        _databaseService.ClearSelectedSeasonPackCandidates();
+        StatusMessage = "Cleared selected season pack candidates.";
+    }
+
+    [RelayCommand]
+    private void ClearMovieSelectedCandidates()
+    {
+        _databaseService.ClearSelectedMovieCandidates();
+        StatusMessage = "Cleared selected movie candidates.";
+    }
+
+    [RelayCommand]
+    private void ClearAllSelectedCandidates()
+    {
+        _databaseService.ClearSelectedEpisodeCandidates();
+        _databaseService.ClearSelectedSeasonPackCandidates();
+        _databaseService.ClearSelectedMovieCandidates();
+        StatusMessage = "Cleared all selected candidates.";
+    }
+
     partial void OnDefaultLibraryFolderNameChanged(string value)
     {
         if (_isLoadingSettings)
@@ -225,6 +270,11 @@ public partial class SettingsViewModel : ViewModelBase
             AutoTorrentCategoryName = _settingsService.Current.AutoTorrent.CategoryName;
             AutoTorrentMaxCandidatesPerFetch = _settingsService.Current.AutoTorrent.MaxCandidatesPerFetch.ToString();
             AutoTorrentMaxParallelSearches = _settingsService.Current.AutoTorrent.MaxParallelSearches.ToString();
+            AutoTorrentUseShowSnapshotSearch = _settingsService.Current.AutoTorrent.UseShowSnapshotSearch;
+            AutoTorrentSnapshotTargetResults = _settingsService.Current.AutoTorrent.SnapshotTargetResults.ToString();
+            AutoTorrentSnapshotTimeoutSeconds = _settingsService.Current.AutoTorrent.SnapshotTimeoutSeconds.ToString();
+            AutoTorrentLocalMatchWorkers = _settingsService.Current.AutoTorrent.LocalMatchWorkers.ToString();
+            AutoTorrentEnableCandidateMetadataProbe = _settingsService.Current.AutoTorrent.EnableCandidateMetadataProbe;
             AutoTorrentDownloadFolders.Clear();
             foreach (var folder in _settingsService.Current.AutoTorrent.DownloadFolders)
             {
@@ -282,6 +332,20 @@ public partial class SettingsViewModel : ViewModelBase
             int.TryParse(AutoTorrentMaxParallelSearches, out var maxParallelSearches)
                 ? Math.Clamp(maxParallelSearches, 1, 4)
                 : 3;
+        _settingsService.Current.AutoTorrent.UseShowSnapshotSearch = AutoTorrentUseShowSnapshotSearch;
+        _settingsService.Current.AutoTorrent.SnapshotTargetResults =
+            int.TryParse(AutoTorrentSnapshotTargetResults, out var snapshotTarget)
+                ? Math.Clamp(snapshotTarget, 100, 5000)
+                : 2000;
+        _settingsService.Current.AutoTorrent.SnapshotTimeoutSeconds =
+            int.TryParse(AutoTorrentSnapshotTimeoutSeconds, out var snapshotTimeout)
+                ? Math.Clamp(snapshotTimeout, 30, 300)
+                : 120;
+        _settingsService.Current.AutoTorrent.LocalMatchWorkers =
+            int.TryParse(AutoTorrentLocalMatchWorkers, out var localMatchWorkers)
+                ? Math.Clamp(localMatchWorkers, 1, 8)
+                : 3;
+        _settingsService.Current.AutoTorrent.EnableCandidateMetadataProbe = AutoTorrentEnableCandidateMetadataProbe;
     }
 
     private void RefreshLibraryRootPreview()

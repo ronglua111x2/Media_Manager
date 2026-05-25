@@ -82,6 +82,39 @@ public sealed class TrackedShowService : ITrackedShowService
             LogTarget.All);
     }
 
+    public void UpdateSeasonPackMode(long showId, int seasonNumber, SeasonManagementMode mode)
+    {
+        _databaseService.UpdateTrackedSeasonPackMode(showId, seasonNumber, mode);
+    }
+
+    public void UpdateSeasonSelectedPack(long showId, int ownerSeasonNumber, SeasonPackCandidate candidate)
+    {
+        _databaseService.UpdateTrackedSeasonSelectedPack(showId, ownerSeasonNumber, candidate);
+        _logger.Info($"Saved season pack for show id={showId} S{ownerSeasonNumber:00}: '{candidate.FileName}'", LogTarget.All);
+    }
+
+    public void ClearSeasonSelectedPacksForSeasons(long showId, IReadOnlyList<int> seasonNumbers)
+    {
+        _databaseService.ClearTrackedSeasonSelectedPacksForSeasons(showId, seasonNumbers);
+        _logger.Info($"Cleared overlapping season packs for show id={showId}. Seasons={string.Join(",", seasonNumbers)}", LogTarget.All);
+    }
+
+    public void ClearSeasonSelectedPack(long showId, int ownerSeasonNumber)
+    {
+        _databaseService.ClearTrackedSeasonSelectedPack(showId, ownerSeasonNumber);
+        _logger.Info($"Cleared season pack for show id={showId} S{ownerSeasonNumber:00}", LogTarget.All);
+    }
+
+    public void UpdateSeasonPackTorrent(long showId, int ownerSeasonNumber, AddedTorrentResult torrent)
+    {
+        _databaseService.UpdateTrackedSeasonPackTorrent(showId, ownerSeasonNumber, torrent);
+    }
+
+    public void MarkSeasonPackTorrentRemoved(long showId, int ownerSeasonNumber, string torrentHash)
+    {
+        _databaseService.MarkTrackedSeasonPackTorrentRemoved(showId, ownerSeasonNumber, torrentHash);
+    }
+
     public void UpdateTorrentState(long episodeId, AddedTorrentResult torrent)
     {
         _databaseService.UpdateTrackedEpisodeTorrent(

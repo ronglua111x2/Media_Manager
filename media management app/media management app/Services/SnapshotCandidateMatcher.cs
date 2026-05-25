@@ -1,55 +1,52 @@
+using System.Text.RegularExpressions;
 using media_management_app.Models;
 
 namespace media_management_app.Services;
 
-public sealed class CandidateMatchResult
+public sealed class SnapshotCandidateMatcher
 {
-    public bool IsAccepted { get; init; }
+    private static readonly Regex SeasonWordRegex = new(@"\bseason\s*(?<season>\d{1,3})\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    public string? RejectReason { get; init; }
-
-    public int IdentityScore { get; init; }
-
-    public int EpisodeScore { get; init; }
-
-    public int QualityScore { get; init; }
-
-    public int AudioScore { get; init; }
-
-    public int TotalScore { get; init; }
-}
-
-public static class CandidateMatcher
-{
-    public static CandidateMatchResult MatchEpisodeCandidate(
+    public SnapshotMatchResult Match(
         TrackedShow show,
         TrackedEpisode episode,
-        TorrentSearchResult result,
+        SnapshotCandidate candidate,
         IReadOnlyList<string> selectedQualities)
     {
+        var result = candidate.Result;
+        var parsed = candidate.Parsed;
+
         if (!result.CanAdd)
         {
-            return new CandidateMatchResult { IsAccepted = false, RejectReason = $"not addable link type '{result.LinkType}'" };
+            return new SnapshotMatchResult { IsAccepted = false, RejectReason = $"not addable link type '{result.LinkType}'" };
         }
 
         if (LooksLikePluginError(result.FileName))
         {
-            return new CandidateMatchResult { IsAccepted = false, RejectReason = "search plugin error row" };
+            return new SnapshotMatchResult { IsAccepted = false, RejectReason = "search plugin error row" };
         }
 
-        var parsed = TorrentCandidateParser.Parse(result.FileName);
-        if (!IsEpisodeMatch(parsed, episode))
+        if (parsed.ExplicitYear is not null && show.FirstAirYear is not null && parsed.ExplicitYear != show.FirstAirYear)
         {
-            return new CandidateMatchResult
+            return new SnapshotMatchResult
             {
                 IsAccepted = false,
-                RejectReason = $"does not contain S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00} or {episode.SeasonNumber}x{episode.EpisodeNumber:00}"
+                RejectReason = $"explicit year mismatch {parsed.ExplicitYear} != {show.FirstAirYear}"
+            };
+        }
+
+        if (!IsSeasonMatch(parsed, episode.SeasonNumber))
+        {
+            return new SnapshotMatchResult
+            {
+                IsAccepted = false,
+                RejectReason = $"season mismatch {episode.SeasonNumber:00}"
             };
         }
 
         if (result.Seeders < show.MinimumSeeders)
         {
-            return new CandidateMatchResult
+            return new SnapshotMatchResult
             {
                 IsAccepted = false,
                 RejectReason = $"seeders below threshold {show.MinimumSeeders}"
@@ -58,32 +55,32 @@ public static class CandidateMatcher
 
         if (!TorrentQuality.MatchesSelectedQuality(parsed.Quality, selectedQualities))
         {
-            return new CandidateMatchResult
+            return new SnapshotMatchResult
             {
                 IsAccepted = false,
                 RejectReason = $"does not match selected quality options: {string.Join(", ", selectedQualities)}"
             };
         }
 
-        if (parsed.ExplicitYear is not null && show.FirstAirYear is not null && parsed.ExplicitYear != show.FirstAirYear)
-        {
-            return new CandidateMatchResult
-            {
-                IsAccepted = false,
-                RejectReason = $"explicit year mismatch {parsed.ExplicitYear} != {show.FirstAirYear}"
-            };
-        }
-
         var titleMatch = EvaluateTitleMatch(show.Title, parsed.TitleTokens);
         if (!titleMatch.IsMatch)
         {
-            return new CandidateMatchResult { IsAccepted = false, RejectReason = "does not contain enough show title tokens" };
+            return new SnapshotMatchResult { IsAccepted = false, RejectReason = "does not contain enough show title tokens" };
+        }
+
+        if (parsed.SeasonNumber != episode.SeasonNumber || parsed.EpisodeNumber != episode.EpisodeNumber)
+        {
+            return new SnapshotMatchResult
+            {
+                IsAccepted = false,
+                RejectReason = $"does not contain S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00} or {episode.SeasonNumber}x{episode.EpisodeNumber:00}"
+            };
         }
 
         var episodeScore = EvaluateEpisodeTitleMatch(episode.Title, parsed.EpisodeTitle, out var episodeRejectReason);
         if (episodeRejectReason is not null)
         {
-            return new CandidateMatchResult { IsAccepted = false, RejectReason = episodeRejectReason };
+            return new SnapshotMatchResult { IsAccepted = false, RejectReason = episodeRejectReason };
         }
 
         var qualityScore = TorrentQuality.GetRank(parsed.Quality);
@@ -99,7 +96,7 @@ public static class CandidateMatcher
             identityScore,
             episodeScore);
 
-        return new CandidateMatchResult
+        return new SnapshotMatchResult
         {
             IsAccepted = true,
             IdentityScore = identityScore,
@@ -123,9 +120,25 @@ public static class CandidateMatcher
                fileName.Contains("jackett:", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool IsEpisodeMatch(TorrentCandidateParseResult parsed, TrackedEpisode episode)
+    private static bool IsSeasonMatch(TorrentCandidateParseResult parsed, int seasonNumber)
     {
-        return parsed.SeasonNumber == episode.SeasonNumber && parsed.EpisodeNumber == episode.EpisodeNumber;
+        if (parsed.SeasonNumber is not null)
+        {
+            return parsed.SeasonNumber == seasonNumber;
+        }
+
+        if (parsed.RawTitle.Contains($"S{seasonNumber:00}", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (parsed.RawTitle.Contains($"{seasonNumber}x", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var match = SeasonWordRegex.Match(parsed.RawTitle);
+        return match.Success && int.TryParse(match.Groups["season"].Value, out var parsedSeason) && parsedSeason == seasonNumber;
     }
 
     private static (bool IsMatch, int Score) EvaluateTitleMatch(string showTitle, IReadOnlyList<string> candidateTokens)

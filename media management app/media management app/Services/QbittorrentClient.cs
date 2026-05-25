@@ -102,6 +102,53 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
         }
     }
 
+    public async Task<TorrentMetadataProbeResult> ProbeTorrentMetadataAsync(TorrentSearchResult result, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(result.FileUrl))
+        {
+            return new TorrentMetadataProbeResult { IsAvailable = false, Reason = "candidate URL is empty" };
+        }
+
+        if (result.FileUrl.StartsWith("magnet:?", StringComparison.OrdinalIgnoreCase))
+        {
+            return new TorrentMetadataProbeResult { IsAvailable = false, Reason = "magnet metadata is unavailable before add" };
+        }
+
+        try
+        {
+            var sources = await ResolveAddSourcesAsync(result.FileUrl, cancellationToken);
+            foreach (var source in sources)
+            {
+                var bytes = source.TorrentBytes;
+                if (bytes is null &&
+                    !string.IsNullOrWhiteSpace(source.Url) &&
+                    Uri.TryCreate(source.Url, UriKind.Absolute, out var uri) &&
+                    uri.Scheme is "http" or "https")
+                {
+                    bytes = await TryDownloadTorrentPayloadAsync(uri, cancellationToken);
+                }
+
+                if (bytes is null)
+                {
+                    continue;
+                }
+
+                var metadata = TorrentMetadataReader.Read(bytes);
+                _logger.Debug(
+                    $"Probed torrent metadata. Candidate='{result.FileName}', TorrentName='{metadata.TorrentName}', Files={metadata.Files.Count}, VideoFiles={metadata.VideoFileCount}, Size={metadata.TotalSize}.",
+                    LogTarget.File | LogTarget.Console);
+                return metadata;
+            }
+
+            return new TorrentMetadataProbeResult { IsAvailable = false, Reason = "no .torrent payload could be resolved" };
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException or FormatException)
+        {
+            _logger.Warning($"Torrent metadata probe failed for '{result.FileName}'. Url='{result.FileUrl}', Error='{ex.Message}'", LogTarget.All);
+            return new TorrentMetadataProbeResult { IsAvailable = false, Reason = ex.Message };
+        }
+    }
+
     public async Task<AddedTorrentResult> AddTorrentAsync(AddTorrentRequest request, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(request.Url))
@@ -387,13 +434,47 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
         return torrents;
     }
 
+    public async Task<IReadOnlyList<TorrentContentFile>> GetTorrentFilesAsync(string hash, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(hash))
+        {
+            return [];
+        }
+
+        await LoginAsync(cancellationToken);
+        using var response = await _httpClient.GetAsync(CreateUri($"api/v2/torrents/files?hash={Uri.EscapeDataString(hash)}"), cancellationToken);
+        response.EnsureSuccessStatusCode();
+
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+        if (document.RootElement.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        var files = new List<TorrentContentFile>();
+        foreach (var fileElement in document.RootElement.EnumerateArray())
+        {
+            files.Add(new TorrentContentFile
+            {
+                Name = GetString(fileElement, "name") ?? string.Empty,
+                Size = GetLong(fileElement, "size"),
+                Progress = GetDouble(fileElement, "progress"),
+                Priority = GetInt(fileElement, "priority"),
+                IsSeed = GetBool(fileElement, "is_seed")
+            });
+        }
+
+        return files;
+    }
+
     private async Task<AddedTorrentResult?> GetTorrentAsync(string hash, CancellationToken cancellationToken)
     {
         return (await GetTorrentsAsync(cancellationToken))
             .FirstOrDefault(torrent => string.Equals(torrent.Hash, hash, StringComparison.OrdinalIgnoreCase));
     }
 
-    private async Task<int> StartSearchAsync(TorrentSearchRequest request, CancellationToken cancellationToken)
+    public async Task<int> StartSearchAsync(TorrentSearchRequest request, CancellationToken cancellationToken = default)
     {
         using var response = await PostFormWithAuthRetryAsync("api/v2/search/start", new Dictionary<string, string>
         {
@@ -418,7 +499,7 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
         return id;
     }
 
-    private async Task<SearchResultsResponse> GetSearchResultsAsync(int searchId, int limit, CancellationToken cancellationToken)
+    public async Task<SearchJobResults> GetSearchResultsAsync(int searchId, int limit, CancellationToken cancellationToken = default)
     {
         var path = $"api/v2/search/results?id={searchId}&limit={Math.Max(limit, 1)}&offset=0";
         using var response = await GetWithAuthRetryAsync(path, cancellationToken);
@@ -453,10 +534,10 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
             }
         }
 
-        return new SearchResultsResponse(status, results);
+        return new SearchJobResults(status, results);
     }
 
-    private async Task StopSearchAsync(int searchId, CancellationToken cancellationToken)
+    public async Task StopSearchAsync(int searchId, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -475,7 +556,7 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
         }
     }
 
-    private async Task DeleteSearchAsync(int searchId, CancellationToken cancellationToken)
+    public async Task DeleteSearchAsync(int searchId, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -540,6 +621,21 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
             _logger.Warning($"Failed to resolve torrent URL before add. Falling back to original URL. URL='{url}', Error='{ex.Message}'", LogTarget.All);
             return [TorrentAddSource.FromUrl(url, "original URL")];
         }
+    }
+
+    private async Task<byte[]?> TryDownloadTorrentPayloadAsync(Uri uri, CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+        request.Headers.UserAgent.ParseAdd("MediaManager/1.0");
+        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            return null;
+        }
+
+        var bytes = await ReadLimitedBytesAsync(response.Content, MaxResolverBytes, cancellationToken);
+        var contentType = response.Content.Headers.ContentType?.MediaType ?? string.Empty;
+        return IsTorrentPayload(contentType, bytes) ? bytes : null;
     }
 
     private async Task PostAddTorrentAsync(
@@ -688,6 +784,12 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
             : 0;
     }
 
+    private static bool GetBool(JsonElement element, string propertyName)
+    {
+        return element.TryGetProperty(propertyName, out var property) &&
+               property.ValueKind == JsonValueKind.True;
+    }
+
     private static async Task<byte[]> ReadLimitedBytesAsync(HttpContent content, int maxBytes, CancellationToken cancellationToken)
     {
         await using var stream = await content.ReadAsStreamAsync(cancellationToken);
@@ -796,8 +898,6 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
         return Uri.TryCreate(url, UriKind.Absolute, out var uri) &&
                uri.Scheme is "http" or "https";
     }
-
-    private sealed record SearchResultsResponse(string Status, IReadOnlyList<TorrentSearchResult> Results);
 
     private sealed record TorrentAddSource(string? Url, byte[]? TorrentBytes, string FileName, string Description)
     {
