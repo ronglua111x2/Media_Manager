@@ -456,7 +456,7 @@ public sealed class DatabaseService : IDatabaseService
 
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT s.Id, s.TmdbId, s.Title, s.FirstAirYear, s.Overview, s.PosterPath, s.PreferredQuality, s.PreferredAudioCodec, s.MinimumSeeders, s.CreatedUtc, s.UpdatedUtc,
+            SELECT s.Id, s.TmdbId, s.Title, s.FirstAirYear, s.Overview, s.PosterPath, s.RecipeId, s.PreferredQuality, s.PreferredAudioCodec, s.MinimumSeeders, s.CreatedUtc, s.UpdatedUtc,
                    COUNT(e.Id), SUM(CASE WHEN e.Availability = 1 THEN 1 ELSE 0 END), SUM(CASE WHEN e.IsWanted = 1 THEN 1 ELSE 0 END)
             FROM TrackedShows s
             LEFT JOIN TrackedEpisodes e ON e.ShowId = s.Id
@@ -491,13 +491,14 @@ public sealed class DatabaseService : IDatabaseService
         var now = DateTime.UtcNow;
         using var command = connection.CreateCommand();
         command.CommandText = """
-            INSERT INTO TrackedShows (TmdbId, Title, FirstAirYear, Overview, PosterPath, PreferredQuality, PreferredAudioCodec, MinimumSeeders, CreatedUtc, UpdatedUtc)
-            VALUES ($TmdbId, $Title, $FirstAirYear, $Overview, $PosterPath, $PreferredQuality, $PreferredAudioCodec, $MinimumSeeders, $CreatedUtc, $UpdatedUtc)
+            INSERT INTO TrackedShows (TmdbId, Title, FirstAirYear, Overview, PosterPath, RecipeId, PreferredQuality, PreferredAudioCodec, MinimumSeeders, CreatedUtc, UpdatedUtc)
+            VALUES ($TmdbId, $Title, $FirstAirYear, $Overview, $PosterPath, $RecipeId, $PreferredQuality, $PreferredAudioCodec, $MinimumSeeders, $CreatedUtc, $UpdatedUtc)
             ON CONFLICT(TmdbId) DO UPDATE SET
                 Title = excluded.Title,
                 FirstAirYear = excluded.FirstAirYear,
                 Overview = excluded.Overview,
                 PosterPath = excluded.PosterPath,
+                RecipeId = COALESCE(TrackedShows.RecipeId, excluded.RecipeId),
                 PreferredQuality = CASE WHEN TrackedShows.PreferredQuality = '' THEN excluded.PreferredQuality ELSE TrackedShows.PreferredQuality END,
                 PreferredAudioCodec = TrackedShows.PreferredAudioCodec,
                 MinimumSeeders = TrackedShows.MinimumSeeders,
@@ -508,6 +509,7 @@ public sealed class DatabaseService : IDatabaseService
         command.Parameters.AddWithValue("$FirstAirYear", (object?)show.FirstAirYear ?? DBNull.Value);
         command.Parameters.AddWithValue("$Overview", (object?)show.Overview ?? DBNull.Value);
         command.Parameters.AddWithValue("$PosterPath", (object?)show.PosterPath ?? DBNull.Value);
+        command.Parameters.AddWithValue("$RecipeId", (object?)show.RecipeId ?? DBNull.Value);
         command.Parameters.AddWithValue("$PreferredQuality", string.IsNullOrWhiteSpace(show.PreferredQuality) ? "1080p" : show.PreferredQuality);
         command.Parameters.AddWithValue("$PreferredAudioCodec", (object?)show.PreferredAudioCodec?.Trim() ?? string.Empty);
         command.Parameters.AddWithValue("$MinimumSeeders", Math.Max(0, show.MinimumSeeders));
@@ -1001,6 +1003,18 @@ public sealed class DatabaseService : IDatabaseService
         command.ExecuteNonQuery();
     }
 
+    public void UpdateTrackedShowRecipe(long showId, string? recipeId)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE TrackedShows SET RecipeId = $RecipeId, UpdatedUtc = $UpdatedUtc WHERE Id = $Id;";
+        command.Parameters.AddWithValue("$RecipeId", string.IsNullOrWhiteSpace(recipeId) ? DBNull.Value : recipeId.Trim());
+        command.Parameters.AddWithValue("$UpdatedUtc", DateTime.UtcNow.ToString("O"));
+        command.Parameters.AddWithValue("$Id", showId);
+        command.ExecuteNonQuery();
+    }
+
     public IReadOnlyList<TrackedMovie> GetTrackedMovies()
     {
         var movies = new List<TrackedMovie>();
@@ -1008,7 +1022,7 @@ public sealed class DatabaseService : IDatabaseService
         connection.Open();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT Id, TmdbId, Title, ReleaseYear, Overview, PosterPath, PreferredQuality, PreferredAudioCodec,
+            SELECT Id, TmdbId, Title, ReleaseYear, Overview, PosterPath, RecipeId, PreferredQuality, PreferredAudioCodec,
                    MinimumSeeders, Availability, IsWanted, TorrentHash, TorrentName, TorrentState,
                    TorrentProgress, TorrentUpdatedUtc, SelectedCandidateName, SelectedCandidateUrl,
                    SelectedCandidatePlugin, SelectedCandidateFileSize, SelectedCandidateSeeders,
@@ -1042,13 +1056,14 @@ public sealed class DatabaseService : IDatabaseService
         var now = DateTime.UtcNow;
         using var command = connection.CreateCommand();
         command.CommandText = """
-            INSERT INTO TrackedMovies (TmdbId, Title, ReleaseYear, Overview, PosterPath, PreferredQuality, PreferredAudioCodec, MinimumSeeders, Availability, IsWanted, TorrentHash, TorrentName, TorrentState, TorrentProgress, TorrentUpdatedUtc, SelectedCandidateName, SelectedCandidateUrl, SelectedCandidatePlugin, SelectedCandidateFileSize, SelectedCandidateSeeders, SelectedCandidateQuality, SelectedCandidateAudioCodec, CreatedUtc, UpdatedUtc)
-            VALUES ($TmdbId, $Title, $ReleaseYear, $Overview, $PosterPath, $PreferredQuality, $PreferredAudioCodec, $MinimumSeeders, $Availability, $IsWanted, $TorrentHash, $TorrentName, $TorrentState, $TorrentProgress, $TorrentUpdatedUtc, $SelectedCandidateName, $SelectedCandidateUrl, $SelectedCandidatePlugin, $SelectedCandidateFileSize, $SelectedCandidateSeeders, $SelectedCandidateQuality, $SelectedCandidateAudioCodec, $CreatedUtc, $UpdatedUtc)
+            INSERT INTO TrackedMovies (TmdbId, Title, ReleaseYear, Overview, PosterPath, RecipeId, PreferredQuality, PreferredAudioCodec, MinimumSeeders, Availability, IsWanted, TorrentHash, TorrentName, TorrentState, TorrentProgress, TorrentUpdatedUtc, SelectedCandidateName, SelectedCandidateUrl, SelectedCandidatePlugin, SelectedCandidateFileSize, SelectedCandidateSeeders, SelectedCandidateQuality, SelectedCandidateAudioCodec, CreatedUtc, UpdatedUtc)
+            VALUES ($TmdbId, $Title, $ReleaseYear, $Overview, $PosterPath, $RecipeId, $PreferredQuality, $PreferredAudioCodec, $MinimumSeeders, $Availability, $IsWanted, $TorrentHash, $TorrentName, $TorrentState, $TorrentProgress, $TorrentUpdatedUtc, $SelectedCandidateName, $SelectedCandidateUrl, $SelectedCandidatePlugin, $SelectedCandidateFileSize, $SelectedCandidateSeeders, $SelectedCandidateQuality, $SelectedCandidateAudioCodec, $CreatedUtc, $UpdatedUtc)
             ON CONFLICT(TmdbId) DO UPDATE SET
                 Title = excluded.Title,
                 ReleaseYear = excluded.ReleaseYear,
                 Overview = excluded.Overview,
                 PosterPath = excluded.PosterPath,
+                RecipeId = COALESCE(TrackedMovies.RecipeId, excluded.RecipeId),
                 PreferredQuality = TrackedMovies.PreferredQuality,
                 PreferredAudioCodec = TrackedMovies.PreferredAudioCodec,
                 MinimumSeeders = TrackedMovies.MinimumSeeders,
@@ -1165,6 +1180,18 @@ public sealed class DatabaseService : IDatabaseService
         command.Parameters.AddWithValue("$PreferredQuality", string.IsNullOrWhiteSpace(preferredQuality) ? "1080p" : preferredQuality.Trim());
         command.Parameters.AddWithValue("$PreferredAudioCodec", string.IsNullOrWhiteSpace(preferredAudioCodec) ? string.Empty : preferredAudioCodec.Trim());
         command.Parameters.AddWithValue("$MinimumSeeders", Math.Max(0, minimumSeeders));
+        command.Parameters.AddWithValue("$UpdatedUtc", DateTime.UtcNow.ToString("O"));
+        command.Parameters.AddWithValue("$Id", movieId);
+        command.ExecuteNonQuery();
+    }
+
+    public void UpdateTrackedMovieRecipe(long movieId, string? recipeId)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE TrackedMovies SET RecipeId = $RecipeId, UpdatedUtc = $UpdatedUtc WHERE Id = $Id;";
+        command.Parameters.AddWithValue("$RecipeId", string.IsNullOrWhiteSpace(recipeId) ? DBNull.Value : recipeId.Trim());
         command.Parameters.AddWithValue("$UpdatedUtc", DateTime.UtcNow.ToString("O"));
         command.Parameters.AddWithValue("$Id", movieId);
         command.ExecuteNonQuery();
@@ -1347,6 +1374,7 @@ public sealed class DatabaseService : IDatabaseService
                 FirstAirYear INTEGER NULL,
                 Overview TEXT NULL,
                 PosterPath TEXT NULL,
+                RecipeId TEXT NULL,
                 PreferredQuality TEXT NOT NULL DEFAULT '1080p',
                 PreferredAudioCodec TEXT NOT NULL DEFAULT '',
                 MinimumSeeders INTEGER NOT NULL DEFAULT 0,
@@ -1355,6 +1383,7 @@ public sealed class DatabaseService : IDatabaseService
             );
             """;
         shows.ExecuteNonQuery();
+        EnsureColumn(connection, "TrackedShows", "RecipeId", "TEXT NULL");
         EnsureColumn(connection, "TrackedShows", "PreferredAudioCodec", "TEXT NOT NULL DEFAULT ''");
         EnsureColumn(connection, "TrackedShows", "MinimumSeeders", "INTEGER NOT NULL DEFAULT 0");
 
@@ -1456,6 +1485,7 @@ public sealed class DatabaseService : IDatabaseService
                 ReleaseYear INTEGER NULL,
                 Overview TEXT NULL,
                 PosterPath TEXT NULL,
+                RecipeId TEXT NULL,
                 PreferredQuality TEXT NOT NULL DEFAULT '1080p',
                 PreferredAudioCodec TEXT NOT NULL DEFAULT '',
                 MinimumSeeders INTEGER NOT NULL DEFAULT 0,
@@ -1478,6 +1508,7 @@ public sealed class DatabaseService : IDatabaseService
             );
             """;
         command.ExecuteNonQuery();
+        EnsureColumn(connection, "TrackedMovies", "RecipeId", "TEXT NULL");
         EnsureColumn(connection, "TrackedMovies", "SelectedCandidateName", "TEXT NULL");
         EnsureColumn(connection, "TrackedMovies", "SelectedCandidateUrl", "TEXT NULL");
         EnsureColumn(connection, "TrackedMovies", "SelectedCandidatePlugin", "TEXT NULL");
@@ -1516,7 +1547,7 @@ public sealed class DatabaseService : IDatabaseService
 
         using var command = connection.CreateCommand();
         command.CommandText = $"""
-            SELECT s.Id, s.TmdbId, s.Title, s.FirstAirYear, s.Overview, s.PosterPath, s.PreferredQuality, s.PreferredAudioCodec, s.MinimumSeeders, s.CreatedUtc, s.UpdatedUtc,
+            SELECT s.Id, s.TmdbId, s.Title, s.FirstAirYear, s.Overview, s.PosterPath, s.RecipeId, s.PreferredQuality, s.PreferredAudioCodec, s.MinimumSeeders, s.CreatedUtc, s.UpdatedUtc,
                    COUNT(e.Id), SUM(CASE WHEN e.Availability = 1 THEN 1 ELSE 0 END), SUM(CASE WHEN e.IsWanted = 1 THEN 1 ELSE 0 END)
             FROM TrackedShows s
             LEFT JOIN TrackedEpisodes e ON e.ShowId = s.Id
@@ -1540,14 +1571,15 @@ public sealed class DatabaseService : IDatabaseService
             FirstAirYear = reader.IsDBNull(3) ? null : reader.GetInt32(3),
             Overview = reader.IsDBNull(4) ? null : reader.GetString(4),
             PosterPath = reader.IsDBNull(5) ? null : reader.GetString(5),
-            PreferredQuality = reader.GetString(6),
-            PreferredAudioCodec = reader.IsDBNull(7) ? string.Empty : reader.GetString(7),
-            MinimumSeeders = reader.IsDBNull(8) ? 0 : reader.GetInt32(8),
-            CreatedUtc = DateTime.Parse(reader.GetString(9), null, System.Globalization.DateTimeStyles.RoundtripKind),
-            UpdatedUtc = DateTime.Parse(reader.GetString(10), null, System.Globalization.DateTimeStyles.RoundtripKind),
-            TotalEpisodes = reader.IsDBNull(11) ? 0 : Convert.ToInt32(reader.GetValue(11)),
-            AvailableEpisodes = reader.IsDBNull(12) ? 0 : Convert.ToInt32(reader.GetValue(12)),
-            WantedEpisodes = reader.IsDBNull(13) ? 0 : Convert.ToInt32(reader.GetValue(13))
+            RecipeId = reader.IsDBNull(6) ? null : reader.GetString(6),
+            PreferredQuality = reader.GetString(7),
+            PreferredAudioCodec = reader.IsDBNull(8) ? string.Empty : reader.GetString(8),
+            MinimumSeeders = reader.IsDBNull(9) ? 0 : reader.GetInt32(9),
+            CreatedUtc = DateTime.Parse(reader.GetString(10), null, System.Globalization.DateTimeStyles.RoundtripKind),
+            UpdatedUtc = DateTime.Parse(reader.GetString(11), null, System.Globalization.DateTimeStyles.RoundtripKind),
+            TotalEpisodes = reader.IsDBNull(12) ? 0 : Convert.ToInt32(reader.GetValue(12)),
+            AvailableEpisodes = reader.IsDBNull(13) ? 0 : Convert.ToInt32(reader.GetValue(13)),
+            WantedEpisodes = reader.IsDBNull(14) ? 0 : Convert.ToInt32(reader.GetValue(14))
         };
     }
 
@@ -1587,7 +1619,7 @@ public sealed class DatabaseService : IDatabaseService
         connection.Open();
         using var command = connection.CreateCommand();
         command.CommandText = $"""
-            SELECT Id, TmdbId, Title, ReleaseYear, Overview, PosterPath, PreferredQuality, PreferredAudioCodec,
+            SELECT Id, TmdbId, Title, ReleaseYear, Overview, PosterPath, RecipeId, PreferredQuality, PreferredAudioCodec,
                    MinimumSeeders, Availability, IsWanted, TorrentHash, TorrentName, TorrentState,
                    TorrentProgress, TorrentUpdatedUtc, SelectedCandidateName, SelectedCandidateUrl,
                    SelectedCandidatePlugin, SelectedCandidateFileSize, SelectedCandidateSeeders,
@@ -1611,25 +1643,26 @@ public sealed class DatabaseService : IDatabaseService
             ReleaseYear = reader.IsDBNull(3) ? null : reader.GetInt32(3),
             Overview = reader.IsDBNull(4) ? null : reader.GetString(4),
             PosterPath = reader.IsDBNull(5) ? null : reader.GetString(5),
-            PreferredQuality = reader.GetString(6),
-            PreferredAudioCodec = reader.IsDBNull(7) ? string.Empty : reader.GetString(7),
-            MinimumSeeders = reader.IsDBNull(8) ? 0 : reader.GetInt32(8),
-            Availability = (EpisodeAvailability)reader.GetInt32(9),
-            IsWanted = reader.GetInt32(10) == 1,
-            TorrentHash = reader.IsDBNull(11) ? null : reader.GetString(11),
-            TorrentName = reader.IsDBNull(12) ? null : reader.GetString(12),
-            TorrentState = reader.IsDBNull(13) ? null : reader.GetString(13),
-            TorrentProgress = reader.IsDBNull(14) ? 0 : reader.GetDouble(14),
-            TorrentUpdatedUtc = reader.IsDBNull(15) ? null : DateTime.Parse(reader.GetString(15), null, System.Globalization.DateTimeStyles.RoundtripKind),
-            SelectedCandidateName = reader.IsDBNull(16) ? null : reader.GetString(16),
-            SelectedCandidateUrl = reader.IsDBNull(17) ? null : reader.GetString(17),
-            SelectedCandidatePlugin = reader.IsDBNull(18) ? null : reader.GetString(18),
-            SelectedCandidateFileSize = reader.IsDBNull(19) ? 0 : reader.GetInt64(19),
-            SelectedCandidateSeeders = reader.IsDBNull(20) ? 0 : reader.GetInt32(20),
-            SelectedCandidateQuality = reader.IsDBNull(21) ? null : reader.GetString(21),
-            SelectedCandidateAudioCodec = reader.IsDBNull(22) ? null : reader.GetString(22),
-            CreatedUtc = DateTime.Parse(reader.GetString(23), null, System.Globalization.DateTimeStyles.RoundtripKind),
-            UpdatedUtc = DateTime.Parse(reader.GetString(24), null, System.Globalization.DateTimeStyles.RoundtripKind)
+            RecipeId = reader.IsDBNull(6) ? null : reader.GetString(6),
+            PreferredQuality = reader.GetString(7),
+            PreferredAudioCodec = reader.IsDBNull(8) ? string.Empty : reader.GetString(8),
+            MinimumSeeders = reader.IsDBNull(9) ? 0 : reader.GetInt32(9),
+            Availability = (EpisodeAvailability)reader.GetInt32(10),
+            IsWanted = reader.GetInt32(11) == 1,
+            TorrentHash = reader.IsDBNull(12) ? null : reader.GetString(12),
+            TorrentName = reader.IsDBNull(13) ? null : reader.GetString(13),
+            TorrentState = reader.IsDBNull(14) ? null : reader.GetString(14),
+            TorrentProgress = reader.IsDBNull(15) ? 0 : reader.GetDouble(15),
+            TorrentUpdatedUtc = reader.IsDBNull(16) ? null : DateTime.Parse(reader.GetString(16), null, System.Globalization.DateTimeStyles.RoundtripKind),
+            SelectedCandidateName = reader.IsDBNull(17) ? null : reader.GetString(17),
+            SelectedCandidateUrl = reader.IsDBNull(18) ? null : reader.GetString(18),
+            SelectedCandidatePlugin = reader.IsDBNull(19) ? null : reader.GetString(19),
+            SelectedCandidateFileSize = reader.IsDBNull(20) ? 0 : reader.GetInt64(20),
+            SelectedCandidateSeeders = reader.IsDBNull(21) ? 0 : reader.GetInt32(21),
+            SelectedCandidateQuality = reader.IsDBNull(22) ? null : reader.GetString(22),
+            SelectedCandidateAudioCodec = reader.IsDBNull(23) ? null : reader.GetString(23),
+            CreatedUtc = DateTime.Parse(reader.GetString(24), null, System.Globalization.DateTimeStyles.RoundtripKind),
+            UpdatedUtc = DateTime.Parse(reader.GetString(25), null, System.Globalization.DateTimeStyles.RoundtripKind)
         };
     }
 
@@ -1640,6 +1673,7 @@ public sealed class DatabaseService : IDatabaseService
         command.Parameters.AddWithValue("$ReleaseYear", (object?)movie.ReleaseYear ?? DBNull.Value);
         command.Parameters.AddWithValue("$Overview", (object?)movie.Overview ?? DBNull.Value);
         command.Parameters.AddWithValue("$PosterPath", (object?)movie.PosterPath ?? DBNull.Value);
+        command.Parameters.AddWithValue("$RecipeId", (object?)movie.RecipeId ?? DBNull.Value);
         command.Parameters.AddWithValue("$PreferredQuality", string.IsNullOrWhiteSpace(movie.PreferredQuality) ? "1080p" : movie.PreferredQuality);
         command.Parameters.AddWithValue("$PreferredAudioCodec", string.IsNullOrWhiteSpace(movie.PreferredAudioCodec) ? string.Empty : movie.PreferredAudioCodec.Trim());
         command.Parameters.AddWithValue("$MinimumSeeders", Math.Max(0, movie.MinimumSeeders));

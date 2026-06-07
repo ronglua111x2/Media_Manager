@@ -4,8 +4,10 @@ using System.Windows;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using media_management_app.Common;
 using media_management_app.Models;
 using media_management_app.Services;
+using WinForms = System.Windows.Forms;
 
 namespace media_management_app.ViewModels;
 
@@ -15,6 +17,8 @@ public partial class AutoTorrentViewModel : ViewModelBase
     private readonly ITrackedShowService _trackedShowService;
     private readonly ITrackedMovieService _trackedMovieService;
     private readonly IFetchJobService _fetchJobService;
+    private readonly IRecipeService _recipeService;
+    private readonly IAutomationFlowService _automationFlowService;
     private readonly IQbittorrentClient _qbittorrentClient;
     private readonly IAutoTorrentLinkService _autoTorrentLinkService;
     private readonly IDatabaseService _databaseService;
@@ -47,11 +51,28 @@ public partial class AutoTorrentViewModel : ViewModelBase
     [ObservableProperty]
     private bool isPackFetchRunning;
 
+    [ObservableProperty]
+    private SearchRecipe? selectedRecipe;
+
+    [ObservableProperty]
+    private RecipeModuleConfig? selectedRecipeModule;
+
+    [ObservableProperty]
+    private TrackedShowCardViewModel? selectedTestShow;
+
+    [ObservableProperty]
+    private TrackedMovieCardViewModel? selectedTestMovie;
+
+    [ObservableProperty]
+    private RecipeDryRunResult? testLabResult;
+
     public AutoTorrentViewModel(
         ISettingsService settingsService,
         ITrackedShowService trackedShowService,
         ITrackedMovieService trackedMovieService,
         IFetchJobService fetchJobService,
+        IRecipeService recipeService,
+        IAutomationFlowService automationFlowService,
         IQbittorrentClient qbittorrentClient,
         IAutoTorrentLinkService autoTorrentLinkService,
         IDatabaseService databaseService,
@@ -61,6 +82,8 @@ public partial class AutoTorrentViewModel : ViewModelBase
         _trackedShowService = trackedShowService;
         _trackedMovieService = trackedMovieService;
         _fetchJobService = fetchJobService;
+        _recipeService = recipeService;
+        _automationFlowService = automationFlowService;
         _qbittorrentClient = qbittorrentClient;
         _autoTorrentLinkService = autoTorrentLinkService;
         _databaseService = databaseService;
@@ -72,11 +95,13 @@ public partial class AutoTorrentViewModel : ViewModelBase
         MovieCards = [];
         FetchJobs = [];
         StorageStatuses = [];
+        Recipes = [];
         _fetchJobService.JobsChanged += OnFetchJobsChanged;
         _fetchJobService.CandidatesChanged += OnCandidatesChanged;
         ReloadShowCards();
         ReloadMovieCards();
         ReloadFetchJobs();
+        ReloadRecipes();
         RefreshStorageStatus(updateStatusMessage: false);
         _storageStatusTimer = new DispatcherTimer
         {
@@ -97,6 +122,221 @@ public partial class AutoTorrentViewModel : ViewModelBase
     public ObservableCollection<FetchJobRowViewModel> FetchJobs { get; }
 
     public ObservableCollection<StorageStatusViewModel> StorageStatuses { get; }
+
+    public ObservableCollection<SearchRecipe> Recipes { get; }
+
+    public ObservableCollection<RecipeCandidateResult> TestAcceptedCandidates { get; } = [];
+
+    public ObservableCollection<RecipeCandidateResult> TestRejectedCandidates { get; } = [];
+
+    public ObservableCollection<string> TestQueries { get; } = [];
+
+    partial void OnSelectedRecipeChanged(SearchRecipe? value)
+    {
+        SelectedRecipeModule = value?.Modules.OrderBy(module => module.Order).FirstOrDefault();
+    }
+
+    [RelayCommand]
+    private void CreateRecipe()
+    {
+        var recipe = _recipeService.SaveRecipe(new SearchRecipe
+        {
+            Name = $"Recipe {Recipes.Count + 1}",
+            TargetKind = MediaKind.TvEpisode,
+            Modules = _recipeService.GetDefaultRecipe(MediaKind.TvEpisode).Modules
+                .Select(CloneModule)
+                .ToList()
+        });
+        ReloadRecipes(recipe.RecipeId);
+        StatusMessage = $"Created recipe {recipe.Name}.";
+    }
+
+    [RelayCommand]
+    private void SaveRecipe()
+    {
+        if (SelectedRecipe is null)
+        {
+            StatusMessage = "Select a recipe first.";
+            return;
+        }
+
+        _recipeService.SaveRecipe(SelectedRecipe);
+        ReloadRecipes(SelectedRecipe.RecipeId);
+        StatusMessage = $"Saved recipe {SelectedRecipe.Name}.";
+    }
+
+    [RelayCommand]
+    private void DuplicateRecipe()
+    {
+        if (SelectedRecipe is null)
+        {
+            StatusMessage = "Select a recipe first.";
+            return;
+        }
+
+        var copy = _recipeService.DuplicateRecipe(SelectedRecipe.RecipeId);
+        ReloadRecipes(copy.RecipeId);
+        StatusMessage = $"Duplicated recipe as {copy.Name}.";
+    }
+
+    [RelayCommand]
+    private void DeleteRecipe()
+    {
+        if (SelectedRecipe is null)
+        {
+            StatusMessage = "Select a recipe first.";
+            return;
+        }
+
+        var deletedName = SelectedRecipe.Name;
+        _recipeService.DeleteRecipe(SelectedRecipe.RecipeId);
+        ReloadRecipes();
+        StatusMessage = $"Deleted recipe {deletedName}.";
+    }
+
+    [RelayCommand]
+    private void ImportRecipe()
+    {
+        using var dialog = new WinForms.OpenFileDialog
+        {
+            Filter = "Recipe files (*.rcp)|*.rcp|All files (*.*)|*.*",
+            Title = "Import recipe"
+        };
+        if (dialog.ShowDialog() != WinForms.DialogResult.OK)
+        {
+            return;
+        }
+
+        var recipe = _recipeService.ImportRecipe(dialog.FileName);
+        ReloadRecipes(recipe.RecipeId);
+        StatusMessage = $"Imported recipe {recipe.Name}.";
+    }
+
+    [RelayCommand]
+    private void ExportRecipe()
+    {
+        if (SelectedRecipe is null)
+        {
+            StatusMessage = "Select a recipe first.";
+            return;
+        }
+
+        using var dialog = new WinForms.FolderBrowserDialog
+        {
+            Description = "Export recipe to folder",
+            UseDescriptionForTitle = true
+        };
+        if (dialog.ShowDialog() != WinForms.DialogResult.OK)
+        {
+            return;
+        }
+
+        var path = _recipeService.ExportRecipe(SelectedRecipe.RecipeId, dialog.SelectedPath);
+        StatusMessage = $"Exported recipe to {path}.";
+    }
+
+    [RelayCommand]
+    private void MoveSelectedRecipeModuleUp()
+    {
+        MoveSelectedRecipeModule(-1);
+    }
+
+    [RelayCommand]
+    private void MoveSelectedRecipeModuleDown()
+    {
+        MoveSelectedRecipeModule(1);
+    }
+
+    [RelayCommand]
+    private async Task DryRunSelectedShow()
+    {
+        if (SelectedTestShow is null)
+        {
+            StatusMessage = "Select a tracked show in Test Lab.";
+            return;
+        }
+
+        await RunAsync(async () =>
+        {
+            var result = await _automationFlowService.DryRunAsync(new RecipeRunRequest
+            {
+                TargetKind = MediaKind.TvEpisode,
+                ShowId = SelectedTestShow.Id,
+                RecipeId = SelectedRecipe?.RecipeId
+            });
+            ApplyTestLabResult(result);
+            StatusMessage = $"Dry run for {SelectedTestShow.Title}: {result.Summary}";
+        });
+    }
+
+    [RelayCommand]
+    private async Task DryRunSelectedMovie()
+    {
+        if (SelectedTestMovie is null)
+        {
+            StatusMessage = "Select a tracked movie in Test Lab.";
+            return;
+        }
+
+        await RunAsync(async () =>
+        {
+            var result = await _automationFlowService.DryRunAsync(new RecipeRunRequest
+            {
+                TargetKind = MediaKind.Movie,
+                MovieId = SelectedTestMovie.Id,
+                RecipeId = SelectedRecipe?.RecipeId
+            });
+            ApplyTestLabResult(result);
+            StatusMessage = $"Dry run for {SelectedTestMovie.Title}: {result.Summary}";
+        });
+    }
+
+    [RelayCommand]
+    private async Task RunNowSelectedShow()
+    {
+        if (SelectedTestShow is null)
+        {
+            StatusMessage = "Select a tracked show in Test Lab.";
+            return;
+        }
+
+        await RunAsync(async () =>
+        {
+            var result = await _automationFlowService.RunNowAsync(new RecipeRunRequest
+            {
+                TargetKind = MediaKind.TvEpisode,
+                ShowId = SelectedTestShow.Id,
+                RecipeId = SelectedRecipe?.RecipeId
+            });
+            ApplyTestLabResult(result);
+            RefreshCandidatesInPlace();
+            ReloadShowCards(SelectedTestShow.Id);
+            StatusMessage = $"Run Now for {SelectedTestShow.Title}: {result.Summary}";
+        });
+    }
+
+    [RelayCommand]
+    private async Task RunNowSelectedMovie()
+    {
+        if (SelectedTestMovie is null)
+        {
+            StatusMessage = "Select a tracked movie in Test Lab.";
+            return;
+        }
+
+        await RunAsync(async () =>
+        {
+            var result = await _automationFlowService.RunNowAsync(new RecipeRunRequest
+            {
+                TargetKind = MediaKind.Movie,
+                MovieId = SelectedTestMovie.Id,
+                RecipeId = SelectedRecipe?.RecipeId
+            });
+            ApplyTestLabResult(result);
+            ReloadMovieCards(SelectedTestMovie.Id);
+            StatusMessage = $"Run Now for {SelectedTestMovie.Title}: {result.Summary}";
+        });
+    }
 
     [RelayCommand]
     private async Task SearchShows()
@@ -1225,6 +1465,99 @@ public partial class AutoTorrentViewModel : ViewModelBase
         SelectedFetchJob = selectedJobId is null
             ? FetchJobs.FirstOrDefault()
             : FetchJobs.FirstOrDefault(job => job.Id == selectedJobId.Value) ?? FetchJobs.FirstOrDefault();
+    }
+
+    private void ReloadRecipes(string? selectedRecipeId = null)
+    {
+        var existingSelectedId = selectedRecipeId ?? SelectedRecipe?.RecipeId;
+        Recipes.Clear();
+        foreach (var recipe in _recipeService.GetRecipes())
+        {
+            Recipes.Add(recipe);
+        }
+
+        SelectedRecipe = Recipes.FirstOrDefault(recipe =>
+                             string.Equals(recipe.RecipeId, existingSelectedId, StringComparison.OrdinalIgnoreCase)) ??
+                         Recipes.FirstOrDefault();
+        SelectedRecipeModule = SelectedRecipe?.Modules.OrderBy(module => module.Order).FirstOrDefault();
+    }
+
+    private void MoveSelectedRecipeModule(int direction)
+    {
+        if (SelectedRecipe is null || SelectedRecipeModule is null)
+        {
+            StatusMessage = "Select a recipe module first.";
+            return;
+        }
+
+        var modules = SelectedRecipe.Modules.OrderBy(module => module.Order).ToList();
+        var index = modules.FindIndex(module => string.Equals(module.ModuleId, SelectedRecipeModule.ModuleId, StringComparison.OrdinalIgnoreCase));
+        var targetIndex = index + direction;
+        if (index < 0 || targetIndex < 0 || targetIndex >= modules.Count)
+        {
+            return;
+        }
+
+        (modules[index].Order, modules[targetIndex].Order) = (modules[targetIndex].Order, modules[index].Order);
+        SelectedRecipe.Modules = modules.OrderBy(module => module.Order).ToList();
+        _recipeService.SaveRecipe(SelectedRecipe);
+        ReloadRecipes(SelectedRecipe.RecipeId);
+        SelectedRecipeModule = SelectedRecipe?.Modules.FirstOrDefault(module =>
+            string.Equals(module.ModuleId, modules[targetIndex].ModuleId, StringComparison.OrdinalIgnoreCase));
+        StatusMessage = $"Moved module {SelectedRecipeModule?.DisplayName}.";
+    }
+
+    private void ApplyTestLabResult(RecipeDryRunResult result)
+    {
+        TestLabResult = result;
+        TestQueries.Clear();
+        foreach (var query in result.Queries)
+        {
+            TestQueries.Add(query);
+        }
+
+        TestAcceptedCandidates.Clear();
+        foreach (var candidate in result.AcceptedCandidates)
+        {
+            TestAcceptedCandidates.Add(candidate);
+        }
+
+        TestRejectedCandidates.Clear();
+        foreach (var candidate in result.RejectedCandidates.Take(200))
+        {
+            TestRejectedCandidates.Add(candidate);
+        }
+    }
+
+    private static RecipeModuleConfig CloneModule(RecipeModuleConfig module)
+    {
+        return new RecipeModuleConfig
+        {
+            ModuleId = Guid.NewGuid().ToString("N"),
+            BlockType = module.BlockType,
+            Order = module.Order,
+            SchemaVersion = module.SchemaVersion,
+            IsEnabled = module.IsEnabled,
+            DisplayName = module.DisplayName,
+            Aliases = module.Aliases.ToList(),
+            QueryTemplates = module.QueryTemplates.ToList(),
+            QualityAllowList = module.QualityAllowList.ToList(),
+            PreferredAudioCodec = module.PreferredAudioCodec,
+            MinimumSeeders = module.MinimumSeeders,
+            MaximumSizeBytes = module.MaximumSizeBytes,
+            IncludeTerms = module.IncludeTerms.ToList(),
+            ExcludeTerms = module.ExcludeTerms.ToList(),
+            PreferredReleaseGroups = module.PreferredReleaseGroups.ToList(),
+            BlockedReleaseGroups = module.BlockedReleaseGroups.ToList(),
+            Plugins = module.Plugins,
+            Category = module.Category,
+            ResultLimit = module.ResultLimit,
+            SavePath = module.SavePath,
+            TorrentCategory = module.TorrentCategory,
+            Tags = module.Tags,
+            Paused = module.Paused,
+            ExtensionData = module.ExtensionData.ToDictionary(pair => pair.Key, pair => pair.Value)
+        };
     }
 
     private void UpdateWanted(long episodeId, bool isWanted)

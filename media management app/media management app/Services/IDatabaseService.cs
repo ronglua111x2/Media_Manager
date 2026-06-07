@@ -80,6 +80,8 @@ public interface IDatabaseService
 
     void UpdateTrackedShowPreferences(long showId, string preferredQuality, string preferredAudioCodec, int minimumSeeders);
 
+    void UpdateTrackedShowRecipe(long showId, string? recipeId);
+
     IReadOnlyList<TrackedMovie> GetTrackedMovies();
 
     TrackedMovie? GetTrackedMovie(long id);
@@ -102,6 +104,8 @@ public interface IDatabaseService
     void UpdateTrackedMovieSelectedCandidate(long movieId, EpisodeFetchCandidate candidate);
 
     void UpdateTrackedMoviePreferences(long movieId, string preferredQuality, string preferredAudioCodec, int minimumSeeders);
+
+    void UpdateTrackedMovieRecipe(long movieId, string? recipeId);
 
     long CreateFetchJob(FetchJob job);
 

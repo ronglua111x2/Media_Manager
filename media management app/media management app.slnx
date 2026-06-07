@@ -6,4 +6,5 @@
   <Project Path="media management app/media management app.csproj">
     <Platform Solution="*|x64" Project="x64" />
   </Project>
+  <Project Path="MediaManager.Tests/MediaManager.Tests.csproj" />
 </Solution>

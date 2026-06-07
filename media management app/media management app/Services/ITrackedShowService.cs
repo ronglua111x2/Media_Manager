@@ -45,4 +45,6 @@ public interface ITrackedShowService
     void UpdatePreferredQuality(long showId, string preferredQuality);
 
     void UpdatePreferences(long showId, string preferredQuality, string preferredAudioCodec, int minimumSeeders);
+
+    void UpdateRecipe(long showId, string? recipeId);
 }

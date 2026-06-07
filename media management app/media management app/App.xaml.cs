@@ -73,6 +73,10 @@ public partial class App : System.Windows.Application
         services.AddSingleton<IHardlinkService, HardlinkService>();
         services.AddSingleton<ISourceReconciliationService, SourceReconciliationService>();
         services.AddSingleton<IQbittorrentClient, QbittorrentClient>();
+        services.AddSingleton<IRecipeService, RecipeService>();
+        services.AddSingleton<ISearchPlanBuilder, SearchPlanBuilder>();
+        services.AddSingleton<ICandidateEvaluationService, CandidateEvaluationService>();
+        services.AddSingleton<IAutomationFlowService, AutomationFlowService>();
         services.AddSingleton<ShowSearchSnapshotService>();
         services.AddSingleton<TmdbMetadataProvider>();
         services.AddSingleton<IMetadataProvider>(provider => provider.GetRequiredService<TmdbMetadataProvider>());
@@ -84,9 +88,7 @@ public partial class App : System.Windows.Application
         services.AddSingleton<IAutoTorrentLinkService, AutoTorrentLinkService>();
 
         services.AddSingleton<SettingsViewModel>();
-        services.AddSingleton<InboxViewModel>();
         services.AddSingleton<AutoTorrentViewModel>();
-        services.AddSingleton<ReviewViewModel>();
         services.AddSingleton<MainViewModel>();
         services.AddSingleton<MainWindow>();
     }

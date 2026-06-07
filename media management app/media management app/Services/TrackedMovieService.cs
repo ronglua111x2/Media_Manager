@@ -111,6 +111,12 @@ public sealed class TrackedMovieService : ITrackedMovieService
             LogTarget.All);
     }
 
+    public void UpdateRecipe(long movieId, string? recipeId)
+    {
+        _databaseService.UpdateTrackedMovieRecipe(movieId, recipeId);
+        _logger.Info($"Updated recipe assignment for movie id={movieId}: {recipeId ?? "<default>"}", LogTarget.All);
+    }
+
     private long ImportMovie(TmdbMovieDetails details, TrackedMovie? existing)
     {
         existing ??= _databaseService.GetTrackedMovieByTmdbId(details.TmdbId);
@@ -121,6 +127,7 @@ public sealed class TrackedMovieService : ITrackedMovieService
             ReleaseYear = details.ReleaseYear,
             Overview = details.Overview,
             PosterPath = details.PosterPath,
+            RecipeId = existing?.RecipeId,
             PreferredQuality = existing?.PreferredQuality ?? "1080p",
             PreferredAudioCodec = existing?.PreferredAudioCodec ?? string.Empty,
             MinimumSeeders = existing?.MinimumSeeders ?? 0,

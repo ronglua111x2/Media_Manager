@@ -8,10 +8,4 @@
     <DataTemplate DataType="{x:Type vm:AutoTorrentViewModel}">
         <views:AutoTorrentView />
     </DataTemplate>
-    <DataTemplate DataType="{x:Type vm:InboxViewModel}">
-        <views:InboxView />
-    </DataTemplate>
-    <DataTemplate DataType="{x:Type vm:ReviewViewModel}">
-        <views:ReviewView />
-    </DataTemplate>
 </ResourceDictionary>

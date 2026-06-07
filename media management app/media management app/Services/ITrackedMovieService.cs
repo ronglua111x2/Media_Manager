@@ -25,4 +25,6 @@ public interface ITrackedMovieService
     void UpdateSelectedCandidate(long movieId, EpisodeFetchCandidate candidate);
 
     void UpdatePreferences(long movieId, string preferredQuality, string preferredAudioCodec, int minimumSeeders);
+
+    void UpdateRecipe(long movieId, string? recipeId);
 }

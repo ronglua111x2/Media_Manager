@@ -11,6 +11,9 @@ public sealed class FetchJobService : IFetchJobService
     private readonly IDatabaseService _databaseService;
     private readonly ISettingsService _settingsService;
     private readonly IQbittorrentClient _qbittorrentClient;
+    private readonly IRecipeService _recipeService;
+    private readonly ISearchPlanBuilder _searchPlanBuilder;
+    private readonly ICandidateEvaluationService _candidateEvaluationService;
     private readonly ShowSearchSnapshotService _snapshotService;
     private readonly IOperationProgressService _progressService;
     private readonly IAppLogger _logger;
@@ -26,6 +29,9 @@ public sealed class FetchJobService : IFetchJobService
         IDatabaseService databaseService,
         ISettingsService settingsService,
         IQbittorrentClient qbittorrentClient,
+        IRecipeService recipeService,
+        ISearchPlanBuilder searchPlanBuilder,
+        ICandidateEvaluationService candidateEvaluationService,
         ShowSearchSnapshotService snapshotService,
         IOperationProgressService progressService,
         IAppLogger logger)
@@ -33,6 +39,9 @@ public sealed class FetchJobService : IFetchJobService
         _databaseService = databaseService;
         _settingsService = settingsService;
         _qbittorrentClient = qbittorrentClient;
+        _recipeService = recipeService;
+        _searchPlanBuilder = searchPlanBuilder;
+        _candidateEvaluationService = candidateEvaluationService;
         _snapshotService = snapshotService;
         _progressService = progressService;
         _logger = logger;
@@ -333,14 +342,7 @@ public sealed class FetchJobService : IFetchJobService
             JobsChanged?.Invoke(this, EventArgs.Empty);
             ClearEpisodeCandidateCache(targetEpisodes);
 
-            if (_settingsService.Current.AutoTorrent.UseShowSnapshotSearch)
-            {
-                await ProcessShowJobSnapshotAsync(job, show, targetEpisodes, cancellationToken);
-            }
-            else
-            {
-                await ProcessShowJobParallelAsync(job, show, targetEpisodes, cancellationToken);
-            }
+            await ProcessShowJobParallelAsync(job, show, targetEpisodes, cancellationToken);
 
             job.Status = FetchJobStatus.Completed;
             job.FinishedUtc = DateTime.UtcNow;
@@ -494,12 +496,12 @@ public sealed class FetchJobService : IFetchJobService
         int workerId,
         CancellationToken cancellationToken)
     {
-        var queries = BuildQueries(show, episode).ToList();
+        var recipe = _recipeService.GetRecipeOrDefault(show.RecipeId, MediaKind.TvEpisode);
+        var queries = _searchPlanBuilder.BuildEpisodeQueries(recipe, show, episode).ToList();
         var query = string.Join(" | ", queries);
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-        _logger.Info($"Worker {workerId} fetching candidates for {query}", LogTarget.All);
-        var selectedQualities = ParseQualities(show.PreferredQuality);
-        var searchSummary = await SearchEpisodeCandidatesSequentialAsync(episode, show, queries, selectedQualities, cancellationToken);
+        _logger.Info($"Worker {workerId} fetching candidates for {query} with recipe '{recipe.Name}'", LogTarget.All);
+        var searchSummary = await SearchEpisodeCandidatesSequentialAsync(recipe, episode, show, queries, cancellationToken);
         var candidates = searchSummary.Candidates;
 
         stopwatch.Stop();
@@ -539,14 +541,34 @@ public sealed class FetchJobService : IFetchJobService
         JobsChanged?.Invoke(this, EventArgs.Empty);
 
         cancellationToken.ThrowIfCancellationRequested();
-        var queries = BuildMovieQueries(movie).ToList();
+        var recipe = _recipeService.GetRecipeOrDefault(movie.RecipeId, MediaKind.Movie);
+        var queries = _searchPlanBuilder.BuildMovieQueries(recipe, movie).ToList();
         var query = string.Join(" | ", queries);
-        _logger.Info($"Fetching movie candidates for {query}", LogTarget.All);
+        _logger.Info($"Fetching movie candidates for {query} with recipe '{recipe.Name}'", LogTarget.All);
         var searchResults = await SearchManyAsync(queries, cancellationToken);
-        var filteredResults = searchResults
-            .Where(result => IsUsableMovieCandidate(result, movie, query));
-        var candidates = filteredResults
-            .Select(result => ToMovieCandidate(movie.Id, result, movie.PreferredQuality, movie.PreferredAudioCodec))
+        var candidates = searchResults
+            .Select(result => _candidateEvaluationService.EvaluateMovie(recipe, movie, result))
+            .Where(result =>
+            {
+                if (result.IsAccepted)
+                {
+                    return true;
+                }
+
+                var message =
+                    $"Rejected movie search candidate for '{query}'. Reason='{result.RejectReason}: {result.RejectDetail}', Engine='{result.SearchResult.EngineName}', Name='{result.SearchResult.FileName}', Url='{result.SearchResult.FileUrl}'.";
+                if (result.RejectReason == CandidateRejectReason.PluginError)
+                {
+                    _logger.Warning(message, LogTarget.All);
+                }
+                else
+                {
+                    _logger.Debug(message, LogTarget.File | LogTarget.Console);
+                }
+
+                return false;
+            })
+            .Select(result => ToMovieCandidate(movie.Id, result.SearchResult, result.QualityScore, result.TotalScore))
             .OrderByDescending(candidate => candidate.QualityScore)
             .ThenByDescending(candidate => candidate.Seeders)
             .ThenByDescending(candidate => candidate.TotalScore)
@@ -680,15 +702,15 @@ public sealed class FetchJobService : IFetchJobService
     }
 
     private async Task<EpisodeSearchSummary> SearchEpisodeCandidatesSequentialAsync(
+        SearchRecipe recipe,
         TrackedEpisode episode,
         TrackedShow show,
         IReadOnlyList<string> queries,
-        IReadOnlyList<string> selectedQualities,
         CancellationToken cancellationToken)
     {
         var maxCandidates = GetMaxCandidatesPerFetch();
         var resultsByUrl = new Dictionary<string, TorrentSearchResult>(StringComparer.OrdinalIgnoreCase);
-        var matchedCandidates = new List<(EpisodeFetchCandidate Candidate, CandidateMatchResult Match)>();
+        var matchedCandidates = new List<(EpisodeFetchCandidate Candidate, RecipeCandidateResult Match)>();
 
         foreach (var query in queries.Where(query => !string.IsNullOrWhiteSpace(query)).Distinct(StringComparer.OrdinalIgnoreCase))
         {
@@ -706,12 +728,12 @@ public sealed class FetchJobService : IFetchJobService
                     continue;
                 }
 
-                var match = CandidateMatcher.MatchEpisodeCandidate(show, episode, result, selectedQualities);
+                var match = _candidateEvaluationService.EvaluateEpisode(recipe, show, episode, result);
                 if (!match.IsAccepted)
                 {
                     var message =
-                        $"Rejected search candidate for '{query}'. Reason='{match.RejectReason}', Engine='{result.EngineName}', Name='{result.FileName}', Url='{result.FileUrl}'.";
-                    if (match.RejectReason?.Contains("plugin error", StringComparison.OrdinalIgnoreCase) == true)
+                        $"Rejected search candidate for '{query}'. Reason='{match.RejectReason}: {match.RejectDetail}', Engine='{result.EngineName}', Name='{result.FileName}', Url='{result.FileUrl}'.";
+                    if (match.RejectReason == CandidateRejectReason.PluginError)
                     {
                         _logger.Warning(message, LogTarget.All);
                     }
@@ -719,16 +741,6 @@ public sealed class FetchJobService : IFetchJobService
                     {
                         _logger.Debug(message, LogTarget.File | LogTarget.Console);
                     }
-                    continue;
-                }
-
-                var parsed = TorrentCandidateParser.Parse(result.FileName);
-                var metadataRejectReason = await GetEpisodeMetadataRejectReasonAsync(show, episode, result, parsed, match.IdentityScore, cancellationToken);
-                if (metadataRejectReason is not null)
-                {
-                    _logger.Debug(
-                        $"Rejected probed search candidate for '{query}'. Reason='{metadataRejectReason}', Engine='{result.EngineName}', Name='{result.FileName}', Url='{result.FileUrl}'.",
-                        LogTarget.File | LogTarget.Console);
                     continue;
                 }
 
@@ -1300,21 +1312,9 @@ public sealed class FetchJobService : IFetchJobService
     private static EpisodeFetchCandidate ToMovieCandidate(
         long movieId,
         TorrentSearchResult result,
-        string preferredQuality,
-        string preferredAudioCodec)
+        int qualityScore,
+        int totalScore)
     {
-        var selectedQualities = ParseQualities(preferredQuality);
-        var qualityScore = TorrentQuality.GetRank(TorrentQuality.Detect(result.FileName));
-        var audioScore = !string.IsNullOrWhiteSpace(preferredAudioCodec) &&
-                         result.FileName.Contains(preferredAudioCodec, StringComparison.OrdinalIgnoreCase)
-            ? 1
-            : 0;
-        var totalScore = TorrentQuality.CalculateCandidateScore(
-            qualityScore,
-            audioScore,
-            result.Seeders,
-            identityScore: 0,
-            episodeScore: 0);
         var candidate = ToCandidate(0, result, qualityScore, totalScore);
         candidate.MovieId = movieId;
         return candidate;
