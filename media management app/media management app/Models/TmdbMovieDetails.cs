@@ -11,4 +11,6 @@ public sealed class TmdbMovieDetails
     public string? Overview { get; set; }
 
     public string? PosterPath { get; set; }
+
+    public int? RuntimeMinutes { get; set; }
 }

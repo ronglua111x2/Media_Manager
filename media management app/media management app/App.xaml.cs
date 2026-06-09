@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using media_management_app.Services;
 using media_management_app.ViewModels;
+using Wpf.Ui.Appearance;
 
 namespace media_management_app;
 
@@ -31,6 +32,8 @@ public partial class App : System.Windows.Application
         }
 
         base.OnStartup(e);
+        ApplicationThemeManager.Apply(ApplicationTheme.Light);
+        ApplicationAccentColorManager.Apply(System.Windows.Media.Color.FromRgb(0x3d, 0x7d, 0x6b), ApplicationTheme.Light);
 
         var services = new ServiceCollection();
         ConfigureServices(services);
@@ -77,6 +80,8 @@ public partial class App : System.Windows.Application
         services.AddSingleton<ISearchPlanBuilder, SearchPlanBuilder>();
         services.AddSingleton<ICandidateEvaluationService, CandidateEvaluationService>();
         services.AddSingleton<IAutomationFlowService, AutomationFlowService>();
+        services.AddSingleton<IDeviceStatusService, DeviceStatusService>();
+        services.AddSingleton<IConsoleWindowService, ConsoleWindowService>();
         services.AddSingleton<ShowSearchSnapshotService>();
         services.AddSingleton<TmdbMetadataProvider>();
         services.AddSingleton<IMetadataProvider>(provider => provider.GetRequiredService<TmdbMetadataProvider>());
@@ -87,8 +92,11 @@ public partial class App : System.Windows.Application
         services.AddSingleton<IFetchJobService, FetchJobService>();
         services.AddSingleton<IAutoTorrentLinkService, AutoTorrentLinkService>();
 
-        services.AddSingleton<SettingsViewModel>();
-        services.AddSingleton<AutoTorrentViewModel>();
+        services.AddSingleton<FindAddViewModel>();
+        services.AddSingleton<LibraryViewModel>();
+        services.AddSingleton<TorrentWorkspaceViewModel>();
+        services.AddSingleton<RecipeWorkspaceViewModel>();
+        services.AddSingleton<SystemSettingsViewModel>();
         services.AddSingleton<MainViewModel>();
         services.AddSingleton<MainWindow>();
     }

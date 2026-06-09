@@ -12,6 +12,9 @@ public sealed class TmdbShowDetails
 
     public string? PosterPath { get; set; }
 
+    public int SeasonCount { get; set; }
+
+    public int EpisodeCount { get; set; }
+
     public List<TmdbSeasonDetails> Seasons { get; set; } = [];
 }
-

@@ -1,26 +1,94 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks">
+    <Color x:Key="AppColorCanvas">#eef3f7</Color>
+    <Color x:Key="AppColorSurface">#fbfcfd</Color>
+    <Color x:Key="AppColorSurfaceRaised">#ffffff</Color>
+    <Color x:Key="AppColorSidebar">#f7fafc</Color>
+    <Color x:Key="AppColorBorder">#d6e0ea</Color>
+    <Color x:Key="AppColorBorderStrong">#b9c8d8</Color>
+    <Color x:Key="AppColorText">#172033</Color>
+    <Color x:Key="AppColorMutedText">#617187</Color>
+    <Color x:Key="AppColorAccent">#3d7d6b</Color>
+    <Color x:Key="AppColorAccentSoft">#e7f1ec</Color>
+    <Color x:Key="AppColorAccentHover">#dbece5</Color>
+    <Color x:Key="AppColorWarning">#c98528</Color>
+    <Color x:Key="AppColorDanger">#c84646</Color>
+    <Color x:Key="AppColorShowAccent">#0f9f9a</Color>
+    <Color x:Key="AppColorShowSoft">#e6f7f6</Color>
+    <Color x:Key="AppColorMovieAccent">#4f7ccf</Color>
+    <Color x:Key="AppColorMovieSoft">#e9f0ff</Color>
+    <Color x:Key="AppColorNewAccent">#56708f</Color>
+    <Color x:Key="AppColorNewSoft">#eef4fb</Color>
+
+    <SolidColorBrush x:Key="AppBrushCanvas" Color="{StaticResource AppColorCanvas}" />
+    <SolidColorBrush x:Key="AppBrushSurface" Color="{StaticResource AppColorSurface}" />
+    <SolidColorBrush x:Key="AppBrushSurfaceRaised" Color="{StaticResource AppColorSurfaceRaised}" />
+    <SolidColorBrush x:Key="AppBrushSidebar" Color="{StaticResource AppColorSidebar}" />
+    <SolidColorBrush x:Key="AppBrushBorder" Color="{StaticResource AppColorBorder}" />
+    <SolidColorBrush x:Key="AppBrushBorderStrong" Color="{StaticResource AppColorBorderStrong}" />
+    <SolidColorBrush x:Key="AppBrushText" Color="{StaticResource AppColorText}" />
+    <SolidColorBrush x:Key="AppBrushMutedText" Color="{StaticResource AppColorMutedText}" />
+    <SolidColorBrush x:Key="AppBrushAccent" Color="{StaticResource AppColorAccent}" />
+    <SolidColorBrush x:Key="AppBrushAccentSoft" Color="{StaticResource AppColorAccentSoft}" />
+    <SolidColorBrush x:Key="AppBrushAccentHover" Color="{StaticResource AppColorAccentHover}" />
+    <SolidColorBrush x:Key="AppBrushWarning" Color="{StaticResource AppColorWarning}" />
+    <SolidColorBrush x:Key="AppBrushDanger" Color="{StaticResource AppColorDanger}" />
+    <SolidColorBrush x:Key="AppBrushShowAccent" Color="{StaticResource AppColorShowAccent}" />
+    <SolidColorBrush x:Key="AppBrushShowSoft" Color="{StaticResource AppColorShowSoft}" />
+    <SolidColorBrush x:Key="AppBrushMovieAccent" Color="{StaticResource AppColorMovieAccent}" />
+    <SolidColorBrush x:Key="AppBrushMovieSoft" Color="{StaticResource AppColorMovieSoft}" />
+    <SolidColorBrush x:Key="AppBrushNewAccent" Color="{StaticResource AppColorNewAccent}" />
+    <SolidColorBrush x:Key="AppBrushNewSoft" Color="{StaticResource AppColorNewSoft}" />
+
+    <Style x:Key="AppIconStyle" TargetType="iconPacks:PackIconLucide">
+        <Setter Property="Width" Value="18" />
+        <Setter Property="Height" Value="18" />
+        <Setter Property="Foreground" Value="{StaticResource AppBrushText}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="HorizontalAlignment" Value="Center" />
+    </Style>
+
+    <Style x:Key="AppIconButtonStyle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+        <Setter Property="Width" Value="34" />
+        <Setter Property="Height" Value="34" />
+        <Setter Property="MinHeight" Value="0" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Margin" Value="0" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Background" Value="{StaticResource AppBrushAccentSoft}" />
+                <Setter Property="BorderBrush" Value="{StaticResource AppBrushBorder}" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
     <Style TargetType="TextBox">
         <Setter Property="Margin" Value="0,4,0,12" />
         <Setter Property="Padding" Value="10,7" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
-        <Setter Property="Background" Value="#ffffff" />
-        <Setter Property="BorderBrush" Value="#cbd5e1" />
+        <Setter Property="Background" Value="{StaticResource AppBrushSurfaceRaised}" />
+        <Setter Property="BorderBrush" Value="{StaticResource AppBrushBorder}" />
         <Setter Property="BorderThickness" Value="1" />
     </Style>
     <Style TargetType="Button">
         <Setter Property="Margin" Value="0,0,8,0" />
         <Setter Property="Padding" Value="12,8" />
         <Setter Property="MinHeight" Value="34" />
-        <Setter Property="Background" Value="#ffffff" />
-        <Setter Property="BorderBrush" Value="#cbd5e1" />
+        <Setter Property="Background" Value="{StaticResource AppBrushSurfaceRaised}" />
+        <Setter Property="BorderBrush" Value="{StaticResource AppBrushBorder}" />
         <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="Foreground" Value="#0f172a" />
+        <Setter Property="Foreground" Value="{StaticResource AppBrushText}" />
         <Setter Property="FontWeight" Value="SemiBold" />
     </Style>
     <Style TargetType="TextBlock">
         <Setter Property="TextWrapping" Value="Wrap" />
-        <Setter Property="Foreground" Value="#0f172a" />
+        <Setter Property="Foreground" Value="{StaticResource AppBrushText}" />
     </Style>
     <Style TargetType="DataGrid">
         <Setter Property="Background" Value="#ffffff" />

@@ -3,261 +3,329 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
+             xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
              mc:Ignorable="d">
-    <Grid Margin="24">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="*" />
-                </Grid.RowDefinitions>
+    <UserControl.Resources>
+        <Style x:Key="SettingsCardStyle" TargetType="materialDesign:Card">
+            <Setter Property="Background" Value="{StaticResource AppBrushSurfaceRaised}" />
+            <Setter Property="Padding" Value="18" />
+            <Setter Property="Margin" Value="0,0,0,14" />
+        </Style>
 
-                <TextBlock Text="Settings" FontSize="24" FontWeight="SemiBold" Margin="0,0,0,20" />
+        <Style x:Key="SettingsLabelStyle" TargetType="TextBlock">
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{StaticResource AppBrushText}" />
+            <Setter Property="Margin" Value="0,0,0,5" />
+        </Style>
 
-                <TabControl Grid.Row="1">
-                    <TabItem Header="Media Manager">
-                        <ScrollViewer VerticalScrollBarVisibility="Auto">
-                            <Grid Margin="0,16,0,0">
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="150" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                </Grid.RowDefinitions>
+        <Style x:Key="SettingsHintStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource AppBrushMutedText}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
 
-                                <TextBlock Grid.Row="0" Text="State folder" FontWeight="SemiBold" />
-                                <DockPanel Grid.Row="1" Margin="0,4,0,12" LastChildFill="True">
-                                    <Button DockPanel.Dock="Right" Content="Browse" Command="{Binding BrowseStateFolderCommand}" Margin="8,0,0,0" />
-                                    <TextBox Text="{Binding StateFolder, UpdateSourceTrigger=PropertyChanged}" Margin="0" />
-                                </DockPanel>
+        <Style x:Key="SettingsIconTextButtonStyle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="MinHeight" Value="36" />
+            <Setter Property="Padding" Value="12,7" />
+            <Setter Property="Margin" Value="0,0,8,0" />
+        </Style>
+    </UserControl.Resources>
 
-                                <TextBlock Grid.Row="2" Text="Source folders" FontWeight="SemiBold" />
-                                <Grid Grid.Row="3" Margin="0,4,0,16">
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="150" />
-                                        <RowDefinition Height="Auto" />
-                                    </Grid.RowDefinitions>
-                                    <ListBox Grid.Row="0"
-                                             ItemsSource="{Binding SourceFolders}"
+    <Grid Background="{StaticResource AppBrushCanvas}" Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <DockPanel Grid.Row="0" Margin="0,0,0,16">
+            <TextBlock DockPanel.Dock="Left"
+                       Text="System Settings"
+                       FontSize="26"
+                       FontWeight="SemiBold" />
+            <TextBlock Text="{Binding StatusMessage}"
+                       Foreground="{StaticResource AppBrushAccent}"
+                       TextTrimming="CharacterEllipsis"
+                       VerticalAlignment="Center"
+                       Margin="18,6,0,0" />
+        </DockPanel>
+
+        <TabControl Grid.Row="1">
+            <TabItem Header="Media Manager">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <Grid Margin="0,16,8,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <materialDesign:Card Grid.Row="0" Style="{StaticResource SettingsCardStyle}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="12" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="State Folder" Style="{StaticResource SettingsLabelStyle}" />
+                                    <TextBox Text="{Binding StateFolder, UpdateSourceTrigger=PropertyChanged}"
+                                             Margin="0" />
+                                    <TextBlock Text="Stores settings, database, recipes, and app state."
+                                               Style="{StaticResource SettingsHintStyle}"
+                                               Margin="0,6,0,0" />
+                                </StackPanel>
+                                <Button Grid.Column="2"
+                                        Command="{Binding BrowseStateFolderCommand}"
+                                        Style="{StaticResource SettingsIconTextButtonStyle}"
+                                        VerticalAlignment="Center">
+                                    <StackPanel Orientation="Horizontal">
+                                        <iconPacks:PackIconLucide Kind="FolderOpen"
+                                                                   Width="16"
+                                                                   Height="16"
+                                                                   Margin="0,0,7,0" />
+                                        <TextBlock Text="Browse" />
+                                    </StackPanel>
+                                </Button>
+                            </Grid>
+                        </materialDesign:Card>
+
+                        <materialDesign:Card Grid.Row="1" Style="{StaticResource SettingsCardStyle}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="18" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="Source Folders" Style="{StaticResource SettingsLabelStyle}" />
+                                    <ListBox ItemsSource="{Binding SourceFolders}"
                                              SelectedItem="{Binding SelectedSourceFolder, Mode=TwoWay}"
+                                             MinHeight="130"
+                                             MaxHeight="170"
                                              HorizontalContentAlignment="Stretch"
                                              ScrollViewer.HorizontalScrollBarVisibility="Auto"
                                              ScrollViewer.VerticalScrollBarVisibility="Auto" />
-                                    <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,10,0,0">
-                                        <Button Content="Add Source Folder" Command="{Binding AddSourceFolderCommand}" />
-                                        <Button Content="Remove Selected Source Folder" Command="{Binding RemoveSelectedSourceFolderCommand}" />
+                                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                        <Button Command="{Binding AddSourceFolderCommand}"
+                                                Style="{StaticResource SettingsIconTextButtonStyle}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconLucide Kind="Plus" Width="16" Height="16" Margin="0,0,7,0" />
+                                                <TextBlock Text="Add" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Command="{Binding RemoveSelectedSourceFolderCommand}"
+                                                Style="{StaticResource SettingsIconTextButtonStyle}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconLucide Kind="Trash2" Width="16" Height="16" Margin="0,0,7,0" />
+                                                <TextBlock Text="Remove" />
+                                            </StackPanel>
+                                        </Button>
                                     </StackPanel>
-                                </Grid>
+                                </StackPanel>
 
-                                <TextBlock Grid.Row="4" Text="Generated library folder name" FontWeight="SemiBold" />
-                                <TextBox Grid.Row="5" Text="{Binding DefaultLibraryFolderName, UpdateSourceTrigger=PropertyChanged}" />
-
-                                <Grid Grid.Row="6" Margin="0,0,0,16">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" MinWidth="360" />
-                                        <ColumnDefinition Width="20" />
-                                        <ColumnDefinition Width="520" MinWidth="420" />
-                                    </Grid.ColumnDefinitions>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="170" />
-                                    </Grid.RowDefinitions>
-
-                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Auto per-drive Jellyfin output roots" FontWeight="SemiBold" />
-                                    <ListBox Grid.Row="1"
-                                             Grid.Column="0"
-                                             ItemsSource="{Binding LibraryRootPreview}"
-                                             Margin="0,4,0,0"
+                                <StackPanel Grid.Column="2">
+                                    <TextBlock Text="Generated Library Folder" Style="{StaticResource SettingsLabelStyle}" />
+                                    <TextBox Text="{Binding DefaultLibraryFolderName, UpdateSourceTrigger=PropertyChanged}"
+                                             Margin="0" />
+                                    <TextBlock Text="Auto per-drive Jellyfin output roots"
+                                               Style="{StaticResource SettingsLabelStyle}"
+                                               Margin="0,14,0,5" />
+                                    <ListBox ItemsSource="{Binding LibraryRootPreview}"
+                                             MinHeight="130"
+                                             MaxHeight="170"
                                              FontFamily="Consolas"
                                              ScrollViewer.HorizontalScrollBarVisibility="Auto"
                                              ScrollViewer.VerticalScrollBarVisibility="Auto" />
-
-                                    <Border Grid.Row="0"
-                                            Grid.RowSpan="2"
-                                            Grid.Column="2"
-                                            Background="#f6f8fa"
-                                            BorderBrush="#d0d7de"
-                                            BorderThickness="1"
-                                            Padding="14"
-                                            Margin="0,4,0,0">
-                                        <StackPanel>
-                                            <TextBlock Text="How multi-drive output works" FontWeight="SemiBold" Margin="0,0,0,8" />
-                                            <TextBlock TextWrapping="Wrap"
-                                                       Margin="0,0,0,8"
-                                                       Text="Hardlinks only work when the source file and linked file are on the same drive. This app creates a Jellyfin library root on each source drive." />
-                                            <TextBlock TextWrapping="Wrap"
-                                                       Margin="0,0,0,8"
-                                                       Text="Example: files from D:\ go to D:\MediaManagerLibrary. Files from E:\ go to E:\MediaManagerLibrary." />
-                                            <TextBlock TextWrapping="Wrap"
-                                                       Text="In Jellyfin, add every generated Shows path to one Shows library. Add every generated Movies path to one Movies library." />
-                                        </StackPanel>
-                                    </Border>
-                                </Grid>
-
-                                <TextBlock Grid.Row="7" Text="TMDb API Read Access Token" FontWeight="SemiBold" />
-                                <TextBox Grid.Row="8" Text="{Binding TmdbReadAccessToken, UpdateSourceTrigger=PropertyChanged}" />
-
-                                <StackPanel Grid.Row="9" Orientation="Horizontal">
-                                    <Button Content="Save Settings" Command="{Binding SaveCommand}" />
-                                    <TextBlock Text="{Binding StatusMessage}" Margin="12,7,0,0" Foreground="#2f6f3e" />
                                 </StackPanel>
                             </Grid>
-                        </ScrollViewer>
-                    </TabItem>
+                        </materialDesign:Card>
 
-                    <TabItem Header="Auto Torrent">
-                        <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="*" />
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
+                        <materialDesign:Card Grid.Row="2" Style="{StaticResource SettingsCardStyle}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="12" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="TMDB API Read Access Token" Style="{StaticResource SettingsLabelStyle}" />
+                                    <TextBox Text="{Binding TmdbReadAccessToken, UpdateSourceTrigger=PropertyChanged}"
+                                             Margin="0"
+                                             MaxHeight="70"
+                                             TextWrapping="Wrap"
+                                             VerticalScrollBarVisibility="Auto" />
+                                    <TextBlock Text="Use the v4 read access token. Test validates the token only if the network/TLS connection reaches TMDB."
+                                               Style="{StaticResource SettingsHintStyle}"
+                                               Margin="0,6,0,0" />
+                                </StackPanel>
+                                <Button Grid.Column="2"
+                                        Command="{Binding TestTmdbTokenCommand}"
+                                        Style="{StaticResource SettingsIconTextButtonStyle}"
+                                        VerticalAlignment="Center">
+                                    <StackPanel Orientation="Horizontal">
+                                        <iconPacks:PackIconLucide Kind="ShieldCheck" Width="16" Height="16" Margin="0,0,7,0" />
+                                        <TextBlock Text="Test Token" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Grid.Column="3"
+                                        Command="{Binding SaveCommand}"
+                                        Style="{StaticResource SettingsIconTextButtonStyle}"
+                                        VerticalAlignment="Center">
+                                    <StackPanel Orientation="Horizontal">
+                                        <iconPacks:PackIconLucide Kind="Save" Width="16" Height="16" Margin="0,0,7,0" />
+                                        <TextBlock Text="Save" />
+                                    </StackPanel>
+                                </Button>
+                            </Grid>
+                        </materialDesign:Card>
 
-                            <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
-                            <Grid Margin="0,16,0,0">
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                </Grid.RowDefinitions>
+                        <materialDesign:Card Grid.Row="3" Style="{StaticResource SettingsCardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="How multi-drive output works"
+                                           FontSize="16"
+                                           FontWeight="SemiBold"
+                                           Margin="0,0,0,8" />
+                                <TextBlock TextWrapping="Wrap"
+                                           Foreground="{StaticResource AppBrushMutedText}"
+                                           Text="Hardlinks only work when the source file and linked file are on the same drive. This app creates a Jellyfin library root on each source drive." />
+                                <TextBlock TextWrapping="Wrap"
+                                           Foreground="{StaticResource AppBrushMutedText}"
+                                           Margin="0,8,0,0"
+                                           Text="In Jellyfin, add every generated Shows path to one Shows library and every generated Movies path to one Movies library." />
+                            </StackPanel>
+                        </materialDesign:Card>
+                    </Grid>
+                </ScrollViewer>
+            </TabItem>
 
-                                <TextBlock Grid.Row="0" Text="qBittorrent Web UI URL" FontWeight="SemiBold" />
-                                <TextBox Grid.Row="1" Text="{Binding QbittorrentWebUiUrl, UpdateSourceTrigger=PropertyChanged}" />
+            <TabItem Header="Auto Torrent">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
 
-                                <TextBlock Grid.Row="2" Text="Username" FontWeight="SemiBold" />
-                                <TextBox Grid.Row="3" Text="{Binding QbittorrentUsername, UpdateSourceTrigger=PropertyChanged}" />
-
-                                <TextBlock Grid.Row="4" Text="Password" FontWeight="SemiBold" />
-                                <TextBox Grid.Row="5" Text="{Binding QbittorrentPassword, UpdateSourceTrigger=PropertyChanged}" />
-
-                                <TextBlock Grid.Row="6" Text="Download folder" FontWeight="SemiBold" />
-                                <DockPanel Grid.Row="7" Margin="0,4,0,12" LastChildFill="True">
-                                    <Button DockPanel.Dock="Right" Content="Browse" Command="{Binding BrowseAutoTorrentDownloadFolderCommand}" Margin="8,0,0,0" />
-                                    <TextBox Text="{Binding AutoTorrentDownloadFolder, UpdateSourceTrigger=PropertyChanged}" Margin="0" />
-                                </DockPanel>
-
-                                <TextBlock Grid.Row="8" Text="Download folder options" FontWeight="SemiBold" />
-                                <Grid Grid.Row="9" Margin="0,4,0,12">
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="110" />
-                                        <RowDefinition Height="Auto" />
-                                    </Grid.RowDefinitions>
-                                    <ListBox Grid.Row="0"
-                                             ItemsSource="{Binding AutoTorrentDownloadFolders}"
-                                             SelectedItem="{Binding SelectedAutoTorrentDownloadFolder, Mode=TwoWay}"
-                                             ScrollViewer.HorizontalScrollBarVisibility="Auto" />
-                                    <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,8,0,0">
-                                        <Button Content="Add Download Folder" Command="{Binding AddAutoTorrentDownloadFolderCommand}" />
-                                        <Button Content="Remove Selected" Command="{Binding RemoveSelectedAutoTorrentDownloadFolderCommand}" />
+                    <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
+                        <StackPanel Margin="0,16,8,0">
+                            <materialDesign:Card Style="{StaticResource SettingsCardStyle}">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="14" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="qBittorrent Web UI URL" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBox Text="{Binding QbittorrentWebUiUrl, UpdateSourceTrigger=PropertyChanged}" />
+                                        <TextBlock Text="Username" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBox Text="{Binding QbittorrentUsername, UpdateSourceTrigger=PropertyChanged}" />
+                                        <TextBlock Text="Password" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBox Text="{Binding QbittorrentPassword, UpdateSourceTrigger=PropertyChanged}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2">
+                                        <TextBlock Text="Download folder" Style="{StaticResource SettingsLabelStyle}" />
+                                        <DockPanel LastChildFill="True" Margin="0,0,0,12">
+                                            <Button DockPanel.Dock="Right"
+                                                    Command="{Binding BrowseAutoTorrentDownloadFolderCommand}"
+                                                    Content="Browse"
+                                                    Margin="8,0,0,0" />
+                                            <TextBox Text="{Binding AutoTorrentDownloadFolder, UpdateSourceTrigger=PropertyChanged}" Margin="0" />
+                                        </DockPanel>
+                                        <TextBlock Text="Category name" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBox Text="{Binding AutoTorrentCategoryName, UpdateSourceTrigger=PropertyChanged}" />
                                     </StackPanel>
                                 </Grid>
+                            </materialDesign:Card>
 
-                                <TextBlock Grid.Row="10" Text="Category name" FontWeight="SemiBold" />
-                                <TextBox Grid.Row="11" Text="{Binding AutoTorrentCategoryName, UpdateSourceTrigger=PropertyChanged}" />
-
-                                <TextBlock Grid.Row="12" Text="Candidates to keep per fetch" FontWeight="SemiBold" />
-                                <TextBox Grid.Row="13" Text="{Binding AutoTorrentMaxCandidatesPerFetch, UpdateSourceTrigger=PropertyChanged}" ToolTip="1-10 candidates per episode or movie." />
-
-                                <TextBlock Grid.Row="14" Text="Parallel searches" FontWeight="SemiBold" />
-                                <TextBox Grid.Row="15"
-                                         Text="{Binding AutoTorrentMaxParallelSearches, UpdateSourceTrigger=PropertyChanged}"
-                                         ToolTip="1-4 qBittorrent searches. qBittorrent allows 5 running searches; this app caps at 4 and defaults to 3." />
-
-                                <TextBlock Grid.Row="16" Text="Use snapshot search" FontWeight="SemiBold" />
-                                <CheckBox Grid.Row="17"
-                                          IsChecked="{Binding AutoTorrentUseShowSnapshotSearch, UpdateSourceTrigger=PropertyChanged}"
-                                          Content="Enable show-level snapshot search for TV fetches" />
-
-                                <TextBlock Grid.Row="18" Text="Snapshot target results" FontWeight="SemiBold" />
-                                <TextBox Grid.Row="19"
-                                         Text="{Binding AutoTorrentSnapshotTargetResults, UpdateSourceTrigger=PropertyChanged}"
-                                         ToolTip="100-5000 results before stopping the snapshot search." />
-
-                                <TextBlock Grid.Row="20" Text="Snapshot timeout (seconds)" FontWeight="SemiBold" />
-                                <TextBox Grid.Row="21"
-                                         Text="{Binding AutoTorrentSnapshotTimeoutSeconds, UpdateSourceTrigger=PropertyChanged}"
-                                         ToolTip="30-300 seconds." />
-
-                                <TextBlock Grid.Row="22" Text="Local match workers" FontWeight="SemiBold" />
-                                <TextBox Grid.Row="23"
-                                         Text="{Binding AutoTorrentLocalMatchWorkers, UpdateSourceTrigger=PropertyChanged}"
-                                         ToolTip="1-8 local episode matching workers." />
-
-                                <TextBlock Grid.Row="24" Text="Candidate metadata probing" FontWeight="SemiBold" />
-                                <CheckBox Grid.Row="25"
-                                          IsChecked="{Binding AutoTorrentEnableCandidateMetadataProbe, UpdateSourceTrigger=PropertyChanged}"
-                                          Content="Probe .torrent file metadata for suspicious candidates before accepting them"
-                                          ToolTip="Best-effort filter for odd candidate names. Direct .torrent links and resolvable detail pages can be probed; magnets cannot be probed until added." />
-
-                                <Border Grid.Row="26" BorderBrush="#dbe3ee" BorderThickness="1" Padding="10" Margin="0,8,0,0">
-                                    <StackPanel>
-                                        <TextBlock Text="Candidate maintenance" FontWeight="SemiBold" Margin="0,0,0,8" />
-                                        <StackPanel Orientation="Horizontal">
-                                            <Button Content="Clear Episode Candidates" Command="{Binding ClearEpisodeSelectedCandidatesCommand}" />
-                                            <Button Content="Clear Pack Candidates" Command="{Binding ClearSeasonPackSelectedCandidatesCommand}" />
-                                            <Button Content="Clear Movie Candidates" Command="{Binding ClearMovieSelectedCandidatesCommand}" />
-                                            <Button Content="Clear All Candidates" Command="{Binding ClearAllSelectedCandidatesCommand}" />
+                            <materialDesign:Card Style="{StaticResource SettingsCardStyle}">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="14" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="Download folder options" Style="{StaticResource SettingsLabelStyle}" />
+                                        <ListBox ItemsSource="{Binding AutoTorrentDownloadFolders}"
+                                                 SelectedItem="{Binding SelectedAutoTorrentDownloadFolder, Mode=TwoWay}"
+                                                 MinHeight="110"
+                                                 ScrollViewer.HorizontalScrollBarVisibility="Auto" />
+                                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                            <Button Content="Add Folder" Command="{Binding AddAutoTorrentDownloadFolderCommand}" />
+                                            <Button Content="Remove Selected" Command="{Binding RemoveSelectedAutoTorrentDownloadFolderCommand}" />
                                         </StackPanel>
                                     </StackPanel>
-                                </Border>
-
-                            </Grid>
-                            </ScrollViewer>
-
-                            <Border Grid.Row="1"
-                                    Background="White"
-                                    BorderBrush="#dbe3ee"
-                                    BorderThickness="0,1,0,0"
-                                    Padding="0,12,0,0">
-                                <DockPanel LastChildFill="True">
-                                    <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
-                                        <Button Content="Test Connection" Command="{Binding TestQbittorrentConnectionCommand}" />
-                                        <Button Content="Save Settings" Command="{Binding SaveCommand}" />
+                                    <StackPanel Grid.Column="2">
+                                        <TextBlock Text="Candidates to keep per fetch" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBox Text="{Binding AutoTorrentMaxCandidatesPerFetch, UpdateSourceTrigger=PropertyChanged}" />
+                                        <TextBlock Text="Parallel searches" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBox Text="{Binding AutoTorrentMaxParallelSearches, UpdateSourceTrigger=PropertyChanged}" />
+                                        <CheckBox IsChecked="{Binding AutoTorrentUseShowSnapshotSearch, UpdateSourceTrigger=PropertyChanged}"
+                                                  Content="Use show-level snapshot search"
+                                                  Margin="0,4,0,12" />
                                     </StackPanel>
-                                    <TextBlock Text="{Binding StatusMessage}"
-                                               Margin="12,7,0,0"
-                                               Foreground="#2f6f3e"
-                                               TextWrapping="Wrap" />
-                                </DockPanel>
-                            </Border>
-                        </Grid>
-                    </TabItem>
-                </TabControl>
-            </Grid>
+                                </Grid>
+                            </materialDesign:Card>
+
+                            <materialDesign:Card Style="{StaticResource SettingsCardStyle}">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="14" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="Snapshot target results" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBox Text="{Binding AutoTorrentSnapshotTargetResults, UpdateSourceTrigger=PropertyChanged}" />
+                                        <TextBlock Text="Snapshot timeout seconds" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBox Text="{Binding AutoTorrentSnapshotTimeoutSeconds, UpdateSourceTrigger=PropertyChanged}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2">
+                                        <TextBlock Text="Local match workers" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBox Text="{Binding AutoTorrentLocalMatchWorkers, UpdateSourceTrigger=PropertyChanged}" />
+                                        <CheckBox IsChecked="{Binding AutoTorrentEnableCandidateMetadataProbe, UpdateSourceTrigger=PropertyChanged}"
+                                                  Content="Probe candidate metadata"
+                                                  Margin="0,4,0,12" />
+                                    </StackPanel>
+                                </Grid>
+                            </materialDesign:Card>
+
+                            <materialDesign:Card Style="{StaticResource SettingsCardStyle}">
+                                <StackPanel>
+                                    <TextBlock Text="Candidate maintenance" FontWeight="SemiBold" Margin="0,0,0,8" />
+                                    <WrapPanel>
+                                        <Button Content="Clear Episode Candidates" Command="{Binding ClearEpisodeSelectedCandidatesCommand}" />
+                                        <Button Content="Clear Pack Candidates" Command="{Binding ClearSeasonPackSelectedCandidatesCommand}" />
+                                        <Button Content="Clear Movie Candidates" Command="{Binding ClearMovieSelectedCandidatesCommand}" />
+                                        <Button Content="Clear All Candidates" Command="{Binding ClearAllSelectedCandidatesCommand}" />
+                                    </WrapPanel>
+                                </StackPanel>
+                            </materialDesign:Card>
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <Border Grid.Row="1"
+                            Background="{StaticResource AppBrushSurface}"
+                            BorderBrush="{StaticResource AppBrushBorder}"
+                            BorderThickness="0,1,0,0"
+                            Padding="0,12,0,0">
+                        <DockPanel LastChildFill="True">
+                            <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
+                                <Button Content="Test Connection" Command="{Binding TestQbittorrentConnectionCommand}" />
+                                <Button Content="Save Settings" Command="{Binding SaveCommand}" />
+                            </StackPanel>
+                            <TextBlock Text="{Binding StatusMessage}"
+                                       Margin="12,7,0,0"
+                                       Foreground="{StaticResource AppBrushAccent}"
+                                       TextWrapping="Wrap" />
+                        </DockPanel>
+                    </Border>
+                </Grid>
+            </TabItem>
+        </TabControl>
+    </Grid>
 </UserControl>

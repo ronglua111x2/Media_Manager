@@ -1,6 +1,6 @@
-using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Windows;
+using System.Windows.Input;
 using media_management_app.Services;
 using media_management_app.ViewModels;
 
@@ -17,21 +17,6 @@ public partial class MainWindow : Window
         _viewModel = viewModel;
         _fetchJobService = fetchJobService;
         DataContext = viewModel;
-        _viewModel.UiLogs.CollectionChanged += UiLogs_CollectionChanged;
-    }
-
-    private void UiLogs_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
-    {
-        if (_viewModel.UiLogs.Count == 0)
-        {
-            return;
-        }
-
-        Dispatcher.BeginInvoke(() =>
-        {
-            var lastLogLine = _viewModel.UiLogs[^1];
-            ConsoleLogList.ScrollIntoView(lastLogLine);
-        });
     }
 
     private void Window_Closing(object? sender, CancelEventArgs e)
@@ -53,5 +38,61 @@ public partial class MainWindow : Window
         }
 
         _fetchJobService.CancelActiveJobs();
+    }
+
+    private void Header_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ClickCount == 2)
+        {
+            ToggleMaximizedState();
+            return;
+        }
+
+        if (e.ButtonState == MouseButtonState.Pressed)
+        {
+            RestoreWindowForDrag(e);
+            DragMove();
+        }
+    }
+
+    private void MinimizeButton_Click(object sender, RoutedEventArgs e)
+    {
+        WindowState = WindowState.Minimized;
+    }
+
+    private void MaximizeRestoreButton_Click(object sender, RoutedEventArgs e)
+    {
+        ToggleMaximizedState();
+    }
+
+    private void CloseButton_Click(object sender, RoutedEventArgs e)
+    {
+        Close();
+    }
+
+    private void ToggleMaximizedState()
+    {
+        WindowState = WindowState == WindowState.Maximized
+            ? WindowState.Normal
+            : WindowState.Maximized;
+    }
+
+    private void RestoreWindowForDrag(MouseButtonEventArgs e)
+    {
+        if (WindowState != WindowState.Maximized)
+        {
+            return;
+        }
+
+        var mousePosition = PointToScreen(e.GetPosition(this));
+        var restoredWidth = RestoreBounds.Width;
+        var restoredHeight = RestoreBounds.Height;
+        var horizontalRatio = mousePosition.X / ActualWidth;
+
+        WindowState = WindowState.Normal;
+        Width = restoredWidth;
+        Height = restoredHeight;
+        Left = mousePosition.X - (restoredWidth * horizontalRatio);
+        Top = Math.Max(0, mousePosition.Y - 20);
     }
 }

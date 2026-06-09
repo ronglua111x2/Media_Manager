@@ -3,179 +3,384 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         mc:Ignorable="d"
-        Title="Media Manager" Height="720" Width="1120"
-        MinHeight="560" MinWidth="920"
-        WindowState="Maximized"
+        Title="Media Manager"
+        Height="720"
+        Width="1280"
+        MinHeight="600"
+        MinWidth="960"
+        WindowStartupLocation="CenterScreen"
+        WindowStyle="None"
+        ResizeMode="CanResize"
+        Background="{StaticResource AppBrushCanvas}"
         Icon="Assets/app-icon.ico"
         Closing="Window_Closing">
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="0"
+                            CornerRadius="8"
+                            GlassFrameThickness="0"
+                            ResizeBorderThickness="6" />
+    </shell:WindowChrome.WindowChrome>
+
     <Window.Resources>
-        <Style x:Key="ExpandedSidebarStyle" TargetType="Border">
-            <Setter Property="Visibility" Value="Visible" />
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
+
+        <Style x:Key="ChromeIconStyle" TargetType="iconPacks:PackIconLucide" BasedOn="{StaticResource AppIconStyle}">
+            <Setter Property="Width" Value="13" />
+            <Setter Property="Height" Value="13" />
+            <Setter Property="Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+        </Style>
+
+        <Style x:Key="TitleButtonStyle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Width" Value="44" />
+            <Setter Property="Height" Value="38" />
+            <Setter Property="MinHeight" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="shell:WindowChrome.IsHitTestVisibleInChrome" Value="True" />
             <Style.Triggers>
-                <DataTrigger Binding="{Binding IsSidebarOpen}" Value="False">
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{StaticResource AppBrushAccentSoft}" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="CloseTitleButtonStyle" TargetType="Button" BasedOn="{StaticResource TitleButtonStyle}">
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{StaticResource AppBrushDanger}" />
+                    <Setter Property="Foreground" Value="#ffffff" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="SidebarShellStyle" TargetType="Border">
+            <Setter Property="Width" Value="260" />
+            <Setter Property="Background" Value="{StaticResource AppBrushSidebar}" />
+            <Setter Property="BorderBrush" Value="{StaticResource AppBrushBorder}" />
+            <Setter Property="BorderThickness" Value="1,0,0,0" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsSidebarCollapsed}" Value="True">
+                    <Setter Property="Width" Value="72" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="SidebarTextPanelStyle" TargetType="StackPanel">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding DataContext.IsSidebarCollapsed, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
                     <Setter Property="Visibility" Value="Collapsed" />
                 </DataTrigger>
             </Style.Triggers>
         </Style>
-        <Style x:Key="CollapsedSidebarStyle" TargetType="Border">
-            <Setter Property="Visibility" Value="Collapsed" />
-            <Style.Triggers>
-                <DataTrigger Binding="{Binding IsSidebarOpen}" Value="False">
-                    <Setter Property="Visibility" Value="Visible" />
-                </DataTrigger>
-            </Style.Triggers>
-        </Style>
-        <Style x:Key="ConsoleShellStyle" TargetType="Border">
-            <Setter Property="Height" Value="205" />
-            <Style.Triggers>
-                <DataTrigger Binding="{Binding IsConsoleVisible}" Value="False">
-                    <Setter Property="Height" Value="38" />
-                </DataTrigger>
-            </Style.Triggers>
-        </Style>
-        <Style x:Key="ConsoleBodyStyle" TargetType="Grid">
+
+        <Style x:Key="SidebarHeaderTextPanelStyle" TargetType="StackPanel">
             <Setter Property="Visibility" Value="Visible" />
             <Style.Triggers>
-                <DataTrigger Binding="{Binding IsConsoleVisible}" Value="False">
+                <DataTrigger Binding="{Binding IsSidebarCollapsed}" Value="True">
                     <Setter Property="Visibility" Value="Collapsed" />
                 </DataTrigger>
             </Style.Triggers>
         </Style>
-        <Style x:Key="ConsoleToggleTextStyle" TargetType="TextBlock">
-            <Setter Property="Text" Value="Hide Console" />
+
+        <Style x:Key="SidebarButtonStyle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="MinHeight" Value="58" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="0,0,0,8" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="shell:WindowChrome.IsHitTestVisibleInChrome" Value="True" />
             <Style.Triggers>
-                <DataTrigger Binding="{Binding IsConsoleVisible}" Value="False">
-                    <Setter Property="Text" Value="Show Console" />
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{StaticResource AppBrushAccentSoft}" />
+                    <Setter Property="BorderBrush" Value="{StaticResource AppBrushBorderStrong}" />
+                </Trigger>
+                <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                    <Setter Property="Background" Value="{StaticResource AppBrushAccentSoft}" />
+                    <Setter Property="BorderBrush" Value="{StaticResource AppBrushAccent}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="SelectedAccentStyle" TargetType="Border">
+            <Setter Property="Background" Value="Transparent" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                    <Setter Property="Background" Value="{StaticResource AppBrushAccent}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="StatusPillStyle" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource AppBrushSurfaceRaised}" />
+            <Setter Property="BorderBrush" Value="{StaticResource AppBrushBorder}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Padding" Value="10,5" />
+            <Setter Property="Margin" Value="8,3,0,3" />
+        </Style>
+
+        <Style x:Key="SidebarToggleOpenIconStyle" TargetType="iconPacks:PackIconLucide" BasedOn="{StaticResource AppIconStyle}">
+            <Setter Property="Kind" Value="PanelRightOpen" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsSidebarCollapsed}" Value="False">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="SidebarToggleCloseIconStyle" TargetType="iconPacks:PackIconLucide" BasedOn="{StaticResource AppIconStyle}">
+            <Setter Property="Kind" Value="PanelRightClose" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsSidebarCollapsed}" Value="True">
+                    <Setter Property="Visibility" Value="Collapsed" />
                 </DataTrigger>
             </Style.Triggers>
         </Style>
     </Window.Resources>
 
-    <DockPanel>
-        <Border DockPanel.Dock="Left"
-                Width="180"
-                Background="#f8fafc"
-                BorderBrush="#d8e0eb"
-                BorderThickness="0,0,1,0"
-                Style="{StaticResource ExpandedSidebarStyle}">
-            <DockPanel Margin="8">
-                <Button DockPanel.Dock="Top"
-                        Command="{Binding ToggleSidebarCommand}"
-                        HorizontalAlignment="Right"
-                        Padding="7"
-                        MinWidth="34"
-                        ToolTip="Collapse sidebar">
-                    <Path Style="{StaticResource ButtonIconPath}" Margin="0" Data="M15,6 L9,12 L15,18" />
-                </Button>
-                <TextBlock DockPanel.Dock="Top"
-                           Text="Auto Torrent"
-                           FontSize="18"
-                           FontWeight="SemiBold"
-                           Margin="0,6,0,16" />
-                <StackPanel DockPanel.Dock="Top">
-                    <Button Command="{Binding ShowAutoTorrentCommand}" Margin="0,0,0,8">
-                        <StackPanel Orientation="Horizontal">
-                            <Path Style="{StaticResource NavIconPath}" Data="M3,11 L21,11 M12,3 L12,19 M7,7 L12,3 L17,7 M7,17 L12,21 L17,17" />
-                            <TextBlock Text="Auto Torrent" />
-                        </StackPanel>
-                    </Button>
-                    <Button Command="{Binding ShowSettingsCommand}" Margin="0,0,0,8">
-                        <StackPanel Orientation="Horizontal">
-                            <Path Style="{StaticResource NavIconPath}" Data="M12,8 A4,4 0 1 1 12,16 A4,4 0 0 1 12,8 M12,2 L14,5 L18,5 L19,9 L22,11 L20,15 L21,19 L17,20 L14,23 L10,23 L7,20 L3,19 L4,15 L2,11 L5,9 L6,5 L10,5 Z" />
-                            <TextBlock Text="Settings" />
-                        </StackPanel>
-                    </Button>
-                </StackPanel>
-            </DockPanel>
-        </Border>
+    <Border Background="{StaticResource AppBrushCanvas}"
+            BorderBrush="{StaticResource AppBrushBorder}"
+            BorderThickness="1">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="46" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="46" />
+            </Grid.RowDefinitions>
 
-        <Border DockPanel.Dock="Left"
-                Width="48"
-                Background="#f8fafc"
-                BorderBrush="#d8e0eb"
-                BorderThickness="0,0,1,0"
-                Style="{StaticResource CollapsedSidebarStyle}">
-            <StackPanel Margin="6">
-                <Button Command="{Binding ToggleSidebarCommand}" Padding="7" MinWidth="34" ToolTip="Expand sidebar">
-                    <Path Style="{StaticResource ButtonIconPath}" Margin="0" Data="M9,6 L15,12 L9,18" />
-                </Button>
-                <Button Command="{Binding ShowAutoTorrentCommand}" Padding="7" MinWidth="34" Margin="0,12,0,8" ToolTip="Auto Torrent">
-                    <Path Style="{StaticResource NavIconPath}" Margin="0" Data="M3,11 L21,11 M12,3 L12,19 M7,7 L12,3 L17,7 M7,17 L12,21 L17,17" />
-                </Button>
-                <Button Command="{Binding ShowSettingsCommand}" Padding="7" MinWidth="34" Margin="0,0,0,8" ToolTip="Settings">
-                    <Path Style="{StaticResource NavIconPath}" Margin="0" Data="M12,8 A4,4 0 1 1 12,16 A4,4 0 0 1 12,8 M12,2 L14,5 L18,5 L19,9 L22,11 L20,15 L21,19 L17,20 L14,23 L10,23 L7,20 L3,19 L4,15 L2,11 L5,9 L6,5 L10,5 Z" />
-                </Button>
-            </StackPanel>
-        </Border>
-
-        <Border DockPanel.Dock="Bottom"
-                Background="#111111"
-                BorderBrush="#303030"
-                BorderThickness="0,1,0,0"
-                Style="{StaticResource ConsoleShellStyle}">
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="38" />
-                    <RowDefinition Height="*" />
-                </Grid.RowDefinitions>
-                <Grid Margin="10,7,10,6">
+            <Border Grid.Row="0"
+                    Background="{StaticResource AppBrushSurface}"
+                    BorderBrush="{StaticResource AppBrushBorder}"
+                    BorderThickness="0,0,0,1"
+                    MouseLeftButtonDown="Header_MouseLeftButtonDown">
+                <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
-                    <Grid Grid.Column="0" Margin="0,0,8,0">
-                        <ProgressBar Style="{StaticResource OperationProgressBar}"
-                                     Minimum="0"
-                                     Maximum="100"
-                                     Value="{Binding OperationProgressPercent}" />
-                        <TextBlock Text="{Binding OperationProgressMessage}"
-                                   Foreground="#f8fafc"
-                                   FontSize="12"
+
+                    <StackPanel Orientation="Horizontal"
+                                VerticalAlignment="Center"
+                                Margin="14,0,0,0">
+                        <Border Width="25"
+                                Height="25"
+                                Background="{StaticResource AppBrushText}"
+                                CornerRadius="5"
+                                Margin="0,0,9,0">
+                            <Grid>
+                                <iconPacks:PackIconLucide Kind="MonitorPlay"
+                                                          Width="16"
+                                                          Height="16"
+                                                          Foreground="#ffffff"
+                                                          HorizontalAlignment="Center"
+                                                          VerticalAlignment="Center" />
+                                <Border Width="5"
+                                        Height="5"
+                                        Background="{StaticResource AppBrushAccent}"
+                                        CornerRadius="2.5"
+                                        HorizontalAlignment="Right"
+                                        VerticalAlignment="Bottom"
+                                        Margin="0,0,4,4" />
+                            </Grid>
+                        </Border>
+                        <TextBlock Text="Media Manager"
+                                   FontSize="14"
                                    FontWeight="SemiBold"
-                                   HorizontalAlignment="Center"
-                                   VerticalAlignment="Center"
-                                   TextTrimming="CharacterEllipsis" />
-                    </Grid>
-                    <Button Grid.Column="1"
-                            Command="{Binding ToggleConsoleCommand}"
-                            Padding="10,4"
-                            MinHeight="24"
-                            MinWidth="108"
-                            ToolTip="Show or hide the console log">
-                        <TextBlock Style="{StaticResource ConsoleToggleTextStyle}" TextWrapping="NoWrap" />
-                    </Button>
-                </Grid>
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
 
-                <Grid Grid.Row="1" Style="{StaticResource ConsoleBodyStyle}">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
-                    <TextBlock Text="Console Log"
-                               Foreground="#d6d6d6"
-                               FontWeight="SemiBold"
-                               Margin="10,2,10,4" />
-                    <ListBox x:Name="ConsoleLogList"
-                             Grid.Row="1"
-                             ItemsSource="{Binding UiLogs}"
-                             Background="#111111"
-                             BorderThickness="0"
-                             Foreground="#d6d6d6"
-                             FontFamily="Consolas"
-                             FontSize="12"
-                             ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                             ScrollViewer.VerticalScrollBarVisibility="Auto">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate>
-                                <TextBlock Text="{Binding}" Foreground="#d6d6d6" TextWrapping="NoWrap" />
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
+                    <StackPanel Grid.Column="1"
+                                Orientation="Horizontal"
+                                HorizontalAlignment="Right">
+                        <Button Style="{StaticResource TitleButtonStyle}"
+                                Click="MinimizeButton_Click"
+                                ToolTip="Minimize">
+                            <iconPacks:PackIconLucide Kind="Minus" Style="{StaticResource ChromeIconStyle}" />
+                        </Button>
+                        <Button Style="{StaticResource TitleButtonStyle}"
+                                Click="MaximizeRestoreButton_Click"
+                                ToolTip="Maximize or restore">
+                            <iconPacks:PackIconLucide Kind="Square" Style="{StaticResource ChromeIconStyle}" />
+                        </Button>
+                        <Button Style="{StaticResource CloseTitleButtonStyle}"
+                                Click="CloseButton_Click"
+                                ToolTip="Close">
+                            <iconPacks:PackIconLucide Kind="X" Style="{StaticResource ChromeIconStyle}" />
+                        </Button>
+                    </StackPanel>
                 </Grid>
+            </Border>
+
+            <Grid Grid.Row="1">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <Border Grid.Column="0"
+                        Background="{StaticResource AppBrushSurfaceRaised}">
+                    <ContentControl Content="{Binding CurrentView}" />
+                </Border>
+
+                <Border Grid.Column="1"
+                        Style="{StaticResource SidebarShellStyle}">
+                    <DockPanel LastChildFill="True">
+                        <Border DockPanel.Dock="Top"
+                                BorderBrush="{StaticResource AppBrushBorder}"
+                                BorderThickness="0,0,0,1"
+                                Padding="14,14,14,12">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Style="{StaticResource SidebarHeaderTextPanelStyle}">
+                                    <TextBlock Text="Workspace"
+                                               FontSize="15"
+                                               FontWeight="SemiBold" />
+                                   <TextBlock Text="{Binding SelectedWorkspaceLabel}"
+                                               Foreground="{StaticResource AppBrushMutedText}"
+                                               FontSize="12"
+                                               Margin="0,2,0,0" />
+                                </StackPanel>
+                                <Button Grid.Column="1"
+                                        Style="{StaticResource AppIconButtonStyle}"
+                                        Command="{Binding ToggleSidebarCommand}"
+                                        ToolTip="Collapse sidebar">
+                                    <Grid>
+                                        <iconPacks:PackIconLucide Style="{StaticResource SidebarToggleOpenIconStyle}" />
+                                        <iconPacks:PackIconLucide Style="{StaticResource SidebarToggleCloseIconStyle}" />
+                                    </Grid>
+                                </Button>
+                            </Grid>
+                        </Border>
+
+                        <ItemsControl ItemsSource="{Binding NavigationItems}" Margin="12,14,12,0">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Button Style="{StaticResource SidebarButtonStyle}"
+                                            Command="{Binding DataContext.NavigateCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                            CommandParameter="{Binding}"
+                                            ToolTip="{Binding Label}">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="4" />
+                                                <ColumnDefinition Width="46" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+
+                                            <Border Grid.Column="0"
+                                                    Style="{StaticResource SelectedAccentStyle}" />
+
+                                            <iconPacks:PackIconLucide Grid.Column="1"
+                                                                      Kind="{Binding IconKind}"
+                                                                      Width="22"
+                                                                      Height="22"
+                                                                      Foreground="{StaticResource AppBrushText}"
+                                                                      HorizontalAlignment="Center"
+                                                                      VerticalAlignment="Center" />
+
+                                            <StackPanel Grid.Column="2"
+                                                        VerticalAlignment="Center"
+                                                        Margin="4,0,12,0"
+                                                        Style="{StaticResource SidebarTextPanelStyle}">
+                                                <TextBlock Text="{Binding Label}"
+                                                           FontSize="16"
+                                                           FontWeight="SemiBold" />
+                                                <TextBlock Text="{Binding Description}"
+                                                           Foreground="{StaticResource AppBrushMutedText}"
+                                                           FontSize="11"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           TextWrapping="NoWrap" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </DockPanel>
+                </Border>
             </Grid>
-        </Border>
 
-        <ContentControl Content="{Binding CurrentView}" />
-    </DockPanel>
+            <Border Grid.Row="2"
+                    Background="{StaticResource AppBrushSurface}"
+                    BorderBrush="{StaticResource AppBrushBorder}"
+                    BorderThickness="0,1,0,0">
+                <Grid Margin="14,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <Button Grid.Column="0"
+                            Command="{Binding OpenConsoleCommand}"
+                            MinHeight="30"
+                            Padding="12,5"
+                            Margin="0"
+                            ToolTip="Open console log">
+                        <StackPanel Orientation="Horizontal">
+                            <iconPacks:PackIconLucide Kind="Terminal"
+                                                       Width="16"
+                                                       Height="16"
+                                                       Foreground="{StaticResource AppBrushText}"
+                                                       Margin="0,0,7,0" />
+                            <TextBlock Text="Console Log"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+
+                    <WrapPanel Grid.Column="2"
+                               HorizontalAlignment="Right"
+                               VerticalAlignment="Center">
+                        <Border Style="{StaticResource StatusPillStyle}">
+                            <StackPanel Orientation="Horizontal">
+                                <Ellipse Width="8"
+                                         Height="8"
+                                         Fill="{StaticResource AppBrushAccent}"
+                                         VerticalAlignment="Center"
+                                         Margin="0,0,7,0" />
+                                <TextBlock Text="{Binding StorageStatus}"
+                                           TextTrimming="CharacterEllipsis"
+                                           MaxWidth="260" />
+                            </StackPanel>
+                        </Border>
+                        <Border Style="{StaticResource StatusPillStyle}">
+                            <StackPanel Orientation="Horizontal">
+                                <Ellipse Width="8"
+                                         Height="8"
+                                         Fill="{StaticResource AppBrushAccent}"
+                                         VerticalAlignment="Center"
+                                         Margin="0,0,7,0" />
+                                <TextBlock Text="{Binding QbittorrentStatus}"
+                                           TextTrimming="CharacterEllipsis"
+                                           MaxWidth="300" />
+                            </StackPanel>
+                        </Border>
+                        <Border Style="{StaticResource StatusPillStyle}">
+                            <StackPanel Orientation="Horizontal">
+                                <Ellipse Width="8"
+                                         Height="8"
+                                         Fill="{StaticResource AppBrushWarning}"
+                                         VerticalAlignment="Center"
+                                         Margin="0,0,7,0" />
+                                <TextBlock Text="{Binding JobStatus}"
+                                           TextTrimming="CharacterEllipsis"
+                                           MaxWidth="300" />
+                            </StackPanel>
+                        </Border>
+                    </WrapPanel>
+                </Grid>
+            </Border>
+        </Grid>
+    </Border>
 </Window>

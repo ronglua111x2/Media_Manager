@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text.Json;
@@ -154,6 +155,17 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
 
     public async Task<IReadOnlyList<TmdbShowSearchResult>> SearchTvShowsAsync(string query, CancellationToken cancellationToken = default)
     {
+        var searchResults = await SearchTvShowsLightweightAsync(query, cancellationToken);
+        foreach (var result in searchResults)
+        {
+            await PopulateShowCountsAsync(result, cancellationToken);
+        }
+
+        return searchResults;
+    }
+
+    public async Task<IReadOnlyList<TmdbShowSearchResult>> SearchTvShowsLightweightAsync(string query, CancellationToken cancellationToken = default)
+    {
         if (string.IsNullOrWhiteSpace(query))
         {
             return [];
@@ -166,7 +178,7 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
 
         ConfigureHeaders();
         var searchPath = $"search/tv?query={Uri.EscapeDataString(query.Trim())}&include_adult=false&language=en-US&page=1";
-        using var response = await _httpClient.GetAsync(searchPath, cancellationToken);
+        using var response = await GetAsyncWithRetryAsync(searchPath, cancellationToken);
         response.EnsureSuccessStatusCode();
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
@@ -193,12 +205,34 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
             .Where(result => result.TmdbId > 0 && !string.IsNullOrWhiteSpace(result.Title))
             .ToList();
 
-        foreach (var result in searchResults)
+        return searchResults;
+    }
+
+    public async Task<TmdbShowDetails> GetTvShowSummaryAsync(int tmdbId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(_settingsService.Current.TmdbReadAccessToken))
         {
-            await PopulateShowCountsAsync(result, cancellationToken);
+            throw new InvalidOperationException("TMDb read access token is not configured.");
         }
 
-        return searchResults;
+        ConfigureHeaders();
+        using var detailsResponse = await GetAsyncWithRetryAsync($"tv/{tmdbId}?language=en-US", cancellationToken);
+        detailsResponse.EnsureSuccessStatusCode();
+
+        await using var detailsStream = await detailsResponse.Content.ReadAsStreamAsync(cancellationToken);
+        using var detailsDocument = await JsonDocument.ParseAsync(detailsStream, cancellationToken: cancellationToken);
+        var root = detailsDocument.RootElement;
+        var firstAirDate = GetString(root, "first_air_date");
+        return new TmdbShowDetails
+        {
+            TmdbId = tmdbId,
+            Title = GetString(root, "name") ?? string.Empty,
+            FirstAirYear = ParseYear(firstAirDate),
+            Overview = GetString(root, "overview"),
+            PosterPath = GetString(root, "poster_path"),
+            SeasonCount = GetInt(root, "number_of_seasons") ?? 0,
+            EpisodeCount = GetInt(root, "number_of_episodes") ?? 0
+        };
     }
 
     public async Task<TmdbShowDetails> GetTvShowDetailsAsync(int tmdbId, CancellationToken cancellationToken = default)
@@ -209,7 +243,7 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
         }
 
         ConfigureHeaders();
-        using var detailsResponse = await _httpClient.GetAsync($"tv/{tmdbId}?language=en-US", cancellationToken);
+        using var detailsResponse = await GetAsyncWithRetryAsync($"tv/{tmdbId}?language=en-US", cancellationToken);
         detailsResponse.EnsureSuccessStatusCode();
 
         await using var detailsStream = await detailsResponse.Content.ReadAsStreamAsync(cancellationToken);
@@ -222,7 +256,9 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
             Title = GetString(root, "name") ?? string.Empty,
             FirstAirYear = ParseYear(firstAirDate),
             Overview = GetString(root, "overview"),
-            PosterPath = GetString(root, "poster_path")
+            PosterPath = GetString(root, "poster_path"),
+            SeasonCount = GetInt(root, "number_of_seasons") ?? 0,
+            EpisodeCount = GetInt(root, "number_of_episodes") ?? 0
         };
 
         if (!root.TryGetProperty("seasons", out var seasonsElement) || seasonsElement.ValueKind != JsonValueKind.Array)
@@ -263,7 +299,7 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
 
         ConfigureHeaders();
         var searchPath = $"search/movie?query={Uri.EscapeDataString(query.Trim())}&include_adult=false&language=en-US&page=1";
-        using var response = await _httpClient.GetAsync(searchPath, cancellationToken);
+        using var response = await GetAsyncWithRetryAsync(searchPath, cancellationToken);
         response.EnsureSuccessStatusCode();
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
@@ -299,7 +335,7 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
         }
 
         ConfigureHeaders();
-        using var response = await _httpClient.GetAsync($"movie/{tmdbId}?language=en-US", cancellationToken);
+        using var response = await GetAsyncWithRetryAsync($"movie/{tmdbId}?language=en-US", cancellationToken);
         response.EnsureSuccessStatusCode();
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
@@ -312,7 +348,8 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
             Title = GetString(root, "title") ?? string.Empty,
             ReleaseYear = ParseYear(releaseDate),
             Overview = GetString(root, "overview"),
-            PosterPath = GetString(root, "poster_path")
+            PosterPath = GetString(root, "poster_path"),
+            RuntimeMinutes = GetInt(root, "runtime")
         };
     }
 
@@ -424,7 +461,7 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
             return CloneCandidate(cached);
         }
 
-        using var detailsResponse = await _httpClient.GetAsync($"tv/{id}?language=en-US", cancellationToken);
+        using var detailsResponse = await GetAsyncWithRetryAsync($"tv/{id}?language=en-US", cancellationToken);
         if (!detailsResponse.IsSuccessStatusCode)
         {
             return null;
@@ -463,7 +500,7 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
         }
 
         var searchPath = $"search/tv?query={Uri.EscapeDataString(queryTitle)}&include_adult=false&language=en-US&page=1";
-        using var searchResponse = await _httpClient.GetAsync(searchPath, cancellationToken);
+        using var searchResponse = await GetAsyncWithRetryAsync(searchPath, cancellationToken);
         searchResponse.EnsureSuccessStatusCode();
 
         await using var searchStream = await searchResponse.Content.ReadAsStreamAsync(cancellationToken);
@@ -486,7 +523,7 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
             return cached;
         }
 
-        using var detailsResponse = await _httpClient.GetAsync($"tv/{seriesId}?language=en-US", cancellationToken);
+        using var detailsResponse = await GetAsyncWithRetryAsync($"tv/{seriesId}?language=en-US", cancellationToken);
         detailsResponse.EnsureSuccessStatusCode();
 
         await using var detailsStream = await detailsResponse.Content.ReadAsStreamAsync(cancellationToken);
@@ -513,7 +550,7 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
             return cached;
         }
 
-        using var seasonResponse = await _httpClient.GetAsync($"tv/{seriesId}/season/{seasonNumber}?language=en-US", cancellationToken);
+        using var seasonResponse = await GetAsyncWithRetryAsync($"tv/{seriesId}/season/{seasonNumber}?language=en-US", cancellationToken);
         if (!seasonResponse.IsSuccessStatusCode)
         {
             _logger.Warning($"TMDb season lookup failed for series {seriesId}, season {seasonNumber}: {(int)seasonResponse.StatusCode}", LogTarget.File | LogTarget.Console);
@@ -539,7 +576,7 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
 
     private async Task<TmdbSeasonDetails> GetTrackedSeasonDetailsAsync(int seriesId, int seasonNumber, DateTime today, CancellationToken cancellationToken)
     {
-        using var seasonResponse = await _httpClient.GetAsync($"tv/{seriesId}/season/{seasonNumber}?language=en-US", cancellationToken);
+        using var seasonResponse = await GetAsyncWithRetryAsync($"tv/{seriesId}/season/{seasonNumber}?language=en-US", cancellationToken);
         if (!seasonResponse.IsSuccessStatusCode)
         {
             _logger.Warning($"TMDb tracked season lookup failed for series {seriesId}, season {seasonNumber}: {(int)seasonResponse.StatusCode}", LogTarget.File | LogTarget.Console);
@@ -580,7 +617,7 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
 
     private async Task PopulateShowCountsAsync(TmdbShowSearchResult result, CancellationToken cancellationToken)
     {
-        using var detailsResponse = await _httpClient.GetAsync($"tv/{result.TmdbId}?language=en-US", cancellationToken);
+        using var detailsResponse = await GetAsyncWithRetryAsync($"tv/{result.TmdbId}?language=en-US", cancellationToken);
         if (!detailsResponse.IsSuccessStatusCode)
         {
             return;
@@ -741,6 +778,44 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
         _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _settingsService.Current.TmdbReadAccessToken);
         _httpClient.DefaultRequestHeaders.Accept.Clear();
         _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+    }
+
+    private async Task<HttpResponseMessage> GetAsyncWithRetryAsync(string requestUri, CancellationToken cancellationToken)
+    {
+        const int maxAttempts = 3;
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                var response = await _httpClient.GetAsync(requestUri, cancellationToken);
+                if (!ShouldRetry(response.StatusCode) || attempt == maxAttempts)
+                {
+                    return response;
+                }
+
+                _logger.Warning($"TMDb returned {(int)response.StatusCode}; retrying attempt {attempt + 1}/{maxAttempts}.", LogTarget.File | LogTarget.Console);
+                response.Dispose();
+            }
+            catch (Exception ex) when (IsTransientNetworkError(ex) && attempt < maxAttempts)
+            {
+                _logger.Warning($"TMDb network error; retrying attempt {attempt + 1}/{maxAttempts}. {ex.Message}", LogTarget.File | LogTarget.Console);
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(350 * attempt), cancellationToken);
+        }
+
+        throw new HttpRequestException("TMDb request failed after retry attempts.");
+    }
+
+    private static bool ShouldRetry(HttpStatusCode statusCode)
+    {
+        return statusCode is HttpStatusCode.RequestTimeout or HttpStatusCode.TooManyRequests ||
+            (int)statusCode >= 500;
+    }
+
+    private static bool IsTransientNetworkError(Exception exception)
+    {
+        return exception is HttpRequestException or IOException;
     }
 
     private static (string Title, int? Year) SplitTrailingYear(string title)

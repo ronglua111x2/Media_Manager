@@ -1,4 +1,7 @@
 using System.Collections.ObjectModel;
+using System.Net.Http;
+using System.Net;
+using System.Net.Http.Headers;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using media_management_app.Common;
@@ -13,6 +16,7 @@ public partial class SettingsViewModel : ViewModelBase
     private readonly IDatabaseService _databaseService;
     private readonly ILibraryPathResolver _libraryPathResolver;
     private readonly IQbittorrentClient _qbittorrentClient;
+    private readonly HttpClient _httpClient;
     private readonly IAppLogger _logger;
     private bool _isLoadingSettings;
 
@@ -75,12 +79,14 @@ public partial class SettingsViewModel : ViewModelBase
         IDatabaseService databaseService,
         ILibraryPathResolver libraryPathResolver,
         IQbittorrentClient qbittorrentClient,
+        HttpClient httpClient,
         IAppLogger logger)
     {
         _settingsService = settingsService;
         _databaseService = databaseService;
         _libraryPathResolver = libraryPathResolver;
         _qbittorrentClient = qbittorrentClient;
+        _httpClient = httpClient;
         _logger = logger;
         SourceFolders = [];
         AutoTorrentDownloadFolders = [];
@@ -166,6 +172,47 @@ public partial class SettingsViewModel : ViewModelBase
         {
             StatusMessage = ex.Message;
             _logger.Error($"qBittorrent connection test failed: {ex.Message}", ex, LogTarget.All);
+        }
+    }
+
+    [RelayCommand]
+    private async Task TestTmdbToken()
+    {
+        var token = TmdbReadAccessToken?.Trim();
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            StatusMessage = "TMDB token is empty.";
+            return;
+        }
+
+        try
+        {
+            StatusMessage = "Testing TMDB token...";
+            using var request = new HttpRequestMessage(HttpMethod.Get, "https://api.themoviedb.org/3/authentication");
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+            using var response = await _httpClient.SendAsync(request);
+            StatusMessage = response.StatusCode switch
+            {
+                HttpStatusCode.OK => "TMDB token is valid.",
+                HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden => "TMDB token was rejected. Check the read access token.",
+                _ => $"TMDB responded with HTTP {(int)response.StatusCode} {response.ReasonPhrase}."
+            };
+
+            if (response.IsSuccessStatusCode)
+            {
+                _logger.Info("TMDB token test succeeded.", LogTarget.All);
+            }
+            else
+            {
+                _logger.Warning($"TMDB token test returned HTTP {(int)response.StatusCode} {response.ReasonPhrase}.", LogTarget.All);
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"TMDB connection failed before token validation: {ex.Message}";
+            _logger.Error("TMDB token test failed before token validation.", ex, LogTarget.All);
         }
     }
 

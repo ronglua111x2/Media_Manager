@@ -2,10 +2,19 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:views="clr-namespace:media_management_app.Views"
                     xmlns:vm="clr-namespace:media_management_app.ViewModels">
-    <DataTemplate DataType="{x:Type vm:SettingsViewModel}">
-        <views:SettingsView />
+    <DataTemplate DataType="{x:Type vm:FindAddViewModel}">
+        <views:FindAddView />
     </DataTemplate>
-    <DataTemplate DataType="{x:Type vm:AutoTorrentViewModel}">
-        <views:AutoTorrentView />
+    <DataTemplate DataType="{x:Type vm:LibraryViewModel}">
+        <views:LibraryView />
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type vm:TorrentWorkspaceViewModel}">
+        <views:TorrentWorkspaceView />
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type vm:RecipeWorkspaceViewModel}">
+        <views:RecipeWorkspaceView />
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type vm:SystemSettingsViewModel}">
+        <views:SystemSettingsView />
     </DataTemplate>
 </ResourceDictionary>

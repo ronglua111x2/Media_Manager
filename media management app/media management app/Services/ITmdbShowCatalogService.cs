@@ -6,6 +6,9 @@ public interface ITmdbShowCatalogService
 {
     Task<IReadOnlyList<TmdbShowSearchResult>> SearchTvShowsAsync(string query, CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<TmdbShowSearchResult>> SearchTvShowsLightweightAsync(string query, CancellationToken cancellationToken = default);
+
+    Task<TmdbShowDetails> GetTvShowSummaryAsync(int tmdbId, CancellationToken cancellationToken = default);
+
     Task<TmdbShowDetails> GetTvShowDetailsAsync(int tmdbId, CancellationToken cancellationToken = default);
 }
-
