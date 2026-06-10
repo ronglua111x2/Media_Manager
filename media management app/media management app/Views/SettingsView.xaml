@@ -242,56 +242,21 @@
                             </materialDesign:Card>
 
                             <materialDesign:Card Style="{StaticResource SettingsCardStyle}">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="14" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0">
-                                        <TextBlock Text="Download folder options" Style="{StaticResource SettingsLabelStyle}" />
-                                        <ListBox ItemsSource="{Binding AutoTorrentDownloadFolders}"
-                                                 SelectedItem="{Binding SelectedAutoTorrentDownloadFolder, Mode=TwoWay}"
-                                                 MinHeight="110"
-                                                 ScrollViewer.HorizontalScrollBarVisibility="Auto" />
-                                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                                            <Button Content="Add Folder" Command="{Binding AddAutoTorrentDownloadFolderCommand}" />
-                                            <Button Content="Remove Selected" Command="{Binding RemoveSelectedAutoTorrentDownloadFolderCommand}" />
-                                        </StackPanel>
+                                <StackPanel>
+                                    <TextBlock Text="Download folder options" Style="{StaticResource SettingsLabelStyle}" />
+                                    <TextBlock Text="Search, snapshot, and candidate tuning moved to Recipe modules (Search and Parser)."
+                                               Style="{StaticResource MutedTextStyle}"
+                                               Margin="0,0,0,8"
+                                               TextWrapping="Wrap" />
+                                    <ListBox ItemsSource="{Binding AutoTorrentDownloadFolders}"
+                                             SelectedItem="{Binding SelectedAutoTorrentDownloadFolder, Mode=TwoWay}"
+                                             MinHeight="110"
+                                             ScrollViewer.HorizontalScrollBarVisibility="Auto" />
+                                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                        <Button Content="Add Folder" Command="{Binding AddAutoTorrentDownloadFolderCommand}" />
+                                        <Button Content="Remove Selected" Command="{Binding RemoveSelectedAutoTorrentDownloadFolderCommand}" />
                                     </StackPanel>
-                                    <StackPanel Grid.Column="2">
-                                        <TextBlock Text="Candidates to keep per fetch" Style="{StaticResource SettingsLabelStyle}" />
-                                        <TextBox Text="{Binding AutoTorrentMaxCandidatesPerFetch, UpdateSourceTrigger=PropertyChanged}" />
-                                        <TextBlock Text="Parallel searches" Style="{StaticResource SettingsLabelStyle}" />
-                                        <TextBox Text="{Binding AutoTorrentMaxParallelSearches, UpdateSourceTrigger=PropertyChanged}" />
-                                        <CheckBox IsChecked="{Binding AutoTorrentUseShowSnapshotSearch, UpdateSourceTrigger=PropertyChanged}"
-                                                  Content="Use show-level snapshot search"
-                                                  Margin="0,4,0,12" />
-                                    </StackPanel>
-                                </Grid>
-                            </materialDesign:Card>
-
-                            <materialDesign:Card Style="{StaticResource SettingsCardStyle}">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="14" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0">
-                                        <TextBlock Text="Snapshot target results" Style="{StaticResource SettingsLabelStyle}" />
-                                        <TextBox Text="{Binding AutoTorrentSnapshotTargetResults, UpdateSourceTrigger=PropertyChanged}" />
-                                        <TextBlock Text="Snapshot timeout seconds" Style="{StaticResource SettingsLabelStyle}" />
-                                        <TextBox Text="{Binding AutoTorrentSnapshotTimeoutSeconds, UpdateSourceTrigger=PropertyChanged}" />
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="2">
-                                        <TextBlock Text="Local match workers" Style="{StaticResource SettingsLabelStyle}" />
-                                        <TextBox Text="{Binding AutoTorrentLocalMatchWorkers, UpdateSourceTrigger=PropertyChanged}" />
-                                        <CheckBox IsChecked="{Binding AutoTorrentEnableCandidateMetadataProbe, UpdateSourceTrigger=PropertyChanged}"
-                                                  Content="Probe candidate metadata"
-                                                  Margin="0,4,0,12" />
-                                    </StackPanel>
-                                </Grid>
+                                </StackPanel>
                             </materialDesign:Card>
 
                             <materialDesign:Card Style="{StaticResource SettingsCardStyle}">

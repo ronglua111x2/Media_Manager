@@ -127,7 +127,11 @@ public sealed class FetchJobService : IFetchJobService
             throw new InvalidOperationException("Select at least one pack-mode season.");
         }
 
-        var snapshotResults = await _snapshotService.CaptureSnapshotAsync(show, _progressService, cancellationToken);
+        var snapshotResults = await _snapshotService.CaptureSnapshotAsync(
+            show,
+            _progressService,
+            cancellationToken,
+            MediaKind.TvSeasonPack);
         var candidates = await MapSeasonPackCandidatesAsync(show, selectedSeasons, snapshotResults, cancellationToken);
         lock (_gate)
         {
@@ -342,7 +346,15 @@ public sealed class FetchJobService : IFetchJobService
             JobsChanged?.Invoke(this, EventArgs.Empty);
             ClearEpisodeCandidateCache(targetEpisodes);
 
-            await ProcessShowJobParallelAsync(job, show, targetEpisodes, cancellationToken);
+            var recipe = _recipeService.GetRecipeOrDefault(show.RecipeId, MediaKind.TvEpisode);
+            if (RecipeRuntimeSettings.GetUseShowSnapshotSearch(recipe, _settingsService.Current.AutoTorrent))
+            {
+                await ProcessShowJobSnapshotAsync(job, show, targetEpisodes, cancellationToken);
+            }
+            else
+            {
+                await ProcessShowJobParallelAsync(job, show, targetEpisodes, cancellationToken);
+            }
 
             job.Status = FetchJobStatus.Completed;
             job.FinishedUtc = DateTime.UtcNow;
@@ -392,7 +404,10 @@ public sealed class FetchJobService : IFetchJobService
         IReadOnlyList<TrackedEpisode> targetEpisodes,
         CancellationToken cancellationToken)
     {
-        var parallelSearches = Math.Min(GetMaxParallelSearches(), Math.Max(targetEpisodes.Count, 1));
+        var recipe = _recipeService.GetRecipeOrDefault(show.RecipeId, MediaKind.TvEpisode);
+        var parallelSearches = Math.Min(
+            RecipeRuntimeSettings.GetParallelSearchCount(recipe, _settingsService.Current.AutoTorrent),
+            Math.Max(targetEpisodes.Count, 1));
         var nextIndex = 0;
         _logger.Info(
             $"Starting fetch job #{job.Id} for {show.DisplayTitle}. TargetEpisodes={targetEpisodes.Count}, ParallelSearches={parallelSearches}.",
@@ -433,7 +448,7 @@ public sealed class FetchJobService : IFetchJobService
             $"Snapshot fetch started for {show.DisplayTitle}.",
             LogTarget.Ui | LogTarget.Console);
         _logger.Info(
-            $"Snapshot settings for {show.DisplayTitle}: TargetResults={_settingsService.Current.AutoTorrent.SnapshotTargetResults}, TimeoutSeconds={_settingsService.Current.AutoTorrent.SnapshotTimeoutSeconds}, LocalWorkers={_settingsService.Current.AutoTorrent.LocalMatchWorkers}.",
+            $"Snapshot settings for {show.DisplayTitle}: TargetResults={RecipeRuntimeSettings.GetSnapshotTargetResults(_recipeService.GetRecipeOrDefault(show.RecipeId, MediaKind.TvEpisode), _settingsService.Current.AutoTorrent)}, TimeoutSeconds={RecipeRuntimeSettings.GetSnapshotTimeoutSeconds(_recipeService.GetRecipeOrDefault(show.RecipeId, MediaKind.TvEpisode), _settingsService.Current.AutoTorrent)}, LocalWorkers={RecipeRuntimeSettings.GetLocalMatchWorkers(_recipeService.GetRecipeOrDefault(show.RecipeId, MediaKind.TvEpisode), _settingsService.Current.AutoTorrent)}.",
             LogTarget.Ui | LogTarget.Console);
 
         job.TotalEpisodes = targetEpisodes.Count;
@@ -453,7 +468,8 @@ public sealed class FetchJobService : IFetchJobService
         var matcher = new SnapshotCandidateMatcher();
         var selectedQualities = ParseQualities(show.PreferredQuality);
 
-        var workerCount = Math.Clamp(_settingsService.Current.AutoTorrent.LocalMatchWorkers, 1, 8);
+        var snapshotRecipe = _recipeService.GetRecipeOrDefault(show.RecipeId, MediaKind.TvEpisode);
+        var workerCount = RecipeRuntimeSettings.GetLocalMatchWorkers(snapshotRecipe, _settingsService.Current.AutoTorrent);
         var nextIndex = 0;
 
         async Task RunWorkerAsync(int workerId)
@@ -572,7 +588,7 @@ public sealed class FetchJobService : IFetchJobService
             .OrderByDescending(candidate => candidate.QualityScore)
             .ThenByDescending(candidate => candidate.Seeders)
             .ThenByDescending(candidate => candidate.TotalScore)
-            .Take(GetMaxCandidatesPerFetch())
+            .Take(RecipeRuntimeSettings.GetMaxCandidatesPerFetch(recipe, _settingsService.Current.AutoTorrent))
             .ToList();
 
         _logger.Info(
@@ -708,7 +724,7 @@ public sealed class FetchJobService : IFetchJobService
         IReadOnlyList<string> queries,
         CancellationToken cancellationToken)
     {
-        var maxCandidates = GetMaxCandidatesPerFetch();
+        var maxCandidates = RecipeRuntimeSettings.GetMaxCandidatesPerFetch(recipe, _settingsService.Current.AutoTorrent);
         var resultsByUrl = new Dictionary<string, TorrentSearchResult>(StringComparer.OrdinalIgnoreCase);
         var matchedCandidates = new List<(EpisodeFetchCandidate Candidate, RecipeCandidateResult Match)>();
 
@@ -878,7 +894,8 @@ public sealed class FetchJobService : IFetchJobService
         int identityScore,
         CancellationToken cancellationToken)
     {
-        if (!ShouldProbeEpisodeCandidate(result, parsed, identityScore))
+        var recipe = _recipeService.GetRecipeOrDefault(show.RecipeId, MediaKind.TvEpisode);
+        if (!ShouldProbeEpisodeCandidate(recipe, result, parsed, identityScore))
         {
             return null;
         }
@@ -919,11 +936,12 @@ public sealed class FetchJobService : IFetchJobService
     }
 
     private bool ShouldProbeEpisodeCandidate(
+        SearchRecipe recipe,
         TorrentSearchResult result,
         TorrentCandidateParseResult parsed,
         int identityScore)
     {
-        return _settingsService.Current.AutoTorrent.EnableCandidateMetadataProbe &&
+        return RecipeRuntimeSettings.GetEnableCandidateMetadataProbe(recipe, _settingsService.Current.AutoTorrent) &&
                result.CanAdd &&
                !result.FileUrl.StartsWith("magnet:?", StringComparison.OrdinalIgnoreCase) &&
                (string.Equals(result.LinkType, "HTTP URL", StringComparison.OrdinalIgnoreCase) ||
@@ -931,9 +949,9 @@ public sealed class FetchJobService : IFetchJobService
                 identityScore <= 3);
     }
 
-    private bool ShouldProbePackCandidate(TorrentSearchResult result, TorrentCandidateParseResult parsed)
+    private bool ShouldProbePackCandidate(SearchRecipe recipe, TorrentSearchResult result, TorrentCandidateParseResult parsed)
     {
-        return _settingsService.Current.AutoTorrent.EnableCandidateMetadataProbe &&
+        return RecipeRuntimeSettings.GetEnableCandidateMetadataProbe(recipe, _settingsService.Current.AutoTorrent) &&
                result.CanAdd &&
                !result.FileUrl.StartsWith("magnet:?", StringComparison.OrdinalIgnoreCase) &&
                (string.Equals(result.LinkType, "HTTP URL", StringComparison.OrdinalIgnoreCase) ||
@@ -1084,7 +1102,9 @@ public sealed class FetchJobService : IFetchJobService
             .ThenByDescending(entry => entry.Candidate.Seeders)
             .ThenByDescending(entry => entry.Match.IdentityScore)
             .ThenByDescending(entry => entry.Match.EpisodeScore)
-            .Take(GetMaxCandidatesPerFetch())
+            .Take(RecipeRuntimeSettings.GetMaxCandidatesPerFetch(
+                _recipeService.GetRecipeOrDefault(show.RecipeId, MediaKind.TvEpisode),
+                _settingsService.Current.AutoTorrent))
             .Select(entry => entry.Candidate)
             .ToList();
 
@@ -1102,13 +1122,14 @@ public sealed class FetchJobService : IFetchJobService
         CancellationToken cancellationToken)
     {
         var selectedQualities = ParseQualities(show.PreferredQuality);
+        var packRecipe = _recipeService.GetRecipeOrDefault(show.PackRecipeId, MediaKind.TvSeasonPack);
         var candidates = new List<SeasonPackCandidate>();
         foreach (var result in snapshotResults)
         {
             var parsed = TorrentCandidateParser.Parse(result.FileName);
             var rejectReason = GetPackRejectReason(show, selectedSeasons, result, parsed, selectedQualities);
             var coveredSeasons = parsed.CoveredSeasons;
-            if (rejectReason is "no explicit season coverage" && ShouldProbePackCandidate(result, parsed))
+            if (rejectReason is "no explicit season coverage" && ShouldProbePackCandidate(packRecipe, result, parsed))
             {
                 var probe = await _qbittorrentClient.ProbeTorrentMetadataAsync(result, cancellationToken);
                 var probeRejectReason = GetProbeYearRejectReason(show, probe);
@@ -1129,7 +1150,7 @@ public sealed class FetchJobService : IFetchJobService
                     }
                 }
             }
-            else if (rejectReason is null && ShouldProbePackCandidate(result, parsed))
+            else if (rejectReason is null && ShouldProbePackCandidate(packRecipe, result, parsed))
             {
                 var probe = await _qbittorrentClient.ProbeTorrentMetadataAsync(result, cancellationToken);
                 rejectReason = GetProbeYearRejectReason(show, probe);
@@ -1282,7 +1303,9 @@ public sealed class FetchJobService : IFetchJobService
             .ThenByDescending(entry => entry.Candidate.Seeders)
             .ThenByDescending(entry => entry.Match.IdentityScore)
             .ThenByDescending(entry => entry.Match.EpisodeScore)
-            .Take(GetMaxCandidatesPerFetch())
+            .Take(RecipeRuntimeSettings.GetMaxCandidatesPerFetch(
+                _recipeService.GetRecipeOrDefault(show.RecipeId, MediaKind.TvEpisode),
+                _settingsService.Current.AutoTorrent))
             .Select(entry => entry.Candidate)
             .ToList();
     }
@@ -1318,16 +1341,6 @@ public sealed class FetchJobService : IFetchJobService
         var candidate = ToCandidate(0, result, qualityScore, totalScore);
         candidate.MovieId = movieId;
         return candidate;
-    }
-
-    private int GetMaxCandidatesPerFetch()
-    {
-        return Math.Clamp(_settingsService.Current.AutoTorrent.MaxCandidatesPerFetch, 1, 10);
-    }
-
-    private int GetMaxParallelSearches()
-    {
-        return Math.Clamp(_settingsService.Current.AutoTorrent.MaxParallelSearches, 1, 4);
     }
 
     private static IReadOnlyList<string> ParseQualities(string value)

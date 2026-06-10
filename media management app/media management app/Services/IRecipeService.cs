@@ -5,7 +5,11 @@ namespace media_management_app.Services;
 
 public interface IRecipeService
 {
+    event EventHandler? RecipesChanged;
+
     IReadOnlyList<SearchRecipe> GetRecipes();
+
+    void ReloadFromDisk();
 
     SearchRecipe GetDefaultRecipe(MediaKind targetKind);
 

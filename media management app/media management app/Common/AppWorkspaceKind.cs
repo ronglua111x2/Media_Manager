@@ -5,6 +5,7 @@ public enum AppWorkspaceKind
     FindAdd = 0,
     Library = 1,
     Torrent = 2,
-    Recipe = 3,
-    SystemSettings = 4
+    Qbittorrent = 3,
+    Recipe = 4,
+    SystemSettings = 5
 }

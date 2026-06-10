@@ -82,6 +82,7 @@ public partial class App : System.Windows.Application
         services.AddSingleton<IAutomationFlowService, AutomationFlowService>();
         services.AddSingleton<IDeviceStatusService, DeviceStatusService>();
         services.AddSingleton<IConsoleWindowService, ConsoleWindowService>();
+        services.AddSingleton<IQbittorrentWebViewHostService, QbittorrentWebViewHostService>();
         services.AddSingleton<ShowSearchSnapshotService>();
         services.AddSingleton<TmdbMetadataProvider>();
         services.AddSingleton<IMetadataProvider>(provider => provider.GetRequiredService<TmdbMetadataProvider>());
@@ -89,12 +90,17 @@ public partial class App : System.Windows.Application
         services.AddSingleton<ITmdbMovieCatalogService>(provider => provider.GetRequiredService<TmdbMetadataProvider>());
         services.AddSingleton<ITrackedShowService, TrackedShowService>();
         services.AddSingleton<ITrackedMovieService, TrackedMovieService>();
+        services.AddSingleton<IPosterImageService, PosterImageService>();
+        services.AddSingleton<ITorrentCartService, TorrentCartService>();
+        services.AddSingleton<IMediaCardCatalogService, MediaCardCatalogService>();
         services.AddSingleton<IFetchJobService, FetchJobService>();
         services.AddSingleton<IAutoTorrentLinkService, AutoTorrentLinkService>();
+        services.AddSingleton<ILibraryManagementService, LibraryManagementService>();
 
         services.AddSingleton<FindAddViewModel>();
         services.AddSingleton<LibraryViewModel>();
         services.AddSingleton<TorrentWorkspaceViewModel>();
+        services.AddSingleton<QbittorrentWorkspaceViewModel>();
         services.AddSingleton<RecipeWorkspaceViewModel>();
         services.AddSingleton<SystemSettingsViewModel>();
         services.AddSingleton<MainViewModel>();

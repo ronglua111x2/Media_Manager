@@ -456,7 +456,7 @@ public sealed class DatabaseService : IDatabaseService
 
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT s.Id, s.TmdbId, s.Title, s.FirstAirYear, s.Overview, s.PosterPath, s.RecipeId, s.PreferredQuality, s.PreferredAudioCodec, s.MinimumSeeders, s.CreatedUtc, s.UpdatedUtc,
+            SELECT s.Id, s.TmdbId, s.Title, s.FirstAirYear, s.Overview, s.PosterPath, s.RecipeId, s.PackRecipeId, s.PreferredQuality, s.PreferredAudioCodec, s.MinimumSeeders, s.CreatedUtc, s.UpdatedUtc,
                    COUNT(e.Id), SUM(CASE WHEN e.Availability = 1 THEN 1 ELSE 0 END), SUM(CASE WHEN e.IsWanted = 1 THEN 1 ELSE 0 END)
             FROM TrackedShows s
             LEFT JOIN TrackedEpisodes e ON e.ShowId = s.Id
@@ -491,14 +491,15 @@ public sealed class DatabaseService : IDatabaseService
         var now = DateTime.UtcNow;
         using var command = connection.CreateCommand();
         command.CommandText = """
-            INSERT INTO TrackedShows (TmdbId, Title, FirstAirYear, Overview, PosterPath, RecipeId, PreferredQuality, PreferredAudioCodec, MinimumSeeders, CreatedUtc, UpdatedUtc)
-            VALUES ($TmdbId, $Title, $FirstAirYear, $Overview, $PosterPath, $RecipeId, $PreferredQuality, $PreferredAudioCodec, $MinimumSeeders, $CreatedUtc, $UpdatedUtc)
+            INSERT INTO TrackedShows (TmdbId, Title, FirstAirYear, Overview, PosterPath, RecipeId, PackRecipeId, PreferredQuality, PreferredAudioCodec, MinimumSeeders, CreatedUtc, UpdatedUtc)
+            VALUES ($TmdbId, $Title, $FirstAirYear, $Overview, $PosterPath, $RecipeId, $PackRecipeId, $PreferredQuality, $PreferredAudioCodec, $MinimumSeeders, $CreatedUtc, $UpdatedUtc)
             ON CONFLICT(TmdbId) DO UPDATE SET
                 Title = excluded.Title,
                 FirstAirYear = excluded.FirstAirYear,
                 Overview = excluded.Overview,
                 PosterPath = excluded.PosterPath,
                 RecipeId = COALESCE(TrackedShows.RecipeId, excluded.RecipeId),
+                PackRecipeId = COALESCE(TrackedShows.PackRecipeId, excluded.PackRecipeId),
                 PreferredQuality = CASE WHEN TrackedShows.PreferredQuality = '' THEN excluded.PreferredQuality ELSE TrackedShows.PreferredQuality END,
                 PreferredAudioCodec = TrackedShows.PreferredAudioCodec,
                 MinimumSeeders = TrackedShows.MinimumSeeders,
@@ -510,6 +511,7 @@ public sealed class DatabaseService : IDatabaseService
         command.Parameters.AddWithValue("$Overview", (object?)show.Overview ?? DBNull.Value);
         command.Parameters.AddWithValue("$PosterPath", (object?)show.PosterPath ?? DBNull.Value);
         command.Parameters.AddWithValue("$RecipeId", (object?)show.RecipeId ?? DBNull.Value);
+        command.Parameters.AddWithValue("$PackRecipeId", (object?)show.PackRecipeId ?? DBNull.Value);
         command.Parameters.AddWithValue("$PreferredQuality", string.IsNullOrWhiteSpace(show.PreferredQuality) ? "1080p" : show.PreferredQuality);
         command.Parameters.AddWithValue("$PreferredAudioCodec", (object?)show.PreferredAudioCodec?.Trim() ?? string.Empty);
         command.Parameters.AddWithValue("$MinimumSeeders", Math.Max(0, show.MinimumSeeders));
@@ -534,6 +536,67 @@ public sealed class DatabaseService : IDatabaseService
             """;
         command.Parameters.AddWithValue("$ShowId", showId);
         command.ExecuteNonQuery();
+    }
+
+    public void DeleteTrackedShow(long showId)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM TrackedShows WHERE Id = $ShowId;";
+        command.Parameters.AddWithValue("$ShowId", showId);
+        command.ExecuteNonQuery();
+    }
+
+    public int DeleteAllTrackedShows()
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM TrackedShows;";
+        return command.ExecuteNonQuery();
+    }
+
+    public void DeleteTrackedMovie(long movieId)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM TrackedMovies WHERE Id = $MovieId;";
+        command.Parameters.AddWithValue("$MovieId", movieId);
+        command.ExecuteNonQuery();
+    }
+
+    public int DeleteAllTrackedMovies()
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM TrackedMovies;";
+        return command.ExecuteNonQuery();
+    }
+
+    public int DeleteFetchJobsForMedia(long mediaId, MediaKind targetKind)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            DELETE FROM FetchJobs
+            WHERE ShowId = $MediaId AND TargetKind = $TargetKind;
+            """;
+        command.Parameters.AddWithValue("$MediaId", mediaId);
+        command.Parameters.AddWithValue("$TargetKind", (int)targetKind);
+        return command.ExecuteNonQuery();
+    }
+
+    public int DeleteAllFetchJobs()
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM FetchJobs;";
+        return command.ExecuteNonQuery();
     }
 
     public void UpsertTrackedSeason(TrackedSeason season)
@@ -1015,6 +1078,18 @@ public sealed class DatabaseService : IDatabaseService
         command.ExecuteNonQuery();
     }
 
+    public void UpdateTrackedShowPackRecipe(long showId, string? packRecipeId)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE TrackedShows SET PackRecipeId = $PackRecipeId, UpdatedUtc = $UpdatedUtc WHERE Id = $Id;";
+        command.Parameters.AddWithValue("$PackRecipeId", string.IsNullOrWhiteSpace(packRecipeId) ? DBNull.Value : packRecipeId.Trim());
+        command.Parameters.AddWithValue("$UpdatedUtc", DateTime.UtcNow.ToString("O"));
+        command.Parameters.AddWithValue("$Id", showId);
+        command.ExecuteNonQuery();
+    }
+
     public IReadOnlyList<TrackedMovie> GetTrackedMovies()
     {
         var movies = new List<TrackedMovie>();
@@ -1384,6 +1459,7 @@ public sealed class DatabaseService : IDatabaseService
             """;
         shows.ExecuteNonQuery();
         EnsureColumn(connection, "TrackedShows", "RecipeId", "TEXT NULL");
+        EnsureColumn(connection, "TrackedShows", "PackRecipeId", "TEXT NULL");
         EnsureColumn(connection, "TrackedShows", "PreferredAudioCodec", "TEXT NOT NULL DEFAULT ''");
         EnsureColumn(connection, "TrackedShows", "MinimumSeeders", "INTEGER NOT NULL DEFAULT 0");
 
@@ -1547,7 +1623,7 @@ public sealed class DatabaseService : IDatabaseService
 
         using var command = connection.CreateCommand();
         command.CommandText = $"""
-            SELECT s.Id, s.TmdbId, s.Title, s.FirstAirYear, s.Overview, s.PosterPath, s.RecipeId, s.PreferredQuality, s.PreferredAudioCodec, s.MinimumSeeders, s.CreatedUtc, s.UpdatedUtc,
+            SELECT s.Id, s.TmdbId, s.Title, s.FirstAirYear, s.Overview, s.PosterPath, s.RecipeId, s.PackRecipeId, s.PreferredQuality, s.PreferredAudioCodec, s.MinimumSeeders, s.CreatedUtc, s.UpdatedUtc,
                    COUNT(e.Id), SUM(CASE WHEN e.Availability = 1 THEN 1 ELSE 0 END), SUM(CASE WHEN e.IsWanted = 1 THEN 1 ELSE 0 END)
             FROM TrackedShows s
             LEFT JOIN TrackedEpisodes e ON e.ShowId = s.Id
@@ -1572,14 +1648,15 @@ public sealed class DatabaseService : IDatabaseService
             Overview = reader.IsDBNull(4) ? null : reader.GetString(4),
             PosterPath = reader.IsDBNull(5) ? null : reader.GetString(5),
             RecipeId = reader.IsDBNull(6) ? null : reader.GetString(6),
-            PreferredQuality = reader.GetString(7),
-            PreferredAudioCodec = reader.IsDBNull(8) ? string.Empty : reader.GetString(8),
-            MinimumSeeders = reader.IsDBNull(9) ? 0 : reader.GetInt32(9),
-            CreatedUtc = DateTime.Parse(reader.GetString(10), null, System.Globalization.DateTimeStyles.RoundtripKind),
-            UpdatedUtc = DateTime.Parse(reader.GetString(11), null, System.Globalization.DateTimeStyles.RoundtripKind),
-            TotalEpisodes = reader.IsDBNull(12) ? 0 : Convert.ToInt32(reader.GetValue(12)),
-            AvailableEpisodes = reader.IsDBNull(13) ? 0 : Convert.ToInt32(reader.GetValue(13)),
-            WantedEpisodes = reader.IsDBNull(14) ? 0 : Convert.ToInt32(reader.GetValue(14))
+            PackRecipeId = reader.IsDBNull(7) ? null : reader.GetString(7),
+            PreferredQuality = reader.GetString(8),
+            PreferredAudioCodec = reader.IsDBNull(9) ? string.Empty : reader.GetString(9),
+            MinimumSeeders = reader.IsDBNull(10) ? 0 : reader.GetInt32(10),
+            CreatedUtc = DateTime.Parse(reader.GetString(11), null, System.Globalization.DateTimeStyles.RoundtripKind),
+            UpdatedUtc = DateTime.Parse(reader.GetString(12), null, System.Globalization.DateTimeStyles.RoundtripKind),
+            TotalEpisodes = reader.IsDBNull(13) ? 0 : Convert.ToInt32(reader.GetValue(13)),
+            AvailableEpisodes = reader.IsDBNull(14) ? 0 : Convert.ToInt32(reader.GetValue(14)),
+            WantedEpisodes = reader.IsDBNull(15) ? 0 : Convert.ToInt32(reader.GetValue(15))
         };
     }
 

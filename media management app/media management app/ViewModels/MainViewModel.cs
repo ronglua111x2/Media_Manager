@@ -19,6 +19,7 @@ public partial class MainViewModel : ViewModelBase
         FindAddViewModel findAddViewModel,
         LibraryViewModel libraryViewModel,
         TorrentWorkspaceViewModel torrentWorkspaceViewModel,
+        QbittorrentWorkspaceViewModel qbittorrentWorkspaceViewModel,
         RecipeWorkspaceViewModel recipeWorkspaceViewModel,
         SystemSettingsViewModel systemSettingsViewModel,
         IDeviceStatusService deviceStatusService,
@@ -31,6 +32,7 @@ public partial class MainViewModel : ViewModelBase
             [AppWorkspaceKind.FindAdd] = findAddViewModel,
             [AppWorkspaceKind.Library] = libraryViewModel,
             [AppWorkspaceKind.Torrent] = torrentWorkspaceViewModel,
+            [AppWorkspaceKind.Qbittorrent] = qbittorrentWorkspaceViewModel,
             [AppWorkspaceKind.Recipe] = recipeWorkspaceViewModel,
             [AppWorkspaceKind.SystemSettings] = systemSettingsViewModel
         };
@@ -57,6 +59,13 @@ public partial class MainViewModel : ViewModelBase
                 Label = "Torrent",
                 Description = "Search and fetch torrents",
                 IconKind = "Download"
+            },
+            new ShellNavigationItem
+            {
+                Kind = AppWorkspaceKind.Qbittorrent,
+                Label = "qBittorrent",
+                Description = "Embedded Web UI",
+                IconKind = "Globe"
             },
             new ShellNavigationItem
             {

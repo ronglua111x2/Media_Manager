@@ -1,0 +1,79 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks">
+
+    <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
+
+    <DataTemplate x:Key="WorkspaceMediaCardTemplate">
+        <Border Style="{StaticResource LibraryMediaCardStyle}">
+            <Border.InputBindings>
+                <MouseBinding MouseAction="LeftClick"
+                              Command="{Binding DataContext.SelectMediaCardCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                              CommandParameter="{Binding}" />
+            </Border.InputBindings>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="4" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Border Grid.Column="0"
+                        Background="{StaticResource AppBrushShowAccent}"
+                        CornerRadius="8,0,0,8">
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Setter Property="Background" Value="{StaticResource AppBrushShowAccent}" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding TypeLabel}" Value="Movie">
+                                    <Setter Property="Background" Value="{StaticResource AppBrushMovieAccent}" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                </Border>
+                <StackPanel Grid.Column="1" Margin="10">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="{Binding Title}"
+                                   FontWeight="SemiBold"
+                                   TextTrimming="CharacterEllipsis"
+                                   TextWrapping="NoWrap" />
+                        <Border Grid.Column="1"
+                                Style="{StaticResource MediaTypeChipStyle}"
+                                Margin="8,0,0,0">
+                            <TextBlock Text="{Binding TypeLabel}"
+                                       Style="{StaticResource MediaTypeChipTextStyle}" />
+                        </Border>
+                    </Grid>
+                    <TextBlock Text="{Binding ProgressLabel}"
+                               Style="{StaticResource MutedTextStyle}"
+                               TextTrimming="CharacterEllipsis"
+                               TextWrapping="NoWrap"
+                               Margin="0,6,0,0" />
+                    <Border Style="{StaticResource OrderCountBadgeStyle}"
+                            Visibility="{Binding HasOrders, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <StackPanel Orientation="Horizontal">
+                            <iconPacks:PackIconLucide Kind="ShoppingCart"
+                                                       Width="12"
+                                                       Height="12"
+                                                       Margin="0,0,5,0"
+                                                       Foreground="{StaticResource AppBrushAccent}"
+                                                       VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding OrderCountLabel}"
+                                       Foreground="{StaticResource AppBrushAccent}"
+                                       FontSize="11"
+                                       FontWeight="SemiBold" />
+                        </StackPanel>
+                    </Border>
+                    <TextBlock Text="{Binding AddedLabel, StringFormat=Added {0}}"
+                               Style="{StaticResource MutedTextStyle}"
+                               FontSize="11"
+                               Margin="0,2,0,0" />
+                </StackPanel>
+            </Grid>
+        </Border>
+    </DataTemplate>
+
+</ResourceDictionary>

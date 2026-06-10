@@ -11,6 +11,7 @@ public sealed class SearchPlanBuilder : ISearchPlanBuilder
         var templates = queryModule?.QueryTemplates.Count > 0
             ? queryModule.QueryTemplates
             : ["{title} S{season:00}E{episode:00} {quality}", "{title} {year} S{season:00}E{episode:00}", "{title} {season}x{episode:00}"];
+        templates = AppendCustomQueryTemplate(templates, queryModule).ToList();
         var titles = GetTitles(show.Title, identityModule).ToList();
         var qualities = GetQualities(queryModule).ToList();
         var audio = queryModule?.PreferredAudioCodec ?? string.Empty;
@@ -43,6 +44,7 @@ public sealed class SearchPlanBuilder : ISearchPlanBuilder
         var templates = queryModule?.QueryTemplates.Count > 0
             ? queryModule.QueryTemplates
             : ["{title} {year} {quality}", "{title} {quality}", "{title} {year}"];
+        templates = AppendCustomQueryTemplate(templates, queryModule).ToList();
         var titles = GetTitles(movie.Title, identityModule).ToList();
         var qualities = GetQualities(queryModule).ToList();
         var audio = queryModule?.PreferredAudioCodec ?? string.Empty;
@@ -91,6 +93,22 @@ public sealed class SearchPlanBuilder : ISearchPlanBuilder
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
         return qualities is { Count: > 0 } ? qualities : [string.Empty];
+    }
+
+    private static IEnumerable<string> AppendCustomQueryTemplate(
+        IEnumerable<string> templates,
+        RecipeModuleConfig? queryModule)
+    {
+        foreach (var template in templates)
+        {
+            yield return template;
+        }
+
+        if (queryModule?.ExtensionData.TryGetValue("customQuery", out var customQuery) == true &&
+            !string.IsNullOrWhiteSpace(customQuery))
+        {
+            yield return customQuery.Trim();
+        }
     }
 
     private static string Render(string template, IReadOnlyDictionary<string, string> values)

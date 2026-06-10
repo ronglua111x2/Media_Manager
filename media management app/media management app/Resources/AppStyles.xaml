@@ -1,6 +1,7 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-                    xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks">
+                    xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
+                    xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes">
     <Color x:Key="AppColorCanvas">#eef3f7</Color>
     <Color x:Key="AppColorSurface">#fbfcfd</Color>
     <Color x:Key="AppColorSurfaceRaised">#ffffff</Color>
@@ -140,5 +141,185 @@
         <Setter Property="Background" Value="#243244" />
         <Setter Property="BorderBrush" Value="#3b4a5f" />
         <Setter Property="BorderThickness" Value="1" />
+    </Style>
+
+    <Style x:Key="SectionTitleStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="15" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{StaticResource AppBrushText}" />
+        <Setter Property="TextWrapping" Value="NoWrap" />
+    </Style>
+
+    <Style x:Key="MutedTextStyle" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{StaticResource AppBrushMutedText}" />
+        <Setter Property="FontSize" Value="12" />
+    </Style>
+
+    <Style x:Key="LibraryMediaCardStyle" TargetType="Border">
+        <Setter Property="Background" Value="{StaticResource AppBrushSurface}" />
+        <Setter Property="BorderBrush" Value="{StaticResource AppBrushBorder}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Margin" Value="0,0,0,8" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding TypeLabel}" Value="Show">
+                <Setter Property="Background" Value="{StaticResource AppBrushShowSoft}" />
+                <Setter Property="BorderBrush" Value="{StaticResource AppBrushShowAccent}" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding TypeLabel}" Value="Movie">
+                <Setter Property="Background" Value="{StaticResource AppBrushMovieSoft}" />
+                <Setter Property="BorderBrush" Value="{StaticResource AppBrushMovieAccent}" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                <Setter Property="BorderThickness" Value="2" />
+                <Setter Property="BorderBrush" Value="{StaticResource AppBrushAccent}" />
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="MediaTypeChipStyle" TargetType="Border">
+        <Setter Property="Background" Value="{StaticResource AppBrushShowSoft}" />
+        <Setter Property="BorderBrush" Value="{StaticResource AppBrushShowAccent}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="10" />
+        <Setter Property="Padding" Value="8,3" />
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding TypeLabel}" Value="Movie">
+                <Setter Property="Background" Value="{StaticResource AppBrushMovieSoft}" />
+                <Setter Property="BorderBrush" Value="{StaticResource AppBrushMovieAccent}" />
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="MediaTypeChipTextStyle" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{StaticResource AppBrushShowAccent}" />
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="TextWrapping" Value="NoWrap" />
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding TypeLabel}" Value="Movie">
+                <Setter Property="Foreground" Value="{StaticResource AppBrushMovieAccent}" />
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="SortSegmentButtonStyle" TargetType="Button">
+        <Setter Property="Background" Value="{StaticResource AppBrushSurface}" />
+        <Setter Property="BorderBrush" Value="{StaticResource AppBrushBorder}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Foreground" Value="{StaticResource AppBrushMutedText}" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="MinHeight" Value="34" />
+        <Setter Property="Padding" Value="8,5" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Root"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}">
+                        <ContentPresenter HorizontalAlignment="Center"
+                                          VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Root" Property="Background" Value="{StaticResource AppBrushAccentSoft}" />
+                            <Setter TargetName="Root" Property="BorderBrush" Value="{StaticResource AppBrushAccent}" />
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Root" Property="Background" Value="#d7ebe6" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="True">
+                <Setter Property="Background" Value="{StaticResource AppBrushAccentSoft}" />
+                <Setter Property="BorderBrush" Value="{StaticResource AppBrushAccent}" />
+                <Setter Property="Foreground" Value="{StaticResource AppBrushAccent}" />
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="LibraryPanelCardStyle" TargetType="Border">
+        <Setter Property="Background" Value="{StaticResource AppBrushSurfaceRaised}" />
+        <Setter Property="BorderBrush" Value="{StaticResource AppBrushBorder}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="Padding" Value="14" />
+    </Style>
+
+    <Style x:Key="PanelCardStyle" TargetType="materialDesign:Card">
+        <Setter Property="Background" Value="{StaticResource AppBrushSurfaceRaised}" />
+        <Setter Property="Padding" Value="14" />
+        <Setter Property="Margin" Value="0" />
+        <Setter Property="UniformCornerRadius" Value="8" />
+        <Setter Property="materialDesign:ElevationAssist.Elevation" Value="Dp1" />
+    </Style>
+
+    <Style x:Key="AppPrimaryButtonStyle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+        <Setter Property="Background" Value="{StaticResource AppBrushAccent}" />
+        <Setter Property="BorderBrush" Value="{StaticResource AppBrushAccent}" />
+        <Setter Property="Foreground" Value="#ffffff" />
+        <Setter Property="Padding" Value="12,8" />
+        <Setter Property="MinHeight" Value="34" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Background" Value="#356f5d" />
+                <Setter Property="BorderBrush" Value="#356f5d" />
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Opacity" Value="0.55" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="AppDangerButtonStyle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+        <Setter Property="Background" Value="{StaticResource AppBrushDanger}" />
+        <Setter Property="BorderBrush" Value="{StaticResource AppBrushDanger}" />
+        <Setter Property="Foreground" Value="#ffffff" />
+        <Setter Property="Padding" Value="12,8" />
+        <Setter Property="MinHeight" Value="34" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Background" Value="#b33c3c" />
+                <Setter Property="BorderBrush" Value="#b33c3c" />
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Opacity" Value="0.55" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="AppOutlinedButtonStyle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+        <Setter Property="Background" Value="{StaticResource AppBrushSurfaceRaised}" />
+        <Setter Property="BorderBrush" Value="{StaticResource AppBrushBorder}" />
+        <Setter Property="Foreground" Value="{StaticResource AppBrushText}" />
+        <Setter Property="Padding" Value="12,8" />
+        <Setter Property="MinHeight" Value="34" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Background" Value="{StaticResource AppBrushAccentSoft}" />
+                <Setter Property="BorderBrush" Value="{StaticResource AppBrushAccent}" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="OrderCountBadgeStyle" TargetType="Border">
+        <Setter Property="Background" Value="{StaticResource AppBrushAccentSoft}" />
+        <Setter Property="BorderBrush" Value="{StaticResource AppBrushAccent}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="10" />
+        <Setter Property="Padding" Value="6,2" />
+        <Setter Property="Margin" Value="0,6,0,0" />
+        <Setter Property="HorizontalAlignment" Value="Left" />
     </Style>
 </ResourceDictionary>

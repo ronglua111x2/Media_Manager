@@ -17,11 +17,20 @@ public sealed class RecipeService : IRecipeService
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         Converters = { new JsonStringEnumConverter() }
     };
+    private bool _suppressChangeEvents;
 
     public RecipeService(ISettingsService settingsService, IAppLogger logger)
     {
         _settingsService = settingsService;
         _logger = logger;
+    }
+
+    public event EventHandler? RecipesChanged;
+
+    public void ReloadFromDisk()
+    {
+        _ = GetRecipes();
+        NotifyRecipesChanged();
     }
 
     public IReadOnlyList<SearchRecipe> GetRecipes()
@@ -63,6 +72,7 @@ public sealed class RecipeService : IRecipeService
         var path = GetRecipePath(recipe.RecipeId);
         File.WriteAllText(path, JsonSerializer.Serialize(recipe, _jsonOptions));
         _logger.Info($"Saved recipe '{recipe.Name}' to {path}", LogTarget.All);
+        NotifyRecipesChanged();
         return recipe;
     }
 
@@ -87,6 +97,7 @@ public sealed class RecipeService : IRecipeService
         {
             File.Delete(path);
             _logger.Info($"Deleted recipe file {path}", LogTarget.All);
+            NotifyRecipesChanged();
         }
     }
 
@@ -120,13 +131,29 @@ public sealed class RecipeService : IRecipeService
     private void EnsureDefaults()
     {
         Directory.CreateDirectory(GetRecipesFolder());
-        foreach (var targetKind in new[] { MediaKind.TvEpisode, MediaKind.Movie })
+        _suppressChangeEvents = true;
+        try
         {
-            var path = GetRecipePath(GetDefaultRecipeId(targetKind));
-            if (!File.Exists(path))
+            foreach (var targetKind in new[] { MediaKind.TvEpisode, MediaKind.TvSeasonPack, MediaKind.Movie })
             {
-                SaveRecipe(CreateDefaultRecipe(targetKind));
+                var path = GetRecipePath(GetDefaultRecipeId(targetKind));
+                if (!File.Exists(path))
+                {
+                    SaveRecipe(CreateDefaultRecipe(targetKind));
+                }
             }
+        }
+        finally
+        {
+            _suppressChangeEvents = false;
+        }
+    }
+
+    private void NotifyRecipesChanged()
+    {
+        if (!_suppressChangeEvents)
+        {
+            RecipesChanged?.Invoke(this, EventArgs.Empty);
         }
     }
 
@@ -167,7 +194,12 @@ public sealed class RecipeService : IRecipeService
         var recipe = new SearchRecipe
         {
             RecipeId = GetDefaultRecipeId(targetKind),
-            Name = targetKind == MediaKind.Movie ? "Default Movie Recipe" : "Default TV Recipe",
+            Name = targetKind switch
+            {
+                MediaKind.Movie => "Default Movie Recipe",
+                MediaKind.TvSeasonPack => "Default TV Pack Recipe",
+                _ => "Default TV Episode Recipe"
+            },
             TargetKind = targetKind,
             Modules =
             [
@@ -175,39 +207,74 @@ public sealed class RecipeService : IRecipeService
                 {
                     BlockType = RecipeBlockType.Identity,
                     Order = 0,
-                    DisplayName = "Identity"
+                    DisplayName = "Identity / Aliases"
                 },
                 new RecipeModuleConfig
                 {
                     BlockType = RecipeBlockType.QueryBuilder,
                     Order = 10,
-                    DisplayName = "Query Builder",
+                    DisplayName = "Query / Custom Query",
                     QualityAllowList = qualities.ToList(),
-                    QueryTemplates = targetKind == MediaKind.Movie
-                        ? ["{title} {year} {quality} {audio}", "{title} {quality}", "{title} {year}"]
-                        : ["{title} S{season:00}E{episode:00} {quality} {audio}", "{title} {year} S{season:00}E{episode:00} {quality}", "{title} {season}x{episode:00} {quality}", "{title} S{season:00}E{episode:00}"]
+                    QueryTemplates = targetKind switch
+                    {
+                        MediaKind.Movie =>
+                        [
+                            "{title} {year} {quality} {audio}",
+                            "{title} {quality}",
+                            "{title} {year}"
+                        ],
+                        MediaKind.TvSeasonPack =>
+                        [
+                            "{title} S{season:00} complete {quality} {audio}",
+                            "{title} season {season} {quality}",
+                            "{title} S{season:00} pack {quality}",
+                            "{title} {year} season {season} {quality}"
+                        ],
+                        _ =>
+                        [
+                            "{title} S{season:00}E{episode:00} {quality} {audio}",
+                            "{title} {year} S{season:00}E{episode:00} {quality}",
+                            "{title} {season}x{episode:00} {quality}",
+                            "{title} S{season:00}E{episode:00}"
+                        ]
+                    }
                 },
                 new RecipeModuleConfig
                 {
                     BlockType = RecipeBlockType.SearchSource,
                     Order = 20,
-                    DisplayName = "Search Source",
+                    DisplayName = "Search Method",
                     Plugins = "enabled",
                     Category = "all",
-                    ResultLimit = Math.Max(1, settings.MaxCandidatesPerFetch * 25)
+                    ResultLimit = Math.Max(1, settings.MaxCandidatesPerFetch * 25),
+                    ExtensionData = new Dictionary<string, string>
+                    {
+                        [RecipeRuntimeSettings.ParallelSearchCountKey] = Math.Clamp(settings.MaxParallelSearches, 1, 8).ToString(),
+                        [RecipeRuntimeSettings.MaxCandidatesPerFetchKey] = Math.Clamp(settings.MaxCandidatesPerFetch, 1, 10).ToString(),
+                        [RecipeRuntimeSettings.UseShowSnapshotSearchKey] = settings.UseShowSnapshotSearch.ToString(),
+                        [RecipeRuntimeSettings.SnapshotTargetResultsKey] = Math.Clamp(settings.SnapshotTargetResults, 100, 5000).ToString(),
+                        [RecipeRuntimeSettings.SnapshotTimeoutSecondsKey] = Math.Clamp(settings.SnapshotTimeoutSeconds, 30, 300).ToString(),
+                        [RecipeRuntimeSettings.LocalMatchWorkersKey] = Math.Clamp(settings.LocalMatchWorkers, 1, 8).ToString()
+                    }
                 },
                 new RecipeModuleConfig
                 {
                     BlockType = RecipeBlockType.CandidateParser,
                     Order = 30,
-                    DisplayName = "Candidate Parser"
+                    DisplayName = "Candidate Parser",
+                    ExtensionData = new Dictionary<string, string>
+                    {
+                        [RecipeRuntimeSettings.EnableCandidateMetadataProbeKey] = settings.EnableCandidateMetadataProbe.ToString()
+                    }
                 },
                 new RecipeModuleConfig
                 {
                     BlockType = RecipeBlockType.CandidateFilter,
                     Order = 40,
-                    DisplayName = "Candidate Filter",
-                    QualityAllowList = qualities.ToList()
+                    DisplayName = "Quality / Seeders / Audio",
+                    QualityAllowList = qualities.ToList(),
+                    PreferredAudioCodec = string.Empty,
+                    MinimumSeeders = 1
                 },
                 new RecipeModuleConfig
                 {
@@ -236,7 +303,12 @@ public sealed class RecipeService : IRecipeService
 
     private static string GetDefaultRecipeId(MediaKind targetKind)
     {
-        return targetKind == MediaKind.Movie ? "default-movie" : "default-tv";
+        return targetKind switch
+        {
+            MediaKind.Movie => "default-movie",
+            MediaKind.TvSeasonPack => "default-tv-pack",
+            _ => "default-tv"
+        };
     }
 
     private static void NormalizeRecipe(SearchRecipe recipe)

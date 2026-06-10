@@ -8,15 +8,18 @@ public sealed class ShowSearchSnapshotService
     private const int SnapshotPollDelayMilliseconds = 1000;
 
     private readonly ISettingsService _settingsService;
+    private readonly IRecipeService _recipeService;
     private readonly IQbittorrentClient _qbittorrentClient;
     private readonly IAppLogger _logger;
 
     public ShowSearchSnapshotService(
         ISettingsService settingsService,
+        IRecipeService recipeService,
         IQbittorrentClient qbittorrentClient,
         IAppLogger logger)
     {
         _settingsService = settingsService;
+        _recipeService = recipeService;
         _qbittorrentClient = qbittorrentClient;
         _logger = logger;
     }
@@ -24,16 +27,22 @@ public sealed class ShowSearchSnapshotService
     public async Task<IReadOnlyList<TorrentSearchResult>> CaptureSnapshotAsync(
         TrackedShow show,
         IOperationProgressService? progressService,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        MediaKind recipeKind = MediaKind.TvEpisode)
     {
         if (progressService is null)
         {
             _logger.Info($"Starting snapshot search for {show.DisplayTitle}.", LogTarget.All);
         }
-        var settings = _settingsService.Current.AutoTorrent;
+        var fallback = _settingsService.Current.AutoTorrent;
+        var recipe = recipeKind == MediaKind.TvSeasonPack
+            ? _recipeService.GetRecipeOrDefault(show.PackRecipeId, MediaKind.TvSeasonPack)
+            : _recipeService.GetRecipeOrDefault(show.RecipeId, MediaKind.TvEpisode);
+        var targetResults = RecipeRuntimeSettings.GetSnapshotTargetResults(recipe, fallback);
+        var timeoutSeconds = RecipeRuntimeSettings.GetSnapshotTimeoutSeconds(recipe, fallback);
         var query = BuildPrimaryQuery(show);
-        var snapshot = await CaptureSnapshotAsync(query, settings, progressService, cancellationToken);
-        if (snapshot.Count >= Math.Max(settings.SnapshotTargetResults / 2, 50) || show.FirstAirYear is null)
+        var snapshot = await CaptureSnapshotAsync(query, targetResults, timeoutSeconds, progressService, cancellationToken);
+        if (snapshot.Count >= Math.Max(targetResults / 2, 50) || show.FirstAirYear is null)
         {
             return snapshot;
         }
@@ -44,7 +53,7 @@ public sealed class ShowSearchSnapshotService
             return snapshot;
         }
 
-        var fallbackSnapshot = await CaptureSnapshotAsync(fallbackQuery, settings, progressService, cancellationToken);
+        var fallbackSnapshot = await CaptureSnapshotAsync(fallbackQuery, targetResults, timeoutSeconds, progressService, cancellationToken);
         var combined = snapshot
             .Concat(fallbackSnapshot)
             .GroupBy(result => result.FileUrl, StringComparer.OrdinalIgnoreCase)
@@ -62,7 +71,8 @@ public sealed class ShowSearchSnapshotService
 
     private async Task<IReadOnlyList<TorrentSearchResult>> CaptureSnapshotAsync(
         string query,
-        AutoTorrentSettings settings,
+        int targetResults,
+        int timeoutSeconds,
         IOperationProgressService? progressService,
         CancellationToken cancellationToken)
     {
@@ -71,8 +81,8 @@ public sealed class ShowSearchSnapshotService
             return [];
         }
 
-        var targetResults = Math.Clamp(settings.SnapshotTargetResults, 100, 5000);
-        var timeout = TimeSpan.FromSeconds(Math.Clamp(settings.SnapshotTimeoutSeconds, 30, 300));
+        targetResults = Math.Clamp(targetResults, 100, 5000);
+        var timeout = TimeSpan.FromSeconds(Math.Clamp(timeoutSeconds, 30, 300));
         var deadline = DateTimeOffset.UtcNow.Add(timeout);
         int? searchId = null;
         IReadOnlyList<TorrentSearchResult> latestResults = [];

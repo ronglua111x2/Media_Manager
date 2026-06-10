@@ -35,6 +35,18 @@ public interface IDatabaseService
 
     void DeleteTrackedSeasonsAndEpisodes(long showId);
 
+    void DeleteTrackedShow(long showId);
+
+    int DeleteAllTrackedShows();
+
+    void DeleteTrackedMovie(long movieId);
+
+    int DeleteAllTrackedMovies();
+
+    int DeleteFetchJobsForMedia(long mediaId, MediaKind targetKind);
+
+    int DeleteAllFetchJobs();
+
     void UpsertTrackedSeason(TrackedSeason season);
 
     IReadOnlyList<TrackedSeason> GetTrackedSeasons(long showId);
@@ -81,6 +93,8 @@ public interface IDatabaseService
     void UpdateTrackedShowPreferences(long showId, string preferredQuality, string preferredAudioCodec, int minimumSeeders);
 
     void UpdateTrackedShowRecipe(long showId, string? recipeId);
+
+    void UpdateTrackedShowPackRecipe(long showId, string? packRecipeId);
 
     IReadOnlyList<TrackedMovie> GetTrackedMovies();
 

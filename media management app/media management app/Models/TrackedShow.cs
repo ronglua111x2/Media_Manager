@@ -18,6 +18,8 @@ public sealed class TrackedShow
 
     public string? RecipeId { get; set; }
 
+    public string? PackRecipeId { get; set; }
+
     public string PreferredQuality { get; set; } = "1080p";
 
     public string PreferredAudioCodec { get; set; } = string.Empty;

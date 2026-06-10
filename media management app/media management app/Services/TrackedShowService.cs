@@ -160,6 +160,12 @@ public sealed class TrackedShowService : ITrackedShowService
         _logger.Info($"Updated recipe assignment for show id={showId}: {recipeId ?? "<default>"}", LogTarget.All);
     }
 
+    public void UpdatePackRecipe(long showId, string? packRecipeId)
+    {
+        _databaseService.UpdateTrackedShowPackRecipe(showId, packRecipeId);
+        _logger.Info($"Updated pack recipe assignment for show id={showId}: {packRecipeId ?? "<default>"}", LogTarget.All);
+    }
+
     private long ImportShow(TmdbShowDetails details, string preferredQuality)
     {
         var existing = _databaseService.GetTrackedShowByTmdbId(details.TmdbId);
@@ -171,6 +177,7 @@ public sealed class TrackedShowService : ITrackedShowService
             Overview = details.Overview,
             PosterPath = details.PosterPath,
             RecipeId = existing?.RecipeId,
+            PackRecipeId = existing?.PackRecipeId,
             PreferredQuality = existing?.PreferredQuality ?? preferredQuality,
             PreferredAudioCodec = existing?.PreferredAudioCodec ?? string.Empty,
             MinimumSeeders = existing?.MinimumSeeders ?? 0

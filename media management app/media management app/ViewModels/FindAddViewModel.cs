@@ -48,6 +48,7 @@ public sealed partial class FindAddViewModel : ViewModelBase
 
         SearchResultsView = CollectionViewSource.GetDefaultView(SearchResults);
         ApplySearchResultSort();
+        _recipeService.RecipesChanged += OnRecipesChanged;
         LoadRecipes();
         RefreshExistingMedia();
         StatusMessage = "Search TMDB to add movies or shows to your library.";
@@ -279,6 +280,7 @@ public sealed partial class FindAddViewModel : ViewModelBase
             {
                 var show = await _trackedShowService.AddShowAsync(SelectedResult.ToShowSearchResult());
                 _trackedShowService.UpdateRecipe(show.Id, SelectedRecipeId);
+                _trackedShowService.UpdatePackRecipe(show.Id, GetDefaultRecipeId(MediaKind.TvSeasonPack));
             }
 
             SelectedResult.IsAlreadyAdded = true;
@@ -392,6 +394,12 @@ public sealed partial class FindAddViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsDateSortSelected));
         OnPropertyChanged(nameof(IsTypeSortSelected));
         OnPropertyChanged(nameof(IsNameSortSelected));
+    }
+
+    private void OnRecipesChanged(object? sender, EventArgs e)
+    {
+        LoadRecipes();
+        LoadSelectedResultState(SelectedResult);
     }
 
     private void LoadSelectedResultState(TmdbUnifiedSearchResult? result)

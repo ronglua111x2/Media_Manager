@@ -30,7 +30,8 @@ public enum MediaKind
 {
     Unknown = 0,
     TvEpisode = 1,
-    Movie = 2
+    Movie = 2,
+    TvSeasonPack = 3
 }
 
 public enum ParserPattern
@@ -84,6 +85,20 @@ public enum AutoTorrentLinkKind
     Episode = 1,
     SeasonPack = 2,
     Movie = 3
+}
+
+public enum TorrentOrderStatus
+{
+    Draft = 0,
+    Searching = 1,
+    CandidatesFound = 2,
+    NoCandidates = 3,
+    Approved = 4,
+    AddedToClient = 5,
+    Downloading = 6,
+    Completed = 7,
+    Failed = 8,
+    Canceled = 9
 }
 
 #endregion

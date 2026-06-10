@@ -107,17 +107,34 @@ public sealed class AutomationFlowService : IAutomationFlowService
         var requestLimit = searchSource?.ResultLimit is > 0 ? searchSource.ResultLimit : 100;
         var plugins = string.IsNullOrWhiteSpace(searchSource?.Plugins) ? "enabled" : searchSource!.Plugins;
         var category = string.IsNullOrWhiteSpace(searchSource?.Category) ? "all" : searchSource!.Category;
-        var results = new List<TorrentSearchResult>();
-        foreach (var query in queries)
-        {
-            results.AddRange(await _qbittorrentClient.SearchAsync(new TorrentSearchRequest
+        var parallelSearches = RecipeRuntimeSettings.GetParallelSearchCount(recipe, _settingsService.Current.AutoTorrent);
+        var throttler = new SemaphoreSlim(parallelSearches);
+        var tasks = queries
+            .Where(query => !string.IsNullOrWhiteSpace(query))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(async query =>
             {
-                Query = query,
-                Plugins = plugins,
-                Category = category,
-                Limit = requestLimit
-            }, cancellationToken));
-        }
+                await throttler.WaitAsync(cancellationToken);
+                try
+                {
+                    return await _qbittorrentClient.SearchAsync(new TorrentSearchRequest
+                    {
+                        Query = query,
+                        Plugins = plugins,
+                        Category = category,
+                        Limit = requestLimit
+                    }, cancellationToken);
+                }
+                finally
+                {
+                    throttler.Release();
+                }
+            })
+            .ToList();
+
+        var results = (await Task.WhenAll(tasks))
+            .SelectMany(item => item)
+            .ToList();
 
         return results
             .GroupBy(result => result.FileUrl, StringComparer.OrdinalIgnoreCase)
