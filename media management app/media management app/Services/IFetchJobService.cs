@@ -26,6 +26,13 @@ public interface IFetchJobService
 
     Task<FetchJob> EnqueueMovieFetchAsync(long movieId, CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyDictionary<long, IReadOnlyList<EpisodeFetchCandidate>>> FetchEpisodeCandidatesAsync(
+        long showId,
+        IReadOnlyList<long> episodeIds,
+        string? recipeId = null,
+        Action<long, string>? statusChanged = null,
+        CancellationToken cancellationToken = default);
+
     Task FetchSeasonPacksAsync(long showId, IReadOnlyList<int> seasonNumbers, CancellationToken cancellationToken = default);
 
     void CancelJob(long jobId);

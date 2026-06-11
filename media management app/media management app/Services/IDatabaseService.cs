@@ -121,6 +121,26 @@ public interface IDatabaseService
 
     void UpdateTrackedMovieRecipe(long movieId, string? recipeId);
 
+    IReadOnlyList<TorrentCartOrder> GetTorrentCartOrders(MediaKind? mediaKind = null, long? mediaId = null);
+
+    TorrentCartOrder? GetTorrentCartOrder(long orderId);
+
+    long UpsertTorrentCartOrder(TorrentCartOrder order);
+
+    int DeleteTorrentCartOrders(MediaKind? mediaKind = null, long? mediaId = null);
+
+    int DeleteTorrentCartOrder(long orderId);
+
+    int DeleteTorrentCartOrderCandidates(long orderId);
+
+    IReadOnlyList<TorrentCartOrderCandidate> GetTorrentCartOrderCandidates(long orderId);
+
+    void ReplaceTorrentCartOrderCandidates(long orderId, IReadOnlyList<TorrentCartOrderCandidate> candidates);
+
+    void UpdateTorrentCartOrderCandidateSelection(long orderId, long candidateId);
+
+    void UpdateTorrentCartOrderCandidateAccepted(long orderId, long candidateId, bool isAccepted);
+
     long CreateFetchJob(FetchJob job);
 
     IReadOnlyList<FetchJob> GetFetchJobs();

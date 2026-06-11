@@ -344,7 +344,7 @@
                                           ItemTemplate="{StaticResource ModuleButtonTemplate}">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
-                                        <UniformGrid Rows="1" Columns="8" />
+                                        <UniformGrid Rows="1" Columns="6" />
                                     </ItemsPanelTemplate>
                                 </ItemsControl.ItemsPanel>
                             </ItemsControl>
@@ -472,26 +472,17 @@
                                         </StackPanel.Style>
                                         <Border Style="{StaticResource RecipeModuleFieldsStyle}">
                                             <StackPanel>
+                                                <TextBlock Text="Search mode" Style="{StaticResource RecipeLabelStyle}" />
+                                                <ComboBox ItemsSource="{Binding SearchModeOptions}"
+                                                          SelectedItem="{Binding SearchMode, Mode=TwoWay}"
+                                                          Padding="10,7"
+                                                          Margin="0,0,0,12" />
                                                 <TextBlock Text="Plugins" Style="{StaticResource RecipeLabelStyle}" />
                                                 <TextBox Text="{Binding Plugins, UpdateSourceTrigger=PropertyChanged}"
                                                          Style="{StaticResource RecipeTextBoxStyle}" />
                                                 <TextBlock Text="Category" Style="{StaticResource RecipeLabelStyle}" />
                                                 <TextBox Text="{Binding Category, UpdateSourceTrigger=PropertyChanged}"
                                                          Style="{StaticResource RecipeTextBoxStyle}" />
-                                                <TextBlock Text="Result limit" Style="{StaticResource RecipeLabelStyle}" />
-                                                <Border Style="{StaticResource RecipeNumericChromeStyle}">
-                                                    <materialDesign:NumericUpDown Style="{StaticResource RecipeNumericUpDownStyle}"
-                                                                                  Value="{Binding ResultLimit, UpdateSourceTrigger=PropertyChanged}"
-                                                                                  Minimum="1"
-                                                                                  Maximum="5000" />
-                                                </Border>
-                                                <TextBlock Text="Parallel searches" Style="{StaticResource RecipeLabelStyle}" />
-                                                <Border Style="{StaticResource RecipeNumericChromeStyle}">
-                                                    <materialDesign:NumericUpDown Style="{StaticResource RecipeNumericUpDownStyle}"
-                                                                                  Value="{Binding ParallelSearchCount, UpdateSourceTrigger=PropertyChanged}"
-                                                                                  Minimum="1"
-                                                                                  Maximum="8" />
-                                                </Border>
                                                 <TextBlock Text="Candidates per fetch" Style="{StaticResource RecipeLabelStyle}" />
                                                 <Border Style="{StaticResource RecipeNumericChromeStyle}">
                                                     <materialDesign:NumericUpDown Style="{StaticResource RecipeNumericUpDownStyle}"
@@ -499,30 +490,111 @@
                                                                                   Minimum="1"
                                                                                   Maximum="10" />
                                                 </Border>
-                                                <CheckBox Content="Use show-level snapshot search"
-                                                          IsChecked="{Binding UseShowSnapshotSearch}"
-                                                          Margin="0,0,0,14" />
-                                                <TextBlock Text="Snapshot target results" Style="{StaticResource RecipeLabelStyle}" />
-                                                <Border Style="{StaticResource RecipeNumericChromeStyle}">
-                                                    <materialDesign:NumericUpDown Style="{StaticResource RecipeNumericUpDownStyle}"
-                                                                                  Value="{Binding SnapshotTargetResults, UpdateSourceTrigger=PropertyChanged}"
-                                                                                  Minimum="100"
-                                                                                  Maximum="5000" />
-                                                </Border>
-                                                <TextBlock Text="Snapshot timeout seconds" Style="{StaticResource RecipeLabelStyle}" />
-                                                <Border Style="{StaticResource RecipeNumericChromeStyle}">
-                                                    <materialDesign:NumericUpDown Style="{StaticResource RecipeNumericUpDownStyle}"
-                                                                                  Value="{Binding SnapshotTimeoutSeconds, UpdateSourceTrigger=PropertyChanged}"
-                                                                                  Minimum="30"
-                                                                                  Maximum="300" />
-                                                </Border>
-                                                <TextBlock Text="Local match workers" Style="{StaticResource RecipeLabelStyle}" />
-                                                <Border Style="{StaticResource RecipeNumericChromeStyle}">
-                                                    <materialDesign:NumericUpDown Style="{StaticResource RecipeNumericUpDownStyle}"
-                                                                                  Value="{Binding LocalMatchWorkers, UpdateSourceTrigger=PropertyChanged}"
-                                                                                  Minimum="1"
-                                                                                  Maximum="8" />
-                                                </Border>
+                                                <CheckBox Content="Deduplicate candidates"
+                                                          IsChecked="{Binding DeduplicateCandidates}"
+                                                          Margin="0,0,0,8" />
+                                                <CheckBox Content="Fuzzy deduplicate (by filename + size)"
+                                                          IsChecked="{Binding FuzzyDeduplicate}"
+                                                          Margin="0,0,0,8" />
+                                                <StackPanel>
+                                                    <StackPanel.Style>
+                                                        <Style TargetType="StackPanel">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsFuzzyDeduplicateEnabled}" Value="True">
+                                                                    <Setter Property="Visibility" Value="Visible" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </StackPanel.Style>
+                                                    <TextBlock Text="Fuzzy dedup size tolerance (MB)" Style="{StaticResource RecipeLabelStyle}" />
+                                                    <Border Style="{StaticResource RecipeNumericChromeStyle}">
+                                                        <materialDesign:NumericUpDown Style="{StaticResource RecipeNumericUpDownStyle}"
+                                                                                      Value="{Binding FuzzyDeduplicateSizeToleranceMb, UpdateSourceTrigger=PropertyChanged}"
+                                                                                      Minimum="0"
+                                                                                      Maximum="100" />
+                                                    </Border>
+                                                </StackPanel>
+                                                <StackPanel Margin="0,0,0,12">
+                                                    <StackPanel.Style>
+                                                        <Style TargetType="StackPanel">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsParallelSearchMode}" Value="True">
+                                                                    <Setter Property="Visibility" Value="Visible" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </StackPanel.Style>
+                                                    <TextBlock Text="Parallel episode search"
+                                                               FontWeight="SemiBold"
+                                                               Margin="0,8,0,4" />
+                                                    <TextBlock Text="Runs per-episode qBittorrent searches with multiple workers."
+                                                               Style="{StaticResource MutedTextStyle}"
+                                                               TextWrapping="Wrap"
+                                                               Margin="0,0,0,8" />
+                                                    <TextBlock Text="Result limit" Style="{StaticResource RecipeLabelStyle}" />
+                                                    <Border Style="{StaticResource RecipeNumericChromeStyle}">
+                                                        <materialDesign:NumericUpDown Style="{StaticResource RecipeNumericUpDownStyle}"
+                                                                                      Value="{Binding ResultLimit, UpdateSourceTrigger=PropertyChanged}"
+                                                                                      Minimum="1"
+                                                                                      Maximum="5000" />
+                                                    </Border>
+                                                    <TextBlock Text="Parallel searches" Style="{StaticResource RecipeLabelStyle}" />
+                                                    <Border Style="{StaticResource RecipeNumericChromeStyle}">
+                                                        <materialDesign:NumericUpDown Style="{StaticResource RecipeNumericUpDownStyle}"
+                                                                                      Value="{Binding ParallelSearchCount, UpdateSourceTrigger=PropertyChanged}"
+                                                                                      Minimum="1"
+                                                                                      Maximum="8" />
+                                                    </Border>
+                                                </StackPanel>
+                                                <StackPanel>
+                                                    <StackPanel.Style>
+                                                        <Style TargetType="StackPanel">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsSnapshotSearchMode}" Value="True">
+                                                                    <Setter Property="Visibility" Value="Visible" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </StackPanel.Style>
+                                                    <TextBlock Text="Show snapshot search"
+                                                               FontWeight="SemiBold"
+                                                               Margin="0,8,0,4" />
+                                                    <TextBlock Text="Captures one show-level result set, then matches results to episodes locally."
+                                                               Style="{StaticResource MutedTextStyle}"
+                                                               TextWrapping="Wrap"
+                                                               Margin="0,0,0,8" />
+                                                    <TextBlock Text="Snapshot target results" Style="{StaticResource RecipeLabelStyle}" />
+                                                    <Border Style="{StaticResource RecipeNumericChromeStyle}">
+                                                        <materialDesign:NumericUpDown Style="{StaticResource RecipeNumericUpDownStyle}"
+                                                                                      Value="{Binding SnapshotTargetResults, UpdateSourceTrigger=PropertyChanged}"
+                                                                                      Minimum="100"
+                                                                                      Maximum="5000" />
+                                                    </Border>
+                                                    <TextBlock Text="Snapshot timeout seconds" Style="{StaticResource RecipeLabelStyle}" />
+                                                    <Border Style="{StaticResource RecipeNumericChromeStyle}">
+                                                        <materialDesign:NumericUpDown Style="{StaticResource RecipeNumericUpDownStyle}"
+                                                                                      Value="{Binding SnapshotTimeoutSeconds, UpdateSourceTrigger=PropertyChanged}"
+                                                                                      Minimum="30"
+                                                                                      Maximum="300" />
+                                                    </Border>
+                                                    <TextBlock Text="Snapshot idle timeout seconds (0 = off)" Style="{StaticResource RecipeLabelStyle}" />
+                                                    <Border Style="{StaticResource RecipeNumericChromeStyle}">
+                                                        <materialDesign:NumericUpDown Style="{StaticResource RecipeNumericUpDownStyle}"
+                                                                                      Value="{Binding SnapshotIdleTimeoutSeconds, UpdateSourceTrigger=PropertyChanged}"
+                                                                                      Minimum="0"
+                                                                                      Maximum="120" />
+                                                    </Border>
+                                                    <TextBlock Text="Local match workers" Style="{StaticResource RecipeLabelStyle}" />
+                                                    <Border Style="{StaticResource RecipeNumericChromeStyle}">
+                                                        <materialDesign:NumericUpDown Style="{StaticResource RecipeNumericUpDownStyle}"
+                                                                                      Value="{Binding LocalMatchWorkers, UpdateSourceTrigger=PropertyChanged}"
+                                                                                      Minimum="1"
+                                                                                      Maximum="8" />
+                                                    </Border>
+                                                </StackPanel>
                                             </StackPanel>
                                         </Border>
                                     </StackPanel>
@@ -595,36 +667,6 @@
                                         </Border>
                                     </StackPanel>
 
-                                    <!-- Add torrent -->
-                                    <StackPanel>
-                                        <StackPanel.Style>
-                                            <Style TargetType="StackPanel">
-                                                <Setter Property="Visibility" Value="Collapsed" />
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding BlockType}" Value="{x:Static models:RecipeBlockType.AddTorrent}">
-                                                        <Setter Property="Visibility" Value="Visible" />
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </StackPanel.Style>
-                                        <Border Style="{StaticResource RecipeModuleFieldsStyle}">
-                                            <StackPanel>
-                                                <TextBlock Text="Save path" Style="{StaticResource RecipeLabelStyle}" />
-                                                <TextBox Text="{Binding SavePath, UpdateSourceTrigger=PropertyChanged}"
-                                                         Style="{StaticResource RecipeTextBoxStyle}" />
-                                                <TextBlock Text="Torrent category" Style="{StaticResource RecipeLabelStyle}" />
-                                                <TextBox Text="{Binding TorrentCategory, UpdateSourceTrigger=PropertyChanged}"
-                                                         Style="{StaticResource RecipeTextBoxStyle}" />
-                                                <TextBlock Text="Tags" Style="{StaticResource RecipeLabelStyle}" />
-                                                <TextBox Text="{Binding Tags, UpdateSourceTrigger=PropertyChanged}"
-                                                         Style="{StaticResource RecipeTextBoxStyle}" />
-                                                <CheckBox Content="Add torrent paused"
-                                                          IsChecked="{Binding Paused}"
-                                                          Margin="0,4,0,0" />
-                                            </StackPanel>
-                                        </Border>
-                                    </StackPanel>
-
                                     <!-- Parser -->
                                     <StackPanel>
                                         <StackPanel.Style>
@@ -656,9 +698,6 @@
                                                 <Setter Property="Visibility" Value="Collapsed" />
                                                 <Style.Triggers>
                                                     <DataTrigger Binding="{Binding BlockType}" Value="{x:Static models:RecipeBlockType.Scoring}">
-                                                        <Setter Property="Visibility" Value="Visible" />
-                                                    </DataTrigger>
-                                                    <DataTrigger Binding="{Binding BlockType}" Value="{x:Static models:RecipeBlockType.LinkOutput}">
                                                         <Setter Property="Visibility" Value="Visible" />
                                                     </DataTrigger>
                                                 </Style.Triggers>

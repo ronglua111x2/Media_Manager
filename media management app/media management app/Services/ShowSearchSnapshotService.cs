@@ -40,8 +40,9 @@ public sealed class ShowSearchSnapshotService
             : _recipeService.GetRecipeOrDefault(show.RecipeId, MediaKind.TvEpisode);
         var targetResults = RecipeRuntimeSettings.GetSnapshotTargetResults(recipe, fallback);
         var timeoutSeconds = RecipeRuntimeSettings.GetSnapshotTimeoutSeconds(recipe, fallback);
+        var idleTimeoutSeconds = RecipeRuntimeSettings.GetSnapshotIdleTimeoutSeconds(recipe, fallback);
         var query = BuildPrimaryQuery(show);
-        var snapshot = await CaptureSnapshotAsync(query, targetResults, timeoutSeconds, progressService, cancellationToken);
+        var snapshot = await CaptureSnapshotAsync(query, targetResults, timeoutSeconds, idleTimeoutSeconds, progressService, cancellationToken);
         if (snapshot.Count >= Math.Max(targetResults / 2, 50) || show.FirstAirYear is null)
         {
             return snapshot;
@@ -53,7 +54,7 @@ public sealed class ShowSearchSnapshotService
             return snapshot;
         }
 
-        var fallbackSnapshot = await CaptureSnapshotAsync(fallbackQuery, targetResults, timeoutSeconds, progressService, cancellationToken);
+        var fallbackSnapshot = await CaptureSnapshotAsync(fallbackQuery, targetResults, timeoutSeconds, idleTimeoutSeconds, progressService, cancellationToken);
         var combined = snapshot
             .Concat(fallbackSnapshot)
             .GroupBy(result => result.FileUrl, StringComparer.OrdinalIgnoreCase)
@@ -73,6 +74,7 @@ public sealed class ShowSearchSnapshotService
         string query,
         int targetResults,
         int timeoutSeconds,
+        int idleTimeoutSeconds,
         IOperationProgressService? progressService,
         CancellationToken cancellationToken)
     {
@@ -84,9 +86,14 @@ public sealed class ShowSearchSnapshotService
         targetResults = Math.Clamp(targetResults, 100, 5000);
         var timeout = TimeSpan.FromSeconds(Math.Clamp(timeoutSeconds, 30, 300));
         var deadline = DateTimeOffset.UtcNow.Add(timeout);
+        var idleTimeout = idleTimeoutSeconds > 0
+            ? TimeSpan.FromSeconds(Math.Clamp(idleTimeoutSeconds, 3, 120))
+            : (TimeSpan?)null;
         int? searchId = null;
         IReadOnlyList<TorrentSearchResult> latestResults = [];
         var latestStatus = "Running";
+        var lastResultCount = 0;
+        var idleDeadline = idleTimeout is null ? DateTimeOffset.MaxValue : DateTimeOffset.UtcNow.Add(idleTimeout.Value);
 
         try
         {
@@ -99,6 +106,22 @@ public sealed class ShowSearchSnapshotService
                 latestResults = response.Results;
                 latestStatus = response.Status;
                 progressService?.Report(latestResults.Count, $"Searching snapshot: {query}");
+
+                if (latestResults.Count > lastResultCount)
+                {
+                    lastResultCount = latestResults.Count;
+                    if (idleTimeout is not null)
+                    {
+                        idleDeadline = DateTimeOffset.UtcNow.Add(idleTimeout.Value);
+                    }
+                }
+                else if (idleTimeout is not null && DateTimeOffset.UtcNow >= idleDeadline)
+                {
+                    _logger.Info(
+                        $"Snapshot search idle timeout reached. Query='{query}', Results={latestResults.Count}, IdleSeconds={idleTimeout.Value.TotalSeconds:0}.",
+                        LogTarget.All);
+                    break;
+                }
 
                 if (!string.Equals(latestStatus, "Running", StringComparison.OrdinalIgnoreCase) ||
                     latestResults.Count >= targetResults)

@@ -40,12 +40,14 @@
                                    FontSize="11"
                                    TextTrimming="CharacterEllipsis" />
                     </StackPanel>
-                    <Grid Grid.Column="3" VerticalAlignment="Center">
+                    <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
                         <TextBlock Text="In cart">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock" BasedOn="{StaticResource MutedTextStyle}">
                                     <Setter Property="FontWeight" Value="SemiBold" />
                                     <Setter Property="HorizontalAlignment" Value="Center" />
+                                    <Setter Property="VerticalAlignment" Value="Center" />
+                                    <Setter Property="Margin" Value="0,0,8,0" />
                                     <Setter Property="Visibility" Value="Collapsed" />
                                     <Style.Triggers>
                                         <DataTrigger Binding="{Binding IsInCart}" Value="True">
@@ -58,7 +60,7 @@
                         <Button Command="{Binding DataContext.AddEpisodeToCartCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                 CommandParameter="{Binding}"
                                 IsEnabled="{Binding CanAddToCart}"
-                                Margin="0">
+                                Margin="0,0,8,0">
                             <Button.Style>
                                 <Style TargetType="Button" BasedOn="{StaticResource AppPrimaryButtonStyle}">
                                     <Setter Property="Visibility" Value="Visible" />
@@ -79,7 +81,22 @@
                                 <TextBlock Text="Add" VerticalAlignment="Center" Foreground="#ffffff" />
                             </StackPanel>
                         </Button>
-                    </Grid>
+                        <Button Style="{StaticResource AppOutlinedButtonStyle}"
+                                Command="{Binding DataContext.LinkEpisodeCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                CommandParameter="{Binding}"
+                                IsEnabled="{Binding CanLink}"
+                                Margin="0"
+                                ToolTip="Create library hardlink for this episode">
+                            <StackPanel Orientation="Horizontal">
+                                <iconPacks:PackIconLucide Kind="Link"
+                                                           Width="14"
+                                                           Height="14"
+                                                           Margin="0,0,6,0"
+                                                           VerticalAlignment="Center" />
+                                <TextBlock Text="Link" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
                 </Grid>
             </Border>
         </DataTemplate>
@@ -149,6 +166,22 @@
                                     <TextBlock Text="Add Pack" VerticalAlignment="Center" Foreground="#ffffff" />
                                 </StackPanel>
                             </Button>
+                            <Button Style="{StaticResource AppOutlinedButtonStyle}"
+                                    Command="{Binding DataContext.LinkSeasonPackCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                    CommandParameter="{Binding}"
+                                    IsEnabled="{Binding CanLinkPack}"
+                                    Visibility="{Binding IsPackMode, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                    Margin="8,0,0,0"
+                                    ToolTip="Create library hardlinks for this season pack">
+                                <StackPanel Orientation="Horizontal">
+                                    <iconPacks:PackIconLucide Kind="Link"
+                                                               Width="14"
+                                                               Height="14"
+                                                               Margin="0,0,6,0"
+                                                               VerticalAlignment="Center" />
+                                    <TextBlock Text="Link Pack" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
                             <TextBlock Text="{Binding PackLinkStatus}"
                                        Style="{StaticResource MutedTextStyle}"
                                        VerticalAlignment="Center"
@@ -156,8 +189,7 @@
                         </StackPanel>
 
                         <ItemsControl ItemsSource="{Binding Episodes}"
-                                      ItemTemplate="{StaticResource EpisodeRowTemplate}"
-                                      Visibility="{Binding IsEpisodeWorkflowEnabled, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                      ItemTemplate="{StaticResource EpisodeRowTemplate}" />
                     </StackPanel>
                 </Expander>
             </materialDesign:Card>
@@ -459,22 +491,38 @@
                                                        Style="{StaticResource MutedTextStyle}"
                                                        Margin="0,4,0,0" />
                                         </StackPanel>
-                                        <Button Grid.Column="1"
-                                                Style="{StaticResource AppPrimaryButtonStyle}"
-                                                Command="{Binding DataContext.AddMovieToCartCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                CommandParameter="{Binding}"
-                                                IsEnabled="{Binding CanAddToCart}"
-                                                Margin="0">
-                                            <StackPanel Orientation="Horizontal">
-                                                <iconPacks:PackIconLucide Kind="ShoppingCart"
-                                                                           Width="14"
-                                                                           Height="14"
-                                                                           Margin="0,0,6,0"
-                                                                           Foreground="#ffffff"
-                                                                           VerticalAlignment="Center" />
-                                                <TextBlock Text="Add to Cart" VerticalAlignment="Center" Foreground="#ffffff" />
-                                            </StackPanel>
-                                        </Button>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                            <Button Style="{StaticResource AppPrimaryButtonStyle}"
+                                                    Command="{Binding DataContext.AddMovieToCartCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    CommandParameter="{Binding}"
+                                                    IsEnabled="{Binding CanAddToCart}"
+                                                    Margin="0,0,8,0">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <iconPacks:PackIconLucide Kind="ShoppingCart"
+                                                                               Width="14"
+                                                                               Height="14"
+                                                                               Margin="0,0,6,0"
+                                                                               Foreground="#ffffff"
+                                                                               VerticalAlignment="Center" />
+                                                    <TextBlock Text="Add to Cart" VerticalAlignment="Center" Foreground="#ffffff" />
+                                                </StackPanel>
+                                            </Button>
+                                            <Button Style="{StaticResource AppOutlinedButtonStyle}"
+                                                    Command="{Binding DataContext.LinkMovieCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    CommandParameter="{Binding}"
+                                                    IsEnabled="{Binding CanLink}"
+                                                    Margin="0"
+                                                    ToolTip="Create library hardlink for this movie">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <iconPacks:PackIconLucide Kind="Link"
+                                                                               Width="14"
+                                                                               Height="14"
+                                                                               Margin="0,0,6,0"
+                                                                               VerticalAlignment="Center" />
+                                                    <TextBlock Text="Link" VerticalAlignment="Center" />
+                                                </StackPanel>
+                                            </Button>
+                                        </StackPanel>
                                     </Grid>
                                 </StackPanel>
                             </Border>

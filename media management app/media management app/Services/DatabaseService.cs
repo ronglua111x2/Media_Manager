@@ -91,6 +91,8 @@ public sealed class DatabaseService : IDatabaseService
         InitializeTrackedShows(connection);
         InitializeTrackedMovies(connection);
         InitializeFetchJobs(connection);
+        InitializeTorrentCartOrders(connection);
+        InitializeTorrentCartOrderCandidates(connection);
         _logger.Info("SQLite database is ready", LogTarget.File | LogTarget.Ui | LogTarget.Console);
     }
 
@@ -1272,6 +1274,298 @@ public sealed class DatabaseService : IDatabaseService
         command.ExecuteNonQuery();
     }
 
+    public IReadOnlyList<TorrentCartOrder> GetTorrentCartOrders(MediaKind? mediaKind = null, long? mediaId = null)
+    {
+        var orders = new List<TorrentCartOrder>();
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        var whereClauses = new List<string>();
+        if (mediaKind is not null)
+        {
+            whereClauses.Add("TargetKind = $TargetKind");
+            command.Parameters.AddWithValue("$TargetKind", (int)mediaKind.Value);
+        }
+
+        if (mediaId is not null)
+        {
+            whereClauses.Add("MediaId = $MediaId");
+            command.Parameters.AddWithValue("$MediaId", mediaId.Value);
+        }
+
+        command.CommandText = $"""
+            SELECT Id, TargetKind, MediaId, EpisodeId, SeasonNumber, EpisodeNumber, Title, Summary, Status, StatusDetail,
+                   SelectedCandidateName, SelectedCandidateUrl, SelectedCandidatePlugin, SelectedCandidateFileSize,
+                   SelectedCandidateSeeders, SelectedCandidateLeechers, SelectedCandidateQuality, SelectedCandidateAudioCodec,
+                   SelectedCandidateCoveredSeasons, SelectedCandidateTotalScore,
+                   TorrentHash, TorrentName, TorrentState, TorrentProgress, CreatedUtc, UpdatedUtc
+            FROM TorrentCartOrders
+            {(whereClauses.Count == 0 ? string.Empty : $"WHERE {string.Join(" AND ", whereClauses)}")}
+            ORDER BY Id;
+            """;
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            orders.Add(ReadTorrentCartOrder(reader));
+        }
+
+        return orders;
+    }
+
+    public TorrentCartOrder? GetTorrentCartOrder(long orderId)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT Id, TargetKind, MediaId, EpisodeId, SeasonNumber, EpisodeNumber, Title, Summary, Status, StatusDetail,
+                   SelectedCandidateName, SelectedCandidateUrl, SelectedCandidatePlugin, SelectedCandidateFileSize,
+                   SelectedCandidateSeeders, SelectedCandidateLeechers, SelectedCandidateQuality, SelectedCandidateAudioCodec,
+                   SelectedCandidateCoveredSeasons, SelectedCandidateTotalScore,
+                   TorrentHash, TorrentName, TorrentState, TorrentProgress, CreatedUtc, UpdatedUtc
+            FROM TorrentCartOrders
+            WHERE Id = $Id
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$Id", orderId);
+        using var reader = command.ExecuteReader();
+        return reader.Read() ? ReadTorrentCartOrder(reader) : null;
+    }
+
+    public long UpsertTorrentCartOrder(TorrentCartOrder order)
+    {
+        order.UpdatedUtc = DateTime.UtcNow;
+        if (order.Id <= 0)
+        {
+            order.CreatedUtc = order.UpdatedUtc;
+            using var insertConnection = new SqliteConnection(_connectionString);
+            insertConnection.Open();
+            using var insert = insertConnection.CreateCommand();
+            insert.CommandText = """
+                INSERT INTO TorrentCartOrders (
+                    TargetKind, MediaId, EpisodeId, SeasonNumber, EpisodeNumber, Title, Summary, Status, StatusDetail,
+                    SelectedCandidateName, SelectedCandidateUrl, SelectedCandidatePlugin, SelectedCandidateFileSize,
+                    SelectedCandidateSeeders, SelectedCandidateLeechers, SelectedCandidateQuality, SelectedCandidateAudioCodec,
+                    SelectedCandidateCoveredSeasons, SelectedCandidateTotalScore,
+                    TorrentHash, TorrentName, TorrentState, TorrentProgress, CreatedUtc, UpdatedUtc)
+                VALUES (
+                    $TargetKind, $MediaId, $EpisodeId, $SeasonNumber, $EpisodeNumber, $Title, $Summary, $Status, $StatusDetail,
+                    $SelectedCandidateName, $SelectedCandidateUrl, $SelectedCandidatePlugin, $SelectedCandidateFileSize,
+                    $SelectedCandidateSeeders, $SelectedCandidateLeechers, $SelectedCandidateQuality, $SelectedCandidateAudioCodec,
+                    $SelectedCandidateCoveredSeasons, $SelectedCandidateTotalScore,
+                    $TorrentHash, $TorrentName, $TorrentState, $TorrentProgress, $CreatedUtc, $UpdatedUtc);
+                SELECT last_insert_rowid();
+                """;
+            AddTorrentCartOrderParameters(insert, order);
+            order.Id = (long)(insert.ExecuteScalar() ?? 0L);
+            return order.Id;
+        }
+
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO TorrentCartOrders (
+                Id, TargetKind, MediaId, EpisodeId, SeasonNumber, EpisodeNumber, Title, Summary, Status, StatusDetail,
+                SelectedCandidateName, SelectedCandidateUrl, SelectedCandidatePlugin, SelectedCandidateFileSize,
+                SelectedCandidateSeeders, SelectedCandidateLeechers, SelectedCandidateQuality, SelectedCandidateAudioCodec,
+                SelectedCandidateCoveredSeasons, SelectedCandidateTotalScore,
+                TorrentHash, TorrentName, TorrentState, TorrentProgress, CreatedUtc, UpdatedUtc)
+            VALUES (
+                $Id, $TargetKind, $MediaId, $EpisodeId, $SeasonNumber, $EpisodeNumber, $Title, $Summary, $Status, $StatusDetail,
+                $SelectedCandidateName, $SelectedCandidateUrl, $SelectedCandidatePlugin, $SelectedCandidateFileSize,
+                $SelectedCandidateSeeders, $SelectedCandidateLeechers, $SelectedCandidateQuality, $SelectedCandidateAudioCodec,
+                $SelectedCandidateCoveredSeasons, $SelectedCandidateTotalScore,
+                $TorrentHash, $TorrentName, $TorrentState, $TorrentProgress, $CreatedUtc, $UpdatedUtc)
+            ON CONFLICT(Id) DO UPDATE SET
+                TargetKind = excluded.TargetKind,
+                MediaId = excluded.MediaId,
+                EpisodeId = excluded.EpisodeId,
+                SeasonNumber = excluded.SeasonNumber,
+                EpisodeNumber = excluded.EpisodeNumber,
+                Title = excluded.Title,
+                Summary = excluded.Summary,
+                Status = excluded.Status,
+                StatusDetail = excluded.StatusDetail,
+                SelectedCandidateName = excluded.SelectedCandidateName,
+                SelectedCandidateUrl = excluded.SelectedCandidateUrl,
+                SelectedCandidatePlugin = excluded.SelectedCandidatePlugin,
+                SelectedCandidateFileSize = excluded.SelectedCandidateFileSize,
+                SelectedCandidateSeeders = excluded.SelectedCandidateSeeders,
+                SelectedCandidateLeechers = excluded.SelectedCandidateLeechers,
+                SelectedCandidateQuality = excluded.SelectedCandidateQuality,
+                SelectedCandidateAudioCodec = excluded.SelectedCandidateAudioCodec,
+                SelectedCandidateCoveredSeasons = excluded.SelectedCandidateCoveredSeasons,
+                SelectedCandidateTotalScore = excluded.SelectedCandidateTotalScore,
+                TorrentHash = excluded.TorrentHash,
+                TorrentName = excluded.TorrentName,
+                TorrentState = excluded.TorrentState,
+                TorrentProgress = excluded.TorrentProgress,
+                UpdatedUtc = excluded.UpdatedUtc;
+            """;
+        command.Parameters.AddWithValue("$Id", order.Id);
+        AddTorrentCartOrderParameters(command, order);
+        command.ExecuteNonQuery();
+        return order.Id;
+    }
+
+    public int DeleteTorrentCartOrders(MediaKind? mediaKind = null, long? mediaId = null)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        var whereClauses = new List<string>();
+        if (mediaKind is not null)
+        {
+            whereClauses.Add("TargetKind = $TargetKind");
+        }
+
+        if (mediaId is not null)
+        {
+            whereClauses.Add("MediaId = $MediaId");
+        }
+
+        var whereSql = whereClauses.Count == 0 ? string.Empty : $"WHERE {string.Join(" AND ", whereClauses)}";
+        using var deleteCandidates = connection.CreateCommand();
+        deleteCandidates.CommandText = $"""
+            DELETE FROM TorrentCartOrderCandidates
+            WHERE OrderId IN (SELECT Id FROM TorrentCartOrders {whereSql});
+            """;
+        if (mediaKind is not null)
+        {
+            deleteCandidates.Parameters.AddWithValue("$TargetKind", (int)mediaKind.Value);
+        }
+        if (mediaId is not null)
+        {
+            deleteCandidates.Parameters.AddWithValue("$MediaId", mediaId.Value);
+        }
+        deleteCandidates.ExecuteNonQuery();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            DELETE FROM TorrentCartOrders
+            {whereSql};
+            """;
+        if (mediaKind is not null)
+        {
+            command.Parameters.AddWithValue("$TargetKind", (int)mediaKind.Value);
+        }
+        if (mediaId is not null)
+        {
+            command.Parameters.AddWithValue("$MediaId", mediaId.Value);
+        }
+        return command.ExecuteNonQuery();
+    }
+
+    public int DeleteTorrentCartOrder(long orderId)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var deleteCandidates = connection.CreateCommand();
+        deleteCandidates.CommandText = "DELETE FROM TorrentCartOrderCandidates WHERE OrderId = $Id;";
+        deleteCandidates.Parameters.AddWithValue("$Id", orderId);
+        deleteCandidates.ExecuteNonQuery();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM TorrentCartOrders WHERE Id = $Id;";
+        command.Parameters.AddWithValue("$Id", orderId);
+        return command.ExecuteNonQuery();
+    }
+
+    public int DeleteTorrentCartOrderCandidates(long orderId)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM TorrentCartOrderCandidates WHERE OrderId = $OrderId;";
+        command.Parameters.AddWithValue("$OrderId", orderId);
+        return command.ExecuteNonQuery();
+    }
+
+    public IReadOnlyList<TorrentCartOrderCandidate> GetTorrentCartOrderCandidates(long orderId)
+    {
+        var candidates = new List<TorrentCartOrderCandidate>();
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT Id, OrderId, Rank, IsSelected, IsAccepted, Name, Url, PluginName, FileSize, Seeders, Leechers,
+                   Quality, AudioCodec, CoveredSeasons, TotalScore
+            FROM TorrentCartOrderCandidates
+            WHERE OrderId = $OrderId
+            ORDER BY Rank, Id;
+            """;
+        command.Parameters.AddWithValue("$OrderId", orderId);
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            candidates.Add(ReadTorrentCartOrderCandidate(reader));
+        }
+
+        return candidates;
+    }
+
+    public void ReplaceTorrentCartOrderCandidates(long orderId, IReadOnlyList<TorrentCartOrderCandidate> candidates)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var transaction = connection.BeginTransaction();
+
+        using var delete = connection.CreateCommand();
+        delete.Transaction = transaction;
+        delete.CommandText = "DELETE FROM TorrentCartOrderCandidates WHERE OrderId = $OrderId;";
+        delete.Parameters.AddWithValue("$OrderId", orderId);
+        delete.ExecuteNonQuery();
+
+        foreach (var candidate in candidates.Select((candidate, index) => (Candidate: candidate, Index: index)))
+        {
+            using var insert = connection.CreateCommand();
+            insert.Transaction = transaction;
+            insert.CommandText = """
+                INSERT INTO TorrentCartOrderCandidates (
+                    OrderId, Rank, IsSelected, IsAccepted, Name, Url, PluginName, FileSize, Seeders, Leechers,
+                    Quality, AudioCodec, CoveredSeasons, TotalScore)
+                VALUES (
+                    $OrderId, $Rank, $IsSelected, $IsAccepted, $Name, $Url, $PluginName, $FileSize, $Seeders, $Leechers,
+                    $Quality, $AudioCodec, $CoveredSeasons, $TotalScore);
+                """;
+            AddTorrentCartOrderCandidateParameters(insert, orderId, candidate.Candidate, candidate.Index);
+            insert.ExecuteNonQuery();
+        }
+
+        transaction.Commit();
+    }
+
+    public void UpdateTorrentCartOrderCandidateSelection(long orderId, long candidateId)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE TorrentCartOrderCandidates
+            SET IsSelected = CASE WHEN Id = $CandidateId THEN 1 ELSE 0 END
+            WHERE OrderId = $OrderId;
+            """;
+        command.Parameters.AddWithValue("$OrderId", orderId);
+        command.Parameters.AddWithValue("$CandidateId", candidateId);
+        command.ExecuteNonQuery();
+    }
+
+    public void UpdateTorrentCartOrderCandidateAccepted(long orderId, long candidateId, bool isAccepted)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE TorrentCartOrderCandidates
+            SET IsAccepted = CASE WHEN Id = $CandidateId THEN $IsAccepted ELSE 0 END
+            WHERE OrderId = $OrderId;
+            """;
+        command.Parameters.AddWithValue("$OrderId", orderId);
+        command.Parameters.AddWithValue("$CandidateId", candidateId);
+        command.Parameters.AddWithValue("$IsAccepted", isAccepted ? 1 : 0);
+        command.ExecuteNonQuery();
+    }
+
     public void ClearSelectedEpisodeCandidates()
     {
         using var connection = new SqliteConnection(_connectionString);
@@ -1616,6 +1910,79 @@ public sealed class DatabaseService : IDatabaseService
         EnsureColumn(connection, "FetchJobs", "TargetKind", "INTEGER NOT NULL DEFAULT 1");
     }
 
+    private static void InitializeTorrentCartOrders(SqliteConnection connection)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            CREATE TABLE IF NOT EXISTS TorrentCartOrders (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                TargetKind INTEGER NOT NULL,
+                MediaId INTEGER NOT NULL,
+                EpisodeId INTEGER NULL,
+                SeasonNumber INTEGER NULL,
+                EpisodeNumber INTEGER NULL,
+                Title TEXT NOT NULL,
+                Summary TEXT NOT NULL,
+                Status INTEGER NOT NULL,
+                StatusDetail TEXT NOT NULL DEFAULT '',
+                SelectedCandidateName TEXT NOT NULL DEFAULT '',
+                SelectedCandidateUrl TEXT NOT NULL DEFAULT '',
+                SelectedCandidatePlugin TEXT NOT NULL DEFAULT '',
+                SelectedCandidateFileSize INTEGER NOT NULL DEFAULT 0,
+                SelectedCandidateSeeders INTEGER NOT NULL DEFAULT 0,
+                SelectedCandidateLeechers INTEGER NOT NULL DEFAULT 0,
+                SelectedCandidateQuality TEXT NOT NULL DEFAULT '',
+                SelectedCandidateAudioCodec TEXT NOT NULL DEFAULT '',
+                SelectedCandidateCoveredSeasons TEXT NOT NULL DEFAULT '',
+                SelectedCandidateTotalScore INTEGER NOT NULL DEFAULT 0,
+                TorrentHash TEXT NOT NULL DEFAULT '',
+                TorrentName TEXT NOT NULL DEFAULT '',
+                TorrentState TEXT NOT NULL DEFAULT '',
+                TorrentProgress REAL NOT NULL DEFAULT 0,
+                CreatedUtc TEXT NOT NULL,
+                UpdatedUtc TEXT NOT NULL
+            );
+            """;
+        command.ExecuteNonQuery();
+        EnsureColumn(connection, "TorrentCartOrders", "SelectedCandidateLeechers", "INTEGER NOT NULL DEFAULT 0");
+        EnsureColumn(connection, "TorrentCartOrders", "SelectedCandidateCoveredSeasons", "TEXT NOT NULL DEFAULT ''");
+        EnsureColumn(connection, "TorrentCartOrders", "SelectedCandidateTotalScore", "INTEGER NOT NULL DEFAULT 0");
+        EnsureColumn(connection, "TorrentCartOrders", "TorrentHash", "TEXT NOT NULL DEFAULT ''");
+        EnsureColumn(connection, "TorrentCartOrders", "TorrentName", "TEXT NOT NULL DEFAULT ''");
+        EnsureColumn(connection, "TorrentCartOrders", "TorrentState", "TEXT NOT NULL DEFAULT ''");
+        EnsureColumn(connection, "TorrentCartOrders", "TorrentProgress", "REAL NOT NULL DEFAULT 0");
+        EnsureColumn(connection, "TorrentCartOrders", "CreatedUtc", "TEXT NOT NULL DEFAULT '1970-01-01T00:00:00.0000000Z'");
+        EnsureColumn(connection, "TorrentCartOrders", "UpdatedUtc", "TEXT NOT NULL DEFAULT '1970-01-01T00:00:00.0000000Z'");
+    }
+
+    private static void InitializeTorrentCartOrderCandidates(SqliteConnection connection)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            CREATE TABLE IF NOT EXISTS TorrentCartOrderCandidates (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                OrderId INTEGER NOT NULL,
+                Rank INTEGER NOT NULL DEFAULT 0,
+                IsSelected INTEGER NOT NULL DEFAULT 0,
+                IsAccepted INTEGER NOT NULL DEFAULT 0,
+                Name TEXT NOT NULL DEFAULT '',
+                Url TEXT NOT NULL DEFAULT '',
+                PluginName TEXT NOT NULL DEFAULT '',
+                FileSize INTEGER NOT NULL DEFAULT 0,
+                Seeders INTEGER NOT NULL DEFAULT 0,
+                Leechers INTEGER NOT NULL DEFAULT 0,
+                Quality TEXT NOT NULL DEFAULT '',
+                AudioCodec TEXT NOT NULL DEFAULT '',
+                CoveredSeasons TEXT NOT NULL DEFAULT '',
+                TotalScore INTEGER NOT NULL DEFAULT 0
+            );
+            """;
+        command.ExecuteNonQuery();
+        EnsureColumn(connection, "TorrentCartOrderCandidates", "IsAccepted", "INTEGER NOT NULL DEFAULT 0");
+        EnsureColumn(connection, "TorrentCartOrderCandidates", "CoveredSeasons", "TEXT NOT NULL DEFAULT ''");
+        EnsureColumn(connection, "TorrentCartOrderCandidates", "TotalScore", "INTEGER NOT NULL DEFAULT 0");
+    }
+
     private TrackedShow? GetTrackedShowCore(string whereClause, object value)
     {
         using var connection = new SqliteConnection(_connectionString);
@@ -1797,6 +2164,57 @@ public sealed class DatabaseService : IDatabaseService
         command.Parameters.AddWithValue("$FinishedUtc", (object?)job.FinishedUtc?.ToString("O") ?? DBNull.Value);
     }
 
+    private static void AddTorrentCartOrderParameters(SqliteCommand command, TorrentCartOrder order)
+    {
+        command.Parameters.AddWithValue("$TargetKind", (int)order.TargetKind);
+        command.Parameters.AddWithValue("$MediaId", order.MediaId);
+        command.Parameters.AddWithValue("$EpisodeId", (object?)order.EpisodeId ?? DBNull.Value);
+        command.Parameters.AddWithValue("$SeasonNumber", (object?)order.SeasonNumber ?? DBNull.Value);
+        command.Parameters.AddWithValue("$EpisodeNumber", (object?)order.EpisodeNumber ?? DBNull.Value);
+        command.Parameters.AddWithValue("$Title", order.Title);
+        command.Parameters.AddWithValue("$Summary", order.Summary);
+        command.Parameters.AddWithValue("$Status", (int)order.Status);
+        command.Parameters.AddWithValue("$StatusDetail", order.StatusDetail);
+        command.Parameters.AddWithValue("$SelectedCandidateName", order.SelectedCandidateName);
+        command.Parameters.AddWithValue("$SelectedCandidateUrl", order.SelectedCandidateUrl);
+        command.Parameters.AddWithValue("$SelectedCandidatePlugin", order.SelectedCandidatePlugin);
+        command.Parameters.AddWithValue("$SelectedCandidateFileSize", order.SelectedCandidateFileSize);
+        command.Parameters.AddWithValue("$SelectedCandidateSeeders", order.SelectedCandidateSeeders);
+        command.Parameters.AddWithValue("$SelectedCandidateLeechers", order.SelectedCandidateLeechers);
+        command.Parameters.AddWithValue("$SelectedCandidateQuality", order.SelectedCandidateQuality);
+        command.Parameters.AddWithValue("$SelectedCandidateAudioCodec", order.SelectedCandidateAudioCodec);
+        command.Parameters.AddWithValue("$SelectedCandidateCoveredSeasons", order.SelectedCandidateCoveredSeasons);
+        command.Parameters.AddWithValue("$SelectedCandidateTotalScore", order.SelectedCandidateTotalScore);
+        command.Parameters.AddWithValue("$TorrentHash", order.TorrentHash);
+        command.Parameters.AddWithValue("$TorrentName", order.TorrentName);
+        command.Parameters.AddWithValue("$TorrentState", order.TorrentState);
+        command.Parameters.AddWithValue("$TorrentProgress", Math.Clamp(order.TorrentProgress, 0, 1));
+        command.Parameters.AddWithValue("$CreatedUtc", (order.CreatedUtc == default ? DateTime.UtcNow : order.CreatedUtc).ToString("O"));
+        command.Parameters.AddWithValue("$UpdatedUtc", order.UpdatedUtc.ToString("O"));
+    }
+
+    private static void AddTorrentCartOrderCandidateParameters(
+        SqliteCommand command,
+        long orderId,
+        TorrentCartOrderCandidate candidate,
+        int index)
+    {
+        command.Parameters.AddWithValue("$OrderId", orderId);
+        command.Parameters.AddWithValue("$Rank", candidate.Rank <= 0 ? index + 1 : candidate.Rank);
+        command.Parameters.AddWithValue("$IsSelected", candidate.IsSelected ? 1 : 0);
+        command.Parameters.AddWithValue("$IsAccepted", candidate.IsAccepted ? 1 : 0);
+        command.Parameters.AddWithValue("$Name", candidate.Name);
+        command.Parameters.AddWithValue("$Url", candidate.Url);
+        command.Parameters.AddWithValue("$PluginName", candidate.PluginName);
+        command.Parameters.AddWithValue("$FileSize", candidate.FileSize);
+        command.Parameters.AddWithValue("$Seeders", candidate.Seeders);
+        command.Parameters.AddWithValue("$Leechers", candidate.Leechers);
+        command.Parameters.AddWithValue("$Quality", candidate.Quality);
+        command.Parameters.AddWithValue("$AudioCodec", candidate.AudioCodec);
+        command.Parameters.AddWithValue("$CoveredSeasons", candidate.CoveredSeasons);
+        command.Parameters.AddWithValue("$TotalScore", candidate.TotalScore);
+    }
+
     private static FetchJob ReadFetchJob(SqliteDataReader reader)
     {
         return new FetchJob
@@ -1812,6 +2230,61 @@ public sealed class DatabaseService : IDatabaseService
             CreatedUtc = DateTime.Parse(reader.GetString(8), null, System.Globalization.DateTimeStyles.RoundtripKind),
             StartedUtc = reader.IsDBNull(9) ? null : DateTime.Parse(reader.GetString(9), null, System.Globalization.DateTimeStyles.RoundtripKind),
             FinishedUtc = reader.IsDBNull(10) ? null : DateTime.Parse(reader.GetString(10), null, System.Globalization.DateTimeStyles.RoundtripKind)
+        };
+    }
+
+    private static TorrentCartOrder ReadTorrentCartOrder(SqliteDataReader reader)
+    {
+        return new TorrentCartOrder
+        {
+            Id = reader.GetInt64(0),
+            TargetKind = (MediaKind)reader.GetInt32(1),
+            MediaId = reader.GetInt64(2),
+            EpisodeId = reader.IsDBNull(3) ? null : reader.GetInt64(3),
+            SeasonNumber = reader.IsDBNull(4) ? null : reader.GetInt32(4),
+            EpisodeNumber = reader.IsDBNull(5) ? null : reader.GetInt32(5),
+            Title = reader.GetString(6),
+            Summary = reader.GetString(7),
+            Status = (TorrentOrderStatus)reader.GetInt32(8),
+            StatusDetail = reader.GetString(9),
+            SelectedCandidateName = reader.GetString(10),
+            SelectedCandidateUrl = reader.GetString(11),
+            SelectedCandidatePlugin = reader.GetString(12),
+            SelectedCandidateFileSize = reader.GetInt64(13),
+            SelectedCandidateSeeders = reader.GetInt32(14),
+            SelectedCandidateLeechers = reader.GetInt32(15),
+            SelectedCandidateQuality = reader.GetString(16),
+            SelectedCandidateAudioCodec = reader.GetString(17),
+            SelectedCandidateCoveredSeasons = reader.GetString(18),
+            SelectedCandidateTotalScore = reader.GetInt32(19),
+            TorrentHash = reader.GetString(20),
+            TorrentName = reader.GetString(21),
+            TorrentState = reader.GetString(22),
+            TorrentProgress = reader.GetDouble(23),
+            CreatedUtc = DateTime.Parse(reader.GetString(24), null, System.Globalization.DateTimeStyles.RoundtripKind),
+            UpdatedUtc = DateTime.Parse(reader.GetString(25), null, System.Globalization.DateTimeStyles.RoundtripKind)
+        };
+    }
+
+    private static TorrentCartOrderCandidate ReadTorrentCartOrderCandidate(SqliteDataReader reader)
+    {
+        return new TorrentCartOrderCandidate
+        {
+            Id = reader.GetInt64(0),
+            OrderId = reader.GetInt64(1),
+            Rank = reader.GetInt32(2),
+            IsSelected = reader.GetInt32(3) == 1,
+            IsAccepted = reader.GetInt32(4) == 1,
+            Name = reader.GetString(5),
+            Url = reader.GetString(6),
+            PluginName = reader.GetString(7),
+            FileSize = reader.GetInt64(8),
+            Seeders = reader.GetInt32(9),
+            Leechers = reader.GetInt32(10),
+            Quality = reader.GetString(11),
+            AudioCodec = reader.GetString(12),
+            CoveredSeasons = reader.GetString(13),
+            TotalScore = reader.GetInt32(14)
         };
     }
 

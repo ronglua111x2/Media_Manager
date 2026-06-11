@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using media_management_app.Common;
 using media_management_app.Models;
 
@@ -116,6 +117,38 @@ public sealed class FetchJobService : IFetchJobService
             candidates = [];
             return false;
         }
+    }
+
+    public async Task<IReadOnlyDictionary<long, IReadOnlyList<EpisodeFetchCandidate>>> FetchEpisodeCandidatesAsync(
+        long showId,
+        IReadOnlyList<long> episodeIds,
+        string? recipeId = null,
+        Action<long, string>? statusChanged = null,
+        CancellationToken cancellationToken = default)
+    {
+        var show = _databaseService.GetTrackedShow(showId) ?? throw new InvalidOperationException("Tracked show was not found.");
+        var requestedEpisodeIds = episodeIds.Distinct().ToHashSet();
+        var targetEpisodes = _databaseService.GetTrackedEpisodes(showId)
+            .Where(episode => requestedEpisodeIds.Contains(episode.Id))
+            .OrderBy(episode => episode.SeasonNumber)
+            .ThenBy(episode => episode.EpisodeNumber)
+            .ToList();
+        if (targetEpisodes.Count == 0)
+        {
+            return new Dictionary<long, IReadOnlyList<EpisodeFetchCandidate>>();
+        }
+
+        ClearEpisodeCandidateCache(targetEpisodes);
+        var recipe = _recipeService.GetRecipeOrDefault(recipeId ?? show.RecipeId, MediaKind.TvEpisode);
+        var useSnapshot = RecipeRuntimeSettings.GetUseShowSnapshotSearch(recipe, _settingsService.Current.AutoTorrent);
+        var mode = useSnapshot ? "Show snapshot search" : "Parallel episode search";
+        _logger.Info(
+            $"Cart episode run for {show.DisplayTitle}. Recipe='{recipe.Name}', Mode='{mode}', Orders={targetEpisodes.Count}.",
+            LogTarget.All);
+
+        return useSnapshot
+            ? await FetchEpisodeCandidatesSnapshotAsync(show, targetEpisodes, recipe, statusChanged, cancellationToken)
+            : await FetchEpisodeCandidatesParallelAsync(show, targetEpisodes, recipe, statusChanged, cancellationToken);
     }
 
     public async Task FetchSeasonPacksAsync(long showId, IReadOnlyList<int> seasonNumbers, CancellationToken cancellationToken = default)
@@ -433,6 +466,160 @@ public sealed class FetchJobService : IFetchJobService
             .ToList();
 
         await Task.WhenAll(workers);
+    }
+
+    private async Task<IReadOnlyDictionary<long, IReadOnlyList<EpisodeFetchCandidate>>> FetchEpisodeCandidatesParallelAsync(
+        TrackedShow show,
+        IReadOnlyList<TrackedEpisode> targetEpisodes,
+        SearchRecipe recipe,
+        Action<long, string>? statusChanged,
+        CancellationToken cancellationToken)
+    {
+        var parallelSearches = Math.Min(
+            RecipeRuntimeSettings.GetParallelSearchCount(recipe, _settingsService.Current.AutoTorrent),
+            Math.Max(targetEpisodes.Count, 1));
+        var nextIndex = 0;
+        var results = new Dictionary<long, IReadOnlyList<EpisodeFetchCandidate>>();
+        var resultGate = new object();
+
+        async Task RunWorkerAsync(int workerId)
+        {
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var index = Interlocked.Increment(ref nextIndex) - 1;
+                if (index >= targetEpisodes.Count)
+                {
+                    return;
+                }
+
+                var episode = targetEpisodes[index];
+                var label = $"{show.DisplayTitle} S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00}";
+                statusChanged?.Invoke(episode.Id, $"Searching {label} with {recipe.Name} (parallel worker {workerId}).");
+                _logger.Info($"Cart parallel worker {workerId} searching {label} with recipe '{recipe.Name}'.", LogTarget.All);
+
+                var queries = _searchPlanBuilder.BuildEpisodeQueries(recipe, show, episode).ToList();
+                var searchSummary = await SearchEpisodeCandidatesSequentialAsync(recipe, episode, show, queries, cancellationToken);
+                lock (_gate)
+                {
+                    _candidatesByEpisodeId[episode.Id] = searchSummary.Candidates;
+                }
+
+                lock (resultGate)
+                {
+                    results[episode.Id] = searchSummary.Candidates;
+                }
+
+                var detail = searchSummary.Candidates.Count == 0
+                    ? $"No candidates found for {label}."
+                    : $"Found {searchSummary.Candidates.Count} candidate(s) for {label}.";
+                statusChanged?.Invoke(episode.Id, detail);
+                _logger.Info(
+                    $"Cart parallel search finished {label}. RawResults={searchSummary.SearchResults.Count}, Candidates={searchSummary.Candidates.Count}.",
+                    LogTarget.All);
+                CandidatesChanged?.Invoke(this, EventArgs.Empty);
+                await Task.Yield();
+            }
+        }
+
+        var workers = Enumerable.Range(1, parallelSearches)
+            .Select(RunWorkerAsync)
+            .ToList();
+        await Task.WhenAll(workers);
+        return results;
+    }
+
+    private async Task<IReadOnlyDictionary<long, IReadOnlyList<EpisodeFetchCandidate>>> FetchEpisodeCandidatesSnapshotAsync(
+        TrackedShow show,
+        IReadOnlyList<TrackedEpisode> targetEpisodes,
+        SearchRecipe recipe,
+        Action<long, string>? statusChanged,
+        CancellationToken cancellationToken)
+    {
+        foreach (var episode in targetEpisodes)
+        {
+            statusChanged?.Invoke(
+                episode.Id,
+                $"Searching snapshot for {show.DisplayTitle} S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00} with {recipe.Name}.");
+        }
+
+        _logger.Info(
+            $"Cart snapshot search started for {show.DisplayTitle}. Recipe='{recipe.Name}', Orders={targetEpisodes.Count}, TargetResults={RecipeRuntimeSettings.GetSnapshotTargetResults(recipe, _settingsService.Current.AutoTorrent)}, TimeoutSeconds={RecipeRuntimeSettings.GetSnapshotTimeoutSeconds(recipe, _settingsService.Current.AutoTorrent)}, LocalWorkers={RecipeRuntimeSettings.GetLocalMatchWorkers(recipe, _settingsService.Current.AutoTorrent)}.",
+            LogTarget.All);
+
+        var snapshotResults = await _snapshotService.CaptureSnapshotAsync(show, _progressService, cancellationToken);
+        var snapshotCandidates = snapshotResults
+            .Select(result => new SnapshotCandidate
+            {
+                Result = result,
+                Parsed = TorrentCandidateParser.Parse(result.FileName)
+            })
+            .ToList();
+        var matcher = new SnapshotCandidateMatcher();
+        var selectedQualities = ParseQualities(show.PreferredQuality);
+        var workerCount = Math.Min(
+            RecipeRuntimeSettings.GetLocalMatchWorkers(recipe, _settingsService.Current.AutoTorrent),
+            Math.Max(targetEpisodes.Count, 1));
+        var nextIndex = 0;
+        var results = new Dictionary<long, IReadOnlyList<EpisodeFetchCandidate>>();
+        var resultGate = new object();
+        var cartJob = new FetchJob { Id = 0, ShowId = show.Id, ShowTitle = show.DisplayTitle, TargetKind = MediaKind.TvEpisode };
+
+        foreach (var episode in targetEpisodes)
+        {
+            statusChanged?.Invoke(
+                episode.Id,
+                $"Matching snapshot for {show.DisplayTitle} S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00}.");
+        }
+
+        async Task RunWorkerAsync(int workerId)
+        {
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var index = Interlocked.Increment(ref nextIndex) - 1;
+                if (index >= targetEpisodes.Count)
+                {
+                    return;
+                }
+
+                var episode = targetEpisodes[index];
+                var label = $"{show.DisplayTitle} S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00}";
+                statusChanged?.Invoke(episode.Id, $"Matching {label} from snapshot (worker {workerId}).");
+                var candidates = await MapSnapshotCandidatesAsync(
+                    show,
+                    episode,
+                    snapshotCandidates,
+                    matcher,
+                    selectedQualities,
+                    cartJob,
+                    cancellationToken,
+                    recipe);
+
+                lock (_gate)
+                {
+                    _candidatesByEpisodeId[episode.Id] = candidates;
+                }
+
+                lock (resultGate)
+                {
+                    results[episode.Id] = candidates;
+                }
+
+                var detail = candidates.Count == 0
+                    ? $"No snapshot match found for {label}."
+                    : $"Matched {candidates.Count} candidate(s) for {label}.";
+                statusChanged?.Invoke(episode.Id, detail);
+                CandidatesChanged?.Invoke(this, EventArgs.Empty);
+                await Task.Yield();
+            }
+        }
+
+        var workers = Enumerable.Range(1, workerCount)
+            .Select(RunWorkerAsync)
+            .ToList();
+        await Task.WhenAll(workers);
+        return results;
     }
 
     private async Task ProcessShowJobSnapshotAsync(
@@ -770,6 +957,15 @@ public sealed class FetchJobService : IFetchJobService
             }
         }
 
+        if (RecipeRuntimeSettings.GetDeduplicateCandidates(recipe, _settingsService.Current.AutoTorrent))
+        {
+            var autoTorrent = _settingsService.Current.AutoTorrent;
+            matchedCandidates = DeduplicateEpisodeCandidates(
+                matchedCandidates,
+                RecipeRuntimeSettings.GetFuzzyDeduplicate(recipe, autoTorrent),
+                RecipeRuntimeSettings.GetFuzzyDeduplicateSizeToleranceMb(recipe, autoTorrent));
+        }
+
         var candidates = matchedCandidates
             .OrderByDescending(entry => entry.Match.QualityScore)
             .ThenByDescending(entry => entry.Match.AudioScore)
@@ -1062,7 +1258,8 @@ public sealed class FetchJobService : IFetchJobService
         SnapshotCandidateMatcher matcher,
         IReadOnlyList<string> selectedQualities,
         FetchJob job,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        SearchRecipe? recipeOverride = null)
     {
         var matchedCandidates = new List<(EpisodeFetchCandidate Candidate, SnapshotMatchResult Match)>();
         foreach (var candidate in snapshotCandidates)
@@ -1096,15 +1293,24 @@ public sealed class FetchJobService : IFetchJobService
             matchedCandidates.Add((episodeCandidate, match));
         }
 
+        var recipe = recipeOverride ?? _recipeService.GetRecipeOrDefault(show.RecipeId, MediaKind.TvEpisode);
+        var maxCandidates = RecipeRuntimeSettings.GetMaxCandidatesPerFetch(recipe, _settingsService.Current.AutoTorrent);
+        if (RecipeRuntimeSettings.GetDeduplicateCandidates(recipe, _settingsService.Current.AutoTorrent))
+        {
+            var autoTorrent = _settingsService.Current.AutoTorrent;
+            matchedCandidates = DeduplicateEpisodeCandidates(
+                matchedCandidates,
+                RecipeRuntimeSettings.GetFuzzyDeduplicate(recipe, autoTorrent),
+                RecipeRuntimeSettings.GetFuzzyDeduplicateSizeToleranceMb(recipe, autoTorrent));
+        }
+
         var finalCandidates = matchedCandidates
             .OrderByDescending(entry => entry.Match.QualityScore)
             .ThenByDescending(entry => entry.Match.AudioScore)
             .ThenByDescending(entry => entry.Candidate.Seeders)
             .ThenByDescending(entry => entry.Match.IdentityScore)
             .ThenByDescending(entry => entry.Match.EpisodeScore)
-            .Take(RecipeRuntimeSettings.GetMaxCandidatesPerFetch(
-                _recipeService.GetRecipeOrDefault(show.RecipeId, MediaKind.TvEpisode),
-                _settingsService.Current.AutoTorrent))
+            .Take(maxCandidates)
             .Select(entry => entry.Candidate)
             .ToList();
 
@@ -1308,6 +1514,46 @@ public sealed class FetchJobService : IFetchJobService
                 _settingsService.Current.AutoTorrent))
             .Select(entry => entry.Candidate)
             .ToList();
+    }
+
+    private static List<(EpisodeFetchCandidate Candidate, TMatch Match)> DeduplicateEpisodeCandidates<TMatch>(
+        List<(EpisodeFetchCandidate Candidate, TMatch Match)> candidates,
+        bool fuzzy,
+        int sizeToleranceMb)
+    {
+        var result = candidates
+            .GroupBy(entry => entry.Candidate.FileUrl, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.OrderByDescending(entry => entry.Candidate.Seeders).First())
+            .ToList();
+
+        if (!fuzzy)
+        {
+            return result;
+        }
+
+        return result
+            .GroupBy(entry => (
+                NormalizeFileName(entry.Candidate.FileName),
+                SizeBucket(entry.Candidate.FileSize, sizeToleranceMb)))
+            .Select(group => group.OrderByDescending(entry => entry.Candidate.Seeders).First())
+            .ToList();
+    }
+
+    private static string NormalizeFileName(string name)
+    {
+        name = Regex.Replace(name, @"\([^)]*\)|\[[^\]]*\]", " ");
+        return Regex.Replace(name.ToLowerInvariant().Trim(), @"\s+", " ");
+    }
+
+    private static long SizeBucket(long bytes, int toleranceMb)
+    {
+        if (toleranceMb <= 0)
+        {
+            return bytes;
+        }
+
+        var bucketBytes = 1024L * 1024L * toleranceMb;
+        return bytes / bucketBytes;
     }
 
     private static EpisodeFetchCandidate ToCandidate(

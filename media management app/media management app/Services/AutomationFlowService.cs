@@ -200,17 +200,16 @@ public sealed class AutomationFlowService : IAutomationFlowService
 
     private AddTorrentRequest CreateAddTorrentRequest(SearchRecipe recipe, TorrentSearchResult result, string? itemSavePath)
     {
-        var addModule = recipe.Modules.FirstOrDefault(module => module.BlockType == RecipeBlockType.AddTorrent && module.IsEnabled);
-        var savePath = FirstNonEmpty(itemSavePath, addModule?.SavePath, _settingsService.Current.AutoTorrent.DownloadFolder, _settingsService.Current.SourceFolders.FirstOrDefault());
-        var category = FirstNonEmpty(addModule?.TorrentCategory, _settingsService.Current.AutoTorrent.CategoryName, "AutoTorrent");
+        var savePath = FirstNonEmpty(itemSavePath, _settingsService.Current.AutoTorrent.DownloadFolder, _settingsService.Current.SourceFolders.FirstOrDefault());
+        var category = FirstNonEmpty(_settingsService.Current.AutoTorrent.CategoryName, "AutoTorrent");
         return new AddTorrentRequest
         {
             Url = result.FileUrl,
             PluginName = result.EngineName,
             SavePath = savePath,
             Category = category,
-            Tags = addModule?.Tags ?? string.Empty,
-            Paused = addModule?.Paused ?? false
+            Tags = "media-manager",
+            Paused = false
         };
     }
 

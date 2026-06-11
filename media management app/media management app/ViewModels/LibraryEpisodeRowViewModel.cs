@@ -15,6 +15,7 @@ public sealed partial class LibraryEpisodeRowViewModel : ObservableObject
         Title = episode.Title;
         AirDateDisplay = episode.AirDateDisplay;
         Availability = episode.Availability;
+        TorrentHash = episode.TorrentHash ?? string.Empty;
     }
 
     public long Id { get; }
@@ -35,11 +36,20 @@ public sealed partial class LibraryEpisodeRowViewModel : ObservableObject
 
     public bool IsAvailable => Availability == EpisodeAvailability.Available;
 
-    public bool CanAddToCart => !IsAvailable && !IsInCart;
+    public string TorrentHash { get; }
+
+    public bool CanAddToCart => !IsSeasonPackMode && !IsAvailable && !IsInCart;
+
+    public bool CanLink => !IsSeasonPackMode && !string.IsNullOrWhiteSpace(TorrentHash);
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanAddToCart))]
     private bool isInCart;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanAddToCart))]
+    [NotifyPropertyChangedFor(nameof(CanLink))]
+    private bool isSeasonPackMode;
 
     public string AvailabilityLabel => IsAvailable ? "Available" : "Missing";
 

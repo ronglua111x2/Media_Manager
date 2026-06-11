@@ -20,6 +20,8 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
     private readonly IDatabaseService _databaseService;
     private readonly IRecipeService _recipeService;
     private readonly IQbittorrentClient _qbittorrentClient;
+    private readonly ISettingsService _settingsService;
+    private readonly IAppLogger _logger;
 
     private IReadOnlyList<LibraryMediaCardViewModel> _allMediaCards = [];
     private bool _isLoadingRecipeAssignment;
@@ -35,7 +37,9 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         IFetchJobService fetchJobService,
         IDatabaseService databaseService,
         IRecipeService recipeService,
-        IQbittorrentClient qbittorrentClient)
+        IQbittorrentClient qbittorrentClient,
+        ISettingsService settingsService,
+        IAppLogger logger)
     {
         _trackedShowService = trackedShowService;
         _trackedMovieService = trackedMovieService;
@@ -47,6 +51,8 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         _databaseService = databaseService;
         _recipeService = recipeService;
         _qbittorrentClient = qbittorrentClient;
+        _settingsService = settingsService;
+        _logger = logger;
 
         _torrentCartService.CartChanged += (_, _) => OnCartChanged();
         _recipeService.RecipesChanged += (_, _) => LoadRecipeAssignment(SelectedMediaCard);
@@ -97,6 +103,12 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
 
     public bool HasOrders => Orders.Count > 0;
 
+    public bool HasAddableOrders => Orders.Any(order => order.CanAddToClient);
+
+    public bool HasAcceptableCandidates => Orders.Any(order => order.CanAccept);
+
+    public bool HasCandidatesInCart => Orders.Any(order => order.HasCandidates);
+
     public bool IsDateSortSelected => MediaSortMode == MediaCardSortMode.DateAddedDesc;
 
     public bool IsTypeSortSelected => MediaSortMode == MediaCardSortMode.TypeThenTitle;
@@ -132,6 +144,8 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         OnPropertyChanged(nameof(HasMedia));
         OnPropertyChanged(nameof(HasAnyCartOrders));
         ClearAllCartsCommand.NotifyCanExecuteChanged();
+        ClearCandidatesCommand.NotifyCanExecuteChanged();
+        AcceptAllCandidatesCommand.NotifyCanExecuteChanged();
         StatusMessage = MediaCards.Count == 0
             ? "No media in library. Add items from Find/Add, then build carts from Library."
             : $"Loaded {MediaCards.Count} media item(s).";
@@ -183,13 +197,18 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
             return;
         }
 
+        _torrentCartService.ClearCandidates(
+            SelectedMediaCard.MediaKind,
+            SelectedMediaCard.Id,
+            orders.Select(order => order.Id));
+
         _runCartCts?.Cancel();
         _runCartCts?.Dispose();
         _runCartCts = new CancellationTokenSource();
         var cancellationToken = _runCartCts.Token;
 
         IsRunningCart = true;
-        var addedCount = 0;
+        var candidateCount = 0;
         var noCandidateCount = 0;
         var failedCount = 0;
         var canceledCount = 0;
@@ -197,7 +216,19 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
 
         try
         {
-            foreach (var order in orders)
+            var episodeOrders = orders
+                .Where(order => order.TargetKind == MediaKind.TvEpisode && order.EpisodeId is not null)
+                .ToList();
+            if (episodeOrders.Count > 0)
+            {
+                var episodeResult = await SearchEpisodeOrdersAsync(episodeOrders, cancellationToken);
+                candidateCount += episodeResult.CandidateCount;
+                noCandidateCount += episodeResult.NoCandidateCount;
+                failedCount += episodeResult.FailedCount;
+            }
+
+            var episodeOrderIds = episodeOrders.Select(order => order.Id).ToHashSet();
+            foreach (var order in orders.Where(order => !episodeOrderIds.Contains(order.Id)))
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var recipeLabel = order.EpisodeId is null && order.SeasonNumber is not null
@@ -208,7 +239,7 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
                 _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.Searching, $"Searching with recipe: {recipeLabel}");
                 try
                 {
-                    var result = await RunOrderAsync(order, cancellationToken);
+                    var result = await SearchOrderAsync(order, cancellationToken);
                     if (result.NoCandidates)
                     {
                         noCandidateCount++;
@@ -216,11 +247,8 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
                         continue;
                     }
 
-                    addedCount++;
-                    _torrentCartService.UpdateOrderStatus(
-                        order.Id,
-                        TorrentOrderStatus.AddedToClient,
-                        result.Detail);
+                    candidateCount++;
+                    _torrentCartService.ReplaceCandidates(result.Order.Id, result.Candidates);
                 }
                 catch (OperationCanceledException)
                 {
@@ -244,12 +272,12 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
             {
                 _trackedShowService.RefreshAvailability();
                 _trackedMovieService.RefreshAvailability();
-                finalStatus = $"Run complete. Added={addedCount}, No candidates={noCandidateCount}, Failed={failedCount}.";
+                finalStatus = $"Search complete. Candidates={candidateCount}, No candidates={noCandidateCount}, Failed={failedCount}.";
             }
             else
             {
                 finalStatus = canceledCount > 0
-                    ? $"Cart run stopped. Added={addedCount}, Canceled={canceledCount}, Failed={failedCount}."
+                    ? $"Cart run stopped. Candidates={candidateCount}, Canceled={canceledCount}, Failed={failedCount}."
                     : "Cart run stopped.";
             }
         }
@@ -283,6 +311,71 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         StatusMessage = "Stopping cart run...";
     }
 
+    [RelayCommand(CanExecute = nameof(CanAddCart))]
+    private async Task AddCart()
+    {
+        if (SelectedMediaCard is null)
+        {
+            return;
+        }
+
+        var orders = _torrentCartService.GetOrders(SelectedMediaCard.MediaKind, SelectedMediaCard.Id)
+            .Where(order => order.HasSelectedCandidate &&
+                            order.Status == TorrentOrderStatus.Approved)
+            .ToList();
+        if (orders.Count == 0)
+        {
+            StatusMessage = "No approved candidates are ready to add.";
+            return;
+        }
+
+        IsRunningCart = true;
+        var addedCount = 0;
+        var failedCount = 0;
+        try
+        {
+            foreach (var order in orders)
+            {
+                try
+                {
+                    await AddOrderToClientAsync(order);
+                    addedCount++;
+                }
+                catch (Exception ex)
+                {
+                    failedCount++;
+                    _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.Failed, ex.Message);
+                }
+            }
+
+            _trackedShowService.RefreshAvailability();
+            _trackedMovieService.RefreshAvailability();
+            StatusMessage = $"Add complete. Added={addedCount}, Failed={failedCount}.";
+        }
+        finally
+        {
+            IsRunningCart = false;
+            if (SelectedMediaCard is not null)
+            {
+                await LoadSelectedCartAsync(SelectedMediaCard);
+            }
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanAcceptAllCandidates))]
+    private void AcceptAllCandidates()
+    {
+        if (SelectedMediaCard is null)
+        {
+            return;
+        }
+
+        var accepted = _torrentCartService.AcceptSelectedCandidates(SelectedMediaCard.MediaKind, SelectedMediaCard.Id);
+        StatusMessage = accepted == 0
+            ? "No selected candidates to accept."
+            : $"Accepted {accepted} candidate(s).";
+    }
+
     [RelayCommand(CanExecute = nameof(HasOrders))]
     private void ClearCart()
     {
@@ -305,6 +398,30 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         StatusMessage = removed == 0
             ? $"{SelectedMediaCard.Title}'s cart is already empty."
             : $"Cleared {removed} order(s) from {SelectedMediaCard.Title}'s cart.";
+    }
+
+    [RelayCommand(CanExecute = nameof(HasCandidatesInCart))]
+    private void ClearCandidates()
+    {
+        if (SelectedMediaCard is null)
+        {
+            return;
+        }
+
+        var confirm = System.Windows.MessageBox.Show(
+            $"Clear all candidates in {SelectedMediaCard.Title}'s cart?",
+            "Clear Candidates",
+            System.Windows.MessageBoxButton.YesNo,
+            System.Windows.MessageBoxImage.Question);
+        if (confirm != System.Windows.MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        var cleared = _torrentCartService.ClearCandidates(SelectedMediaCard.MediaKind, SelectedMediaCard.Id);
+        StatusMessage = cleared == 0
+            ? $"{SelectedMediaCard.Title}'s cart has no candidates to clear."
+            : $"Cleared candidates from {cleared} order(s) in {SelectedMediaCard.Title}'s cart.";
     }
 
     [RelayCommand(CanExecute = nameof(HasAnyCartOrders))]
@@ -336,6 +453,18 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
 
         _torrentCartService.RemoveOrder(order.Id);
         StatusMessage = $"Removed order '{order.Title}'.";
+    }
+
+    private void SelectCandidate(long orderId, long candidateId)
+    {
+        _torrentCartService.SelectCandidate(orderId, candidateId);
+        StatusMessage = "Candidate selection updated.";
+    }
+
+    private void AcceptCandidate(long orderId)
+    {
+        _torrentCartService.AcceptSelectedCandidate(orderId);
+        StatusMessage = "Candidate accepted.";
     }
 
     [RelayCommand]
@@ -405,9 +534,12 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
     partial void OnIsRunningCartChanged(bool value)
     {
         RunCartCommand.NotifyCanExecuteChanged();
+        AddCartCommand.NotifyCanExecuteChanged();
         StopRunCartCommand.NotifyCanExecuteChanged();
         ClearCartCommand.NotifyCanExecuteChanged();
         ClearAllCartsCommand.NotifyCanExecuteChanged();
+        ClearCandidatesCommand.NotifyCanExecuteChanged();
+        AcceptAllCandidatesCommand.NotifyCanExecuteChanged();
     }
 
     private async Task LoadSelectedCartAsync(LibraryMediaCardViewModel? card)
@@ -445,27 +577,47 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
 
         OnPropertyChanged(nameof(HasAnyCartOrders));
         ClearAllCartsCommand.NotifyCanExecuteChanged();
+        ClearCandidatesCommand.NotifyCanExecuteChanged();
+        AcceptAllCandidatesCommand.NotifyCanExecuteChanged();
     }
 
     private void NotifyCartStateChanged()
     {
         OnPropertyChanged(nameof(HasOrders));
         OnPropertyChanged(nameof(HasAnyCartOrders));
+        OnPropertyChanged(nameof(HasAddableOrders));
+        OnPropertyChanged(nameof(HasAcceptableCandidates));
+        OnPropertyChanged(nameof(HasCandidatesInCart));
         RunCartCommand.NotifyCanExecuteChanged();
+        AddCartCommand.NotifyCanExecuteChanged();
+        AcceptAllCandidatesCommand.NotifyCanExecuteChanged();
         ClearCartCommand.NotifyCanExecuteChanged();
         ClearAllCartsCommand.NotifyCanExecuteChanged();
+        ClearCandidatesCommand.NotifyCanExecuteChanged();
     }
 
-    private static TorrentOrderViewModel MapOrder(TorrentCartOrder order) =>
-        new()
+    private TorrentOrderViewModel MapOrder(TorrentCartOrder order)
+    {
+        var viewModel = new TorrentOrderViewModel
         {
             Id = order.Id,
             TargetKind = order.TargetKind,
             Title = order.Title,
             Summary = order.Summary,
             Status = order.Status,
-            StatusDetail = order.StatusDetail
+            StatusDetail = order.StatusDetail,
+            SelectedCandidateName = order.SelectedCandidateName,
+            SelectedCandidateSeeders = order.SelectedCandidateSeeders,
+            SelectedCandidateQuality = order.SelectedCandidateQuality,
+            TorrentName = order.TorrentName,
+            TorrentProgress = order.TorrentProgress
         };
+        viewModel.CandidateSelected = SelectCandidate;
+        viewModel.AcceptRequested = AcceptCandidate;
+        viewModel.LoadCandidates(_torrentCartService.GetCandidates(order.Id)
+            .Select(candidate => new TorrentOrderCandidateViewModel(candidate)));
+        return viewModel;
+    }
 
     private void LoadRecipeAssignment(LibraryMediaCardViewModel? card)
     {
@@ -521,27 +673,89 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         return _recipeService.GetRecipeOrDefault(recipeId, targetKind).Name;
     }
 
-    private async Task<CartRunResult> RunOrderAsync(TorrentCartOrder order, CancellationToken cancellationToken)
+    private async Task<CartRunResult> SearchEpisodeOrdersAsync(
+        IReadOnlyList<TorrentCartOrder> orders,
+        CancellationToken cancellationToken)
+    {
+        var result = new CartRunResult();
+        var show = _databaseService.GetTrackedShow(orders[0].MediaId)
+            ?? throw new InvalidOperationException("Tracked show was not found.");
+        var recipe = _recipeService.GetRecipeOrDefault(SelectedEpisodeRecipeId ?? show.RecipeId, MediaKind.TvEpisode);
+        var mode = RecipeRuntimeSettings.GetUseShowSnapshotSearch(recipe, _settingsService.Current.AutoTorrent)
+            ? "Show snapshot search"
+            : "Parallel episode search";
+        _logger.Info(
+            $"Run Cart: Media='{show.DisplayTitle}', Recipe='{recipe.Name}', Target='TV episode', Mode='{mode}', Orders={orders.Count}.",
+            LogTarget.All);
+
+        var ordersByEpisodeId = orders
+            .Where(order => order.EpisodeId is not null)
+            .GroupBy(order => order.EpisodeId!.Value)
+            .ToDictionary(group => group.Key, group => group.First());
+        foreach (var order in ordersByEpisodeId.Values)
+        {
+            _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.Searching, $"Queued for {mode} with recipe: {recipe.Name}");
+        }
+
+        var candidatesByEpisodeId = await _fetchJobService.FetchEpisodeCandidatesAsync(
+            show.Id,
+            ordersByEpisodeId.Keys.ToList(),
+            recipe.RecipeId,
+            (episodeId, detail) =>
+            {
+                if (ordersByEpisodeId.TryGetValue(episodeId, out var order))
+                {
+                    _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.Searching, detail);
+                }
+            },
+            cancellationToken);
+
+        foreach (var (episodeId, order) in ordersByEpisodeId)
+        {
+            if (!candidatesByEpisodeId.TryGetValue(episodeId, out var candidates) || candidates.Count == 0)
+            {
+                result.NoCandidateCount++;
+                _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.NoCandidates, "No candidates found.");
+                continue;
+            }
+
+            result.CandidateCount++;
+            _torrentCartService.ReplaceCandidates(order.Id, ToCartCandidates(candidates));
+        }
+
+        return result;
+    }
+
+    private async Task<CartSearchResult> SearchOrderAsync(TorrentCartOrder order, CancellationToken cancellationToken)
     {
         if (order.TargetKind == MediaKind.Movie)
         {
-            var result = await _automationFlowService.RunNowAsync(new RecipeRunRequest
+            var movie = _databaseService.GetTrackedMovie(order.MediaId)
+                ?? throw new InvalidOperationException("Tracked movie was not found.");
+            var recipe = _recipeService.GetRecipeOrDefault(SelectedMovieRecipeId ?? movie.RecipeId, MediaKind.Movie);
+            _logger.Info(
+                $"Run Cart: Media='{movie.DisplayTitle}', Recipe='{recipe.Name}', Target='Movie', Mode='Single movie search'.",
+                LogTarget.All);
+            var result = await _automationFlowService.DryRunAsync(new RecipeRunRequest
             {
                 TargetKind = MediaKind.Movie,
                 MovieId = order.MediaId,
-                RecipeId = SelectedMovieRecipeId
+                RecipeId = recipe.RecipeId
             }, cancellationToken);
-            return result.BestCandidate is null
-                ? CartRunResult.NoneFound(result.Summary)
-                : CartRunResult.Added($"Added best candidate: {result.BestCandidate.DisplayName}");
+            if (result.BestCandidate is null)
+            {
+                return CartSearchResult.NoneFound(order, result.Summary);
+            }
+
+            return CartSearchResult.Found(order, $"Found {result.AcceptedCandidates.Count} movie candidate(s).", ToCartCandidates(result.AcceptedCandidates));
         }
 
         if (order.EpisodeId is null || order.SeasonNumber is null || order.EpisodeNumber is null)
         {
-            return await RunSeasonPackOrderAsync(order, cancellationToken);
+            return await SearchSeasonPackOrderAsync(order, cancellationToken);
         }
 
-        var episodeResult = await _automationFlowService.RunNowAsync(new RecipeRunRequest
+        var episodeResult = await _automationFlowService.DryRunAsync(new RecipeRunRequest
         {
             TargetKind = MediaKind.TvEpisode,
             ShowId = order.MediaId,
@@ -549,9 +763,12 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
             EpisodeNumber = order.EpisodeNumber,
             RecipeId = SelectedEpisodeRecipeId
         }, cancellationToken);
-        return episodeResult.BestCandidate is null
-            ? CartRunResult.NoneFound(episodeResult.Summary)
-            : CartRunResult.Added($"Added best candidate: {episodeResult.BestCandidate.DisplayName}");
+        if (episodeResult.BestCandidate is null)
+        {
+            return CartSearchResult.NoneFound(order, episodeResult.Summary);
+        }
+
+        return CartSearchResult.Found(order, $"Found {episodeResult.AcceptedCandidates.Count} episode candidate(s).", ToCartCandidates(episodeResult.AcceptedCandidates));
     }
 
     private bool CanRunCart()
@@ -559,49 +776,284 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         return HasOrders && !IsRunningCart;
     }
 
-    private async Task<CartRunResult> RunSeasonPackOrderAsync(TorrentCartOrder order, CancellationToken cancellationToken)
+    private bool CanAddCart()
+    {
+        return HasAddableOrders && !IsRunningCart;
+    }
+
+    private bool CanAcceptAllCandidates()
+    {
+        return HasAcceptableCandidates && !IsRunningCart;
+    }
+
+    private async Task<CartSearchResult> SearchSeasonPackOrderAsync(TorrentCartOrder order, CancellationToken cancellationToken)
     {
         if (order.SeasonNumber is null)
         {
             throw new InvalidOperationException("Season pack order is missing a season number.");
         }
 
+        var show = _databaseService.GetTrackedShow(order.MediaId)
+            ?? throw new InvalidOperationException("Tracked show was not found.");
+        var recipe = _recipeService.GetRecipeOrDefault(SelectedPackRecipeId ?? show.PackRecipeId, MediaKind.TvSeasonPack);
+        _logger.Info(
+            $"Run Cart: Media='{show.DisplayTitle}', Recipe='{recipe.Name}', Target='Season pack', Mode='Pack snapshot search', Season=S{order.SeasonNumber.Value:00}.",
+            LogTarget.All);
         await _fetchJobService.FetchSeasonPacksAsync(order.MediaId, [order.SeasonNumber.Value], cancellationToken);
         if (!_fetchJobService.TryGetPackCandidates(order.MediaId, order.SeasonNumber.Value, out var candidates) ||
             candidates.Count == 0)
         {
-            return CartRunResult.NoneFound("No season pack candidates found.");
+            return CartSearchResult.NoneFound(order, "No season pack candidates found.");
         }
 
-        var candidate = candidates
-            .OrderByDescending(item => item.TotalScore)
-            .ThenByDescending(item => item.Seeders)
-            .First();
-        var show = _databaseService.GetTrackedShow(order.MediaId)
-            ?? throw new InvalidOperationException("Tracked show was not found.");
-        var recipe = _recipeService.GetRecipeOrDefault(show.PackRecipeId ?? SelectedPackRecipeId, MediaKind.TvSeasonPack);
-        var addModule = recipe.Modules.FirstOrDefault(module => module.BlockType == RecipeBlockType.AddTorrent && module.IsEnabled);
-        var season = _databaseService.GetTrackedSeasons(order.MediaId)
-            .FirstOrDefault(item => item.SeasonNumber == order.SeasonNumber.Value);
-        var addedTorrent = await _qbittorrentClient.AddTorrentAsync(new AddTorrentRequest
-        {
-            Url = candidate.FileUrl,
-            PluginName = candidate.PluginName,
-            SavePath = season?.DownloadFolder ?? addModule?.SavePath ?? string.Empty,
-            Category = addModule?.TorrentCategory ?? "AutoTorrent",
-            Tags = string.IsNullOrWhiteSpace(addModule?.Tags) ? "media-manager" : addModule.Tags,
-            Paused = addModule?.Paused ?? false
-        });
-        _trackedShowService.UpdateSeasonSelectedPack(order.MediaId, order.SeasonNumber.Value, candidate);
-        _trackedShowService.UpdateSeasonPackTorrent(order.MediaId, order.SeasonNumber.Value, addedTorrent);
-        return CartRunResult.Added($"Added season pack candidate: {candidate.DisplayName}");
+        return CartSearchResult.Found(order, $"Found {candidates.Count} season pack candidate(s).", ToCartCandidates(candidates));
     }
 
-    private sealed record CartRunResult(bool AddedToClient, bool NoCandidates, string Detail)
+    private static IReadOnlyList<TorrentCartOrderCandidate> ToCartCandidates(IReadOnlyList<RecipeCandidateResult> candidates)
     {
-        public static CartRunResult Added(string detail) => new(true, false, detail);
+        return candidates.Select((candidate, index) => new TorrentCartOrderCandidate
+        {
+            Rank = index + 1,
+            IsSelected = index == 0,
+            Name = candidate.SearchResult.FileName,
+            Url = candidate.SearchResult.FileUrl,
+            PluginName = candidate.SearchResult.EngineName,
+            FileSize = candidate.SearchResult.FileSize,
+            Seeders = candidate.SearchResult.Seeders,
+            Leechers = candidate.SearchResult.Leechers,
+            Quality = TorrentQuality.Detect(candidate.SearchResult.FileName),
+            AudioCodec = string.Empty,
+            CoveredSeasons = string.Empty,
+            TotalScore = candidate.TotalScore
+        }).ToList();
+    }
 
-        public static CartRunResult NoneFound(string detail) => new(false, true, detail);
+    private static IReadOnlyList<TorrentCartOrderCandidate> ToCartCandidates(IReadOnlyList<EpisodeFetchCandidate> candidates)
+    {
+        return candidates.Select((candidate, index) => new TorrentCartOrderCandidate
+        {
+            Rank = index + 1,
+            IsSelected = index == 0,
+            Name = candidate.FileName,
+            Url = candidate.FileUrl,
+            PluginName = candidate.PluginName,
+            FileSize = candidate.FileSize,
+            Seeders = candidate.Seeders,
+            Leechers = candidate.Leechers,
+            Quality = candidate.QualityLabel,
+            AudioCodec = candidate.AudioCodecLabel,
+            CoveredSeasons = string.Empty,
+            TotalScore = candidate.TotalScore
+        }).ToList();
+    }
+
+    private static IReadOnlyList<TorrentCartOrderCandidate> ToCartCandidates(IReadOnlyList<SeasonPackCandidate> candidates)
+    {
+        return candidates.Select((candidate, index) => new TorrentCartOrderCandidate
+        {
+            Rank = index + 1,
+            IsSelected = index == 0,
+            Name = candidate.FileName,
+            Url = candidate.FileUrl,
+            PluginName = candidate.PluginName,
+            FileSize = candidate.FileSize,
+            Seeders = candidate.Seeders,
+            Leechers = candidate.Leechers,
+            Quality = candidate.QualityLabel,
+            AudioCodec = candidate.AudioCodecLabel,
+            CoveredSeasons = string.Join(",", candidate.CoveredSeasons),
+            TotalScore = candidate.TotalScore
+        }).ToList();
+    }
+
+    private async Task AddOrderToClientAsync(TorrentCartOrder order)
+    {
+        var addedTorrent = await _qbittorrentClient.AddTorrentAsync(CreateAddTorrentRequest(order));
+        order.TorrentHash = addedTorrent.Hash;
+        order.TorrentName = addedTorrent.Name;
+        order.TorrentState = addedTorrent.State;
+        order.TorrentProgress = addedTorrent.Progress;
+        order.Status = TorrentOrderStatus.AddedToClient;
+        order.StatusDetail = $"Added to qBittorrent: {addedTorrent.Name}";
+
+        if (order.TargetKind == MediaKind.Movie)
+        {
+            var candidate = ToEpisodeCandidate(order);
+            candidate.MovieId = order.MediaId;
+            _trackedMovieService.UpdateSelectedCandidate(order.MediaId, candidate);
+            _trackedMovieService.UpdateTorrentState(order.MediaId, addedTorrent);
+            _torrentCartService.SaveOrder(order);
+            return;
+        }
+
+        if (order.EpisodeId is null)
+        {
+            if (order.SeasonNumber is null)
+            {
+                throw new InvalidOperationException("Season pack order is missing a season number.");
+            }
+
+            _trackedShowService.UpdateSeasonSelectedPack(order.MediaId, order.SeasonNumber.Value, ToSeasonPackCandidate(order));
+            _trackedShowService.UpdateSeasonPackTorrent(order.MediaId, order.SeasonNumber.Value, addedTorrent);
+            _torrentCartService.SaveOrder(order);
+            return;
+        }
+
+        var episodeCandidate = ToEpisodeCandidate(order);
+        _trackedShowService.UpdateSelectedCandidate(order.EpisodeId.Value, episodeCandidate);
+        _trackedShowService.UpdateTorrentState(order.EpisodeId.Value, addedTorrent);
+        _torrentCartService.SaveOrder(order);
+    }
+
+    private AddTorrentRequest CreateAddTorrentRequest(TorrentCartOrder order)
+    {
+        return new AddTorrentRequest
+        {
+            Url = order.SelectedCandidateUrl,
+            PluginName = order.SelectedCandidatePlugin,
+            SavePath = GetOrderDownloadFolder(order),
+            Category = FirstNonEmpty(_settingsService.Current.AutoTorrent.CategoryName, "AutoTorrent"),
+            Tags = "media-manager",
+            Paused = false
+        };
+    }
+
+    private string GetOrderDownloadFolder(TorrentCartOrder order)
+    {
+        if (order.TargetKind != MediaKind.Movie && order.SeasonNumber is not null)
+        {
+            var season = _databaseService.GetTrackedSeasons(order.MediaId)
+                .FirstOrDefault(item => item.SeasonNumber == order.SeasonNumber.Value);
+            if (!string.IsNullOrWhiteSpace(season?.DownloadFolder))
+            {
+                return season.DownloadFolder;
+            }
+        }
+
+        return FirstNonEmpty(_settingsService.Current.AutoTorrent.DownloadFolder, _settingsService.Current.SourceFolders.FirstOrDefault());
+    }
+
+    private static void ApplyCandidate(TorrentCartOrder order, RecipeCandidateResult candidate)
+    {
+        order.SelectedCandidateName = candidate.SearchResult.FileName;
+        order.SelectedCandidateUrl = candidate.SearchResult.FileUrl;
+        order.SelectedCandidatePlugin = candidate.SearchResult.EngineName;
+        order.SelectedCandidateFileSize = candidate.SearchResult.FileSize;
+        order.SelectedCandidateSeeders = candidate.SearchResult.Seeders;
+        order.SelectedCandidateLeechers = candidate.SearchResult.Leechers;
+        order.SelectedCandidateQuality = TorrentQuality.Detect(candidate.SearchResult.FileName);
+        order.SelectedCandidateAudioCodec = string.Empty;
+        order.SelectedCandidateCoveredSeasons = string.Empty;
+        order.SelectedCandidateTotalScore = candidate.TotalScore;
+        order.TorrentHash = string.Empty;
+        order.TorrentName = string.Empty;
+        order.TorrentState = string.Empty;
+        order.TorrentProgress = 0;
+        order.Status = TorrentOrderStatus.CandidatesFound;
+        order.StatusDetail = $"Candidate found: {candidate.DisplayName}";
+    }
+
+    private static void ApplyCandidate(TorrentCartOrder order, SeasonPackCandidate candidate)
+    {
+        order.SelectedCandidateName = candidate.FileName;
+        order.SelectedCandidateUrl = candidate.FileUrl;
+        order.SelectedCandidatePlugin = candidate.PluginName;
+        order.SelectedCandidateFileSize = candidate.FileSize;
+        order.SelectedCandidateSeeders = candidate.Seeders;
+        order.SelectedCandidateLeechers = candidate.Leechers;
+        order.SelectedCandidateQuality = candidate.QualityLabel;
+        order.SelectedCandidateAudioCodec = candidate.AudioCodecLabel;
+        order.SelectedCandidateCoveredSeasons = string.Join(",", candidate.CoveredSeasons);
+        order.SelectedCandidateTotalScore = candidate.TotalScore;
+        order.TorrentHash = string.Empty;
+        order.TorrentName = string.Empty;
+        order.TorrentState = string.Empty;
+        order.TorrentProgress = 0;
+        order.Status = TorrentOrderStatus.CandidatesFound;
+        order.StatusDetail = $"Candidate found: {candidate.DisplayName}";
+    }
+
+    private static EpisodeFetchCandidate ToEpisodeCandidate(TorrentCartOrder order)
+    {
+        return new EpisodeFetchCandidate
+        {
+            EpisodeId = order.EpisodeId ?? 0,
+            FileName = order.SelectedCandidateName,
+            FileUrl = order.SelectedCandidateUrl,
+            FileSize = order.SelectedCandidateFileSize,
+            Seeders = order.SelectedCandidateSeeders,
+            Leechers = order.SelectedCandidateLeechers,
+            PluginName = order.SelectedCandidatePlugin,
+            QualityLabel = order.SelectedCandidateQuality,
+            AudioCodecLabel = order.SelectedCandidateAudioCodec,
+            TotalScore = order.SelectedCandidateTotalScore
+        };
+    }
+
+    private static SeasonPackCandidate ToSeasonPackCandidate(TorrentCartOrder order)
+    {
+        return new SeasonPackCandidate
+        {
+            ShowId = order.MediaId,
+            OwnerSeasonNumber = order.SeasonNumber ?? 0,
+            FileName = order.SelectedCandidateName,
+            FileUrl = order.SelectedCandidateUrl,
+            PluginName = order.SelectedCandidatePlugin,
+            FileSize = order.SelectedCandidateFileSize,
+            Seeders = order.SelectedCandidateSeeders,
+            Leechers = order.SelectedCandidateLeechers,
+            QualityLabel = order.SelectedCandidateQuality,
+            AudioCodecLabel = order.SelectedCandidateAudioCodec,
+            CoveredSeasons = ParseCoveredSeasons(order),
+            TotalScore = order.SelectedCandidateTotalScore
+        };
+    }
+
+    private static IReadOnlyList<int> ParseCoveredSeasons(TorrentCartOrder order)
+    {
+        var seasons = order.SelectedCandidateCoveredSeasons
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(value => int.TryParse(value, out var parsed) ? parsed : 0)
+            .Where(value => value > 0)
+            .Distinct()
+            .Order()
+            .ToList();
+
+        if (seasons.Count == 0 && order.SeasonNumber is not null)
+        {
+            seasons.Add(order.SeasonNumber.Value);
+        }
+
+        return seasons;
+    }
+
+    private static string FirstNonEmpty(params string?[] values)
+    {
+        return values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim() ?? string.Empty;
+    }
+
+    private sealed class CartRunResult
+    {
+        public int CandidateCount { get; set; }
+
+        public int NoCandidateCount { get; set; }
+
+        public int FailedCount { get; set; }
+    }
+
+    private sealed record CartSearchResult(
+        TorrentCartOrder Order,
+        bool NoCandidates,
+        string Detail,
+        IReadOnlyList<TorrentCartOrderCandidate> Candidates)
+    {
+        public static CartSearchResult Found(
+            TorrentCartOrder order,
+            string detail,
+            IReadOnlyList<TorrentCartOrderCandidate> candidates) =>
+            new(order, false, detail, candidates);
+
+        public static CartSearchResult NoneFound(TorrentCartOrder order, string detail) => new(order, true, detail, []);
     }
 
     private void ApplyMediaCardSort()

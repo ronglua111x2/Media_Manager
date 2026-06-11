@@ -24,6 +24,8 @@ public partial class LibrarySeasonViewModel : ObservableObject
         selectedPackOwnerSeasonNumber = seasonRecord?.SelectedPackOwnerSeasonNumber;
         selectedPackName = seasonRecord?.SelectedPackCandidateName ?? string.Empty;
         selectedPackCoveredSeasons = seasonRecord?.SelectedPackCoveredSeasons ?? string.Empty;
+        packTorrentHash = seasonRecord?.PackTorrentHash ?? string.Empty;
+        SyncEpisodePackMode();
     }
 
     public long ShowId { get; }
@@ -69,6 +71,8 @@ public partial class LibrarySeasonViewModel : ObservableObject
 
     public bool CanAddPackToCart => IsPackMode && !IsCoveredByAnotherPack && !IsPackInCart;
 
+    public bool CanLinkPack => IsPackMode && !IsCoveredByAnotherPack && !string.IsNullOrWhiteSpace(PackTorrentHash);
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanAddPackToCart))]
     private bool isPackInCart;
@@ -84,6 +88,7 @@ public partial class LibrarySeasonViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(PackModeBannerTitle))]
     [NotifyPropertyChangedFor(nameof(PackLinkStatus))]
     [NotifyPropertyChangedFor(nameof(CanAddPackToCart))]
+    [NotifyPropertyChangedFor(nameof(CanLinkPack))]
     [NotifyPropertyChangedFor(nameof(CanTogglePackMode))]
     private bool isPackMode;
 
@@ -94,6 +99,7 @@ public partial class LibrarySeasonViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(PackModeBannerTitle))]
     [NotifyPropertyChangedFor(nameof(PackLinkStatus))]
     [NotifyPropertyChangedFor(nameof(CanAddPackToCart))]
+    [NotifyPropertyChangedFor(nameof(CanLinkPack))]
     [NotifyPropertyChangedFor(nameof(CanTogglePackMode))]
     private int? selectedPackOwnerSeasonNumber;
 
@@ -103,14 +109,20 @@ public partial class LibrarySeasonViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(IsCoveredByAnotherPack))]
     [NotifyPropertyChangedFor(nameof(PackModeBannerTitle))]
     [NotifyPropertyChangedFor(nameof(CanAddPackToCart))]
+    [NotifyPropertyChangedFor(nameof(CanLinkPack))]
     [NotifyPropertyChangedFor(nameof(CanTogglePackMode))]
     private string selectedPackName = string.Empty;
 
     [ObservableProperty]
     private string selectedPackCoveredSeasons = string.Empty;
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanLinkPack))]
+    private string packTorrentHash = string.Empty;
+
     partial void OnIsPackModeChanged(bool value)
     {
+        SyncEpisodePackMode();
         _managementModeChanged(ShowId, SeasonNumber, value ? SeasonManagementMode.Pack : SeasonManagementMode.Episode);
         NotifySeasonChanged();
     }
@@ -121,5 +133,13 @@ public partial class LibrarySeasonViewModel : ObservableObject
         OnPropertyChanged(nameof(SeasonStats));
         OnPropertyChanged(nameof(AvailableEpisodes));
         OnPropertyChanged(nameof(MissingEpisodes));
+    }
+
+    private void SyncEpisodePackMode()
+    {
+        foreach (var episode in Episodes)
+        {
+            episode.IsSeasonPackMode = IsPackMode;
+        }
     }
 }

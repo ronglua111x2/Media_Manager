@@ -14,6 +14,7 @@ public sealed partial class LibraryMovieDetailViewModel : ObservableObject
         Overview = movie.Overview ?? string.Empty;
         PosterPath = movie.PosterPath;
         Availability = movie.Availability;
+        TorrentHash = movie.TorrentHash ?? string.Empty;
         PreferencesSummary =
             $"Quality {movie.PreferredQuality} | Audio {(string.IsNullOrWhiteSpace(movie.PreferredAudioCodec) ? "Any" : movie.PreferredAudioCodec)} | Min seeders {movie.MinimumSeeders}";
     }
@@ -28,6 +29,8 @@ public sealed partial class LibraryMovieDetailViewModel : ObservableObject
 
     public EpisodeAvailability Availability { get; }
 
+    public string TorrentHash { get; }
+
     public string PreferencesSummary { get; }
 
     public string RecipeName { get; }
@@ -37,6 +40,8 @@ public sealed partial class LibraryMovieDetailViewModel : ObservableObject
     public bool IsAvailable => Availability == EpisodeAvailability.Available;
 
     public bool CanAddToCart => !IsAvailable && !IsInCart;
+
+    public bool CanLink => !string.IsNullOrWhiteSpace(TorrentHash);
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanAddToCart))]

@@ -24,7 +24,15 @@ public sealed class AutoTorrentSettings
 
     public int SnapshotTimeoutSeconds { get; set; } = 120;
 
+    public int SnapshotIdleTimeoutSeconds { get; set; } = 10;
+
     public int LocalMatchWorkers { get; set; } = 3;
+
+    public bool DeduplicateCandidates { get; set; } = true;
+
+    public bool FuzzyDeduplicate { get; set; }
+
+    public int FuzzyDeduplicateSizeToleranceMb { get; set; } = 5;
 
     public bool EnableCandidateMetadataProbe { get; set; }
 }

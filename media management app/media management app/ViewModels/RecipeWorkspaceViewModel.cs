@@ -309,6 +309,8 @@ public sealed partial class RecipeListItemViewModel : ObservableObject
 public sealed partial class RecipeModuleEditorViewModel : ObservableObject
 {
     private const string CustomQueryKey = "customQuery";
+    private const string ParallelSearchMode = "Parallel episode search";
+    private const string SnapshotSearchMode = "Show snapshot search";
     private static readonly string[] StandardQualities = ["2160p", "1080p", "720p", "480p"];
 
     private readonly RecipeModuleConfig _module;
@@ -325,6 +327,8 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
 
     public ObservableCollection<QualityOptionViewModel> QualityOptions { get; }
 
+    public IReadOnlyList<string> SearchModeOptions { get; } = [ParallelSearchMode, SnapshotSearchMode];
+
     public RecipeBlockType BlockType => _module.BlockType;
 
     public string BlockTypeLabel => _module.BlockType switch
@@ -335,8 +339,6 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
         RecipeBlockType.CandidateParser => "Parser",
         RecipeBlockType.CandidateFilter => "Quality",
         RecipeBlockType.Scoring => "Scoring",
-        RecipeBlockType.AddTorrent => "Add",
-        RecipeBlockType.LinkOutput => "Link",
         _ => _module.BlockType.ToString()
     };
 
@@ -348,8 +350,6 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
         RecipeBlockType.CandidateParser => "Search",
         RecipeBlockType.CandidateFilter => "Tags",
         RecipeBlockType.Scoring => "Tags",
-        RecipeBlockType.AddTorrent => "Download",
-        RecipeBlockType.LinkOutput => "Library",
         _ => "ScrollText"
     };
 
@@ -357,12 +357,10 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
     {
         RecipeBlockType.Identity => "Aliases and title matching for the media item.",
         RecipeBlockType.QueryBuilder => "Query templates, custom query, preferred quality, and audio tokens.",
-        RecipeBlockType.SearchSource => "qBittorrent search source, category, result limit, and parallel search count.",
+        RecipeBlockType.SearchSource => "Choose parallel per-episode search or show-level snapshot matching.",
         RecipeBlockType.CandidateParser => "Candidate filename parsing is currently automatic.",
         RecipeBlockType.CandidateFilter => "Quality, seeders, size, include/exclude terms, and release groups.",
         RecipeBlockType.Scoring => "Ranking weights are currently fixed by the candidate scoring service.",
-        RecipeBlockType.AddTorrent => "qBittorrent add settings.",
-        RecipeBlockType.LinkOutput => "Post-download hardlink output behavior.",
         _ => "Recipe module settings."
     };
 
@@ -498,11 +496,57 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
         set => SetExtensionValue(RecipeRuntimeSettings.MaxCandidatesPerFetchKey, Math.Clamp(value, 1, 10).ToString());
     }
 
+    public bool DeduplicateCandidates
+    {
+        get => GetExtensionBool(RecipeRuntimeSettings.DeduplicateCandidatesKey, true);
+        set
+        {
+            SetExtensionValue(RecipeRuntimeSettings.DeduplicateCandidatesKey, value.ToString());
+            OnPropertyChanged(nameof(IsFuzzyDeduplicateEnabled));
+        }
+    }
+
+    public bool FuzzyDeduplicate
+    {
+        get => GetExtensionBool(RecipeRuntimeSettings.FuzzyDeduplicateKey, false);
+        set
+        {
+            SetExtensionValue(RecipeRuntimeSettings.FuzzyDeduplicateKey, value.ToString());
+            OnPropertyChanged(nameof(IsFuzzyDeduplicateEnabled));
+        }
+    }
+
+    public int FuzzyDeduplicateSizeToleranceMb
+    {
+        get => GetExtensionInt(RecipeRuntimeSettings.FuzzyDeduplicateSizeToleranceMbKey, 5, 0, 100);
+        set => SetExtensionValue(
+            RecipeRuntimeSettings.FuzzyDeduplicateSizeToleranceMbKey,
+            Math.Clamp(value, 0, 100).ToString());
+    }
+
+    public bool IsFuzzyDeduplicateEnabled => DeduplicateCandidates && FuzzyDeduplicate;
+
     public bool UseShowSnapshotSearch
     {
         get => GetExtensionBool(RecipeRuntimeSettings.UseShowSnapshotSearchKey, false);
-        set => SetExtensionValue(RecipeRuntimeSettings.UseShowSnapshotSearchKey, value.ToString());
+        set
+        {
+            SetExtensionValue(RecipeRuntimeSettings.UseShowSnapshotSearchKey, value.ToString());
+            OnPropertyChanged(nameof(SearchMode));
+            OnPropertyChanged(nameof(IsParallelSearchMode));
+            OnPropertyChanged(nameof(IsSnapshotSearchMode));
+        }
     }
+
+    public string SearchMode
+    {
+        get => UseShowSnapshotSearch ? SnapshotSearchMode : ParallelSearchMode;
+        set => UseShowSnapshotSearch = string.Equals(value, SnapshotSearchMode, StringComparison.OrdinalIgnoreCase);
+    }
+
+    public bool IsParallelSearchMode => !UseShowSnapshotSearch;
+
+    public bool IsSnapshotSearchMode => UseShowSnapshotSearch;
 
     public int SnapshotTargetResults
     {
@@ -514,6 +558,12 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
     {
         get => GetExtensionInt(RecipeRuntimeSettings.SnapshotTimeoutSecondsKey, 120, 30, 300);
         set => SetExtensionValue(RecipeRuntimeSettings.SnapshotTimeoutSecondsKey, Math.Clamp(value, 30, 300).ToString());
+    }
+
+    public int SnapshotIdleTimeoutSeconds
+    {
+        get => GetExtensionInt(RecipeRuntimeSettings.SnapshotIdleTimeoutSecondsKey, 10, 0, 120);
+        set => SetExtensionValue(RecipeRuntimeSettings.SnapshotIdleTimeoutSecondsKey, Math.Clamp(value, 0, 120).ToString());
     }
 
     public int LocalMatchWorkers
@@ -606,14 +656,18 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
         RecipeBlockType.SearchSource =>
         [
             $"Enabled: {(IsEnabled ? "Yes" : "No")}",
+            $"Mode: {SearchMode}",
             $"Plugins: {DisplayOrEmpty(Plugins)}",
             $"Category: {DisplayOrEmpty(Category)}",
             $"Result limit: {ResultLimit}",
             $"Parallel searches: {ParallelSearchCount}",
             $"Candidates per fetch: {MaxCandidatesPerFetch}",
+            $"Deduplicate candidates: {(DeduplicateCandidates ? "On" : "Off")}",
+            $"Fuzzy dedup: {(FuzzyDeduplicate ? "On" : "Off")}{(FuzzyDeduplicate ? $", size tolerance: {FuzzyDeduplicateSizeToleranceMb} MB" : string.Empty)}",
             $"Snapshot search: {(UseShowSnapshotSearch ? "On" : "Off")}",
             $"Snapshot target: {SnapshotTargetResults}",
             $"Snapshot timeout: {SnapshotTimeoutSeconds}s",
+            $"Snapshot idle timeout: {SnapshotIdleTimeoutSeconds}s{(SnapshotIdleTimeoutSeconds == 0 ? " (off)" : string.Empty)}",
             $"Local match workers: {LocalMatchWorkers}"
         ],
         RecipeBlockType.CandidateFilter =>
@@ -628,14 +682,6 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
             $"Preferred groups: {CountLines(PreferredReleaseGroupsText)}",
             $"Blocked groups: {CountLines(BlockedReleaseGroupsText)}"
         ],
-        RecipeBlockType.AddTorrent =>
-        [
-            $"Enabled: {(IsEnabled ? "Yes" : "No")}",
-            $"Save path: {DisplayOrEmpty(SavePath)}",
-            $"Category: {DisplayOrEmpty(TorrentCategory)}",
-            $"Tags: {DisplayOrEmpty(Tags)}",
-            $"Paused: {(Paused ? "Yes" : "No")}"
-        ],
         RecipeBlockType.CandidateParser =>
         [
             $"Enabled: {(IsEnabled ? "Yes" : "No")}",
@@ -645,11 +691,6 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
         [
             $"Enabled: {(IsEnabled ? "Yes" : "No")}",
             "Scoring uses quality, audio, seeders, and title match weights."
-        ],
-        RecipeBlockType.LinkOutput =>
-        [
-            $"Enabled: {(IsEnabled ? "Yes" : "No")}",
-            "Hardlinks are created after download completes."
         ],
         _ => [$"Enabled: {(IsEnabled ? "Yes" : "No")}"]
     };
@@ -750,9 +791,13 @@ internal static class ModuleFieldHelp
                 new() { FieldName = "Result limit", Description = "Maximum rows returned per query.", OutputImpact = "Higher values surface more candidates but increase search time and noise." },
                 new() { FieldName = "Parallel searches", Description = "How many queries run at the same time.", OutputImpact = "Faster cart execution when set higher, but may hit qBittorrent search capacity limits." },
                 new() { FieldName = "Candidates per fetch", Description = "How many accepted candidates are kept per episode or movie fetch.", OutputImpact = "Lower values reduce noise; higher values keep more backup torrent options." },
+                new() { FieldName = "Deduplicate candidates", Description = "Remove duplicate torrent URLs before ranking, keeping the copy with the most seeders.", OutputImpact = "Frees candidate slots for distinct torrents when the same release appears from multiple indexers." },
+                new() { FieldName = "Fuzzy deduplicate", Description = "Also group candidates by normalized filename and file size bucket.", OutputImpact = "Removes near-duplicate releases that use different tracker URLs but represent the same torrent, such as the same filename with or without a (TV) suffix." },
+                new() { FieldName = "Fuzzy dedup size tolerance", Description = "File size bucket width in MB for fuzzy dedup. 0 means exact byte size only.", OutputImpact = "Larger values treat small size differences across trackers as the same release; smaller values are stricter." },
                 new() { FieldName = "Snapshot search", Description = "Use one large show-level search snapshot instead of per-episode queries.", OutputImpact = "Faster for full seasons but needs local matching workers." },
                 new() { FieldName = "Snapshot target results", Description = "How many rows to collect in the snapshot search.", OutputImpact = "Larger snapshots improve coverage but take longer to finish." },
                 new() { FieldName = "Snapshot timeout", Description = "Maximum seconds to wait for snapshot search completion.", OutputImpact = "Prevents hung searches from blocking the fetch job indefinitely." },
+                new() { FieldName = "Snapshot idle timeout", Description = "Stop snapshot polling when no new results arrive for this many seconds. Resets whenever new rows are added. 0 disables early stop.", OutputImpact = "Finishes sooner when indexers stop returning new rows, while still respecting the total snapshot timeout." },
                 new() { FieldName = "Local match workers", Description = "Parallel workers that match snapshot rows to episodes.", OutputImpact = "More workers speed up snapshot matching on large seasons." }
             ],
             RecipeBlockType.CandidateFilter =>
@@ -766,13 +811,6 @@ internal static class ModuleFieldHelp
                 new() { FieldName = "Preferred release groups", Description = "Groups you prefer when ranking.", OutputImpact = "Currently informational for scoring; blocked groups always reject." },
                 new() { FieldName = "Blocked release groups", Description = "Groups that are always rejected.", OutputImpact = "Any matching group name in the torrent title removes the candidate." }
             ],
-            RecipeBlockType.AddTorrent =>
-            [
-                new() { FieldName = "Save path", Description = "Download folder passed to qBittorrent.", OutputImpact = "Overrides the default path when adding the selected torrent." },
-                new() { FieldName = "Torrent category", Description = "qBittorrent category label for added torrents.", OutputImpact = "Helps organize downloads and automation rules inside qBittorrent." },
-                new() { FieldName = "Tags", Description = "Comma-separated tags applied on add.", OutputImpact = "Useful for filtering and post-processing inside qBittorrent." },
-                new() { FieldName = "Add torrent paused", Description = "Adds the torrent in paused state.", OutputImpact = "Prevents immediate download until you manually resume." }
-            ],
             RecipeBlockType.CandidateParser =>
             [
                 new() { FieldName = "Automatic parsing", Description = "Filename tokens are parsed by TorrentCandidateParser.", OutputImpact = "Extracts season, episode, quality, year, and title tokens used by filter and scoring modules." },
@@ -781,10 +819,6 @@ internal static class ModuleFieldHelp
             RecipeBlockType.Scoring =>
             [
                 new() { FieldName = "Scoring weights", Description = "Quality, audio, seeders, title match, and episode title contribute to total score.", OutputImpact = "The highest-scoring accepted candidate is chosen when Run Cart executes." }
-            ],
-            RecipeBlockType.LinkOutput =>
-            [
-                new() { FieldName = "Hardlink output", Description = "After download completes, files are hardlinked into the library.", OutputImpact = "Managed by the link service using your library path rules." }
             ],
             _ =>
             [

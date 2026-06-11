@@ -281,20 +281,6 @@ public sealed class RecipeService : IRecipeService
                     BlockType = RecipeBlockType.Scoring,
                     Order = 50,
                     DisplayName = "Scoring"
-                },
-                new RecipeModuleConfig
-                {
-                    BlockType = RecipeBlockType.AddTorrent,
-                    Order = 60,
-                    DisplayName = "Add Torrent",
-                    SavePath = settings.DownloadFolder ?? string.Empty,
-                    TorrentCategory = string.IsNullOrWhiteSpace(settings.CategoryName) ? "AutoTorrent" : settings.CategoryName
-                },
-                new RecipeModuleConfig
-                {
-                    BlockType = RecipeBlockType.LinkOutput,
-                    Order = 70,
-                    DisplayName = "Link Output"
                 }
             ]
         };
@@ -318,6 +304,7 @@ public sealed class RecipeService : IRecipeService
         recipe.Version = Math.Max(1, recipe.Version);
         recipe.MainFlowVersion = string.IsNullOrWhiteSpace(recipe.MainFlowVersion) ? "recipe-flow-v1" : recipe.MainFlowVersion.Trim();
         recipe.Modules ??= [];
+        recipe.Modules.RemoveAll(module => module.BlockType is RecipeBlockType.AddTorrent or RecipeBlockType.LinkOutput);
         EnsureRequiredModules(recipe);
         foreach (var module in recipe.Modules)
         {
@@ -345,7 +332,7 @@ public sealed class RecipeService : IRecipeService
 
     private static void EnsureRequiredModules(SearchRecipe recipe)
     {
-        foreach (var blockType in Enum.GetValues<RecipeBlockType>())
+        foreach (var blockType in RequiredRecipeBlockTypes)
         {
             if (recipe.Modules.Any(module => module.BlockType == blockType))
             {
@@ -357,10 +344,20 @@ public sealed class RecipeService : IRecipeService
                 BlockType = blockType,
                 Order = GetDefaultOrder(blockType),
                 DisplayName = blockType.ToString(),
-                IsEnabled = blockType is not RecipeBlockType.AddTorrent and not RecipeBlockType.LinkOutput
+                IsEnabled = true
             });
         }
     }
+
+    private static readonly RecipeBlockType[] RequiredRecipeBlockTypes =
+    [
+        RecipeBlockType.Identity,
+        RecipeBlockType.QueryBuilder,
+        RecipeBlockType.SearchSource,
+        RecipeBlockType.CandidateParser,
+        RecipeBlockType.CandidateFilter,
+        RecipeBlockType.Scoring
+    ];
 
     private static int GetDefaultOrder(RecipeBlockType blockType)
     {
@@ -372,8 +369,6 @@ public sealed class RecipeService : IRecipeService
             RecipeBlockType.CandidateParser => 30,
             RecipeBlockType.CandidateFilter => 40,
             RecipeBlockType.Scoring => 50,
-            RecipeBlockType.AddTorrent => 60,
-            RecipeBlockType.LinkOutput => 70,
             _ => 100
         };
     }

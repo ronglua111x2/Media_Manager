@@ -9,7 +9,11 @@ public static class RecipeRuntimeSettings
     public const string UseShowSnapshotSearchKey = "useShowSnapshotSearch";
     public const string SnapshotTargetResultsKey = "snapshotTargetResults";
     public const string SnapshotTimeoutSecondsKey = "snapshotTimeoutSeconds";
+    public const string SnapshotIdleTimeoutSecondsKey = "snapshotIdleTimeoutSeconds";
     public const string LocalMatchWorkersKey = "localMatchWorkers";
+    public const string DeduplicateCandidatesKey = "deduplicateCandidates";
+    public const string FuzzyDeduplicateKey = "fuzzyDeduplicate";
+    public const string FuzzyDeduplicateSizeToleranceMbKey = "fuzzyDeduplicateSizeToleranceMb";
     public const string EnableCandidateMetadataProbeKey = "enableCandidateMetadataProbe";
 
     public static int GetParallelSearchCount(SearchRecipe recipe, AutoTorrentSettings fallback) =>
@@ -27,8 +31,20 @@ public static class RecipeRuntimeSettings
     public static int GetSnapshotTimeoutSeconds(SearchRecipe recipe, AutoTorrentSettings fallback) =>
         GetInt(GetSearchModule(recipe), SnapshotTimeoutSecondsKey, fallback.SnapshotTimeoutSeconds, 30, 300);
 
+    public static int GetSnapshotIdleTimeoutSeconds(SearchRecipe recipe, AutoTorrentSettings fallback) =>
+        GetInt(GetSearchModule(recipe), SnapshotIdleTimeoutSecondsKey, fallback.SnapshotIdleTimeoutSeconds, 0, 120);
+
     public static int GetLocalMatchWorkers(SearchRecipe recipe, AutoTorrentSettings fallback) =>
         GetInt(GetSearchModule(recipe), LocalMatchWorkersKey, fallback.LocalMatchWorkers, 1, 8);
+
+    public static bool GetDeduplicateCandidates(SearchRecipe recipe, AutoTorrentSettings fallback) =>
+        GetBool(GetSearchModule(recipe), DeduplicateCandidatesKey, fallback.DeduplicateCandidates);
+
+    public static bool GetFuzzyDeduplicate(SearchRecipe recipe, AutoTorrentSettings fallback) =>
+        GetBool(GetSearchModule(recipe), FuzzyDeduplicateKey, fallback.FuzzyDeduplicate);
+
+    public static int GetFuzzyDeduplicateSizeToleranceMb(SearchRecipe recipe, AutoTorrentSettings fallback) =>
+        GetInt(GetSearchModule(recipe), FuzzyDeduplicateSizeToleranceMbKey, fallback.FuzzyDeduplicateSizeToleranceMb, 0, 100);
 
     public static bool GetEnableCandidateMetadataProbe(SearchRecipe recipe, AutoTorrentSettings fallback) =>
         GetBool(GetParserModule(recipe), EnableCandidateMetadataProbeKey, fallback.EnableCandidateMetadataProbe);

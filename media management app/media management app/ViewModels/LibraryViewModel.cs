@@ -19,6 +19,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
     private readonly ITorrentCartService _torrentCartService;
     private readonly ILibraryManagementService _libraryManagementService;
     private readonly IRecipeService _recipeService;
+    private readonly IAutoTorrentLinkService _autoTorrentLinkService;
 
     private IReadOnlyList<LibraryMediaCardViewModel> _allMediaCards = [];
     private long? _loadedDetailMediaId;
@@ -32,7 +33,8 @@ public sealed partial class LibraryViewModel : ViewModelBase
         IPosterImageService posterImageService,
         ITorrentCartService torrentCartService,
         ILibraryManagementService libraryManagementService,
-        IRecipeService recipeService)
+        IRecipeService recipeService,
+        IAutoTorrentLinkService autoTorrentLinkService)
     {
         _trackedShowService = trackedShowService;
         _trackedMovieService = trackedMovieService;
@@ -42,6 +44,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
         _torrentCartService = torrentCartService;
         _libraryManagementService = libraryManagementService;
         _recipeService = recipeService;
+        _autoTorrentLinkService = autoTorrentLinkService;
 
         _torrentCartService.CartChanged += (_, _) => RefreshCartStateOnSelectedDetail();
         RefreshLibrary();
@@ -223,6 +226,75 @@ public sealed partial class LibraryViewModel : ViewModelBase
             : $"Added {addedCount} episode(s) from S{season.SeasonNumber:00} to cart.";
     }
 
+    [RelayCommand(CanExecute = nameof(CanLinkEpisode))]
+    private async Task LinkEpisode(LibraryEpisodeRowViewModel? episode)
+    {
+        if (episode is null)
+        {
+            return;
+        }
+
+        try
+        {
+            StatusMessage = $"Creating library link for {episode.EpisodeCode}...";
+            var result = await _autoTorrentLinkService.LinkEpisodeAsync(
+                episode.ShowId,
+                episode.SeasonNumber,
+                episode.EpisodeNumber);
+            _trackedShowService.RefreshAvailability(episode.ShowId);
+            await ReloadSelectedDetailAsync();
+            StatusMessage = $"Library link for {episode.EpisodeCode}: {result.Summary}.";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Link failed for {episode.EpisodeCode}: {ex.Message}";
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanLinkSeasonPack))]
+    private async Task LinkSeasonPack(LibrarySeasonViewModel? season)
+    {
+        if (season is null)
+        {
+            return;
+        }
+
+        try
+        {
+            StatusMessage = $"Creating library links for season {season.SeasonNumber:00} pack...";
+            var result = await _autoTorrentLinkService.LinkSeasonPackAsync(season.ShowId, season.SeasonNumber);
+            _trackedShowService.RefreshAvailability(season.ShowId);
+            await ReloadSelectedDetailAsync();
+            StatusMessage = $"Pack library links for S{season.SeasonNumber:00}: {result.Summary}.";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Pack link failed for S{season.SeasonNumber:00}: {ex.Message}";
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanLinkMovie))]
+    private async Task LinkMovie(LibraryMovieDetailViewModel? movie)
+    {
+        if (movie is null)
+        {
+            return;
+        }
+
+        try
+        {
+            StatusMessage = $"Creating library link for {movie.Title}...";
+            var result = await _autoTorrentLinkService.LinkMovieAsync(movie.Id);
+            _trackedMovieService.RefreshAvailability(movie.Id);
+            await ReloadSelectedDetailAsync();
+            StatusMessage = $"Library link for {movie.Title}: {result.Summary}.";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Link failed for {movie.Title}: {ex.Message}";
+        }
+    }
+
     [RelayCommand(CanExecute = nameof(HasSelectedMedia))]
     private void DeleteSelectedMedia()
     {
@@ -370,6 +442,20 @@ public sealed partial class LibraryViewModel : ViewModelBase
         AddMovieToCartCommand.NotifyCanExecuteChanged();
         AddEpisodeToCartCommand.NotifyCanExecuteChanged();
         AddSeasonPackToCartCommand.NotifyCanExecuteChanged();
+        LinkMovieCommand.NotifyCanExecuteChanged();
+        LinkEpisodeCommand.NotifyCanExecuteChanged();
+        LinkSeasonPackCommand.NotifyCanExecuteChanged();
+    }
+
+    private async Task ReloadSelectedDetailAsync()
+    {
+        await LoadSelectedMediaAsync(SelectedMediaCard);
+        AddMovieToCartCommand.NotifyCanExecuteChanged();
+        AddEpisodeToCartCommand.NotifyCanExecuteChanged();
+        AddSeasonPackToCartCommand.NotifyCanExecuteChanged();
+        LinkMovieCommand.NotifyCanExecuteChanged();
+        LinkEpisodeCommand.NotifyCanExecuteChanged();
+        LinkSeasonPackCommand.NotifyCanExecuteChanged();
     }
 
     private LibraryShowDetailViewModel BuildShowDetail(TrackedShow show, IReadOnlySet<int>? expandedSeasons = null)
@@ -453,6 +539,10 @@ public sealed partial class LibraryViewModel : ViewModelBase
     private void UpdateSeasonManagementMode(long showId, int seasonNumber, SeasonManagementMode mode)
     {
         _trackedShowService.UpdateSeasonPackMode(showId, seasonNumber, mode);
+        AddEpisodeToCartCommand.NotifyCanExecuteChanged();
+        AddSeasonPackToCartCommand.NotifyCanExecuteChanged();
+        LinkEpisodeCommand.NotifyCanExecuteChanged();
+        LinkSeasonPackCommand.NotifyCanExecuteChanged();
         StatusMessage = $"Season {seasonNumber:00} set to {mode} mode.";
     }
 
@@ -524,4 +614,10 @@ public sealed partial class LibraryViewModel : ViewModelBase
     private bool CanAddEpisodeToCart(LibraryEpisodeRowViewModel? episode) => episode?.CanAddToCart == true;
 
     private bool CanAddSeasonPackToCart(LibrarySeasonViewModel? season) => season?.CanAddPackToCart == true;
+
+    private bool CanLinkMovie(LibraryMovieDetailViewModel? movie) => movie?.CanLink == true;
+
+    private bool CanLinkEpisode(LibraryEpisodeRowViewModel? episode) => episode?.CanLink == true;
+
+    private bool CanLinkSeasonPack(LibrarySeasonViewModel? season) => season?.CanLinkPack == true;
 }

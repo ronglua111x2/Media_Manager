@@ -61,6 +61,64 @@
                                    Style="{StaticResource MutedTextStyle}"
                                    Margin="0,4,0,0"
                                    TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding CandidateText}"
+                                   Margin="0,4,0,0"
+                                   TextWrapping="Wrap">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource MutedTextStyle}">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding HasCandidates}" Value="True">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <Grid Margin="0,8,0,0">
+                            <Grid.Style>
+                                <Style TargetType="Grid">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding HasCandidates}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Grid.Style>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="8" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <ComboBox ItemsSource="{Binding Candidates}"
+                                      SelectedValue="{Binding SelectedCandidateId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                      SelectedValuePath="Id"
+                                      DisplayMemberPath="DisplayText"
+                                      MinWidth="360"
+                                      MaxWidth="900"
+                                      HorizontalAlignment="Stretch"
+                                      ToolTip="Choose candidate for this order" />
+                            <Button Grid.Column="2"
+                                    Style="{StaticResource AppPrimaryButtonStyle}"
+                                    Command="{Binding AcceptCommand}"
+                                    IsEnabled="{Binding CanAccept}"
+                                    ToolTip="Accept selected candidate">
+                                <StackPanel Orientation="Horizontal">
+                                    <iconPacks:PackIconLucide Kind="Check"
+                                                               Width="14"
+                                                               Height="14"
+                                                               Margin="0,0,6,0"
+                                                               Foreground="#ffffff"
+                                                               VerticalAlignment="Center" />
+                                    <TextBlock Text="Accept" VerticalAlignment="Center" Foreground="#ffffff" />
+                                </StackPanel>
+                            </Button>
+                        </Grid>
+                        <TextBlock Text="{Binding TorrentText}"
+                                   Style="{StaticResource MutedTextStyle}"
+                                   Margin="0,4,0,0"
+                                   TextWrapping="Wrap" />
                         <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                             <Border Background="{StaticResource AppBrushAccentSoft}"
                                     BorderBrush="{StaticResource AppBrushAccent}"
@@ -80,19 +138,6 @@
                     </StackPanel>
 
                     <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
-                        <Button Style="{StaticResource AppOutlinedButtonStyle}"
-                                Command="{Binding DataContext.ViewOrderCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                CommandParameter="{Binding}"
-                                Margin="0,0,8,0">
-                            <StackPanel Orientation="Horizontal">
-                                <iconPacks:PackIconLucide Kind="Eye"
-                                                           Width="14"
-                                                           Height="14"
-                                                           Margin="0,0,6,0"
-                                                           VerticalAlignment="Center" />
-                                <TextBlock Text="View" VerticalAlignment="Center" />
-                            </StackPanel>
-                        </Button>
                         <Button Style="{StaticResource AppOutlinedButtonStyle}"
                                 Command="{Binding DataContext.RemoveOrderCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                 CommandParameter="{Binding}"
@@ -244,16 +289,29 @@
                         </StackPanel>
                     </Button>
                     <Button Style="{StaticResource AppOutlinedButtonStyle}"
-                            Command="{Binding ClearAllCartsCommand}"
+                            Command="{Binding ClearCandidatesCommand}"
                             Margin="0,0,8,0"
-                            ToolTip="Clear every media cart">
+                            ToolTip="Clear candidates from every order in this cart">
                         <StackPanel Orientation="Horizontal">
-                            <iconPacks:PackIconLucide Kind="Trash2"
+                            <iconPacks:PackIconLucide Kind="ListX"
                                                        Width="14"
                                                        Height="14"
                                                        Margin="0,0,6,0"
                                                        VerticalAlignment="Center" />
-                            <TextBlock Text="Clear All" VerticalAlignment="Center" />
+                            <TextBlock Text="Clear Candidates" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource AppDangerButtonStyle}"
+                            Command="{Binding StopRunCartCommand}"
+                            Margin="0,0,8,0">
+                        <StackPanel Orientation="Horizontal">
+                            <iconPacks:PackIconLucide Kind="Square"
+                                                       Width="14"
+                                                       Height="14"
+                                                       Margin="0,0,6,0"
+                                                       Foreground="#ffffff"
+                                                       VerticalAlignment="Center" />
+                            <TextBlock Text="Stop" VerticalAlignment="Center" Foreground="#ffffff" />
                         </StackPanel>
                     </Button>
                     <Button Style="{StaticResource AppPrimaryButtonStyle}"
@@ -269,17 +327,30 @@
                             <TextBlock Text="Run Cart" VerticalAlignment="Center" Foreground="#ffffff" />
                         </StackPanel>
                     </Button>
-                    <Button Style="{StaticResource AppDangerButtonStyle}"
-                            Command="{Binding StopRunCartCommand}"
-                            Margin="0">
+                    <Button Style="{StaticResource AppOutlinedButtonStyle}"
+                            Command="{Binding AcceptAllCandidatesCommand}"
+                            Margin="0,0,8,0"
+                            ToolTip="Accept the selected candidate for every order in this cart">
                         <StackPanel Orientation="Horizontal">
-                            <iconPacks:PackIconLucide Kind="Square"
+                            <iconPacks:PackIconLucide Kind="CheckCheck"
                                                        Width="14"
                                                        Height="14"
                                                        Margin="0,0,6,0"
-                                                       Foreground="#ffffff"
                                                        VerticalAlignment="Center" />
-                            <TextBlock Text="Stop" VerticalAlignment="Center" Foreground="#ffffff" />
+                            <TextBlock Text="Accept All" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource AppOutlinedButtonStyle}"
+                            Command="{Binding AddCartCommand}"
+                            Margin="0"
+                            ToolTip="Add selected candidates to qBittorrent">
+                        <StackPanel Orientation="Horizontal">
+                            <iconPacks:PackIconLucide Kind="Download"
+                                                       Width="14"
+                                                       Height="14"
+                                                       Margin="0,0,6,0"
+                                                       VerticalAlignment="Center" />
+                            <TextBlock Text="Add" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
                 </StackPanel>
@@ -311,13 +382,21 @@
                                    TextAlignment="Center" />
                     </StackPanel>
 
-                    <StackPanel Visibility="{Binding HasSelectedMedia, Converter={StaticResource BooleanToVisibilityConverter}}">
-                        <TextBlock Text="{Binding StatusMessage}"
+                    <Grid Visibility="{Binding HasSelectedMedia, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0"
+                                   Text="{Binding StatusMessage}"
                                    Style="{StaticResource MutedTextStyle}"
                                    TextTrimming="CharacterEllipsis"
                                    Margin="0,0,0,14" />
 
-                        <Border Background="{StaticResource AppBrushSurface}"
+                        <Border Grid.Row="1"
+                                Background="{StaticResource AppBrushSurface}"
                                 BorderBrush="{StaticResource AppBrushBorder}"
                                 BorderThickness="1"
                                 CornerRadius="8"
@@ -385,66 +464,72 @@
                             </StackPanel>
                         </Border>
 
-                        <ItemsControl ItemsSource="{Binding Orders}"
-                                      ItemTemplate="{StaticResource OrderCardTemplate}">
-                            <ItemsControl.Style>
-                                <Style TargetType="ItemsControl">
-                                    <Setter Property="Visibility" Value="Collapsed" />
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding HasOrders}" Value="True">
-                                            <Setter Property="Visibility" Value="Visible" />
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </ItemsControl.Style>
-                        </ItemsControl>
+                        <ScrollViewer Grid.Row="2"
+                                      VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled">
+                            <StackPanel>
+                                <ItemsControl ItemsSource="{Binding Orders}"
+                                              ItemTemplate="{StaticResource OrderCardTemplate}">
+                                    <ItemsControl.Style>
+                                        <Style TargetType="ItemsControl">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding HasOrders}" Value="True">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </ItemsControl.Style>
+                                </ItemsControl>
 
-                        <Border Background="{StaticResource AppBrushSurface}"
-                                BorderBrush="{StaticResource AppBrushBorder}"
-                                BorderThickness="1"
-                                CornerRadius="8"
-                                Padding="28"
-                                HorizontalAlignment="Stretch">
-                            <Border.Style>
-                                <Style TargetType="Border">
-                                    <Setter Property="Visibility" Value="Collapsed" />
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding HasOrders}" Value="False">
-                                            <Setter Property="Visibility" Value="Visible" />
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </Border.Style>
-                            <StackPanel HorizontalAlignment="Center">
-                                <iconPacks:PackIconLucide Kind="ShoppingBag"
-                                                           Width="40"
-                                                           Height="40"
-                                                           Foreground="{StaticResource AppBrushMutedText}"
-                                                           HorizontalAlignment="Center"
-                                                           Margin="0,0,0,14" />
-                                <TextBlock Text="This cart is empty."
-                                           FontWeight="SemiBold"
-                                           FontSize="15"
-                                           HorizontalAlignment="Center" />
-                                <TextBlock Text="Go to Library and use Add to Cart on episodes, movies, or season packs."
-                                           Style="{StaticResource MutedTextStyle}"
-                                           TextAlignment="Center"
-                                           Margin="0,8,0,16" />
-                                <Button Style="{StaticResource AppOutlinedButtonStyle}"
-                                        Command="{Binding GoToLibraryHintCommand}"
-                                        HorizontalAlignment="Center">
-                                    <StackPanel Orientation="Horizontal">
-                                        <iconPacks:PackIconLucide Kind="LibraryBig"
-                                                                   Width="14"
-                                                                   Height="14"
-                                                                   Margin="0,0,6,0"
-                                                                   VerticalAlignment="Center" />
-                                        <TextBlock Text="How to add items" VerticalAlignment="Center" />
+                                <Border Background="{StaticResource AppBrushSurface}"
+                                        BorderBrush="{StaticResource AppBrushBorder}"
+                                        BorderThickness="1"
+                                        CornerRadius="8"
+                                        Padding="28"
+                                        HorizontalAlignment="Stretch">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding HasOrders}" Value="False">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <StackPanel HorizontalAlignment="Center">
+                                        <iconPacks:PackIconLucide Kind="ShoppingBag"
+                                                                   Width="40"
+                                                                   Height="40"
+                                                                   Foreground="{StaticResource AppBrushMutedText}"
+                                                                   HorizontalAlignment="Center"
+                                                                   Margin="0,0,0,14" />
+                                        <TextBlock Text="This cart is empty."
+                                                   FontWeight="SemiBold"
+                                                   FontSize="15"
+                                                   HorizontalAlignment="Center" />
+                                        <TextBlock Text="Go to Library and use Add to Cart on episodes, movies, or season packs."
+                                                   Style="{StaticResource MutedTextStyle}"
+                                                   TextAlignment="Center"
+                                                   Margin="0,8,0,16" />
+                                        <Button Style="{StaticResource AppOutlinedButtonStyle}"
+                                                Command="{Binding GoToLibraryHintCommand}"
+                                                HorizontalAlignment="Center">
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconLucide Kind="LibraryBig"
+                                                                           Width="14"
+                                                                           Height="14"
+                                                                           Margin="0,0,6,0"
+                                                                           VerticalAlignment="Center" />
+                                                <TextBlock Text="How to add items" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </Button>
                                     </StackPanel>
-                                </Button>
+                                </Border>
                             </StackPanel>
-                        </Border>
-                    </StackPanel>
+                        </ScrollViewer>
+                    </Grid>
                 </Grid>
             </materialDesign:Card>
         </Grid>
