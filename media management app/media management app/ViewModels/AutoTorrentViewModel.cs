@@ -1208,7 +1208,8 @@ public partial class AutoTorrentViewModel : ViewModelBase
                 }
 
                 foreach (var season in _trackedShowService.GetSeasons(trackedShowId)
-                             .Where(season => season.SelectedPackOwnerSeasonNumber == season.SeasonNumber &&
+                             .Where(season => !season.IsHidden &&
+                                              season.SelectedPackOwnerSeasonNumber == season.SeasonNumber &&
                                               !string.IsNullOrWhiteSpace(season.PackTorrentHash)))
                 {
                     if (torrentsByHash.TryGetValue(season.PackTorrentHash!, out var torrent))
@@ -1277,6 +1278,10 @@ public partial class AutoTorrentViewModel : ViewModelBase
 
             var seasonRecords = _trackedShowService.GetSeasons(show.Id)
                 .ToDictionary(season => season.SeasonNumber);
+            var hiddenSeasonNumbers = seasonRecords.Values
+                .Where(season => season.IsHidden)
+                .Select(season => season.SeasonNumber)
+                .ToHashSet();
             var downloadFolderOptions = GetDownloadFolderOptions();
             foreach (var episode in episodes)
             {
@@ -1288,6 +1293,7 @@ public partial class AutoTorrentViewModel : ViewModelBase
 
             var seasons = episodes
                 .GroupBy(episode => episode.SeasonNumber)
+                .Where(group => !hiddenSeasonNumbers.Contains(group.Key))
                 .OrderBy(group => group.Key)
                 .Select(group =>
                 {

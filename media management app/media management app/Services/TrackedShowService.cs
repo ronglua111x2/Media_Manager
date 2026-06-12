@@ -97,6 +97,11 @@ public sealed class TrackedShowService : ITrackedShowService
         _databaseService.UpdateTrackedSeasonPackMode(showId, seasonNumber, mode);
     }
 
+    public void UpdateSeasonHidden(long showId, int seasonNumber, bool isHidden)
+    {
+        _databaseService.UpdateTrackedSeasonHidden(showId, seasonNumber, isHidden);
+    }
+
     public void UpdateSeasonSelectedPack(long showId, int ownerSeasonNumber, SeasonPackCandidate candidate)
     {
         _databaseService.UpdateTrackedSeasonSelectedPack(showId, ownerSeasonNumber, candidate);

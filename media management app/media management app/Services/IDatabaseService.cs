@@ -55,6 +55,8 @@ public interface IDatabaseService
 
     void UpdateTrackedSeasonPackMode(long showId, int seasonNumber, SeasonManagementMode mode);
 
+    void UpdateTrackedSeasonHidden(long showId, int seasonNumber, bool isHidden);
+
     void UpdateTrackedSeasonSelectedPack(long showId, int ownerSeasonNumber, SeasonPackCandidate candidate);
 
     void ClearTrackedSeasonSelectedPacksForSeasons(long showId, IReadOnlyList<int> seasonNumbers);

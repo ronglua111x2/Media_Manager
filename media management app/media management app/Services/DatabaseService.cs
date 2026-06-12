@@ -620,7 +620,8 @@ public sealed class DatabaseService : IDatabaseService
             ON CONFLICT(ShowId, SeasonNumber) DO UPDATE SET
                 EpisodeCount = excluded.EpisodeCount,
                 DownloadFolder = COALESCE(TrackedSeasons.DownloadFolder, excluded.DownloadFolder),
-                ManagementMode = TrackedSeasons.ManagementMode;
+                ManagementMode = TrackedSeasons.ManagementMode,
+                IsHidden = TrackedSeasons.IsHidden;
             """;
         command.Parameters.AddWithValue("$ShowId", season.ShowId);
         command.Parameters.AddWithValue("$SeasonNumber", season.SeasonNumber);
@@ -641,7 +642,7 @@ public sealed class DatabaseService : IDatabaseService
                    SelectedPackCandidateName, SelectedPackCandidateUrl, SelectedPackCandidatePlugin,
                    SelectedPackCandidateFileSize, SelectedPackCandidateSeeders, SelectedPackCandidateQuality,
                    SelectedPackCandidateAudioCodec, SelectedPackCoveredSeasons, SelectedPackOwnerSeasonNumber,
-                   PackTorrentHash, PackTorrentName, PackTorrentState, PackTorrentProgress
+                   PackTorrentHash, PackTorrentName, PackTorrentState, PackTorrentProgress, IsHidden
             FROM TrackedSeasons
             WHERE ShowId = $ShowId
             ORDER BY SeasonNumber;
@@ -670,11 +671,29 @@ public sealed class DatabaseService : IDatabaseService
                 PackTorrentHash = reader.IsDBNull(15) ? null : reader.GetString(15),
                 PackTorrentName = reader.IsDBNull(16) ? null : reader.GetString(16),
                 PackTorrentState = reader.IsDBNull(17) ? null : reader.GetString(17),
-                PackTorrentProgress = reader.GetDouble(18)
+                PackTorrentProgress = reader.GetDouble(18),
+                IsHidden = !reader.IsDBNull(19) && reader.GetInt32(19) != 0
             });
         }
 
         return seasons;
+    }
+
+    public void UpdateTrackedSeasonHidden(long showId, int seasonNumber, bool isHidden)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO TrackedSeasons (ShowId, SeasonNumber, EpisodeCount, IsHidden)
+            VALUES ($ShowId, $SeasonNumber, 0, $IsHidden)
+            ON CONFLICT(ShowId, SeasonNumber) DO UPDATE SET
+                IsHidden = excluded.IsHidden;
+            """;
+        command.Parameters.AddWithValue("$IsHidden", isHidden ? 1 : 0);
+        command.Parameters.AddWithValue("$ShowId", showId);
+        command.Parameters.AddWithValue("$SeasonNumber", seasonNumber);
+        command.ExecuteNonQuery();
     }
 
     public void UpdateTrackedSeasonDownloadFolder(long showId, int seasonNumber, string? downloadFolder)
@@ -1807,6 +1826,7 @@ public sealed class DatabaseService : IDatabaseService
         EnsureColumn(connection, "TrackedSeasons", "PackTorrentName", "TEXT NULL");
         EnsureColumn(connection, "TrackedSeasons", "PackTorrentState", "TEXT NULL");
         EnsureColumn(connection, "TrackedSeasons", "PackTorrentProgress", "REAL NOT NULL DEFAULT 0");
+        EnsureColumn(connection, "TrackedSeasons", "IsHidden", "INTEGER NOT NULL DEFAULT 0");
 
         using var episodes = connection.CreateCommand();
         episodes.CommandText = """

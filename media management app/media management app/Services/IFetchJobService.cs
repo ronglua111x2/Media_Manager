@@ -33,7 +33,7 @@ public interface IFetchJobService
         Action<long, string>? statusChanged = null,
         CancellationToken cancellationToken = default);
 
-    Task FetchSeasonPacksAsync(long showId, IReadOnlyList<int> seasonNumbers, CancellationToken cancellationToken = default);
+    Task FetchSeasonPacksAsync(long showId, IReadOnlyList<int> seasonNumbers, CancellationToken cancellationToken = default, int? maxCandidatesOverride = null);
 
     void CancelJob(long jobId);
 

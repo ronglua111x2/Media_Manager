@@ -151,21 +151,36 @@ public sealed class FetchJobService : IFetchJobService
             : await FetchEpisodeCandidatesParallelAsync(show, targetEpisodes, recipe, statusChanged, cancellationToken);
     }
 
-    public async Task FetchSeasonPacksAsync(long showId, IReadOnlyList<int> seasonNumbers, CancellationToken cancellationToken = default)
+    public async Task FetchSeasonPacksAsync(long showId, IReadOnlyList<int> seasonNumbers, CancellationToken cancellationToken = default, int? maxCandidatesOverride = null)
     {
         var show = _databaseService.GetTrackedShow(showId) ?? throw new InvalidOperationException("Tracked show was not found.");
-        var selectedSeasons = seasonNumbers.Where(season => season > 0).Distinct().Order().ToList();
+        var hiddenSeasons = _databaseService.GetTrackedSeasons(showId)
+            .Where(season => season.IsHidden)
+            .Select(season => season.SeasonNumber)
+            .ToHashSet();
+        var selectedSeasons = seasonNumbers
+            .Where(season => season > 0 && !hiddenSeasons.Contains(season))
+            .Distinct()
+            .Order()
+            .ToList();
         if (selectedSeasons.Count == 0)
         {
             throw new InvalidOperationException("Select at least one pack-mode season.");
         }
 
+        var packRecipe = _recipeService.GetRecipeOrDefault(show.PackRecipeId, MediaKind.TvSeasonPack);
         var snapshotResults = await _snapshotService.CaptureSnapshotAsync(
             show,
             _progressService,
             cancellationToken,
             MediaKind.TvSeasonPack);
-        var candidates = await MapSeasonPackCandidatesAsync(show, selectedSeasons, snapshotResults, cancellationToken);
+        var candidates = await MapSeasonPackCandidatesAsync(
+            show,
+            selectedSeasons,
+            snapshotResults,
+            packRecipe,
+            maxCandidatesOverride,
+            cancellationToken);
         lock (_gate)
         {
             foreach (var seasonNumber in selectedSeasons)
@@ -798,8 +813,13 @@ public sealed class FetchJobService : IFetchJobService
 
     private IReadOnlyList<TrackedEpisode> GetTargetEpisodes(long showId)
     {
-        var packModeSeasons = _databaseService.GetTrackedSeasons(showId)
+        var seasonRecords = _databaseService.GetTrackedSeasons(showId);
+        var packModeSeasons = seasonRecords
             .Where(season => season.ManagementMode == SeasonManagementMode.Pack)
+            .Select(season => season.SeasonNumber)
+            .ToHashSet();
+        var hiddenSeasons = seasonRecords
+            .Where(season => season.IsHidden)
             .Select(season => season.SeasonNumber)
             .ToHashSet();
 
@@ -807,7 +827,8 @@ public sealed class FetchJobService : IFetchJobService
             .Where(episode =>
                 episode.IsWanted &&
                 episode.Availability == EpisodeAvailability.Missing &&
-                !packModeSeasons.Contains(episode.SeasonNumber))
+                !packModeSeasons.Contains(episode.SeasonNumber) &&
+                !hiddenSeasons.Contains(episode.SeasonNumber))
             .OrderBy(episode => episode.SeasonNumber)
             .ThenBy(episode => episode.EpisodeNumber)
             .ToList();
@@ -1331,10 +1352,13 @@ public sealed class FetchJobService : IFetchJobService
         TrackedShow show,
         IReadOnlyList<int> selectedSeasons,
         IReadOnlyList<TorrentSearchResult> snapshotResults,
+        SearchRecipe packRecipe,
+        int? maxCandidatesOverride,
         CancellationToken cancellationToken)
     {
         var selectedQualities = ParseQualities(show.PreferredQuality);
-        var packRecipe = _recipeService.GetRecipeOrDefault(show.PackRecipeId, MediaKind.TvSeasonPack);
+        var maxCandidates = maxCandidatesOverride ??
+            RecipeRuntimeSettings.GetMaxCandidatesPerFetch(packRecipe, _settingsService.Current.AutoTorrent);
         var candidates = new List<SeasonPackCandidate>();
         foreach (var result in snapshotResults)
         {
@@ -1416,7 +1440,7 @@ public sealed class FetchJobService : IFetchJobService
             .OrderByDescending(candidate => candidate.QualityLabel is { Length: > 0 } quality ? TorrentQuality.GetRank(quality) : 0)
             .ThenByDescending(candidate => candidate.Seeders)
             .ThenByDescending(candidate => candidate.TotalScore)
-            .Take(50)
+            .Take(maxCandidates)
             .ToList();
     }
 

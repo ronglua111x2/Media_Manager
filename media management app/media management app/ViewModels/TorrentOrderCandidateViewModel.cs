@@ -20,6 +20,7 @@ public sealed class TorrentOrderCandidateViewModel
         Quality = candidate.Quality;
         AudioCodec = candidate.AudioCodec;
         TotalScore = candidate.TotalScore;
+        CoveredSeasons = candidate.CoveredSeasons;
     }
 
     public long Id { get; }
@@ -50,11 +51,43 @@ public sealed class TorrentOrderCandidateViewModel
 
     public int TotalScore { get; }
 
+    public string CoveredSeasons { get; }
+
+    public bool IsMultiSeason => ParseCoveredSeasons(CoveredSeasons).Count > 1;
+
+    public string CoveredSeasonsDisplay
+    {
+        get
+        {
+            var seasons = ParseCoveredSeasons(CoveredSeasons);
+            return seasons.Count == 0
+                ? string.Empty
+                : string.Join(", ", seasons.Select(season => $"S{season:00}"));
+        }
+    }
+
+    public string MultiSeasonWarningText => IsMultiSeason
+        ? $"Multi-season pack: covers {CoveredSeasonsDisplay}"
+        : string.Empty;
+
     public string FileSizeDisplay => FormatSize(FileSize);
 
-    public string DisplayText => $"#{Rank} {Name} | {QualityDisplay} | {FileSizeDisplay} | {Seeders} seeders | score {TotalScore}";
+    public string DisplayText => IsMultiSeason
+        ? $"#{Rank} {Name} | {QualityDisplay} | {FileSizeDisplay} | {Seeders} seeders | score {TotalScore} | covers {CoveredSeasonsDisplay}"
+        : $"#{Rank} {Name} | {QualityDisplay} | {FileSizeDisplay} | {Seeders} seeders | score {TotalScore}";
 
     private string QualityDisplay => string.IsNullOrWhiteSpace(Quality) ? "unknown" : Quality;
+
+    private static IReadOnlyList<int> ParseCoveredSeasons(string? value)
+    {
+        return (value ?? string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(item => int.TryParse(item, out var season) ? season : 0)
+            .Where(season => season > 0)
+            .Distinct()
+            .Order()
+            .ToList();
+    }
 
     private static string FormatSize(long bytes)
     {

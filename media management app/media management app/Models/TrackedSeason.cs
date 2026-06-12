@@ -41,4 +41,6 @@ public sealed class TrackedSeason
     public string? PackTorrentState { get; set; }
 
     public double PackTorrentProgress { get; set; }
+
+    public bool IsHidden { get; set; }
 }

@@ -117,14 +117,24 @@
         </DataTemplate>
 
         <DataTemplate x:Key="SeasonTemplate">
-            <materialDesign:Card Margin="0,0,0,10"
-                                 Style="{StaticResource PanelCardStyle}"
-                                 Padding="12">
+            <materialDesign:Card>
+                <materialDesign:Card.Style>
+                    <Style TargetType="materialDesign:Card" BasedOn="{StaticResource PanelCardStyle}">
+                        <Setter Property="Margin" Value="0,0,0,10" />
+                        <Setter Property="Padding" Value="12" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsHidden}" Value="True">
+                                <Setter Property="Opacity" Value="0.55" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </materialDesign:Card.Style>
                 <Expander IsExpanded="{Binding IsExpanded, Mode=TwoWay}">
                     <Expander.Header>
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <StackPanel>
@@ -136,14 +146,36 @@
                                                                Foreground="{StaticResource AppBrushShowAccent}"
                                                                VerticalAlignment="Center" />
                                     <TextBlock Text="{Binding Header}"
-                                               FontWeight="SemiBold" />
+                                               FontWeight="SemiBold">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="FontStyle" Value="Normal" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsHidden}" Value="True">
+                                                        <Setter Property="FontStyle" Value="Italic" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
                                 </StackPanel>
                                 <TextBlock Text="{Binding PackModeBannerTitle}"
                                            Style="{StaticResource MutedTextStyle}"
                                            Margin="0,4,0,0"
                                            TextWrapping="Wrap" />
                             </StackPanel>
-                            <CheckBox Grid.Column="1"
+                            <Button Grid.Column="1"
+                                    Style="{StaticResource CompactOutlinedIconButtonStyle}"
+                                    Command="{Binding DataContext.ToggleSeasonHiddenCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                    CommandParameter="{Binding}"
+                                    ToolTip="{Binding HideSeasonToolTip}"
+                                    Margin="8,0,0,0">
+                                <iconPacks:PackIconLucide Kind="{Binding HideSeasonIconKind}"
+                                                           Width="14"
+                                                           Height="14"
+                                                           VerticalAlignment="Center" />
+                            </Button>
+                            <CheckBox Grid.Column="2"
                                       IsChecked="{Binding IsPackMode, Mode=TwoWay}"
                                       Content="Pack mode"
                                       VerticalAlignment="Center"
@@ -885,15 +917,26 @@
 
                             <StackPanel Margin="0,20,0,0"
                                         Visibility="{Binding IsSelectedShow, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
-                                    <iconPacks:PackIconLucide Kind="Tv"
-                                                               Width="16"
-                                                               Height="16"
-                                                               Margin="0,0,8,0"
-                                                               Foreground="{StaticResource AppBrushShowAccent}"
-                                                               VerticalAlignment="Center" />
-                                    <TextBlock Text="Seasons" Style="{StaticResource SectionTitleStyle}" />
-                                </StackPanel>
+                                <Grid Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Orientation="Horizontal">
+                                        <iconPacks:PackIconLucide Kind="Tv"
+                                                                   Width="16"
+                                                                   Height="16"
+                                                                   Margin="0,0,8,0"
+                                                                   Foreground="{StaticResource AppBrushShowAccent}"
+                                                                   VerticalAlignment="Center" />
+                                        <TextBlock Text="Seasons" Style="{StaticResource SectionTitleStyle}" />
+                                    </StackPanel>
+                                    <Button Grid.Column="1"
+                                            Style="{StaticResource AppOutlinedButtonStyle}"
+                                            Command="{Binding ToggleShowHiddenSeasonsCommand}"
+                                            Content="{Binding ShowHiddenSeasonsButtonLabel}"
+                                            Visibility="{Binding SelectedShow.HasHiddenSeasons, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                </Grid>
                                 <ItemsControl ItemsSource="{Binding SelectedShow.Seasons}"
                                               ItemTemplate="{StaticResource SeasonTemplate}" />
                             </StackPanel>

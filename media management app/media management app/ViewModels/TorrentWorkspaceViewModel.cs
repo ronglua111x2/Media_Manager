@@ -1,10 +1,12 @@
 using System.Collections.ObjectModel;
+using System.Windows;
 using System.Windows.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using media_management_app.Common;
 using media_management_app.Models;
 using media_management_app.Services;
+using media_management_app.Views;
 
 namespace media_management_app.ViewModels;
 
@@ -22,6 +24,8 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
     private readonly IQbittorrentClient _qbittorrentClient;
     private readonly ISettingsService _settingsService;
     private readonly ITorrentReconciliationService _torrentReconciliationService;
+    private readonly ITorrentAddDiskAssignmentService _torrentAddDiskAssignmentService;
+    private readonly IDownloadFolderCatalogService _downloadFolderCatalogService;
     private readonly IAppLogger _logger;
 
     private IReadOnlyList<LibraryMediaCardViewModel> _allMediaCards = [];
@@ -41,6 +45,8 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         IQbittorrentClient qbittorrentClient,
         ISettingsService settingsService,
         ITorrentReconciliationService torrentReconciliationService,
+        ITorrentAddDiskAssignmentService torrentAddDiskAssignmentService,
+        IDownloadFolderCatalogService downloadFolderCatalogService,
         IAppLogger logger)
     {
         _trackedShowService = trackedShowService;
@@ -55,6 +61,8 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         _qbittorrentClient = qbittorrentClient;
         _settingsService = settingsService;
         _torrentReconciliationService = torrentReconciliationService;
+        _torrentAddDiskAssignmentService = torrentAddDiskAssignmentService;
+        _downloadFolderCatalogService = downloadFolderCatalogService;
         _logger = logger;
 
         _torrentCartService.CartChanged += (_, _) => OnCartChanged();
@@ -99,6 +107,9 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
 
     [ObservableProperty]
     private string? selectedMovieRecipeId;
+
+    [ObservableProperty]
+    private int maxPackCandidates = 10;
 
     public bool HasMedia => MediaCards.Count > 0;
 
@@ -334,16 +345,41 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
             return;
         }
 
+        var plan = _torrentAddDiskAssignmentService.BuildPlan(orders, GetSeasonDownloadFolder);
+        _torrentAddDiskAssignmentService.AutoAssign(plan);
+
+        var dialog = new TorrentAddDiskDialog(plan, _torrentAddDiskAssignmentService, _downloadFolderCatalogService)
+        {
+            Owner = System.Windows.Application.Current.MainWindow
+        };
+        if (dialog.ShowDialog() != true)
+        {
+            StatusMessage = "Add canceled.";
+            return;
+        }
+
         IsRunningCart = true;
         var addedCount = 0;
         var failedCount = 0;
         try
         {
+            foreach (var seasonGroup in plan.Rows
+                         .Where(row => row.SeasonNumber is not null && row.TargetKind != MediaKind.Movie)
+                         .GroupBy(row => (row.MediaId, row.SeasonNumber)))
+            {
+                var folder = seasonGroup.First().SelectedDownloadFolder;
+                _trackedShowService.UpdateSeasonDownloadFolder(
+                    seasonGroup.Key.MediaId,
+                    seasonGroup.Key.SeasonNumber!.Value,
+                    folder);
+            }
+
             foreach (var order in orders)
             {
                 try
                 {
-                    await AddOrderToClientAsync(order);
+                    var savePath = plan.Rows.First(row => row.OrderId == order.Id).SelectedDownloadFolder;
+                    await AddOrderToClientAsync(order, savePath);
                     addedCount++;
                 }
                 catch (Exception ex)
@@ -495,8 +531,22 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
 
     private void AcceptCandidate(long orderId)
     {
+        var order = _torrentCartService.GetOrder(orderId);
+        if (order is null)
+        {
+            return;
+        }
+
+        if (!TryConfirmMultiSeasonPackAccept(order, out var conflictingOrders))
+        {
+            return;
+        }
+
         _torrentCartService.AcceptSelectedCandidate(orderId);
-        StatusMessage = "Candidate accepted.";
+        CancelSupersededPackOrders(order.MediaId, orderId, conflictingOrders);
+        StatusMessage = conflictingOrders.Count > 0
+            ? $"Candidate accepted. Canceled {conflictingOrders.Count} superseded pack order(s)."
+            : "Candidate accepted.";
     }
 
     [RelayCommand]
@@ -839,7 +889,11 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         _logger.Info(
             $"Run Cart: Media='{show.DisplayTitle}', Recipe='{recipe.Name}', Target='Season pack', Mode='Pack snapshot search', Season=S{order.SeasonNumber.Value:00}.",
             LogTarget.All);
-        await _fetchJobService.FetchSeasonPacksAsync(order.MediaId, [order.SeasonNumber.Value], cancellationToken);
+        await _fetchJobService.FetchSeasonPacksAsync(
+            order.MediaId,
+            [order.SeasonNumber.Value],
+            cancellationToken,
+            Math.Clamp(MaxPackCandidates, 1, 50));
         if (!_fetchJobService.TryGetPackCandidates(order.MediaId, order.SeasonNumber.Value, out var candidates) ||
             candidates.Count == 0)
         {
@@ -906,9 +960,9 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         }).ToList();
     }
 
-    private async Task AddOrderToClientAsync(TorrentCartOrder order)
+    private async Task AddOrderToClientAsync(TorrentCartOrder order, string savePath)
     {
-        var addedTorrent = await _qbittorrentClient.AddTorrentAsync(CreateAddTorrentRequest(order));
+        var addedTorrent = await _qbittorrentClient.AddTorrentAsync(CreateAddTorrentRequest(order, savePath));
         order.TorrentHash = addedTorrent.Hash;
         order.TorrentName = addedTorrent.Name;
         order.TorrentState = addedTorrent.State;
@@ -935,8 +989,16 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
                 throw new InvalidOperationException("Season pack order is missing a season number.");
             }
 
-            _trackedShowService.UpdateSeasonSelectedPack(order.MediaId, order.SeasonNumber.Value, ToSeasonPackCandidate(order));
+            var candidate = ToSeasonPackCandidate(order);
+            var coveredSeasons = candidate.CoveredSeasons;
+            if (coveredSeasons.Count > 0)
+            {
+                _trackedShowService.ClearSeasonSelectedPacksForSeasons(order.MediaId, coveredSeasons);
+            }
+
+            _trackedShowService.UpdateSeasonSelectedPack(order.MediaId, order.SeasonNumber.Value, candidate);
             _trackedShowService.UpdateSeasonPackTorrent(order.MediaId, order.SeasonNumber.Value, addedTorrent);
+            CancelSupersededPackOrders(order.MediaId, order.SeasonNumber.Value, order.Id, coveredSeasons);
             _torrentCartService.SaveOrder(order);
             return;
         }
@@ -947,17 +1009,24 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         _torrentCartService.SaveOrder(order);
     }
 
-    private AddTorrentRequest CreateAddTorrentRequest(TorrentCartOrder order)
+    private AddTorrentRequest CreateAddTorrentRequest(TorrentCartOrder order, string savePath)
     {
         return new AddTorrentRequest
         {
             Url = order.SelectedCandidateUrl,
             PluginName = order.SelectedCandidatePlugin,
-            SavePath = GetOrderDownloadFolder(order),
+            SavePath = savePath,
             Category = FirstNonEmpty(_settingsService.Current.AutoTorrent.CategoryName, "AutoTorrent"),
             Tags = "media-manager",
             Paused = false
         };
+    }
+
+    private string? GetSeasonDownloadFolder(long showId, int seasonNumber)
+    {
+        return _databaseService.GetTrackedSeasons(showId)
+            .FirstOrDefault(season => season.SeasonNumber == seasonNumber)
+            ?.DownloadFolder;
     }
 
     private string GetOrderDownloadFolder(TorrentCartOrder order)
@@ -1064,6 +1133,113 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         if (seasons.Count == 0 && order.SeasonNumber is not null)
         {
             seasons.Add(order.SeasonNumber.Value);
+        }
+
+        return seasons;
+    }
+
+    private bool TryConfirmMultiSeasonPackAccept(TorrentCartOrder order, out IReadOnlyList<TorrentCartOrder> conflictingOrders)
+    {
+        conflictingOrders = [];
+        if (!IsSeasonPackOrder(order) || order.SeasonNumber is not int ownerSeason)
+        {
+            return true;
+        }
+
+        var selected = _torrentCartService.GetCandidates(order.Id).FirstOrDefault(candidate => candidate.IsSelected);
+        if (selected is null)
+        {
+            return true;
+        }
+
+        var coveredSeasons = ParseCoveredSeasonsFromValue(selected.CoveredSeasons, ownerSeason);
+        if (coveredSeasons.Count <= 1)
+        {
+            return true;
+        }
+
+        conflictingOrders = GetConflictingPackOrders(order.MediaId, order.Id, ownerSeason, coveredSeasons);
+        if (conflictingOrders.Count == 0)
+        {
+            return true;
+        }
+
+        var affectedOrders = string.Join("\n", conflictingOrders.Select(conflict => $"- {conflict.Title}"));
+        var coveredDisplay = string.Join(", ", coveredSeasons.Select(season => $"S{season:00}"));
+        var confirm = System.Windows.MessageBox.Show(
+            $"This multi-season pack covers {coveredDisplay}.\n\nAccepting will cancel these cart pack orders:\n{affectedOrders}\n\nCovered seasons will be managed from S{ownerSeason:00} in Library.",
+            "Multi-Season Pack",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+        return confirm == System.Windows.MessageBoxResult.Yes;
+    }
+
+    private void CancelSupersededPackOrders(long showId, long ownerOrderId, IReadOnlyList<TorrentCartOrder> ordersToCancel)
+    {
+        var ownerSeason = _torrentCartService.GetOrder(ownerOrderId)?.SeasonNumber;
+        foreach (var conflict in ordersToCancel)
+        {
+            _torrentCartService.UpdateOrderStatus(
+                conflict.Id,
+                TorrentOrderStatus.Canceled,
+                ownerSeason is int season
+                    ? $"Superseded by multi-season pack on S{season:00}"
+                    : "Superseded by multi-season pack");
+        }
+    }
+
+    private void CancelSupersededPackOrders(
+        long showId,
+        int ownerSeason,
+        long ownerOrderId,
+        IReadOnlyList<int> coveredSeasons)
+    {
+        CancelSupersededPackOrders(
+            showId,
+            ownerOrderId,
+            GetConflictingPackOrders(showId, ownerOrderId, ownerSeason, coveredSeasons));
+    }
+
+    private IReadOnlyList<TorrentCartOrder> GetConflictingPackOrders(
+        long showId,
+        long ownerOrderId,
+        int ownerSeason,
+        IReadOnlyList<int> coveredSeasons)
+    {
+        var conflictingSeasons = coveredSeasons
+            .Where(season => season != ownerSeason)
+            .ToHashSet();
+        if (conflictingSeasons.Count == 0)
+        {
+            return [];
+        }
+
+        return _torrentCartService.GetOrders(MediaKind.TvEpisode, showId)
+            .Where(order => order.Id != ownerOrderId &&
+                            IsSeasonPackOrder(order) &&
+                            order.SeasonNumber is int seasonNumber &&
+                            conflictingSeasons.Contains(seasonNumber) &&
+                            order.Status != TorrentOrderStatus.Canceled)
+            .OrderBy(order => order.SeasonNumber)
+            .ToList();
+    }
+
+    private static bool IsSeasonPackOrder(TorrentCartOrder order) =>
+        order.EpisodeId is null && order.SeasonNumber is not null && order.TargetKind != MediaKind.Movie;
+
+    private static IReadOnlyList<int> ParseCoveredSeasonsFromValue(string coveredSeasonsValue, int fallbackSeason)
+    {
+        var seasons = coveredSeasonsValue
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(value => int.TryParse(value, out var parsed) ? parsed : 0)
+            .Where(value => value > 0)
+            .Distinct()
+            .Order()
+            .ToList();
+
+        if (seasons.Count == 0)
+        {
+            seasons.Add(fallbackSeason);
         }
 
         return seasons;

@@ -10,19 +10,22 @@ public sealed partial class LibraryShowDetailViewModel : ObservableObject
         TrackedShow show,
         IEnumerable<LibrarySeasonViewModel> seasons,
         string episodeRecipeName,
-        string packRecipeName)
+        string packRecipeName,
+        int hiddenSeasonCount)
     {
         Id = show.Id;
         Title = show.DisplayTitle;
         Overview = show.Overview ?? string.Empty;
         PosterPath = show.PosterPath;
-        TotalEpisodes = show.TotalEpisodes;
-        AvailableEpisodes = show.AvailableEpisodes;
+        HiddenSeasonCount = hiddenSeasonCount;
+        var seasonList = seasons.ToList();
+        TotalEpisodes = seasonList.Sum(season => season.TotalEpisodes);
+        AvailableEpisodes = seasonList.Sum(season => season.AvailableEpisodes);
         PreferencesSummary =
             $"Quality {show.PreferredQuality} | Audio {(string.IsNullOrWhiteSpace(show.PreferredAudioCodec) ? "Any" : show.PreferredAudioCodec)} | Min seeders {show.MinimumSeeders}";
         EpisodeRecipeName = episodeRecipeName;
         PackRecipeName = packRecipeName;
-        Seasons = new ObservableCollection<LibrarySeasonViewModel>(seasons);
+        Seasons = new ObservableCollection<LibrarySeasonViewModel>(seasonList);
     }
 
     public long Id { get; }
@@ -42,6 +45,10 @@ public sealed partial class LibraryShowDetailViewModel : ObservableObject
     public string EpisodeRecipeName { get; }
 
     public string PackRecipeName { get; }
+
+    public int HiddenSeasonCount { get; }
+
+    public bool HasHiddenSeasons => HiddenSeasonCount > 0;
 
     public string RecipeSummary => $"Episode recipe: {EpisodeRecipeName} | Pack recipe: {PackRecipeName}";
 

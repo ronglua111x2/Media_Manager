@@ -84,6 +84,8 @@ public partial class App : System.Windows.Application
         services.AddSingleton<ICandidateEvaluationService, CandidateEvaluationService>();
         services.AddSingleton<IAutomationFlowService, AutomationFlowService>();
         services.AddSingleton<IDeviceStatusService, DeviceStatusService>();
+        services.AddSingleton<IDownloadFolderCatalogService, DownloadFolderCatalogService>();
+        services.AddSingleton<ITorrentAddDiskAssignmentService, TorrentAddDiskAssignmentService>();
         services.AddSingleton<IConsoleWindowService, ConsoleWindowService>();
         services.AddSingleton<IQbittorrentWebViewHostService, QbittorrentWebViewHostService>();
         services.AddSingleton<ShowSearchSnapshotService>();

@@ -53,6 +53,9 @@ public sealed partial class TorrentOrderViewModel : ObservableObject
             if (SetProperty(ref _selectedCandidateId, value))
             {
                 OnPropertyChanged(nameof(SelectedCandidate));
+                OnPropertyChanged(nameof(SelectedCandidateIsMultiSeason));
+                OnPropertyChanged(nameof(SelectedCandidateCoveredSeasonsDisplay));
+                OnPropertyChanged(nameof(SelectedCandidateMultiSeasonWarning));
                 OnPropertyChanged(nameof(HasCandidates));
                 OnPropertyChanged(nameof(CanAccept));
                 AcceptCommand.NotifyCanExecuteChanged();
@@ -87,6 +90,12 @@ public sealed partial class TorrentOrderViewModel : ObservableObject
         SelectedCandidateId is null
             ? null
             : Candidates.FirstOrDefault(candidate => candidate.Id == SelectedCandidateId.Value);
+
+    public bool SelectedCandidateIsMultiSeason => SelectedCandidate?.IsMultiSeason == true;
+
+    public string SelectedCandidateCoveredSeasonsDisplay => SelectedCandidate?.CoveredSeasonsDisplay ?? string.Empty;
+
+    public string SelectedCandidateMultiSeasonWarning => SelectedCandidate?.MultiSeasonWarningText ?? string.Empty;
 
     public bool CanAccept => HasCandidates &&
                              SelectedCandidateId is not null &&
@@ -139,6 +148,9 @@ public sealed partial class TorrentOrderViewModel : ObservableObject
         OnPropertyChanged(nameof(HasCandidates));
         OnPropertyChanged(nameof(CanAccept));
         OnPropertyChanged(nameof(SelectedCandidate));
+        OnPropertyChanged(nameof(SelectedCandidateIsMultiSeason));
+        OnPropertyChanged(nameof(SelectedCandidateCoveredSeasonsDisplay));
+        OnPropertyChanged(nameof(SelectedCandidateMultiSeasonWarning));
         AcceptCommand.NotifyCanExecuteChanged();
     }
 

@@ -108,6 +108,9 @@ public sealed partial class LibraryViewModel : ViewModelBase
     [ObservableProperty]
     private string? selectedImportFolder;
 
+    [ObservableProperty]
+    private bool showHiddenSeasons;
+
     public bool HasMedia => MediaCards.Count > 0;
 
     public bool HasSelectedMedia => SelectedMediaCard is not null;
@@ -131,6 +134,10 @@ public sealed partial class LibraryViewModel : ViewModelBase
     public bool CanImportSelected =>
         !IsImportBusy &&
         ImportGroups.Any(group => group.CanImport);
+
+    public string ShowHiddenSeasonsButtonLabel => ShowHiddenSeasons
+        ? "Hide hidden seasons"
+        : $"Show hidden seasons ({SelectedShow?.HiddenSeasonCount ?? 0})";
 
     [RelayCommand]
     private void RefreshLibrary()
@@ -577,6 +584,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
         var isSameMedia = value?.Id == _loadedDetailMediaId && value?.MediaKind == _loadedDetailMediaKind;
         if (!isSameMedia)
         {
+            ShowHiddenSeasons = false;
             _loadedDetailMediaId = value?.Id;
             _loadedDetailMediaKind = value?.MediaKind;
             _ = LoadSelectedMediaAsync(value);
@@ -603,6 +611,39 @@ public sealed partial class LibraryViewModel : ViewModelBase
     partial void OnIsImportPanelOpenChanged(bool value)
     {
         OnPropertyChanged(nameof(HasSelectedMedia));
+    }
+
+    partial void OnShowHiddenSeasonsChanged(bool value)
+    {
+        OnPropertyChanged(nameof(ShowHiddenSeasonsButtonLabel));
+    }
+
+    partial void OnSelectedShowChanged(LibraryShowDetailViewModel? value)
+    {
+        OnPropertyChanged(nameof(ShowHiddenSeasonsButtonLabel));
+    }
+
+    [RelayCommand]
+    private void ToggleSeasonHidden(LibrarySeasonViewModel? season)
+    {
+        if (season is null || SelectedShow is null)
+        {
+            return;
+        }
+
+        var wasHidden = season.IsHidden;
+        _trackedShowService.UpdateSeasonHidden(season.ShowId, season.SeasonNumber, !wasHidden);
+        RebuildSelectedShowDetail();
+        StatusMessage = wasHidden
+            ? $"Season {season.SeasonNumber:00} is visible again."
+            : $"Season {season.SeasonNumber:00} hidden.";
+    }
+
+    [RelayCommand]
+    private void ToggleShowHiddenSeasons()
+    {
+        ShowHiddenSeasons = !ShowHiddenSeasons;
+        RebuildSelectedShowDetail();
     }
 
     private async Task LoadSelectedMediaAsync(LibraryMediaCardViewModel? card)
@@ -710,8 +751,14 @@ public sealed partial class LibraryViewModel : ViewModelBase
         var seasonRecords = _trackedShowService.GetSeasons(show.Id)
             .ToDictionary(season => season.SeasonNumber);
 
+        var hiddenSeasonNumbers = seasonRecords.Values
+            .Where(season => season.IsHidden)
+            .Select(season => season.SeasonNumber)
+            .ToHashSet();
+
         var seasons = episodes
             .GroupBy(episode => episode.SeasonNumber)
+            .Where(group => ShowHiddenSeasons || !hiddenSeasonNumbers.Contains(group.Key))
             .OrderBy(group => group.Key)
             .Select(group =>
             {
@@ -731,7 +778,33 @@ public sealed partial class LibraryViewModel : ViewModelBase
 
         var episodeRecipeName = _recipeService.GetRecipeOrDefault(show.RecipeId, MediaKind.TvEpisode).Name;
         var packRecipeName = _recipeService.GetRecipeOrDefault(show.PackRecipeId, MediaKind.TvSeasonPack).Name;
-        return new LibraryShowDetailViewModel(show, seasons, episodeRecipeName, packRecipeName);
+        return new LibraryShowDetailViewModel(show, seasons, episodeRecipeName, packRecipeName, hiddenSeasonNumbers.Count);
+    }
+
+    private void RebuildSelectedShowDetail()
+    {
+        if (SelectedMediaCard?.IsShow != true)
+        {
+            return;
+        }
+
+        var show = _trackedShowService.GetShows().FirstOrDefault(item => item.Id == SelectedMediaCard.Id);
+        if (show is null)
+        {
+            return;
+        }
+
+        var expandedSeasons = SelectedShow?.Seasons
+            .Where(season => season.IsExpanded)
+            .Select(season => season.SeasonNumber)
+            .ToHashSet() ?? [];
+
+        SelectedShow = BuildShowDetail(show, expandedSeasons);
+
+        if (ShowHiddenSeasons && SelectedShow?.HasHiddenSeasons != true)
+        {
+            ShowHiddenSeasons = false;
+        }
     }
 
     private LibraryMovieDetailViewModel BuildMovieDetail(TrackedMovie movie)

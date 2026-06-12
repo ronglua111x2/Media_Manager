@@ -28,6 +28,8 @@ public interface ITrackedShowService
 
     void UpdateSeasonPackMode(long showId, int seasonNumber, Common.SeasonManagementMode mode);
 
+    void UpdateSeasonHidden(long showId, int seasonNumber, bool isHidden);
+
     void UpdateSeasonSelectedPack(long showId, int ownerSeasonNumber, SeasonPackCandidate candidate);
 
     void ClearSeasonSelectedPacksForSeasons(long showId, IReadOnlyList<int> seasonNumbers);

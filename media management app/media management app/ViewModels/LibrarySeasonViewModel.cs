@@ -26,6 +26,7 @@ public partial class LibrarySeasonViewModel : ObservableObject
         selectedPackCoveredSeasons = seasonRecord?.SelectedPackCoveredSeasons ?? string.Empty;
         packTorrentHash = seasonRecord?.PackTorrentHash ?? string.Empty;
         packTorrentProgress = seasonRecord?.PackTorrentProgress ?? 0;
+        isHidden = seasonRecord?.IsHidden ?? false;
         SyncEpisodePackMode();
     }
 
@@ -59,6 +60,10 @@ public partial class LibrarySeasonViewModel : ObservableObject
         SelectedPackOwnerSeasonNumber is null ? string.Empty : $"S{SelectedPackOwnerSeasonNumber:00}";
 
     public string ManagementModeLabel => IsPackMode ? "Pack" : "Episodes";
+
+    public string HideSeasonIconKind => IsHidden ? "EyeOff" : "Eye";
+
+    public string HideSeasonToolTip => IsHidden ? "Show season again" : "Hide season";
 
     public string PackModeBannerTitle => IsCoveredByAnotherPack
         ? $"Managed by pack selected on {PackOwnerDisplay}: {SelectedPackName}"
@@ -106,6 +111,9 @@ public partial class LibrarySeasonViewModel : ObservableObject
 
     [ObservableProperty]
     private bool isExpanded;
+
+    [ObservableProperty]
+    private bool isHidden;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ManagementModeLabel))]
