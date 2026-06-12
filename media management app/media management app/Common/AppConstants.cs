@@ -15,6 +15,11 @@ public static class AppConstants
     #region Logging
 
     public const int MaxLogLinesPerFile = 2000;
+    public const int MinLogLinesPerFile = 100;
+    public const int MaxConfigurableLogLinesPerFile = 100000;
+    public const int DefaultLogCleanupRetentionDays = 30;
+    public const int MinLogCleanupRetentionDays = 1;
+    public const int MaxLogCleanupRetentionDays = 3650;
     public const int MaxUiLogLines = 500;
     public const string LogFileSuffix = "systemlog";
     public const string LogFileExtension = ".txt";

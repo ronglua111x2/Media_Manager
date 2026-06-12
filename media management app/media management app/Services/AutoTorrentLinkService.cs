@@ -136,6 +136,35 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
                                   string.Equals(item.ProviderId, providerId, StringComparison.OrdinalIgnoreCase));
     }
 
+    public AutoTorrentLinkResult RemoveEpisodeLinks(long showId, int seasonNumber, int episodeNumber)
+    {
+        var show = _databaseService.GetTrackedShow(showId);
+        var providerId = show?.TmdbId.ToString();
+        return string.IsNullOrWhiteSpace(providerId)
+            ? new AutoTorrentLinkResult { SkippedCount = 1, Messages = { "Tracked show was not found." } }
+            : RemoveLinks(item =>
+            {
+                var key = GetOutputEpisodeKey(item);
+                return item.MediaKind == MediaKind.TvEpisode &&
+                       key == (seasonNumber, episodeNumber) &&
+                       string.Equals(item.Provider, "tmdb", StringComparison.OrdinalIgnoreCase) &&
+                       string.Equals(item.ProviderId, providerId, StringComparison.OrdinalIgnoreCase);
+            });
+    }
+
+    public AutoTorrentLinkResult RemoveSeasonPackLinks(long showId, int ownerSeasonNumber)
+    {
+        var show = _databaseService.GetTrackedShow(showId);
+        var providerId = show?.TmdbId.ToString();
+        return string.IsNullOrWhiteSpace(providerId)
+            ? new AutoTorrentLinkResult { SkippedCount = 1, Messages = { "Tracked show was not found." } }
+            : RemoveLinks(item => item.MediaKind == MediaKind.TvEpisode &&
+                                  item.AutoTorrentLinkKind == AutoTorrentLinkKind.SeasonPack &&
+                                  item.AutoTorrentPackOwnerSeasonNumber == ownerSeasonNumber &&
+                                  string.Equals(item.Provider, "tmdb", StringComparison.OrdinalIgnoreCase) &&
+                                  string.Equals(item.ProviderId, providerId, StringComparison.OrdinalIgnoreCase));
+    }
+
     public AutoTorrentLinkResult RemoveMovieLinks(long movieId)
     {
         var movie = _databaseService.GetTrackedMovie(movieId);
@@ -321,6 +350,14 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
                 continue;
             }
 
+            if (item.IsExternalImport)
+            {
+                _databaseService.DeleteSourceItem(item.Id);
+                result.RemovedCount++;
+                result.Messages.Add($"Removed imported library record for {item.FileName}.");
+                continue;
+            }
+
             if (_hardlinkService.RemoveHardLink(item, out _, out var errorMessage))
             {
                 item.LinkedPath = null;
@@ -339,6 +376,21 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
         }
 
         return result;
+    }
+
+    private static (int SeasonNumber, int EpisodeNumber)? GetOutputEpisodeKey(SourceItem item)
+    {
+        if (item.MappedSeasonNumber is not null && item.MappedEpisodeNumber is not null)
+        {
+            return (item.MappedSeasonNumber.Value, item.MappedEpisodeNumber.Value);
+        }
+
+        if (item.SeasonNumber is not null && item.EpisodeNumber is not null)
+        {
+            return (item.SeasonNumber.Value, item.EpisodeNumber.Value);
+        }
+
+        return null;
     }
 
     private async Task<AddedTorrentResult?> GetTorrentAsync(string hash, CancellationToken cancellationToken)

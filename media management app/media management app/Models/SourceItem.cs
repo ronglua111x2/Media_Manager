@@ -78,5 +78,7 @@ public sealed class SourceItem
 
     public int? AutoTorrentPackOwnerSeasonNumber { get; set; }
 
+    public bool IsExternalImport { get; set; }
+
     public DateTime LastSeenUtc { get; set; } = DateTime.UtcNow;
 }

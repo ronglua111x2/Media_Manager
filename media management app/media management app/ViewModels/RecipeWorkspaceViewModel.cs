@@ -329,6 +329,12 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
 
     public IReadOnlyList<string> SearchModeOptions { get; } = [ParallelSearchMode, SnapshotSearchMode];
 
+    public IReadOnlyList<string> EpisodeNumberingModeOptions { get; } =
+    [
+        RecipeRuntimeSettings.StandardTvEpisodeNumbering,
+        RecipeRuntimeSettings.AnimeAbsoluteEpisodeNumbering
+    ];
+
     public RecipeBlockType BlockType => _module.BlockType;
 
     public string BlockTypeLabel => _module.BlockType switch
@@ -578,6 +584,15 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
         set => SetExtensionValue(RecipeRuntimeSettings.EnableCandidateMetadataProbeKey, value.ToString());
     }
 
+    public string EpisodeNumberingMode
+    {
+        get => RecipeRuntimeSettings.NormalizeEpisodeNumberingMode(
+            GetExtensionValue(RecipeRuntimeSettings.EpisodeNumberingModeKey));
+        set => SetExtensionValue(
+            RecipeRuntimeSettings.EpisodeNumberingModeKey,
+            RecipeRuntimeSettings.NormalizeEpisodeNumberingMode(value));
+    }
+
     public string SavePath
     {
         get => _module.SavePath;
@@ -685,6 +700,7 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
         RecipeBlockType.CandidateParser =>
         [
             $"Enabled: {(IsEnabled ? "Yes" : "No")}",
+            $"Episode numbering: {EpisodeNumberingMode}",
             $"Probe metadata: {(EnableCandidateMetadataProbe ? "On" : "Off")}"
         ],
         RecipeBlockType.Scoring =>
@@ -813,7 +829,7 @@ internal static class ModuleFieldHelp
             ],
             RecipeBlockType.CandidateParser =>
             [
-                new() { FieldName = "Automatic parsing", Description = "Filename tokens are parsed by TorrentCandidateParser.", OutputImpact = "Extracts season, episode, quality, year, and title tokens used by filter and scoring modules." },
+                new() { FieldName = "Episode numbering", Description = "Controls whether filenames use Standard TV SxxEyy numbering or Anime absolute numbering such as One Piece - 1163.", OutputImpact = "Standard TV keeps existing behavior. Anime absolute accepts absolute episode numbers for shows that publish that way." },
                 new() { FieldName = "Probe candidate metadata", Description = "Download torrent metadata to verify episode/year coverage.", OutputImpact = "Improves accuracy for ambiguous filenames but adds extra qBittorrent requests." }
             ],
             RecipeBlockType.Scoring =>

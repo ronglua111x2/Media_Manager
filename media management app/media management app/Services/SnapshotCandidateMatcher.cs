@@ -35,7 +35,8 @@ public sealed class SnapshotCandidateMatcher
             };
         }
 
-        if (!IsSeasonMatch(parsed, episode.SeasonNumber))
+        var isAbsoluteEpisodeMatch = parsed.AbsoluteEpisodeNumber is not null && parsed.SeasonNumber is null;
+        if (!isAbsoluteEpisodeMatch && !IsSeasonMatch(parsed, episode.SeasonNumber))
         {
             return new SnapshotMatchResult
             {
@@ -68,7 +69,18 @@ public sealed class SnapshotCandidateMatcher
             return new SnapshotMatchResult { IsAccepted = false, RejectReason = "does not contain enough show title tokens" };
         }
 
-        if (parsed.SeasonNumber != episode.SeasonNumber || parsed.EpisodeNumber != episode.EpisodeNumber)
+        if (isAbsoluteEpisodeMatch)
+        {
+            if (parsed.AbsoluteEpisodeNumber != episode.EpisodeNumber)
+            {
+                return new SnapshotMatchResult
+                {
+                    IsAccepted = false,
+                    RejectReason = $"does not contain absolute episode {episode.EpisodeNumber}"
+                };
+            }
+        }
+        else if (parsed.SeasonNumber != episode.SeasonNumber || parsed.EpisodeNumber != episode.EpisodeNumber)
         {
             return new SnapshotMatchResult
             {

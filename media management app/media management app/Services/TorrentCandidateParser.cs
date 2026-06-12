@@ -14,6 +14,8 @@ public sealed class TorrentCandidateParseResult
 
     public int? EpisodeNumber { get; init; }
 
+    public int? AbsoluteEpisodeNumber { get; init; }
+
     public string? EpisodeTitle { get; init; }
 
     public string Quality { get; init; } = string.Empty;
@@ -30,6 +32,9 @@ public static class TorrentCandidateParser
     private static readonly Regex EpisodeRegex = new(
         @"(?<title>.*?)(?:\bS(?<season>\d{1,3})E(?<episode>\d{1,4})\b|\b(?<season2>\d{1,3})x(?<episode2>\d{1,4})\b)(?<rest>.*)$",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex AbsoluteEpisodeRegex = new(
+        @"^(?:\[[^\]]+\]\s*)*(?<title>.*?)(?:\bEP\s*(?<episode>\d{1,4})\b|\b(?<episode>\d{2,4})\b)(?<rest>.*)$",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex YearRegex = new(@"\b(19|20)\d{2}\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex YearRangeRegex = new(@"\b(?<from>(?:19|20)\d{2})\s*(?:-|to)\s*(?<to>(?:19|20)\d{2})\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex SeasonRangeRegex = new(@"\bS(?<from>\d{1,3})\s*(?:-|to)\s*S?(?<to>\d{1,3})\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -39,7 +44,7 @@ public static class TorrentCandidateParser
         @"\b(?:1080p|720p|2160p|480p|bluray|brrip|webrip|web-dl|webdl|hdtv|x264|x265|h264|h265|hevc|aac|dts|hdr|dv|proper|repack|extended|remux|yify|rarbg|truehd|atmos|ddp|dd\+|ac3|flac|opus)\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    public static TorrentCandidateParseResult Parse(string fileName)
+    public static TorrentCandidateParseResult Parse(string fileName, bool allowAnimeAbsolute = false)
     {
         if (string.IsNullOrWhiteSpace(fileName))
         {
@@ -52,6 +57,7 @@ public static class TorrentCandidateParser
         var rest = string.Empty;
         int? season = null;
         int? episode = null;
+        int? absoluteEpisode = null;
 
         if (match.Success)
         {
@@ -61,6 +67,19 @@ public static class TorrentCandidateParser
             var episodeText = match.Groups["episode"].Success ? match.Groups["episode"].Value : match.Groups["episode2"].Value;
             season = int.TryParse(seasonText, out var seasonValue) ? seasonValue : null;
             episode = int.TryParse(episodeText, out var episodeValue) ? episodeValue : null;
+        }
+        else if (allowAnimeAbsolute)
+        {
+            var absoluteMatch = AbsoluteEpisodeRegex.Match(normalized);
+            if (absoluteMatch.Success)
+            {
+                showPart = absoluteMatch.Groups["title"].Value;
+                rest = absoluteMatch.Groups["rest"].Value;
+                absoluteEpisode = int.TryParse(absoluteMatch.Groups["episode"].Value, out var absoluteValue)
+                    ? absoluteValue
+                    : null;
+                episode = absoluteEpisode;
+            }
         }
 
         var explicitYear = ExtractYear(showPart);
@@ -75,6 +94,7 @@ public static class TorrentCandidateParser
             ExplicitYear = explicitYear,
             SeasonNumber = season,
             EpisodeNumber = episode,
+            AbsoluteEpisodeNumber = absoluteEpisode,
             EpisodeTitle = string.IsNullOrWhiteSpace(episodeTitle) ? null : episodeTitle,
             Quality = TorrentQuality.Detect(fileName),
             AudioCodec = DetectAudioCodec(fileName),

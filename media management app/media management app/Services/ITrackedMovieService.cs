@@ -8,6 +8,8 @@ public interface ITrackedMovieService
 
     Task<TrackedMovie> AddMovieAsync(TmdbMovieSearchResult result, CancellationToken cancellationToken = default);
 
+    Task<TrackedMovie> ImportMovieByTmdbIdAsync(int tmdbId, CancellationToken cancellationToken = default);
+
     Task<TrackedMovie> RefreshMovieAsync(TrackedMovie movie, CancellationToken cancellationToken = default);
 
     IReadOnlyList<TrackedMovie> GetMovies();

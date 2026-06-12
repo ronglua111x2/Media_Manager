@@ -7,7 +7,9 @@
         MinHeight="260"
         MinWidth="520"
         WindowStartupLocation="CenterOwner">
+    <!-- #region Console log layout -->
     <DockPanel Background="#111111">
+        <!-- #region Header -->
         <Border DockPanel.Dock="Top"
                 BorderBrush="#303030"
                 BorderThickness="0,0,0,1"
@@ -17,7 +19,9 @@
                        FontSize="15"
                        FontWeight="SemiBold" />
         </Border>
+        <!-- #endregion -->
 
+        <!-- #region Log list and copy menu -->
         <ListBox x:Name="ConsoleLogList"
                  ItemsSource="{Binding UiLogs}"
                  Background="#111111"
@@ -43,5 +47,7 @@
                 </DataTemplate>
             </ListBox.ItemTemplate>
         </ListBox>
+        <!-- #endregion -->
     </DockPanel>
+    <!-- #endregion -->
 </Window>

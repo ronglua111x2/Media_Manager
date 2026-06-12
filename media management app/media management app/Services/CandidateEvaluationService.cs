@@ -6,7 +6,8 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
 {
     public RecipeCandidateResult EvaluateEpisode(SearchRecipe recipe, TrackedShow show, TrackedEpisode episode, TorrentSearchResult result)
     {
-        var parsed = TorrentCandidateParser.Parse(result.FileName);
+        var usesAnimeAbsolute = RecipeRuntimeSettings.UsesAnimeAbsoluteEpisodeNumbering(recipe);
+        var parsed = TorrentCandidateParser.Parse(result.FileName, usesAnimeAbsolute);
         var filter = GetModule(recipe, RecipeBlockType.CandidateFilter);
         var identity = GetModule(recipe, RecipeBlockType.Identity);
         var reject = GetCommonRejectReason(recipe, result, parsed, filter);
@@ -15,7 +16,14 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
             return Rejected(result, reject.Reason, reject.Detail);
         }
 
-        if (parsed.SeasonNumber != episode.SeasonNumber || parsed.EpisodeNumber != episode.EpisodeNumber)
+        if (usesAnimeAbsolute && parsed.AbsoluteEpisodeNumber is not null && parsed.SeasonNumber is null)
+        {
+            if (parsed.AbsoluteEpisodeNumber != episode.EpisodeNumber)
+            {
+                return Rejected(result, CandidateRejectReason.EpisodeMismatch, $"does not contain absolute episode {episode.EpisodeNumber}");
+            }
+        }
+        else if (parsed.SeasonNumber != episode.SeasonNumber || parsed.EpisodeNumber != episode.EpisodeNumber)
         {
             return Rejected(result, CandidateRejectReason.EpisodeMismatch, $"does not contain S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00}");
         }

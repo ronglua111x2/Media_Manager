@@ -31,6 +31,16 @@ public sealed class TrackedMovieService : ITrackedMovieService
         return movie;
     }
 
+    public async Task<TrackedMovie> ImportMovieByTmdbIdAsync(int tmdbId, CancellationToken cancellationToken = default)
+    {
+        var details = await _catalogService.GetMovieDetailsAsync(tmdbId, cancellationToken);
+        var movieId = ImportMovie(details, null);
+        RefreshAvailability(movieId);
+        var movie = _databaseService.GetTrackedMovie(movieId) ?? throw new InvalidOperationException("Tracked movie was not imported.");
+        _logger.Info($"Tracked movie imported from existing media: {movie.DisplayTitle}", LogTarget.All);
+        return movie;
+    }
+
     public async Task<TrackedMovie> RefreshMovieAsync(TrackedMovie movie, CancellationToken cancellationToken = default)
     {
         var details = await _catalogService.GetMovieDetailsAsync(movie.TmdbId, cancellationToken);

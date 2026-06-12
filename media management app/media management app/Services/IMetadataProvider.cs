@@ -10,5 +10,7 @@ public interface IMetadataProvider
 
     Task<MetadataValidationResult> ValidateTvSeriesMatchAsync(TvSeriesMatchRequest request, string providerId, CancellationToken cancellationToken = default);
 
+    Task<MovieMetadataMatchResult> MatchMovieAsync(SourceItem item, CancellationToken cancellationToken = default);
+
     Task<EpisodeMappingResult> MapTvEpisodeAsync(SourceItem item, CancellationToken cancellationToken = default);
 }

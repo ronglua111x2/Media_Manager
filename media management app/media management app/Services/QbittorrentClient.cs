@@ -151,11 +151,12 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
 
     public async Task<AddedTorrentResult> AddTorrentAsync(AddTorrentRequest request, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(request.Url))
+        var torrentUrl = TorrentSearchResult.NormalizeUrl(request.Url);
+        if (string.IsNullOrWhiteSpace(torrentUrl))
         {
             throw new InvalidOperationException("Torrent URL is empty.");
         }
-        if (!IsSupportedTorrentUrl(request.Url))
+        if (!IsSupportedTorrentUrl(torrentUrl))
         {
             throw new InvalidOperationException("This search result is not a supported qBittorrent URL.");
         }
@@ -174,8 +175,8 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
 
         if (!string.IsNullOrWhiteSpace(request.PluginName))
         {
-            _logger.Info($"Trying qBittorrent search plugin download. Plugin='{request.PluginName}', Url='{request.Url}'", LogTarget.All);
-            await PostSearchDownloadTorrentAsync(request.Url, request.PluginName, cancellationToken);
+            _logger.Info($"Trying qBittorrent search plugin download. Plugin='{request.PluginName}', Url='{torrentUrl}'", LogTarget.All);
+            await PostSearchDownloadTorrentAsync(torrentUrl, request.PluginName, cancellationToken);
             var pluginAddedTorrent = await WaitForAddedTorrentAsync(existingHashes, null, cancellationToken);
             if (pluginAddedTorrent is not null)
             {
@@ -191,7 +192,7 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
             _logger.Warning("qBittorrent search plugin download did not create a torrent. Falling back to URL resolver.", LogTarget.All);
         }
 
-        var addSources = await ResolveAddSourcesAsync(request.Url, cancellationToken);
+        var addSources = await ResolveAddSourcesAsync(torrentUrl, cancellationToken);
         foreach (var source in addSources)
         {
             _logger.Info($"Trying qBittorrent add source: {source.Description}", LogTarget.All);
@@ -515,8 +516,10 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
         {
             foreach (var resultElement in resultsElement.EnumerateArray())
             {
+                var descriptionUrl = GetString(resultElement, "descrLink") ?? string.Empty;
                 var fileUrl = GetString(resultElement, "fileUrl") ?? string.Empty;
-                if (string.IsNullOrWhiteSpace(fileUrl))
+                var candidateUrl = !string.IsNullOrWhiteSpace(fileUrl) ? fileUrl : descriptionUrl;
+                if (string.IsNullOrWhiteSpace(candidateUrl))
                 {
                     continue;
                 }
@@ -525,7 +528,8 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
                 {
                     FileName = GetString(resultElement, "fileName") ?? string.Empty,
                     FileSize = GetLong(resultElement, "fileSize"),
-                    FileUrl = fileUrl,
+                    FileUrl = candidateUrl,
+                    DescriptionUrl = TorrentSearchResult.NormalizeUrl(descriptionUrl),
                     Seeders = GetInt(resultElement, "nbSeeders"),
                     Leechers = GetInt(resultElement, "nbLeechers"),
                     EngineName = GetString(resultElement, "engineName") ?? string.Empty,

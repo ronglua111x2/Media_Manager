@@ -14,6 +14,8 @@ public sealed class AutoTorrentSettings
 
     public string CategoryName { get; set; } = "AutoTorrent";
 
+    public bool AutoLinkCompletedDownloads { get; set; }
+
     public int MaxCandidatesPerFetch { get; set; } = 3;
 
     public int MaxParallelSearches { get; set; } = 3;

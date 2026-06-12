@@ -3,14 +3,35 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:common="clr-namespace:media_management_app.Common"
              xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
              xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
              mc:Ignorable="d">
+    <!-- #region Local styles and templates -->
     <UserControl.Resources>
         <Style x:Key="SettingsCardStyle" TargetType="materialDesign:Card">
             <Setter Property="Background" Value="{StaticResource AppBrushSurfaceRaised}" />
             <Setter Property="Padding" Value="18" />
             <Setter Property="Margin" Value="0,0,0,14" />
+            <Setter Property="UniformCornerRadius" Value="8" />
+            <Setter Property="materialDesign:ElevationAssist.Elevation" Value="Dp1" />
+        </Style>
+
+        <Style x:Key="SettingsGuidePanelStyle" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource AppBrushSurface}" />
+            <Setter Property="BorderBrush" Value="{StaticResource AppBrushBorder}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="16" />
+        </Style>
+
+        <Style x:Key="SettingsGuideItemStyle" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource AppBrushSurfaceRaised}" />
+            <Setter Property="BorderBrush" Value="{StaticResource AppBrushBorder}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Padding" Value="10,8" />
+            <Setter Property="Margin" Value="0,0,0,8" />
         </Style>
 
         <Style x:Key="SettingsLabelStyle" TargetType="TextBlock">
@@ -23,21 +44,231 @@
             <Setter Property="Foreground" Value="{StaticResource AppBrushMutedText}" />
             <Setter Property="FontSize" Value="12" />
             <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="LineHeight" Value="17" />
         </Style>
 
-        <Style x:Key="SettingsIconTextButtonStyle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+        <Style x:Key="SettingsSectionTitleStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="16" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Margin" Value="0,0,0,12" />
+            <Setter Property="Foreground" Value="{StaticResource AppBrushText}" />
+        </Style>
+
+        <Style x:Key="SettingsTextBoxStyle" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+            <Setter Property="MinHeight" Value="36" />
+            <Setter Property="MaxWidth" Value="760" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="Padding" Value="10,7" />
+            <Setter Property="Margin" Value="0,0,0,10" />
+        </Style>
+
+        <Style x:Key="SettingsListBoxStyle" TargetType="ListBox" BasedOn="{StaticResource {x:Type ListBox}}">
+            <Setter Property="MinHeight" Value="130" />
+            <Setter Property="MaxHeight" Value="180" />
+            <Setter Property="Background" Value="{StaticResource AppBrushSurface}" />
+            <Setter Property="BorderBrush" Value="{StaticResource AppBrushBorder}" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Auto" />
+            <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto" />
+            <Setter Property="Margin" Value="0,0,0,10" />
+        </Style>
+
+        <Style TargetType="ListBoxItem">
+            <Setter Property="Padding" Value="8,5" />
+            <Setter Property="Margin" Value="3,2" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="Root"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="5"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="{StaticResource AppBrushAccentSoft}" />
+                                <Setter TargetName="Root" Property="BorderBrush" Value="{StaticResource AppBrushBorder}" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="{StaticResource AppBrushAccentSoft}" />
+                                <Setter TargetName="Root" Property="BorderBrush" Value="{StaticResource AppBrushAccent}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="SettingsNumericChromeStyle" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource AppBrushSurface}" />
+            <Setter Property="BorderBrush" Value="{StaticResource AppBrushBorder}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Padding" Value="1" />
+            <Setter Property="Width" Value="220" />
+            <Setter Property="MinHeight" Value="38" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+            <Setter Property="Margin" Value="0,0,0,12" />
+        </Style>
+
+        <Style x:Key="SettingsNumericUpDownStyle" TargetType="materialDesign:NumericUpDown">
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="VerticalAlignment" Value="Stretch" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="Padding" Value="10,6,4,6" />
+            <Setter Property="MinHeight" Value="34" />
+            <Setter Property="Foreground" Value="{StaticResource AppBrushText}" />
+            <Setter Property="FontSize" Value="14" />
+        </Style>
+
+        <Style x:Key="SettingsIconTextButtonStyle" TargetType="Button" BasedOn="{StaticResource AppOutlinedButtonStyle}">
             <Setter Property="MinHeight" Value="36" />
             <Setter Property="Padding" Value="12,7" />
             <Setter Property="Margin" Value="0,0,8,0" />
         </Style>
-    </UserControl.Resources>
 
-    <Grid Background="{StaticResource AppBrushCanvas}" Margin="20">
+        <Style x:Key="SettingsPrimaryIconTextButtonStyle" TargetType="Button" BasedOn="{StaticResource AppPrimaryButtonStyle}">
+            <Setter Property="MinHeight" Value="36" />
+            <Setter Property="Padding" Value="12,7" />
+            <Setter Property="Margin" Value="0,0,8,0" />
+        </Style>
+
+        <Style x:Key="SettingsSectionSelectorStyle" TargetType="ListBox">
+            <Setter Property="Background" Value="{StaticResource AppBrushSurfaceRaised}" />
+            <Setter Property="BorderBrush" Value="{StaticResource AppBrushBorder}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="5" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+            <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Disabled" />
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+            <Setter Property="UseLayoutRounding" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBox">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="9"
+                                Padding="{TemplateBinding Padding}"
+                                SnapsToDevicePixels="True">
+                            <ItemsPresenter />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="ItemsPanel">
+                <Setter.Value>
+                    <ItemsPanelTemplate>
+                        <StackPanel Orientation="Horizontal" />
+                    </ItemsPanelTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="SettingsSectionSelectorItemStyle" TargetType="ListBoxItem">
+            <Setter Property="Foreground" Value="{StaticResource AppBrushMutedText}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="MinHeight" Value="40" />
+            <Setter Property="Padding" Value="16,9" />
+            <Setter Property="Margin" Value="1" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+            <Setter Property="UseLayoutRounding" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="Root"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="7"
+                                Padding="{TemplateBinding Padding}"
+                                SnapsToDevicePixels="True">
+                            <ContentPresenter ContentSource="Content"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              SnapsToDevicePixels="True"
+                                              TextOptions.TextFormattingMode="Display"
+                                              TextOptions.TextRenderingMode="ClearType" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="{StaticResource AppBrushAccentSoft}" />
+                                <Setter Property="Foreground" Value="{StaticResource AppBrushText}" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="{StaticResource AppBrushAccent}" />
+                                <Setter Property="Foreground" Value="#ffffff" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="SettingsSectionPanelBaseStyle" TargetType="ScrollViewer">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Setter Property="VerticalScrollBarVisibility" Value="Auto" />
+            <Setter Property="HorizontalScrollBarVisibility" Value="Disabled" />
+        </Style>
+
+        <Style x:Key="SystemSettingsSectionPanelStyle" TargetType="ScrollViewer" BasedOn="{StaticResource SettingsSectionPanelBaseStyle}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding SelectedSettingsSection}" Value="{x:Static common:SettingsSection.System}">
+                    <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="LibrarySettingsSectionPanelStyle" TargetType="ScrollViewer" BasedOn="{StaticResource SettingsSectionPanelBaseStyle}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding SelectedSettingsSection}" Value="{x:Static common:SettingsSection.Library}">
+                    <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="IntegrationsSettingsSectionPanelStyle" TargetType="ScrollViewer" BasedOn="{StaticResource SettingsSectionPanelBaseStyle}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding SelectedSettingsSection}" Value="{x:Static common:SettingsSection.Integrations}">
+                    <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="TorrentStorageSettingsSectionPanelStyle" TargetType="ScrollViewer" BasedOn="{StaticResource SettingsSectionPanelBaseStyle}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding SelectedSettingsSection}" Value="{x:Static common:SettingsSection.TorrentStorage}">
+                    <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Resources>
+    <!-- #endregion -->
+
+    <!-- #region Settings workspace shell -->
+    <Grid Background="{StaticResource AppBrushCanvas}"
+          Margin="16"
+          SnapsToDevicePixels="True"
+          UseLayoutRounding="True"
+          TextOptions.TextFormattingMode="Display"
+          TextOptions.TextRenderingMode="ClearType">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
+        <!-- #region Header -->
         <DockPanel Grid.Row="0" Margin="0,0,0,16">
             <TextBlock DockPanel.Dock="Left"
                        Text="System Settings"
@@ -49,66 +280,161 @@
                        VerticalAlignment="Center"
                        Margin="18,6,0,0" />
         </DockPanel>
+        <!-- #endregion -->
 
-        <TabControl Grid.Row="1">
-            <TabItem Header="Media Manager">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <Grid Margin="0,16,8,0">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
+        <!-- #region Settings section selector and panels -->
+        <Grid Grid.Row="1">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
 
-                        <materialDesign:Card Grid.Row="0" Style="{StaticResource SettingsCardStyle}">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="12" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <StackPanel Grid.Column="0">
-                                    <TextBlock Text="State Folder" Style="{StaticResource SettingsLabelStyle}" />
-                                    <TextBox Text="{Binding StateFolder, UpdateSourceTrigger=PropertyChanged}"
-                                             Margin="0" />
-                                    <TextBlock Text="Stores settings, database, recipes, and app state."
-                                               Style="{StaticResource SettingsHintStyle}"
-                                               Margin="0,6,0,0" />
-                                </StackPanel>
-                                <Button Grid.Column="2"
-                                        Command="{Binding BrowseStateFolderCommand}"
-                                        Style="{StaticResource SettingsIconTextButtonStyle}"
-                                        VerticalAlignment="Center">
-                                    <StackPanel Orientation="Horizontal">
-                                        <iconPacks:PackIconLucide Kind="FolderOpen"
-                                                                   Width="16"
-                                                                   Height="16"
-                                                                   Margin="0,0,7,0" />
-                                        <TextBlock Text="Browse" />
+            <!-- #region Section selector -->
+            <ListBox Grid.Row="0"
+                     Style="{StaticResource SettingsSectionSelectorStyle}"
+                     ItemContainerStyle="{StaticResource SettingsSectionSelectorItemStyle}"
+                     SelectedValue="{Binding SelectedSettingsSection, Mode=TwoWay}"
+                     SelectedValuePath="Tag">
+                <ListBoxItem Content="System"
+                             Tag="{x:Static common:SettingsSection.System}"
+                             Style="{StaticResource SettingsSectionSelectorItemStyle}" />
+                <ListBoxItem Content="Library"
+                             Tag="{x:Static common:SettingsSection.Library}"
+                             Style="{StaticResource SettingsSectionSelectorItemStyle}" />
+                <ListBoxItem Content="Integrations"
+                             Tag="{x:Static common:SettingsSection.Integrations}"
+                             Style="{StaticResource SettingsSectionSelectorItemStyle}" />
+                <ListBoxItem Content="Torrent Storage"
+                             Tag="{x:Static common:SettingsSection.TorrentStorage}"
+                             Style="{StaticResource SettingsSectionSelectorItemStyle}" />
+            </ListBox>
+            <!-- #endregion -->
+
+            <!-- #region Section panels -->
+            <Grid Grid.Row="1">
+            <!-- #region System panel -->
+                <ScrollViewer Style="{StaticResource SystemSettingsSectionPanelStyle}">
+                    <Grid Margin="0,16,8,0"
+                          MaxWidth="1220"
+                          HorizontalAlignment="Left">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="24" />
+                            <ColumnDefinition Width="380" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0">
+                            <materialDesign:Card Style="{StaticResource SettingsCardStyle}">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <Border Width="8"
+                                                Height="24"
+                                                CornerRadius="4"
+                                                Background="{StaticResource AppBrushAccent}"
+                                                Margin="0,0,8,0" />
+                                        <TextBlock Text="Storage" Style="{StaticResource SettingsSectionTitleStyle}" Margin="0" />
                                     </StackPanel>
-                                </Button>
-                            </Grid>
-                        </materialDesign:Card>
+                                    <TextBlock Text="State Folder" Style="{StaticResource SettingsLabelStyle}" />
+                                    <DockPanel LastChildFill="True">
+                                        <Button DockPanel.Dock="Right"
+                                                Command="{Binding BrowseStateFolderCommand}"
+                                                Style="{StaticResource SettingsIconTextButtonStyle}"
+                                                Margin="8,0,0,10">
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconLucide Kind="FolderOpen" Width="16" Height="16" Margin="0,0,7,0" />
+                                                <TextBlock Text="Browse" />
+                                            </StackPanel>
+                                        </Button>
+                                        <TextBox Text="{Binding StateFolder, UpdateSourceTrigger=PropertyChanged}"
+                                                 Style="{StaticResource SettingsTextBoxStyle}" />
+                                    </DockPanel>
+                                </StackPanel>
+                            </materialDesign:Card>
 
-                        <materialDesign:Card Grid.Row="1" Style="{StaticResource SettingsCardStyle}">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="18" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
+                            <materialDesign:Card Style="{StaticResource SettingsCardStyle}">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <Border Width="8"
+                                                Height="24"
+                                                CornerRadius="4"
+                                                Background="{StaticResource AppBrushWarning}"
+                                                Margin="0,0,8,0" />
+                                        <TextBlock Text="Logging" Style="{StaticResource SettingsSectionTitleStyle}" Margin="0" />
+                                    </StackPanel>
+                                    <TextBlock Text="Max log lines per file" Style="{StaticResource SettingsLabelStyle}" />
+                                    <Border Style="{StaticResource SettingsNumericChromeStyle}">
+                                        <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
+                                                                      Value="{Binding LogMaxLinesPerFile, UpdateSourceTrigger=PropertyChanged}"
+                                                                      Minimum="100"
+                                                                      Maximum="100000" />
+                                    </Border>
+                                    <TextBlock Text="Cleanup retention days" Style="{StaticResource SettingsLabelStyle}" />
+                                    <Border Style="{StaticResource SettingsNumericChromeStyle}">
+                                        <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
+                                                                      Value="{Binding LogCleanupRetentionDays, UpdateSourceTrigger=PropertyChanged}"
+                                                                      Minimum="1"
+                                                                      Maximum="3650" />
+                                    </Border>
+                                </StackPanel>
+                            </materialDesign:Card>
+                        </StackPanel>
 
-                                <StackPanel Grid.Column="0">
-                                    <TextBlock Text="Source Folders" Style="{StaticResource SettingsLabelStyle}" />
+                        <Border Grid.Column="2" Style="{StaticResource SettingsGuidePanelStyle}">
+                            <StackPanel>
+                                <TextBlock Text="Guide" Style="{StaticResource SettingsSectionTitleStyle}" />
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="State folder" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Stores settings, database, recipes, logs, and app state."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Log rotation" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Max lines applies the next time the app starts. During one session, extra files rotate with _1, _2, and later suffixes."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Log cleanup" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="After Save, cleanup uses the retention value on the next background wakeup and deletes only old managed log files."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                </ScrollViewer>
+            <!-- #endregion -->
+
+            <!-- #region Library panel -->
+                <ScrollViewer Style="{StaticResource LibrarySettingsSectionPanelStyle}">
+                    <Grid Margin="0,16,8,0"
+                          MaxWidth="1220"
+                          HorizontalAlignment="Left">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="24" />
+                            <ColumnDefinition Width="380" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0">
+                            <materialDesign:Card Style="{StaticResource SettingsCardStyle}">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <Border Width="8"
+                                                Height="24"
+                                                CornerRadius="4"
+                                                Background="{StaticResource AppBrushShowAccent}"
+                                                Margin="0,0,8,0" />
+                                        <TextBlock Text="Source Folders" Style="{StaticResource SettingsSectionTitleStyle}" Margin="0" />
+                                    </StackPanel>
                                     <ListBox ItemsSource="{Binding SourceFolders}"
                                              SelectedItem="{Binding SelectedSourceFolder, Mode=TwoWay}"
-                                             MinHeight="130"
-                                             MaxHeight="170"
-                                             HorizontalContentAlignment="Stretch"
-                                             ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                                             ScrollViewer.VerticalScrollBarVisibility="Auto" />
-                                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                             Style="{StaticResource SettingsListBoxStyle}" />
+                                    <StackPanel Orientation="Horizontal">
                                         <Button Command="{Binding AddSourceFolderCommand}"
                                                 Style="{StaticResource SettingsIconTextButtonStyle}">
                                             <StackPanel Orientation="Horizontal">
@@ -125,172 +451,325 @@
                                         </Button>
                                     </StackPanel>
                                 </StackPanel>
+                            </materialDesign:Card>
 
-                                <StackPanel Grid.Column="2">
-                                    <TextBlock Text="Generated Library Folder" Style="{StaticResource SettingsLabelStyle}" />
+                            <materialDesign:Card Style="{StaticResource SettingsCardStyle}">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <Border Width="8"
+                                                Height="24"
+                                                CornerRadius="4"
+                                                Background="{StaticResource AppBrushMovieAccent}"
+                                                Margin="0,0,8,0" />
+                                        <TextBlock Text="Generated Library" Style="{StaticResource SettingsSectionTitleStyle}" Margin="0" />
+                                    </StackPanel>
+                                    <TextBlock Text="Generated library folder" Style="{StaticResource SettingsLabelStyle}" />
                                     <TextBox Text="{Binding DefaultLibraryFolderName, UpdateSourceTrigger=PropertyChanged}"
-                                             Margin="0" />
-                                    <TextBlock Text="Auto per-drive Jellyfin output roots"
-                                               Style="{StaticResource SettingsLabelStyle}"
-                                               Margin="0,14,0,5" />
+                                             Style="{StaticResource SettingsTextBoxStyle}" />
+                                    <TextBlock Text="Output preview" Style="{StaticResource SettingsLabelStyle}" />
                                     <ListBox ItemsSource="{Binding LibraryRootPreview}"
-                                             MinHeight="130"
-                                             MaxHeight="170"
+                                             Style="{StaticResource SettingsListBoxStyle}"
                                              FontFamily="Consolas"
-                                             ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                                             ScrollViewer.VerticalScrollBarVisibility="Auto" />
+                                             MinHeight="140" />
                                 </StackPanel>
-                            </Grid>
-                        </materialDesign:Card>
+                            </materialDesign:Card>
+                        </StackPanel>
 
-                        <materialDesign:Card Grid.Row="2" Style="{StaticResource SettingsCardStyle}">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="12" />
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <StackPanel Grid.Column="0">
-                                    <TextBlock Text="TMDB API Read Access Token" Style="{StaticResource SettingsLabelStyle}" />
-                                    <TextBox Text="{Binding TmdbReadAccessToken, UpdateSourceTrigger=PropertyChanged}"
-                                             Margin="0"
-                                             MaxHeight="70"
-                                             TextWrapping="Wrap"
-                                             VerticalScrollBarVisibility="Auto" />
-                                    <TextBlock Text="Use the v4 read access token. Test validates the token only if the network/TLS connection reaches TMDB."
-                                               Style="{StaticResource SettingsHintStyle}"
-                                               Margin="0,6,0,0" />
-                                </StackPanel>
-                                <Button Grid.Column="2"
-                                        Command="{Binding TestTmdbTokenCommand}"
-                                        Style="{StaticResource SettingsIconTextButtonStyle}"
-                                        VerticalAlignment="Center">
-                                    <StackPanel Orientation="Horizontal">
-                                        <iconPacks:PackIconLucide Kind="ShieldCheck" Width="16" Height="16" Margin="0,0,7,0" />
-                                        <TextBlock Text="Test Token" />
-                                    </StackPanel>
-                                </Button>
-                                <Button Grid.Column="3"
-                                        Command="{Binding SaveCommand}"
-                                        Style="{StaticResource SettingsIconTextButtonStyle}"
-                                        VerticalAlignment="Center">
-                                    <StackPanel Orientation="Horizontal">
-                                        <iconPacks:PackIconLucide Kind="Save" Width="16" Height="16" Margin="0,0,7,0" />
-                                        <TextBlock Text="Save" />
-                                    </StackPanel>
-                                </Button>
-                            </Grid>
-                        </materialDesign:Card>
-
-                        <materialDesign:Card Grid.Row="3" Style="{StaticResource SettingsCardStyle}">
+                        <Border Grid.Column="2" Style="{StaticResource SettingsGuidePanelStyle}">
                             <StackPanel>
-                                <TextBlock Text="How multi-drive output works"
-                                           FontSize="16"
-                                           FontWeight="SemiBold"
-                                           Margin="0,0,0,8" />
-                                <TextBlock TextWrapping="Wrap"
-                                           Foreground="{StaticResource AppBrushMutedText}"
-                                           Text="Hardlinks only work when the source file and linked file are on the same drive. This app creates a Jellyfin library root on each source drive." />
-                                <TextBlock TextWrapping="Wrap"
-                                           Foreground="{StaticResource AppBrushMutedText}"
-                                           Margin="0,8,0,0"
-                                           Text="In Jellyfin, add every generated Shows path to one Shows library and every generated Movies path to one Movies library." />
+                                <TextBlock Text="Guide" Style="{StaticResource SettingsSectionTitleStyle}" />
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Source folders" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Add folders where downloaded media is stored. The app uses these roots to derive per-drive output paths."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Hardlinks" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Hardlinks only work when source and linked files are on the same drive, so the app creates a library root on each source drive."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Jellyfin" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="In Jellyfin, add every generated Shows path to one Shows library and every generated Movies path to one Movies library."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
                             </StackPanel>
-                        </materialDesign:Card>
+                        </Border>
                     </Grid>
                 </ScrollViewer>
-            </TabItem>
+            <!-- #endregion -->
 
-            <TabItem Header="Auto Torrent">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="*" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
+            <!-- #region Integrations panel -->
+                <ScrollViewer Style="{StaticResource IntegrationsSettingsSectionPanelStyle}">
+                    <Grid Margin="0,16,8,0"
+                          MaxWidth="1220"
+                          HorizontalAlignment="Left">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="24" />
+                            <ColumnDefinition Width="380" />
+                        </Grid.ColumnDefinitions>
 
-                    <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
-                        <StackPanel Margin="0,16,8,0">
+                        <StackPanel Grid.Column="0">
                             <materialDesign:Card Style="{StaticResource SettingsCardStyle}">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="14" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0">
-                                        <TextBlock Text="qBittorrent Web UI URL" Style="{StaticResource SettingsLabelStyle}" />
-                                        <TextBox Text="{Binding QbittorrentWebUiUrl, UpdateSourceTrigger=PropertyChanged}" />
-                                        <TextBlock Text="Username" Style="{StaticResource SettingsLabelStyle}" />
-                                        <TextBox Text="{Binding QbittorrentUsername, UpdateSourceTrigger=PropertyChanged}" />
-                                        <TextBlock Text="Password" Style="{StaticResource SettingsLabelStyle}" />
-                                        <TextBox Text="{Binding QbittorrentPassword, UpdateSourceTrigger=PropertyChanged}" />
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <Border Width="8"
+                                                Height="24"
+                                                CornerRadius="4"
+                                                Background="{StaticResource AppBrushMovieAccent}"
+                                                Margin="0,0,8,0" />
+                                        <TextBlock Text="TMDB" Style="{StaticResource SettingsSectionTitleStyle}" Margin="0" />
                                     </StackPanel>
-                                    <StackPanel Grid.Column="2">
-                                        <TextBlock Text="Download folder" Style="{StaticResource SettingsLabelStyle}" />
-                                        <DockPanel LastChildFill="True" Margin="0,0,0,12">
-                                            <Button DockPanel.Dock="Right"
-                                                    Command="{Binding BrowseAutoTorrentDownloadFolderCommand}"
-                                                    Content="Browse"
-                                                    Margin="8,0,0,0" />
-                                            <TextBox Text="{Binding AutoTorrentDownloadFolder, UpdateSourceTrigger=PropertyChanged}" Margin="0" />
-                                        </DockPanel>
-                                        <TextBlock Text="Category name" Style="{StaticResource SettingsLabelStyle}" />
-                                        <TextBox Text="{Binding AutoTorrentCategoryName, UpdateSourceTrigger=PropertyChanged}" />
-                                    </StackPanel>
-                                </Grid>
+                                    <TextBlock Text="API read access token" Style="{StaticResource SettingsLabelStyle}" />
+                                    <TextBox Text="{Binding TmdbReadAccessToken, UpdateSourceTrigger=PropertyChanged}"
+                                             Style="{StaticResource SettingsTextBoxStyle}"
+                                             MaxHeight="90"
+                                             TextWrapping="Wrap"
+                                             VerticalScrollBarVisibility="Auto" />
+                                    <Button Command="{Binding TestTmdbTokenCommand}"
+                                            Style="{StaticResource SettingsIconTextButtonStyle}"
+                                            HorizontalAlignment="Left">
+                                        <StackPanel Orientation="Horizontal">
+                                            <iconPacks:PackIconLucide Kind="ShieldCheck" Width="16" Height="16" Margin="0,0,7,0" />
+                                            <TextBlock Text="Test Token" />
+                                        </StackPanel>
+                                    </Button>
+                                </StackPanel>
                             </materialDesign:Card>
 
                             <materialDesign:Card Style="{StaticResource SettingsCardStyle}">
                                 <StackPanel>
-                                    <TextBlock Text="Download folder options" Style="{StaticResource SettingsLabelStyle}" />
-                                    <TextBlock Text="Search, snapshot, and candidate tuning moved to Recipe modules (Search and Parser)."
-                                               Style="{StaticResource MutedTextStyle}"
-                                               Margin="0,0,0,8"
-                                               TextWrapping="Wrap" />
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <Border Width="8"
+                                                Height="24"
+                                                CornerRadius="4"
+                                                Background="{StaticResource AppBrushAccent}"
+                                                Margin="0,0,8,0" />
+                                        <TextBlock Text="qBittorrent" Style="{StaticResource SettingsSectionTitleStyle}" Margin="0" />
+                                    </StackPanel>
+                                    <TextBlock Text="Web UI URL" Style="{StaticResource SettingsLabelStyle}" />
+                                    <TextBox Text="{Binding QbittorrentWebUiUrl, UpdateSourceTrigger=PropertyChanged}"
+                                             Style="{StaticResource SettingsTextBoxStyle}" />
+                                    <TextBlock Text="Username" Style="{StaticResource SettingsLabelStyle}" />
+                                    <TextBox Text="{Binding QbittorrentUsername, UpdateSourceTrigger=PropertyChanged}"
+                                             Style="{StaticResource SettingsTextBoxStyle}" />
+                                    <TextBlock Text="Password" Style="{StaticResource SettingsLabelStyle}" />
+                                    <TextBox Text="{Binding QbittorrentPassword, UpdateSourceTrigger=PropertyChanged}"
+                                             Style="{StaticResource SettingsTextBoxStyle}" />
+                                    <Button Command="{Binding TestQbittorrentConnectionCommand}"
+                                            Style="{StaticResource SettingsIconTextButtonStyle}"
+                                            HorizontalAlignment="Left">
+                                        <StackPanel Orientation="Horizontal">
+                                            <iconPacks:PackIconLucide Kind="Wifi" Width="16" Height="16" Margin="0,0,7,0" />
+                                            <TextBlock Text="Test Connection" />
+                                        </StackPanel>
+                                    </Button>
+                                </StackPanel>
+                            </materialDesign:Card>
+                        </StackPanel>
+
+                        <Border Grid.Column="2" Style="{StaticResource SettingsGuidePanelStyle}">
+                            <StackPanel>
+                                <TextBlock Text="Guide" Style="{StaticResource SettingsSectionTitleStyle}" />
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="TMDB token" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Use the v4 read access token. Test validates the token only if the network/TLS connection reaches TMDB."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="qBittorrent Web UI" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="The app connects through the Web UI API. Keep the URL pointed at the same host and port you open in the browser."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Saving" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Test buttons check the current form values. Use Save Settings to persist successful connection details."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                </ScrollViewer>
+            <!-- #endregion -->
+
+            <!-- #region Torrent storage panel -->
+                <ScrollViewer Style="{StaticResource TorrentStorageSettingsSectionPanelStyle}">
+                    <Grid Margin="0,16,8,0"
+                          MaxWidth="1220"
+                          HorizontalAlignment="Left">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="24" />
+                            <ColumnDefinition Width="380" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0">
+                            <materialDesign:Card Style="{StaticResource SettingsCardStyle}">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <Border Width="8"
+                                                Height="24"
+                                                CornerRadius="4"
+                                                Background="{StaticResource AppBrushAccent}"
+                                                Margin="0,0,8,0" />
+                                        <TextBlock Text="Default Storage" Style="{StaticResource SettingsSectionTitleStyle}" Margin="0" />
+                                    </StackPanel>
+                                    <TextBlock Text="Download folder" Style="{StaticResource SettingsLabelStyle}" />
+                                    <DockPanel LastChildFill="True">
+                                        <Button DockPanel.Dock="Right"
+                                                Command="{Binding BrowseAutoTorrentDownloadFolderCommand}"
+                                                Style="{StaticResource SettingsIconTextButtonStyle}"
+                                                Margin="8,0,0,10">
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconLucide Kind="FolderOpen" Width="16" Height="16" Margin="0,0,7,0" />
+                                                <TextBlock Text="Browse" />
+                                            </StackPanel>
+                                        </Button>
+                                        <TextBox Text="{Binding AutoTorrentDownloadFolder, UpdateSourceTrigger=PropertyChanged}"
+                                                 Style="{StaticResource SettingsTextBoxStyle}" />
+                                    </DockPanel>
+                                    <TextBlock Text="Category name" Style="{StaticResource SettingsLabelStyle}" />
+                                    <TextBox Text="{Binding AutoTorrentCategoryName, UpdateSourceTrigger=PropertyChanged}"
+                                             Style="{StaticResource SettingsTextBoxStyle}" />
+                                    <CheckBox IsChecked="{Binding AutoLinkCompletedDownloads, Mode=TwoWay}"
+                                              Margin="0,4,0,0"
+                                              Content="Auto-link completed downloads" />
+                                </StackPanel>
+                            </materialDesign:Card>
+
+                            <materialDesign:Card Style="{StaticResource SettingsCardStyle}">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <Border Width="8"
+                                                Height="24"
+                                                CornerRadius="4"
+                                                Background="{StaticResource AppBrushNewAccent}"
+                                                Margin="0,0,8,0" />
+                                        <TextBlock Text="Download Folder Options" Style="{StaticResource SettingsSectionTitleStyle}" Margin="0" />
+                                    </StackPanel>
                                     <ListBox ItemsSource="{Binding AutoTorrentDownloadFolders}"
                                              SelectedItem="{Binding SelectedAutoTorrentDownloadFolder, Mode=TwoWay}"
-                                             MinHeight="110"
-                                             ScrollViewer.HorizontalScrollBarVisibility="Auto" />
-                                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                                        <Button Content="Add Folder" Command="{Binding AddAutoTorrentDownloadFolderCommand}" />
-                                        <Button Content="Remove Selected" Command="{Binding RemoveSelectedAutoTorrentDownloadFolderCommand}" />
+                                             Style="{StaticResource SettingsListBoxStyle}" />
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button Command="{Binding AddAutoTorrentDownloadFolderCommand}"
+                                                Style="{StaticResource SettingsIconTextButtonStyle}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconLucide Kind="Plus" Width="16" Height="16" Margin="0,0,7,0" />
+                                                <TextBlock Text="Add Folder" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Command="{Binding RemoveSelectedAutoTorrentDownloadFolderCommand}"
+                                                Style="{StaticResource SettingsIconTextButtonStyle}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconLucide Kind="Trash2" Width="16" Height="16" Margin="0,0,7,0" />
+                                                <TextBlock Text="Remove Selected" />
+                                            </StackPanel>
+                                        </Button>
                                     </StackPanel>
                                 </StackPanel>
                             </materialDesign:Card>
 
                             <materialDesign:Card Style="{StaticResource SettingsCardStyle}">
                                 <StackPanel>
-                                    <TextBlock Text="Candidate maintenance" FontWeight="SemiBold" Margin="0,0,0,8" />
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <Border Width="8"
+                                                Height="24"
+                                                CornerRadius="4"
+                                                Background="{StaticResource AppBrushDanger}"
+                                                Margin="0,0,8,0" />
+                                        <TextBlock Text="Candidate Maintenance" Style="{StaticResource SettingsSectionTitleStyle}" Margin="0" />
+                                    </StackPanel>
                                     <WrapPanel>
-                                        <Button Content="Clear Episode Candidates" Command="{Binding ClearEpisodeSelectedCandidatesCommand}" />
-                                        <Button Content="Clear Pack Candidates" Command="{Binding ClearSeasonPackSelectedCandidatesCommand}" />
-                                        <Button Content="Clear Movie Candidates" Command="{Binding ClearMovieSelectedCandidatesCommand}" />
-                                        <Button Content="Clear All Candidates" Command="{Binding ClearAllSelectedCandidatesCommand}" />
+                                        <Button Command="{Binding ClearEpisodeSelectedCandidatesCommand}"
+                                                Style="{StaticResource SettingsIconTextButtonStyle}">
+                                            <TextBlock Text="Clear Episode Candidates" />
+                                        </Button>
+                                        <Button Command="{Binding ClearSeasonPackSelectedCandidatesCommand}"
+                                                Style="{StaticResource SettingsIconTextButtonStyle}">
+                                            <TextBlock Text="Clear Pack Candidates" />
+                                        </Button>
+                                        <Button Command="{Binding ClearMovieSelectedCandidatesCommand}"
+                                                Style="{StaticResource SettingsIconTextButtonStyle}">
+                                            <TextBlock Text="Clear Movie Candidates" />
+                                        </Button>
+                                        <Button Command="{Binding ClearAllSelectedCandidatesCommand}"
+                                                Style="{StaticResource SettingsIconTextButtonStyle}">
+                                            <TextBlock Text="Clear All Candidates" />
+                                        </Button>
                                     </WrapPanel>
                                 </StackPanel>
                             </materialDesign:Card>
                         </StackPanel>
-                    </ScrollViewer>
 
-                    <Border Grid.Row="1"
-                            Background="{StaticResource AppBrushSurface}"
-                            BorderBrush="{StaticResource AppBrushBorder}"
-                            BorderThickness="0,1,0,0"
-                            Padding="0,12,0,0">
-                        <DockPanel LastChildFill="True">
-                            <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
-                                <Button Content="Test Connection" Command="{Binding TestQbittorrentConnectionCommand}" />
-                                <Button Content="Save Settings" Command="{Binding SaveCommand}" />
+                        <Border Grid.Column="2" Style="{StaticResource SettingsGuidePanelStyle}">
+                            <StackPanel>
+                                <TextBlock Text="Guide" Style="{StaticResource SettingsSectionTitleStyle}" />
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Download folder" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="This is the default save path used when adding torrents through the app."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Folder options" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Keep common download folders here so recipe and cart workflows can reuse known storage targets."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Candidate maintenance" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="These buttons clear saved candidate selections only. They do not delete media files or torrents."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
                             </StackPanel>
-                            <TextBlock Text="{Binding StatusMessage}"
-                                       Margin="12,7,0,0"
-                                       Foreground="{StaticResource AppBrushAccent}"
-                                       TextWrapping="Wrap" />
-                        </DockPanel>
-                    </Border>
-                </Grid>
-            </TabItem>
-        </TabControl>
+                        </Border>
+                    </Grid>
+                </ScrollViewer>
+            <!-- #endregion -->
+            </Grid>
+            <!-- #endregion -->
+        </Grid>
+        <!-- #endregion -->
+
+        <!-- #region Save action bar -->
+        <Border Grid.Row="2"
+                Background="{StaticResource AppBrushSurface}"
+                BorderBrush="{StaticResource AppBrushBorder}"
+                BorderThickness="0,1,0,0"
+                Padding="0,12,0,0">
+            <DockPanel LastChildFill="True">
+                <Button DockPanel.Dock="Left"
+                        Command="{Binding SaveCommand}"
+                        Style="{StaticResource SettingsPrimaryIconTextButtonStyle}">
+                    <StackPanel Orientation="Horizontal">
+                        <iconPacks:PackIconLucide Kind="Save" Width="16" Height="16" Margin="0,0,7,0" />
+                        <TextBlock Text="Save Settings" />
+                    </StackPanel>
+                </Button>
+                <TextBlock Text="{Binding StatusMessage}"
+                           Margin="12,7,0,0"
+                           Foreground="{StaticResource AppBrushAccent}"
+                           TextWrapping="Wrap" />
+            </DockPanel>
+        </Border>
+        <!-- #endregion -->
     </Grid>
+    <!-- #endregion -->
 </UserControl>

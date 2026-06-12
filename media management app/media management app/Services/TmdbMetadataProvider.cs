@@ -153,6 +153,48 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
         }
     }
 
+    public async Task<MovieMetadataMatchResult> MatchMovieAsync(SourceItem item, CancellationToken cancellationToken = default)
+    {
+        if (item.MediaKind != MediaKind.Movie)
+        {
+            return new MovieMetadataMatchResult { IsAvailable = false, ErrorMessage = "Item is not a parsed movie." };
+        }
+
+        if (string.IsNullOrWhiteSpace(item.MovieTitle))
+        {
+            return new MovieMetadataMatchResult { IsAvailable = false, ErrorMessage = "Movie title was not parsed." };
+        }
+
+        try
+        {
+            var results = await SearchMoviesAsync(item.MovieTitle, cancellationToken);
+            var queryTitle = NormalizeTitle(item.MovieTitle);
+            var candidates = results
+                .Select(result => ScoreMovieCandidate(result, queryTitle, item.MovieYear))
+                .OrderByDescending(candidate => candidate.Confidence)
+                .ThenBy(candidate => candidate.ReleaseYear ?? int.MaxValue)
+                .ToList();
+
+            var best = candidates.FirstOrDefault();
+            _logger.Info(best is null
+                ? $"TMDb returned no movie candidates for '{item.MovieTitle}'"
+                : $"TMDb best movie match for '{item.MovieTitle}' is '{best.DisplayTitle}' id={best.Id} confidence={best.Confidence:0}. Reason: {best.MatchReason}",
+                LogTarget.File | LogTarget.Ui | LogTarget.Console);
+
+            return new MovieMetadataMatchResult
+            {
+                IsAvailable = true,
+                Candidates = candidates,
+                BestCandidate = best
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.Error($"TMDb movie matching failed for {item.FilePath}", ex, LogTarget.All);
+            return new MovieMetadataMatchResult { IsAvailable = false, ErrorMessage = ex.Message };
+        }
+    }
+
     public async Task<IReadOnlyList<TmdbShowSearchResult>> SearchTvShowsAsync(string query, CancellationToken cancellationToken = default)
     {
         var searchResults = await SearchTvShowsLightweightAsync(query, cancellationToken);
@@ -350,6 +392,56 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
             Overview = GetString(root, "overview"),
             PosterPath = GetString(root, "poster_path"),
             RuntimeMinutes = GetInt(root, "runtime")
+        };
+    }
+
+    private static TmdbMovieCandidate ScoreMovieCandidate(TmdbMovieSearchResult result, string normalizedQuery, int? yearHint)
+    {
+        var normalizedTitle = NormalizeTitle(result.Title);
+        var score = 0d;
+        var reasons = new List<string>();
+
+        if (normalizedTitle == normalizedQuery)
+        {
+            score += 55;
+            reasons.Add("exact title match");
+        }
+        else if (normalizedTitle.Contains(normalizedQuery) || normalizedQuery.Contains(normalizedTitle))
+        {
+            score += 30;
+            reasons.Add("partial title match");
+        }
+
+        if (yearHint is not null && result.ReleaseYear == yearHint)
+        {
+            score += 40;
+            reasons.Add($"year matched {yearHint}");
+        }
+        else if (yearHint is not null && result.ReleaseYear is not null)
+        {
+            score -= 25;
+            reasons.Add($"year mismatch; parsed={yearHint}, tmdb={result.ReleaseYear}");
+        }
+        else if (yearHint is null)
+        {
+            reasons.Add("no parsed year");
+        }
+
+        var confidence = Math.Clamp(score, 0, 100);
+        if (confidence < HighConfidenceThreshold)
+        {
+            reasons.Add("requires manual review");
+        }
+
+        return new TmdbMovieCandidate
+        {
+            Id = result.TmdbId,
+            Title = result.Title,
+            ReleaseYear = result.ReleaseYear,
+            Overview = result.Overview,
+            PosterPath = result.PosterPath,
+            Confidence = confidence,
+            MatchReason = reasons.Count == 0 ? "No strong match signals" : string.Join("; ", reasons)
         };
     }
 

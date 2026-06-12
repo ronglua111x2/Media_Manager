@@ -2,13 +2,26 @@ namespace media_management_app.Models;
 
 public sealed class TorrentSearchResult
 {
+    private string fileUrl = string.Empty;
+    private string descriptionUrl = string.Empty;
+
     public string FileName { get; init; } = string.Empty;
 
     public long FileSize { get; init; }
 
     public string FileSizeDisplay => FormatSize(FileSize);
 
-    public string FileUrl { get; init; } = string.Empty;
+    public string FileUrl
+    {
+        get => fileUrl;
+        init => fileUrl = NormalizeUrl(value);
+    }
+
+    public string DescriptionUrl
+    {
+        get => descriptionUrl;
+        init => descriptionUrl = NormalizeUrl(value);
+    }
 
     public bool CanAdd => IsDirectTorrentLink(FileUrl);
 
@@ -39,6 +52,38 @@ public sealed class TorrentSearchResult
         }
 
         return $"{size:0.##} {units[unitIndex]}";
+    }
+
+    public static string NormalizeUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return string.Empty;
+        }
+
+        var trimmed = url.Trim();
+        if (Uri.TryCreate(trimmed, UriKind.Absolute, out _) ||
+            trimmed.StartsWith("magnet:?", StringComparison.OrdinalIgnoreCase) ||
+            trimmed.StartsWith("bc://bt/", StringComparison.OrdinalIgnoreCase))
+        {
+            return trimmed;
+        }
+
+        string decoded;
+        try
+        {
+            decoded = Uri.UnescapeDataString(trimmed);
+        }
+        catch (UriFormatException)
+        {
+            return trimmed;
+        }
+
+        return Uri.TryCreate(decoded, UriKind.Absolute, out _) ||
+               decoded.StartsWith("magnet:?", StringComparison.OrdinalIgnoreCase) ||
+               decoded.StartsWith("bc://bt/", StringComparison.OrdinalIgnoreCase)
+            ? decoded
+            : trimmed;
     }
 
     private static bool IsDirectTorrentLink(string url)

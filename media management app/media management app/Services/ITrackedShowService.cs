@@ -8,6 +8,8 @@ public interface ITrackedShowService
 
     Task<TrackedShow> AddShowAsync(TmdbShowSearchResult result, CancellationToken cancellationToken = default);
 
+    Task<TrackedShow> ImportShowByTmdbIdAsync(int tmdbId, CancellationToken cancellationToken = default);
+
     Task<TrackedShow> RefreshShowAsync(TrackedShow show, CancellationToken cancellationToken = default);
 
     IReadOnlyList<TrackedShow> GetShows();

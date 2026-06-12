@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
              Loaded="UserControl_Loaded">
+    <!-- #region Local resources -->
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
 
@@ -29,13 +30,16 @@
             </Style.Triggers>
         </Style>
     </UserControl.Resources>
+    <!-- #endregion -->
 
+    <!-- #region qBittorrent workspace layout -->
     <Grid Background="{StaticResource AppBrushCanvas}" Margin="20">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
+        <!-- #region Header and actions -->
         <Border Grid.Row="0"
                 Background="{StaticResource AppBrushSurfaceRaised}"
                 BorderBrush="{StaticResource AppBrushBorder}"
@@ -109,7 +113,9 @@
                 </StackPanel>
             </Grid>
         </Border>
+        <!-- #endregion -->
 
+        <!-- #region Embedded WebView host and overlays -->
         <Border Grid.Row="1"
                 Background="{StaticResource AppBrushSurfaceRaised}"
                 BorderBrush="{StaticResource AppBrushBorder}"
@@ -152,5 +158,7 @@
                 </Border>
             </Grid>
         </Border>
+        <!-- #endregion -->
     </Grid>
+    <!-- #endregion -->
 </UserControl>

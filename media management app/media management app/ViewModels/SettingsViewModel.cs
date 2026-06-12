@@ -48,10 +48,22 @@ public partial class SettingsViewModel : ViewModelBase
     private string autoTorrentCategoryName = "AutoTorrent";
 
     [ObservableProperty]
+    private bool autoLinkCompletedDownloads;
+
+    [ObservableProperty]
+    private int logMaxLinesPerFile = AppConstants.MaxLogLinesPerFile;
+
+    [ObservableProperty]
+    private int logCleanupRetentionDays = AppConstants.DefaultLogCleanupRetentionDays;
+
+    [ObservableProperty]
     private string? selectedSourceFolder;
 
     [ObservableProperty]
     private string statusMessage = string.Empty;
+
+    [ObservableProperty]
+    private SettingsSection selectedSettingsSection = SettingsSection.System;
 
     public SettingsViewModel(
         ISettingsService settingsService,
@@ -130,6 +142,7 @@ public partial class SettingsViewModel : ViewModelBase
             : DefaultLibraryFolderName.Trim();
         _settingsService.Current.TmdbReadAccessToken = string.IsNullOrWhiteSpace(TmdbReadAccessToken) ? null : TmdbReadAccessToken;
         ApplyAutoTorrentSettings();
+        ApplyLogSettings();
         _settingsService.Save();
         _databaseService.Initialize(_settingsService.Current.StateFolder);
         RefreshLibraryRootPreview();
@@ -294,6 +307,9 @@ public partial class SettingsViewModel : ViewModelBase
             QbittorrentPassword = _settingsService.Current.AutoTorrent.Password;
             AutoTorrentDownloadFolder = _settingsService.Current.AutoTorrent.DownloadFolder ?? string.Empty;
             AutoTorrentCategoryName = _settingsService.Current.AutoTorrent.CategoryName;
+            AutoLinkCompletedDownloads = _settingsService.Current.AutoTorrent.AutoLinkCompletedDownloads;
+            LogMaxLinesPerFile = _settingsService.Current.Logs.MaxLinesPerFile;
+            LogCleanupRetentionDays = _settingsService.Current.Logs.CleanupRetentionDays;
             AutoTorrentDownloadFolders.Clear();
             foreach (var folder in _settingsService.Current.AutoTorrent.DownloadFolders)
             {
@@ -343,6 +359,22 @@ public partial class SettingsViewModel : ViewModelBase
         _settingsService.Current.AutoTorrent.CategoryName = string.IsNullOrWhiteSpace(AutoTorrentCategoryName)
             ? "AutoTorrent"
             : AutoTorrentCategoryName.Trim();
+        _settingsService.Current.AutoTorrent.AutoLinkCompletedDownloads = AutoLinkCompletedDownloads;
+    }
+
+    private void ApplyLogSettings()
+    {
+        _settingsService.Current.Logs.MaxLinesPerFile = Math.Clamp(
+            LogMaxLinesPerFile,
+            AppConstants.MinLogLinesPerFile,
+            AppConstants.MaxConfigurableLogLinesPerFile);
+        _settingsService.Current.Logs.CleanupRetentionDays = Math.Clamp(
+            LogCleanupRetentionDays,
+            AppConstants.MinLogCleanupRetentionDays,
+            AppConstants.MaxLogCleanupRetentionDays);
+
+        LogMaxLinesPerFile = _settingsService.Current.Logs.MaxLinesPerFile;
+        LogCleanupRetentionDays = _settingsService.Current.Logs.CleanupRetentionDays;
     }
 
     private void RefreshLibraryRootPreview()

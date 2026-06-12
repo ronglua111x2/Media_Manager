@@ -16,15 +16,17 @@
         ResizeMode="CanResize"
         Background="{StaticResource AppBrushCanvas}"
         Icon="Assets/app-icon.ico"
-        Loaded="Window_Loaded"
         Closing="Window_Closing">
+    <!-- #region Window chrome -->
     <shell:WindowChrome.WindowChrome>
         <shell:WindowChrome CaptionHeight="0"
                             CornerRadius="8"
                             GlassFrameThickness="0"
                             ResizeBorderThickness="6" />
     </shell:WindowChrome.WindowChrome>
+    <!-- #endregion -->
 
+    <!-- #region Window resources -->
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
 
@@ -147,7 +149,9 @@
             </Style.Triggers>
         </Style>
     </Window.Resources>
+    <!-- #endregion -->
 
+    <!-- #region App shell -->
     <Border Background="{StaticResource AppBrushCanvas}"
             BorderBrush="{StaticResource AppBrushBorder}"
             BorderThickness="1">
@@ -158,6 +162,7 @@
                 <RowDefinition Height="46" />
             </Grid.RowDefinitions>
 
+            <!-- #region Title bar -->
             <Border Grid.Row="0"
                     Background="{StaticResource AppBrushSurface}"
                     BorderBrush="{StaticResource AppBrushBorder}"
@@ -220,18 +225,23 @@
                     </StackPanel>
                 </Grid>
             </Border>
+            <!-- #endregion -->
 
+            <!-- #region Workspace content and navigation -->
             <Grid Grid.Row="1">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
+                <!-- #region Current workspace host -->
                 <Border Grid.Column="0"
                         Background="{StaticResource AppBrushSurfaceRaised}">
                     <ContentControl Content="{Binding CurrentView}" />
                 </Border>
+                <!-- #endregion -->
 
+                <!-- #region Sidebar navigation -->
                 <Border Grid.Column="1"
                         Style="{StaticResource SidebarShellStyle}">
                     <DockPanel LastChildFill="True">
@@ -310,8 +320,11 @@
                         </ItemsControl>
                     </DockPanel>
                 </Border>
+                <!-- #endregion -->
             </Grid>
+            <!-- #endregion -->
 
+            <!-- #region Bottom status bar -->
             <Border Grid.Row="2"
                     Background="{StaticResource AppBrushSurface}"
                     BorderBrush="{StaticResource AppBrushBorder}"
@@ -382,16 +395,8 @@
                     </WrapPanel>
                 </Grid>
             </Border>
-
-            <Grid x:Name="QbittorrentPreloadHost"
-                  Grid.Row="0"
-                  Width="1"
-                  Height="1"
-                  HorizontalAlignment="Left"
-                  VerticalAlignment="Top"
-                  Opacity="0"
-                  IsHitTestVisible="False"
-                  Panel.ZIndex="-1" />
+            <!-- #endregion -->
         </Grid>
     </Border>
+    <!-- #endregion -->
 </Window>

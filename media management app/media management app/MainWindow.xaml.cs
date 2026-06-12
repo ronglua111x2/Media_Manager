@@ -1,7 +1,6 @@
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Input;
-using System.Windows.Threading;
 using media_management_app.Services;
 using media_management_app.ViewModels;
 
@@ -11,37 +10,15 @@ public partial class MainWindow : Window
 {
     private readonly MainViewModel _viewModel;
     private readonly IFetchJobService _fetchJobService;
-    private readonly IQbittorrentWebViewHostService _qbittorrentWebViewHostService;
 
     public MainWindow(
         MainViewModel viewModel,
-        IFetchJobService fetchJobService,
-        IQbittorrentWebViewHostService qbittorrentWebViewHostService)
+        IFetchJobService fetchJobService)
     {
         InitializeComponent();
         _viewModel = viewModel;
         _fetchJobService = fetchJobService;
-        _qbittorrentWebViewHostService = qbittorrentWebViewHostService;
         DataContext = viewModel;
-    }
-
-    private void Window_Loaded(object sender, RoutedEventArgs e)
-    {
-        Dispatcher.BeginInvoke(
-            new Action(() => _ = PreloadQbittorrentWebViewAsync()),
-            DispatcherPriority.ApplicationIdle);
-    }
-
-    private async Task PreloadQbittorrentWebViewAsync()
-    {
-        try
-        {
-            await _qbittorrentWebViewHostService.InitializeAsync(QbittorrentPreloadHost);
-        }
-        catch (OperationCanceledException)
-        {
-            // App shutdown can cancel WebView2 startup; no user action is needed.
-        }
     }
 
     private void Window_Closing(object? sender, CancelEventArgs e)

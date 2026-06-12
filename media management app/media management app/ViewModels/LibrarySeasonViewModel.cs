@@ -25,6 +25,7 @@ public partial class LibrarySeasonViewModel : ObservableObject
         selectedPackName = seasonRecord?.SelectedPackCandidateName ?? string.Empty;
         selectedPackCoveredSeasons = seasonRecord?.SelectedPackCoveredSeasons ?? string.Empty;
         packTorrentHash = seasonRecord?.PackTorrentHash ?? string.Empty;
+        packTorrentProgress = seasonRecord?.PackTorrentProgress ?? 0;
         SyncEpisodePackMode();
     }
 
@@ -67,15 +68,39 @@ public partial class LibrarySeasonViewModel : ObservableObject
 
     public string PackLinkStatus => IsCoveredByAnotherPack
         ? $"Covered by {PackOwnerDisplay}"
-        : IsPackMode ? "Pack mode" : "Episode mode";
+        : IsPackLinked
+            ? "Linked"
+            : IsPackTorrentComplete
+                ? "Ready to link"
+                : HasPackTorrent
+                    ? PackTorrentProgress > 0 ? "Downloading" : "Added"
+                    : IsPackInCart ? "In cart" : IsPackMode ? "Pack mode" : "Episode mode";
 
-    public bool CanAddPackToCart => IsPackMode && !IsCoveredByAnotherPack && !IsPackInCart;
+    public bool CanAddPackToCart => IsPackMode && !IsCoveredByAnotherPack && !IsPackInCart && !HasPackTorrent;
 
-    public bool CanLinkPack => IsPackMode && !IsCoveredByAnotherPack && !string.IsNullOrWhiteSpace(PackTorrentHash);
+    public bool CanLinkPack => IsPackMode && !IsCoveredByAnotherPack && (HasPackTorrent || IsPackLinked);
+
+    public bool HasPackTorrent => !string.IsNullOrWhiteSpace(PackTorrentHash);
+
+    public bool IsPackTorrentComplete => HasPackTorrent && PackTorrentProgress >= 0.999;
+
+    public string PackLinkActionLabel => IsPackLinked ? "Unlink Pack" : "Link Pack";
+
+    public string PackLinkActionToolTip => IsPackLinked
+        ? "Remove generated library hardlinks for this season pack"
+        : "Create library hardlinks for this season pack";
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanAddPackToCart))]
+    [NotifyPropertyChangedFor(nameof(PackLinkStatus))]
     private bool isPackInCart;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanLinkPack))]
+    [NotifyPropertyChangedFor(nameof(PackLinkActionLabel))]
+    [NotifyPropertyChangedFor(nameof(PackLinkActionToolTip))]
+    [NotifyPropertyChangedFor(nameof(PackLinkStatus))]
+    private bool isPackLinked;
 
     public bool CanTogglePackMode => !IsCoveredByAnotherPack;
 
@@ -118,7 +143,17 @@ public partial class LibrarySeasonViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanLinkPack))]
+    [NotifyPropertyChangedFor(nameof(HasPackTorrent))]
+    [NotifyPropertyChangedFor(nameof(IsPackTorrentComplete))]
+    [NotifyPropertyChangedFor(nameof(CanAddPackToCart))]
+    [NotifyPropertyChangedFor(nameof(PackLinkStatus))]
     private string packTorrentHash = string.Empty;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsPackTorrentComplete))]
+    [NotifyPropertyChangedFor(nameof(CanLinkPack))]
+    [NotifyPropertyChangedFor(nameof(PackLinkStatus))]
+    private double packTorrentProgress;
 
     partial void OnIsPackModeChanged(bool value)
     {

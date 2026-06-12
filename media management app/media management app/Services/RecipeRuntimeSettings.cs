@@ -15,6 +15,9 @@ public static class RecipeRuntimeSettings
     public const string FuzzyDeduplicateKey = "fuzzyDeduplicate";
     public const string FuzzyDeduplicateSizeToleranceMbKey = "fuzzyDeduplicateSizeToleranceMb";
     public const string EnableCandidateMetadataProbeKey = "enableCandidateMetadataProbe";
+    public const string EpisodeNumberingModeKey = "episodeNumberingMode";
+    public const string StandardTvEpisodeNumbering = "Standard TV";
+    public const string AnimeAbsoluteEpisodeNumbering = "Anime absolute";
 
     public static int GetParallelSearchCount(SearchRecipe recipe, AutoTorrentSettings fallback) =>
         GetInt(GetSearchModule(recipe), ParallelSearchCountKey, fallback.MaxParallelSearches, 1, 8);
@@ -49,6 +52,23 @@ public static class RecipeRuntimeSettings
     public static bool GetEnableCandidateMetadataProbe(SearchRecipe recipe, AutoTorrentSettings fallback) =>
         GetBool(GetParserModule(recipe), EnableCandidateMetadataProbeKey, fallback.EnableCandidateMetadataProbe);
 
+    public static string GetEpisodeNumberingMode(SearchRecipe recipe) =>
+        NormalizeEpisodeNumberingMode(GetString(GetParserModule(recipe), EpisodeNumberingModeKey, StandardTvEpisodeNumbering));
+
+    public static bool UsesAnimeAbsoluteEpisodeNumbering(SearchRecipe recipe) =>
+        string.Equals(GetEpisodeNumberingMode(recipe), AnimeAbsoluteEpisodeNumbering, StringComparison.OrdinalIgnoreCase);
+
+    public static string NormalizeEpisodeNumberingMode(string? value)
+    {
+        if (string.Equals(value, AnimeAbsoluteEpisodeNumbering, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(value, "AnimeAbsolute", StringComparison.OrdinalIgnoreCase))
+        {
+            return AnimeAbsoluteEpisodeNumbering;
+        }
+
+        return StandardTvEpisodeNumbering;
+    }
+
     private static RecipeModuleConfig? GetSearchModule(SearchRecipe recipe) =>
         recipe.Modules.FirstOrDefault(module => module.BlockType == RecipeBlockType.SearchSource);
 
@@ -75,5 +95,12 @@ public static class RecipeRuntimeSettings
         }
 
         return fallback;
+    }
+
+    private static string GetString(RecipeModuleConfig? module, string key, string fallback)
+    {
+        return module?.ExtensionData.TryGetValue(key, out var value) == true && !string.IsNullOrWhiteSpace(value)
+            ? value.Trim()
+            : fallback;
     }
 }

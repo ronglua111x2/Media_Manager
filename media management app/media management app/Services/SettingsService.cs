@@ -96,6 +96,16 @@ public sealed class SettingsService : ISettingsService
         }
 
         Current.AutoTorrent ??= new AutoTorrentSettings();
+        Current.Logs ??= new LogSettings();
+        Current.Logs.MaxLinesPerFile = Math.Clamp(
+            Current.Logs.MaxLinesPerFile,
+            AppConstants.MinLogLinesPerFile,
+            AppConstants.MaxConfigurableLogLinesPerFile);
+        Current.Logs.CleanupRetentionDays = Math.Clamp(
+            Current.Logs.CleanupRetentionDays,
+            AppConstants.MinLogCleanupRetentionDays,
+            AppConstants.MaxLogCleanupRetentionDays);
+
         if (string.IsNullOrWhiteSpace(Current.AutoTorrent.QbittorrentWebUiUrl))
         {
             Current.AutoTorrent.QbittorrentWebUiUrl = "http://localhost:8080";

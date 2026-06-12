@@ -4,6 +4,7 @@
              xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
              xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
              xmlns:models="clr-namespace:media_management_app.Models">
+    <!-- #region Local resources and templates -->
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
 
@@ -179,7 +180,9 @@
             <Setter Property="Padding" Value="18" />
         </Style>
     </UserControl.Resources>
+    <!-- #endregion -->
 
+    <!-- #region Recipe workspace layout -->
     <Grid Background="{StaticResource AppBrushCanvas}" Margin="16">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="250" />
@@ -187,6 +190,7 @@
             <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
 
+        <!-- #region Recipe list panel -->
         <materialDesign:Card Grid.Column="0" Style="{StaticResource PanelCardStyle}">
             <DockPanel LastChildFill="True">
                 <StackPanel DockPanel.Dock="Top">
@@ -270,7 +274,9 @@
                 </ScrollViewer>
             </DockPanel>
         </materialDesign:Card>
+        <!-- #endregion -->
 
+        <!-- #region Recipe editor and module guide -->
         <Grid Grid.Column="2">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
@@ -681,10 +687,15 @@
                                         </StackPanel.Style>
                                         <Border Style="{StaticResource RecipeModuleFieldsStyle}">
                                             <StackPanel>
-                                                <TextBlock Text="Filename parsing is automatic."
+                                                <TextBlock Text="Choose how episode numbers are read from torrent filenames."
                                                            Style="{StaticResource MutedTextStyle}"
                                                            TextWrapping="Wrap"
                                                            Margin="0,0,0,12" />
+                                                <TextBlock Text="Episode numbering" Style="{StaticResource RecipeLabelStyle}" />
+                                                <ComboBox ItemsSource="{Binding EpisodeNumberingModeOptions}"
+                                                          SelectedItem="{Binding EpisodeNumberingMode, Mode=TwoWay}"
+                                                          Padding="10,7"
+                                                          Margin="0,0,0,12" />
                                                 <CheckBox Content="Probe candidate metadata"
                                                           IsChecked="{Binding EnableCandidateMetadataProbe}" />
                                             </StackPanel>
@@ -756,5 +767,7 @@
                 </DockPanel>
             </materialDesign:Card>
         </Grid>
+        <!-- #endregion -->
     </Grid>
+    <!-- #endregion -->
 </UserControl>

@@ -21,6 +21,7 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
     private readonly IRecipeService _recipeService;
     private readonly IQbittorrentClient _qbittorrentClient;
     private readonly ISettingsService _settingsService;
+    private readonly ITorrentReconciliationService _torrentReconciliationService;
     private readonly IAppLogger _logger;
 
     private IReadOnlyList<LibraryMediaCardViewModel> _allMediaCards = [];
@@ -39,6 +40,7 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         IRecipeService recipeService,
         IQbittorrentClient qbittorrentClient,
         ISettingsService settingsService,
+        ITorrentReconciliationService torrentReconciliationService,
         IAppLogger logger)
     {
         _trackedShowService = trackedShowService;
@@ -52,6 +54,7 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         _recipeService = recipeService;
         _qbittorrentClient = qbittorrentClient;
         _settingsService = settingsService;
+        _torrentReconciliationService = torrentReconciliationService;
         _logger = logger;
 
         _torrentCartService.CartChanged += (_, _) => OnCartChanged();
@@ -189,7 +192,9 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         }
 
         var orders = _torrentCartService.GetOrders(SelectedMediaCard.MediaKind, SelectedMediaCard.Id)
-            .Where(order => order.Status is not TorrentOrderStatus.AddedToClient and not TorrentOrderStatus.Completed)
+            .Where(order => order.Status is not TorrentOrderStatus.AddedToClient
+                            and not TorrentOrderStatus.Downloading
+                            and not TorrentOrderStatus.Completed)
             .ToList();
         if (orders.Count == 0)
         {
@@ -362,6 +367,33 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         }
     }
 
+    [RelayCommand(CanExecute = nameof(CanReconcileExistingTorrents))]
+    private async Task ReconcileExistingTorrents()
+    {
+        if (SelectedMediaCard is null)
+        {
+            return;
+        }
+
+        IsRunningCart = true;
+        try
+        {
+            StatusMessage = $"Reconciling existing qBittorrent torrents for {SelectedMediaCard.Title}...";
+            var scope = TorrentReconciliationScope.ForMedia(SelectedMediaCard.MediaKind, SelectedMediaCard.Id);
+            var result = await _torrentReconciliationService.ReconcileAsync(scope);
+            await LoadSelectedCartAsync(SelectedMediaCard);
+            StatusMessage = $"Torrent reconciliation complete. {result.Summary}.";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Torrent reconciliation failed: {ex.Message}";
+        }
+        finally
+        {
+            IsRunningCart = false;
+        }
+    }
+
     [RelayCommand(CanExecute = nameof(CanAcceptAllCandidates))]
     private void AcceptAllCandidates()
     {
@@ -488,6 +520,7 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         OnPropertyChanged(nameof(CartTitle));
         OnPropertyChanged(nameof(IsShowRecipePanel));
         OnPropertyChanged(nameof(IsMovieRecipePanel));
+        ReconcileExistingTorrentsCommand.NotifyCanExecuteChanged();
     }
 
     partial void OnSelectedEpisodeRecipeIdChanged(string? value)
@@ -536,6 +569,7 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         RunCartCommand.NotifyCanExecuteChanged();
         AddCartCommand.NotifyCanExecuteChanged();
         StopRunCartCommand.NotifyCanExecuteChanged();
+        ReconcileExistingTorrentsCommand.NotifyCanExecuteChanged();
         ClearCartCommand.NotifyCanExecuteChanged();
         ClearAllCartsCommand.NotifyCanExecuteChanged();
         ClearCandidatesCommand.NotifyCanExecuteChanged();
@@ -590,6 +624,7 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         OnPropertyChanged(nameof(HasCandidatesInCart));
         RunCartCommand.NotifyCanExecuteChanged();
         AddCartCommand.NotifyCanExecuteChanged();
+        ReconcileExistingTorrentsCommand.NotifyCanExecuteChanged();
         AcceptAllCandidatesCommand.NotifyCanExecuteChanged();
         ClearCartCommand.NotifyCanExecuteChanged();
         ClearAllCartsCommand.NotifyCanExecuteChanged();
@@ -781,6 +816,11 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         return HasAddableOrders && !IsRunningCart;
     }
 
+    private bool CanReconcileExistingTorrents()
+    {
+        return SelectedMediaCard is not null && !IsRunningCart;
+    }
+
     private bool CanAcceptAllCandidates()
     {
         return HasAcceptableCandidates && !IsRunningCart;
@@ -873,8 +913,10 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         order.TorrentName = addedTorrent.Name;
         order.TorrentState = addedTorrent.State;
         order.TorrentProgress = addedTorrent.Progress;
-        order.Status = TorrentOrderStatus.AddedToClient;
-        order.StatusDetail = $"Added to qBittorrent: {addedTorrent.Name}";
+        order.Status = addedTorrent.IsComplete ? TorrentOrderStatus.Completed : TorrentOrderStatus.Downloading;
+        order.StatusDetail = addedTorrent.IsComplete
+            ? $"Ready to link: {addedTorrent.Name}"
+            : $"Downloading: {addedTorrent.Name} ({addedTorrent.ProgressDisplay})";
 
         if (order.TargetKind == MediaKind.Movie)
         {

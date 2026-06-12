@@ -24,6 +24,18 @@ public enum AppLogLevel
 
 #endregion
 
+#region Settings
+
+public enum SettingsSection
+{
+    System = 0,
+    Library = 1,
+    Integrations = 2,
+    TorrentStorage = 3
+}
+
+#endregion
+
 #region Media
 
 public enum MediaKind

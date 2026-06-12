@@ -42,6 +42,8 @@ public partial class App : System.Windows.Application
         var settings = _serviceProvider.GetRequiredService<ISettingsService>();
         settings.Load();
 
+        _serviceProvider.GetRequiredService<ILogCleanupService>().Start();
+
         var database = _serviceProvider.GetRequiredService<IDatabaseService>();
         database.Initialize(settings.Current.StateFolder);
 
@@ -68,6 +70,7 @@ public partial class App : System.Windows.Application
 
         services.AddSingleton<ISettingsService, SettingsService>();
         services.AddSingleton<IAppLogger, AppLogger>();
+        services.AddSingleton<ILogCleanupService, LogCleanupService>();
         services.AddSingleton<IOperationProgressService, OperationProgressService>();
         services.AddSingleton<IDatabaseService, DatabaseService>();
         services.AddSingleton<IParserService, ParserService>();
@@ -93,8 +96,10 @@ public partial class App : System.Windows.Application
         services.AddSingleton<IPosterImageService, PosterImageService>();
         services.AddSingleton<ITorrentCartService, TorrentCartService>();
         services.AddSingleton<IMediaCardCatalogService, MediaCardCatalogService>();
+        services.AddSingleton<IMediaImportService, MediaImportService>();
         services.AddSingleton<IFetchJobService, FetchJobService>();
         services.AddSingleton<IAutoTorrentLinkService, AutoTorrentLinkService>();
+        services.AddSingleton<ITorrentReconciliationService, TorrentReconciliationService>();
         services.AddSingleton<ILibraryManagementService, LibraryManagementService>();
 
         services.AddSingleton<FindAddViewModel>();

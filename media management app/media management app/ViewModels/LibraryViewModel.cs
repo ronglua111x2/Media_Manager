@@ -6,6 +6,7 @@ using CommunityToolkit.Mvvm.Input;
 using media_management_app.Common;
 using media_management_app.Models;
 using media_management_app.Services;
+using WinForms = System.Windows.Forms;
 
 namespace media_management_app.ViewModels;
 
@@ -20,6 +21,8 @@ public sealed partial class LibraryViewModel : ViewModelBase
     private readonly ILibraryManagementService _libraryManagementService;
     private readonly IRecipeService _recipeService;
     private readonly IAutoTorrentLinkService _autoTorrentLinkService;
+    private readonly ITorrentReconciliationService _torrentReconciliationService;
+    private readonly IMediaImportService _mediaImportService;
 
     private IReadOnlyList<LibraryMediaCardViewModel> _allMediaCards = [];
     private long? _loadedDetailMediaId;
@@ -34,7 +37,9 @@ public sealed partial class LibraryViewModel : ViewModelBase
         ITorrentCartService torrentCartService,
         ILibraryManagementService libraryManagementService,
         IRecipeService recipeService,
-        IAutoTorrentLinkService autoTorrentLinkService)
+        IAutoTorrentLinkService autoTorrentLinkService,
+        ITorrentReconciliationService torrentReconciliationService,
+        IMediaImportService mediaImportService)
     {
         _trackedShowService = trackedShowService;
         _trackedMovieService = trackedMovieService;
@@ -45,13 +50,26 @@ public sealed partial class LibraryViewModel : ViewModelBase
         _libraryManagementService = libraryManagementService;
         _recipeService = recipeService;
         _autoTorrentLinkService = autoTorrentLinkService;
+        _torrentReconciliationService = torrentReconciliationService;
+        _mediaImportService = mediaImportService;
 
         _torrentCartService.CartChanged += (_, _) => RefreshCartStateOnSelectedDetail();
+        _torrentReconciliationService.Reconciled += (_, _) => _ = ReloadSelectedDetailAsync();
         RefreshLibrary();
         StatusMessage = "Select a media card to view details.";
     }
 
     public ObservableCollection<LibraryMediaCardViewModel> MediaCards { get; } = [];
+
+    public ObservableCollection<string> ImportFolders { get; } = [];
+
+    public ObservableCollection<MediaImportGroupViewModel> ImportGroups { get; } = [];
+
+    public ObservableCollection<MediaImportGroupViewModel> ReadyImportGroups { get; } = [];
+
+    public ObservableCollection<MediaImportGroupViewModel> NeedsReviewImportGroups { get; } = [];
+
+    public ObservableCollection<MediaImportGroupViewModel> IgnoredImportGroups { get; } = [];
 
     public IReadOnlyList<MediaCardSortMode> SortModes { get; } =
     [
@@ -78,6 +96,18 @@ public sealed partial class LibraryViewModel : ViewModelBase
     [ObservableProperty]
     private string statusMessage = string.Empty;
 
+    [ObservableProperty]
+    private bool isImportPanelOpen;
+
+    [ObservableProperty]
+    private bool isImportBusy;
+
+    [ObservableProperty]
+    private string importStatusMessage = "Add one or more folders to scan existing hardlinked media.";
+
+    [ObservableProperty]
+    private string? selectedImportFolder;
+
     public bool HasMedia => MediaCards.Count > 0;
 
     public bool HasSelectedMedia => SelectedMediaCard is not null;
@@ -91,6 +121,16 @@ public sealed partial class LibraryViewModel : ViewModelBase
     public bool IsTypeSortSelected => MediaSortMode == MediaCardSortMode.TypeThenTitle;
 
     public bool IsNameSortSelected => MediaSortMode == MediaCardSortMode.Title;
+
+    public bool HasImportFolders => ImportFolders.Count > 0;
+
+    public bool HasImportGroups => ImportGroups.Count > 0;
+
+    public bool CanScanImportFolders => HasImportFolders && !IsImportBusy;
+
+    public bool CanImportSelected =>
+        !IsImportBusy &&
+        ImportGroups.Any(group => group.CanImport);
 
     [RelayCommand]
     private void RefreshLibrary()
@@ -114,6 +154,134 @@ public sealed partial class LibraryViewModel : ViewModelBase
         StatusMessage = MediaCards.Count == 0
             ? "No media in library. Use Find/Add to add shows or movies."
             : $"Loaded {MediaCards.Count} media item(s).";
+    }
+
+    [RelayCommand]
+    private void OpenImportPanel()
+    {
+        IsImportPanelOpen = true;
+        ImportStatusMessage = ImportGroups.Count == 0
+            ? "Add one or more folders to scan existing hardlinked media."
+            : ImportStatusMessage;
+    }
+
+    [RelayCommand]
+    private void CloseImportPanel()
+    {
+        IsImportPanelOpen = false;
+    }
+
+    [RelayCommand]
+    private void AddImportFolder()
+    {
+        var selected = BrowseFolder("Add existing media folder");
+        if (string.IsNullOrWhiteSpace(selected) ||
+            ImportFolders.Any(folder => string.Equals(folder, selected, StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+
+        ImportFolders.Add(selected);
+        SelectedImportFolder = selected;
+        NotifyImportStateChanged();
+    }
+
+    [RelayCommand]
+    private void RemoveSelectedImportFolder()
+    {
+        if (string.IsNullOrWhiteSpace(SelectedImportFolder))
+        {
+            return;
+        }
+
+        ImportFolders.Remove(SelectedImportFolder);
+        SelectedImportFolder = ImportFolders.FirstOrDefault();
+        NotifyImportStateChanged();
+    }
+
+    [RelayCommand(CanExecute = nameof(CanScanImportFolders))]
+    private async Task ScanImportFolders()
+    {
+        await RunImportActionAsync(async () =>
+        {
+            ImportStatusMessage = "Scanning and matching existing media...";
+            var result = await _mediaImportService.PreviewAsync(ImportFolders);
+            ImportGroups.Clear();
+            foreach (var group in result.Groups)
+            {
+                ImportGroups.Add(new MediaImportGroupViewModel(group));
+            }
+
+            RefreshImportGroupTabs();
+            ImportStatusMessage = result.Summary;
+        });
+    }
+
+    [RelayCommand]
+    private async Task SearchImportGroup(MediaImportGroupViewModel? group)
+    {
+        if (group is null || group.MediaKind is not (MediaKind.Movie or MediaKind.TvEpisode))
+        {
+            return;
+        }
+
+        await RunImportActionAsync(async () =>
+        {
+            ImportStatusMessage = $"Searching TMDB for '{group.ManualSearchQuery}'...";
+            var candidates = await _mediaImportService.SearchCandidatesAsync(group.MediaKind, group.ManualSearchQuery);
+            group.ReplaceCandidates(candidates);
+            ImportStatusMessage = candidates.Count == 0
+                ? "No TMDB candidates found."
+                : $"Loaded {candidates.Count} candidate(s) for {group.ParsedTitle}.";
+        });
+    }
+
+    [RelayCommand]
+    private void ApplyImportCandidate(MediaImportCandidateViewModel? candidate)
+    {
+        if (candidate is null)
+        {
+            return;
+        }
+
+        candidate.Group.ApplyCandidate(candidate.Candidate);
+        RefreshImportGroupTabs();
+        NotifyImportStateChanged();
+        ImportStatusMessage = $"Selected {candidate.DisplayTitle} for import.";
+    }
+
+    [RelayCommand(CanExecute = nameof(CanImportSelected))]
+    private async Task ImportSelected()
+    {
+        await RunImportActionAsync(async () =>
+        {
+            var groups = ImportGroups
+                .Where(group => group.CanImport && group.SelectedCandidate is not null)
+                .Select(group => new MediaImportCommitGroup
+                {
+                    MediaKind = group.MediaKind,
+                    SelectedCandidate = group.SelectedCandidate!,
+                    Items = group.Files
+                        .Where(file => file.IsIncluded)
+                        .Select(file => file.SourceItem)
+                        .ToList()
+                })
+                .ToList();
+
+            if (groups.Count == 0)
+            {
+                ImportStatusMessage = "No ready groups are selected for import.";
+                return;
+            }
+
+            ImportStatusMessage = "Importing selected media...";
+            var result = await _mediaImportService.CommitAsync(groups);
+            RefreshLibrary();
+            SelectImportedMedia(result);
+            IsImportPanelOpen = false;
+            ImportStatusMessage = result.Summary;
+            StatusMessage = result.Summary;
+        });
     }
 
     [RelayCommand]
@@ -236,6 +404,19 @@ public sealed partial class LibraryViewModel : ViewModelBase
 
         try
         {
+            if (episode.IsLinked)
+            {
+                StatusMessage = $"Removing library link for {episode.EpisodeCode}...";
+                var unlinkResult = _autoTorrentLinkService.RemoveEpisodeLinks(
+                    episode.ShowId,
+                    episode.SeasonNumber,
+                    episode.EpisodeNumber);
+                _trackedShowService.RefreshAvailability(episode.ShowId);
+                await ReloadSelectedDetailAsync();
+                StatusMessage = $"Removed library link for {episode.EpisodeCode}: {unlinkResult.Summary}.";
+                return;
+            }
+
             StatusMessage = $"Creating library link for {episode.EpisodeCode}...";
             var result = await _autoTorrentLinkService.LinkEpisodeAsync(
                 episode.ShowId,
@@ -261,6 +442,16 @@ public sealed partial class LibraryViewModel : ViewModelBase
 
         try
         {
+            if (season.IsPackLinked)
+            {
+                StatusMessage = $"Removing library links for season {season.SeasonNumber:00} pack...";
+                var unlinkResult = _autoTorrentLinkService.RemoveSeasonPackLinks(season.ShowId, season.SeasonNumber);
+                _trackedShowService.RefreshAvailability(season.ShowId);
+                await ReloadSelectedDetailAsync();
+                StatusMessage = $"Removed pack library links for S{season.SeasonNumber:00}: {unlinkResult.Summary}.";
+                return;
+            }
+
             StatusMessage = $"Creating library links for season {season.SeasonNumber:00} pack...";
             var result = await _autoTorrentLinkService.LinkSeasonPackAsync(season.ShowId, season.SeasonNumber);
             _trackedShowService.RefreshAvailability(season.ShowId);
@@ -283,6 +474,16 @@ public sealed partial class LibraryViewModel : ViewModelBase
 
         try
         {
+            if (movie.IsLinked)
+            {
+                StatusMessage = $"Removing library link for {movie.Title}...";
+                var unlinkResult = _autoTorrentLinkService.RemoveMovieLinks(movie.Id);
+                _trackedMovieService.RefreshAvailability(movie.Id);
+                await ReloadSelectedDetailAsync();
+                StatusMessage = $"Removed library link for {movie.Title}: {unlinkResult.Summary}.";
+                return;
+            }
+
             StatusMessage = $"Creating library link for {movie.Title}...";
             var result = await _autoTorrentLinkService.LinkMovieAsync(movie.Id);
             _trackedMovieService.RefreshAvailability(movie.Id);
@@ -292,6 +493,28 @@ public sealed partial class LibraryViewModel : ViewModelBase
         catch (Exception ex)
         {
             StatusMessage = $"Link failed for {movie.Title}: {ex.Message}";
+        }
+    }
+
+    [RelayCommand]
+    private async Task ReconcileExistingTorrents()
+    {
+        try
+        {
+            var scope = SelectedMediaCard is null
+                ? TorrentReconciliationScope.All
+                : TorrentReconciliationScope.ForMedia(SelectedMediaCard.MediaKind, SelectedMediaCard.Id);
+            StatusMessage = SelectedMediaCard is null
+                ? "Reconciling existing qBittorrent torrents..."
+                : $"Reconciling existing qBittorrent torrents for {SelectedMediaCard.Title}...";
+
+            var result = await _torrentReconciliationService.ReconcileAsync(scope);
+            await ReloadSelectedDetailAsync();
+            StatusMessage = $"Torrent reconciliation complete. {result.Summary}.";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Torrent reconciliation failed: {ex.Message}";
         }
     }
 
@@ -370,6 +593,16 @@ public sealed partial class LibraryViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsDateSortSelected));
         OnPropertyChanged(nameof(IsTypeSortSelected));
         OnPropertyChanged(nameof(IsNameSortSelected));
+    }
+
+    partial void OnIsImportBusyChanged(bool value)
+    {
+        NotifyImportStateChanged();
+    }
+
+    partial void OnIsImportPanelOpenChanged(bool value)
+    {
+        OnPropertyChanged(nameof(HasSelectedMedia));
     }
 
     private async Task LoadSelectedMediaAsync(LibraryMediaCardViewModel? card)
@@ -461,6 +694,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
     private LibraryShowDetailViewModel BuildShowDetail(TrackedShow show, IReadOnlySet<int>? expandedSeasons = null)
     {
         var linkedEpisodeStatuses = GetLinkedEpisodeStatuses(show.TmdbId);
+        var linkedPackOwnerSeasons = GetLinkedPackOwnerSeasons(show.TmdbId);
         var episodes = _trackedShowService.GetEpisodes(show.Id)
             .Select(episode => new LibraryEpisodeRowViewModel(episode)
             {
@@ -490,7 +724,8 @@ public sealed partial class LibraryViewModel : ViewModelBase
                     seasonRecord)
                 {
                     IsExpanded = expandedSeasons?.Contains(group.Key) == true,
-                    IsPackInCart = _torrentCartService.TryGetActiveSeasonPackOrder(show.Id, group.Key, out _)
+                    IsPackInCart = _torrentCartService.TryGetActiveSeasonPackOrder(show.Id, group.Key, out _),
+                    IsPackLinked = linkedPackOwnerSeasons.Contains(group.Key)
                 };
             });
 
@@ -534,6 +769,90 @@ public sealed partial class LibraryViewModel : ViewModelBase
         {
             SelectedMediaCard = MediaCards.FirstOrDefault(card => card.Id == selectedId && card.MediaKind == selectedKind);
         }
+    }
+
+    private async Task RunImportActionAsync(Func<Task> action)
+    {
+        if (IsImportBusy)
+        {
+            return;
+        }
+
+        try
+        {
+            IsImportBusy = true;
+            await action();
+        }
+        catch (Exception ex)
+        {
+            ImportStatusMessage = ex.Message;
+            StatusMessage = $"Import failed: {ex.Message}";
+        }
+        finally
+        {
+            IsImportBusy = false;
+            NotifyImportStateChanged();
+        }
+    }
+
+    private void RefreshImportGroupTabs()
+    {
+        ReadyImportGroups.Clear();
+        NeedsReviewImportGroups.Clear();
+        IgnoredImportGroups.Clear();
+
+        foreach (var group in ImportGroups)
+        {
+            switch (group.Status)
+            {
+                case MediaImportGroupStatus.Ready:
+                    ReadyImportGroups.Add(group);
+                    break;
+                case MediaImportGroupStatus.NeedsReview:
+                    NeedsReviewImportGroups.Add(group);
+                    break;
+                case MediaImportGroupStatus.Ignored:
+                    IgnoredImportGroups.Add(group);
+                    break;
+            }
+        }
+
+        NotifyImportStateChanged();
+    }
+
+    private void SelectImportedMedia(MediaImportCommitResult result)
+    {
+        var firstImported = result.ImportedMedia.FirstOrDefault();
+        if (firstImported.MediaId <= 0)
+        {
+            return;
+        }
+
+        SelectedMediaCard = MediaCards.FirstOrDefault(card =>
+            card.MediaKind == firstImported.MediaKind &&
+            card.Id == firstImported.MediaId);
+    }
+
+    private void NotifyImportStateChanged()
+    {
+        OnPropertyChanged(nameof(HasImportFolders));
+        OnPropertyChanged(nameof(HasImportGroups));
+        OnPropertyChanged(nameof(CanScanImportFolders));
+        OnPropertyChanged(nameof(CanImportSelected));
+        ScanImportFoldersCommand.NotifyCanExecuteChanged();
+        ImportSelectedCommand.NotifyCanExecuteChanged();
+    }
+
+    private static string? BrowseFolder(string description)
+    {
+        using var dialog = new WinForms.FolderBrowserDialog
+        {
+            Description = description,
+            UseDescriptionForTitle = true,
+            ShowNewFolderButton = false
+        };
+
+        return dialog.ShowDialog() == WinForms.DialogResult.OK ? dialog.SelectedPath : null;
     }
 
     private void UpdateSeasonManagementMode(long showId, int seasonNumber, SeasonManagementMode mode)
@@ -584,6 +903,24 @@ public sealed partial class LibraryViewModel : ViewModelBase
         }
 
         return statuses;
+    }
+
+    private HashSet<int> GetLinkedPackOwnerSeasons(int tmdbId)
+    {
+        var providerId = tmdbId.ToString();
+        return _databaseService.GetSourceItems()
+            .Where(item =>
+                item.MediaKind == MediaKind.TvEpisode &&
+                item.MatchAccepted &&
+                item.State == ItemState.Linked &&
+                item.AutoTorrentLinkKind == AutoTorrentLinkKind.SeasonPack &&
+                item.AutoTorrentPackOwnerSeasonNumber is not null &&
+                !string.IsNullOrWhiteSpace(item.LinkedPath) &&
+                File.Exists(item.LinkedPath) &&
+                string.Equals(item.Provider, "tmdb", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(item.ProviderId, providerId, StringComparison.OrdinalIgnoreCase))
+            .Select(item => item.AutoTorrentPackOwnerSeasonNumber!.Value)
+            .ToHashSet();
     }
 
     private static int GetLinkStatusPriority(string status)

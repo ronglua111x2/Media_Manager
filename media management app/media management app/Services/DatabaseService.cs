@@ -61,6 +61,7 @@ public sealed class DatabaseService : IDatabaseService
                 AutoTorrentLinkKind INTEGER NULL,
                 AutoTorrentTorrentHash TEXT NULL,
                 AutoTorrentPackOwnerSeasonNumber INTEGER NULL,
+                IsExternalImport INTEGER NOT NULL DEFAULT 0,
                 LastSeenUtc TEXT NOT NULL
             );
             """;
@@ -87,6 +88,7 @@ public sealed class DatabaseService : IDatabaseService
         EnsureColumn(connection, "SourceItems", "AutoTorrentLinkKind", "INTEGER NULL");
         EnsureColumn(connection, "SourceItems", "AutoTorrentTorrentHash", "TEXT NULL");
         EnsureColumn(connection, "SourceItems", "AutoTorrentPackOwnerSeasonNumber", "INTEGER NULL");
+        EnsureColumn(connection, "SourceItems", "IsExternalImport", "INTEGER NOT NULL DEFAULT 0");
         InitializeSeriesMappings(connection);
         InitializeTrackedShows(connection);
         InitializeTrackedMovies(connection);
@@ -111,7 +113,7 @@ public sealed class DatabaseService : IDatabaseService
                    MatchedTitle, MatchedYear, Provider, ProviderId, MatchConfidence, MatchReason,
                    RequiresManualReview, MatchAccepted, UseAbsoluteAnimeMapping,
                    State, Notes, LinkedPath, AutoTorrentLinkKind, AutoTorrentTorrentHash,
-                   AutoTorrentPackOwnerSeasonNumber, LastSeenUtc
+                   AutoTorrentPackOwnerSeasonNumber, IsExternalImport, LastSeenUtc
             FROM SourceItems
             ORDER BY LastSeenUtc DESC;
             """;
@@ -158,10 +160,13 @@ public sealed class DatabaseService : IDatabaseService
                 AutoTorrentTorrentHash = excluded.AutoTorrentTorrentHash,
                 AutoTorrentPackOwnerSeasonNumber = excluded.AutoTorrentPackOwnerSeasonNumber,
                 """;
+        var externalImportUpdateSql = preserveLinkedState
+            ? "IsExternalImport = CASE WHEN SourceItems.State IN (3, 6) THEN SourceItems.IsExternalImport ELSE excluded.IsExternalImport END,"
+            : "IsExternalImport = excluded.IsExternalImport,";
 
         command.CommandText = $"""
-            INSERT INTO SourceItems (SourceRootFolder, ParentFolder, FilePath, FileName, ScanText, MediaKind, ParserPattern, ShowTitle, MovieTitle, MovieYear, SeasonNumber, EpisodeNumber, MappedSeasonNumber, MappedEpisodeNumber, EpisodeMappingSource, EpisodeMappingConfidence, EpisodeMappingReason, EpisodeTitle, MatchedTitle, MatchedYear, Provider, ProviderId, MatchConfidence, MatchReason, RequiresManualReview, MatchAccepted, UseAbsoluteAnimeMapping, State, Notes, LinkedPath, AutoTorrentLinkKind, AutoTorrentTorrentHash, AutoTorrentPackOwnerSeasonNumber, LastSeenUtc)
-            VALUES ($SourceRootFolder, $ParentFolder, $FilePath, $FileName, $ScanText, $MediaKind, $ParserPattern, $ShowTitle, $MovieTitle, $MovieYear, $SeasonNumber, $EpisodeNumber, $MappedSeasonNumber, $MappedEpisodeNumber, $EpisodeMappingSource, $EpisodeMappingConfidence, $EpisodeMappingReason, $EpisodeTitle, $MatchedTitle, $MatchedYear, $Provider, $ProviderId, $MatchConfidence, $MatchReason, $RequiresManualReview, $MatchAccepted, $UseAbsoluteAnimeMapping, $State, $Notes, $LinkedPath, $AutoTorrentLinkKind, $AutoTorrentTorrentHash, $AutoTorrentPackOwnerSeasonNumber, $LastSeenUtc)
+            INSERT INTO SourceItems (SourceRootFolder, ParentFolder, FilePath, FileName, ScanText, MediaKind, ParserPattern, ShowTitle, MovieTitle, MovieYear, SeasonNumber, EpisodeNumber, MappedSeasonNumber, MappedEpisodeNumber, EpisodeMappingSource, EpisodeMappingConfidence, EpisodeMappingReason, EpisodeTitle, MatchedTitle, MatchedYear, Provider, ProviderId, MatchConfidence, MatchReason, RequiresManualReview, MatchAccepted, UseAbsoluteAnimeMapping, State, Notes, LinkedPath, AutoTorrentLinkKind, AutoTorrentTorrentHash, AutoTorrentPackOwnerSeasonNumber, IsExternalImport, LastSeenUtc)
+            VALUES ($SourceRootFolder, $ParentFolder, $FilePath, $FileName, $ScanText, $MediaKind, $ParserPattern, $ShowTitle, $MovieTitle, $MovieYear, $SeasonNumber, $EpisodeNumber, $MappedSeasonNumber, $MappedEpisodeNumber, $EpisodeMappingSource, $EpisodeMappingConfidence, $EpisodeMappingReason, $EpisodeTitle, $MatchedTitle, $MatchedYear, $Provider, $ProviderId, $MatchConfidence, $MatchReason, $RequiresManualReview, $MatchAccepted, $UseAbsoluteAnimeMapping, $State, $Notes, $LinkedPath, $AutoTorrentLinkKind, $AutoTorrentTorrentHash, $AutoTorrentPackOwnerSeasonNumber, $IsExternalImport, $LastSeenUtc)
             ON CONFLICT(FilePath) DO UPDATE SET
                 SourceRootFolder = excluded.SourceRootFolder,
                 ParentFolder = excluded.ParentFolder,
@@ -193,6 +198,7 @@ public sealed class DatabaseService : IDatabaseService
                 Notes = excluded.Notes,
                 {linkedPathUpdateSql}
                 {autoTorrentMetadataUpdateSql}
+                {externalImportUpdateSql}
                 LastSeenUtc = excluded.LastSeenUtc;
             """;
         AddParameters(command, item);
@@ -318,6 +324,7 @@ public sealed class DatabaseService : IDatabaseService
         command.Parameters.AddWithValue("$AutoTorrentLinkKind", item.AutoTorrentLinkKind is null ? DBNull.Value : (int)item.AutoTorrentLinkKind.Value);
         command.Parameters.AddWithValue("$AutoTorrentTorrentHash", (object?)item.AutoTorrentTorrentHash ?? DBNull.Value);
         command.Parameters.AddWithValue("$AutoTorrentPackOwnerSeasonNumber", (object?)item.AutoTorrentPackOwnerSeasonNumber ?? DBNull.Value);
+        command.Parameters.AddWithValue("$IsExternalImport", item.IsExternalImport ? 1 : 0);
         command.Parameters.AddWithValue("$LastSeenUtc", item.LastSeenUtc.ToString("O"));
     }
 
@@ -377,7 +384,8 @@ public sealed class DatabaseService : IDatabaseService
             AutoTorrentLinkKind = reader.IsDBNull(31) ? null : (AutoTorrentLinkKind)reader.GetInt32(31),
             AutoTorrentTorrentHash = reader.IsDBNull(32) ? null : reader.GetString(32),
             AutoTorrentPackOwnerSeasonNumber = reader.IsDBNull(33) ? null : reader.GetInt32(33),
-            LastSeenUtc = DateTime.Parse(reader.GetString(34), null, System.Globalization.DateTimeStyles.RoundtripKind)
+            IsExternalImport = reader.GetInt32(34) == 1,
+            LastSeenUtc = DateTime.Parse(reader.GetString(35), null, System.Globalization.DateTimeStyles.RoundtripKind)
         };
     }
 

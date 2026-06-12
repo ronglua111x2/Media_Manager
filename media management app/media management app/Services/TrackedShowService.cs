@@ -31,6 +31,16 @@ public sealed class TrackedShowService : ITrackedShowService
         return show;
     }
 
+    public async Task<TrackedShow> ImportShowByTmdbIdAsync(int tmdbId, CancellationToken cancellationToken = default)
+    {
+        var details = await _catalogService.GetTvShowDetailsAsync(tmdbId, cancellationToken);
+        var showId = ImportShow(details, "1080p");
+        RefreshAvailabilityCore(showId);
+        var show = _databaseService.GetTrackedShow(showId) ?? throw new InvalidOperationException("Tracked show was not imported.");
+        _logger.Info($"Tracked show imported from existing media: {show.DisplayTitle}, Episodes={show.TotalEpisodes}", LogTarget.All);
+        return show;
+    }
+
     public async Task<TrackedShow> RefreshShowAsync(TrackedShow show, CancellationToken cancellationToken = default)
     {
         var details = await _catalogService.GetTvShowDetailsAsync(show.TmdbId, cancellationToken);

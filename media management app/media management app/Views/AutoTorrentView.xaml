@@ -4,6 +4,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d">
+    <!-- #region Local resources -->
     <UserControl.Resources>
         <Style x:Key="PanelBorder" TargetType="Border">
             <Setter Property="Background" Value="#ffffff" />
@@ -26,7 +27,9 @@
             <Setter Property="Foreground" Value="#ffffff" />
         </Style>
     </UserControl.Resources>
+    <!-- #endregion -->
 
+    <!-- #region Auto Torrent workspace -->
     <Grid Background="#f8fafc" Margin="0">
         <Grid Margin="24">
             <Grid.RowDefinitions>
@@ -34,6 +37,7 @@
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
 
+            <!-- #region Header -->
             <DockPanel Grid.Row="0" Margin="0,0,0,18">
                 <TextBlock DockPanel.Dock="Right"
                            Text="{Binding StatusMessage}"
@@ -45,8 +49,11 @@
                     <TextBlock Text="Recipe-driven qBittorrent fetching for tracked shows and movies." Foreground="#64748b" />
                 </StackPanel>
             </DockPanel>
+            <!-- #endregion -->
 
+            <!-- #region Auto Torrent tabs -->
             <TabControl Grid.Row="1">
+                <!-- #region Dashboard tab -->
                 <TabItem Header="Dashboard">
                     <Grid Margin="0,16,0,0">
                         <Grid.RowDefinitions>
@@ -186,7 +193,9 @@
                         </Grid>
                     </Grid>
                 </TabItem>
+                <!-- #endregion -->
 
+                <!-- #region Recipes tab -->
                 <TabItem Header="Recipes">
                     <Grid Margin="0,16,0,0">
                         <Grid.ColumnDefinitions>
@@ -297,7 +306,9 @@
                         </Border>
                     </Grid>
                 </TabItem>
+                <!-- #endregion -->
 
+                <!-- #region Test Lab tab -->
                 <TabItem Header="Test Lab">
                     <Grid Margin="0,16,0,0">
                         <Grid.RowDefinitions>
@@ -401,7 +412,9 @@
                         </Grid>
                     </Grid>
                 </TabItem>
+                <!-- #endregion -->
 
+                <!-- #region Activity tab -->
                 <TabItem Header="Activity">
                     <Grid Margin="0,16,0,0">
                         <Grid.ColumnDefinitions>
@@ -454,7 +467,10 @@
                         </Border>
                     </Grid>
                 </TabItem>
+                <!-- #endregion -->
             </TabControl>
+            <!-- #endregion -->
         </Grid>
     </Grid>
+    <!-- #endregion -->
 </UserControl>

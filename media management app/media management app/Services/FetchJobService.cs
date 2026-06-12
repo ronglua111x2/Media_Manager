@@ -548,11 +548,12 @@ public sealed class FetchJobService : IFetchJobService
             LogTarget.All);
 
         var snapshotResults = await _snapshotService.CaptureSnapshotAsync(show, _progressService, cancellationToken);
+        var usesAnimeAbsolute = RecipeRuntimeSettings.UsesAnimeAbsoluteEpisodeNumbering(recipe);
         var snapshotCandidates = snapshotResults
             .Select(result => new SnapshotCandidate
             {
                 Result = result,
-                Parsed = TorrentCandidateParser.Parse(result.FileName)
+                Parsed = TorrentCandidateParser.Parse(result.FileName, usesAnimeAbsolute)
             })
             .ToList();
         var matcher = new SnapshotCandidateMatcher();
@@ -644,18 +645,19 @@ public sealed class FetchJobService : IFetchJobService
         _databaseService.UpdateFetchJob(job);
         JobsChanged?.Invoke(this, EventArgs.Empty);
 
+        var snapshotRecipe = _recipeService.GetRecipeOrDefault(show.RecipeId, MediaKind.TvEpisode);
         var snapshotResults = await _snapshotService.CaptureSnapshotAsync(show, _progressService, cancellationToken);
+        var usesAnimeAbsolute = RecipeRuntimeSettings.UsesAnimeAbsoluteEpisodeNumbering(snapshotRecipe);
         var snapshotCandidates = snapshotResults
             .Select(result => new SnapshotCandidate
             {
                 Result = result,
-                Parsed = TorrentCandidateParser.Parse(result.FileName)
+                Parsed = TorrentCandidateParser.Parse(result.FileName, usesAnimeAbsolute)
             })
             .ToList();
         var matcher = new SnapshotCandidateMatcher();
         var selectedQualities = ParseQualities(show.PreferredQuality);
 
-        var snapshotRecipe = _recipeService.GetRecipeOrDefault(show.RecipeId, MediaKind.TvEpisode);
         var workerCount = RecipeRuntimeSettings.GetLocalMatchWorkers(snapshotRecipe, _settingsService.Current.AutoTorrent);
         var nextIndex = 0;
 
@@ -1112,23 +1114,27 @@ public sealed class FetchJobService : IFetchJobService
         }
 
         var files = GetProbeMatchFiles(probe).ToList();
+        var usesAnimeAbsolute = RecipeRuntimeSettings.UsesAnimeAbsoluteEpisodeNumbering(recipe);
         if (files.Count == 1 &&
-            TorrentCandidateParser.Parse($"{probe.TorrentName} {files[0].Path}") is { SeasonNumber: null, EpisodeNumber: null })
+            TorrentCandidateParser.Parse($"{probe.TorrentName} {files[0].Path}", usesAnimeAbsolute) is { SeasonNumber: null, EpisodeNumber: null })
         {
             return null;
         }
 
         var hasTargetEpisode = files.Any(file =>
         {
-            var fileParsed = TorrentCandidateParser.Parse($"{probe.TorrentName} {file.Path}");
-            return fileParsed.SeasonNumber == episode.SeasonNumber &&
-                   fileParsed.EpisodeNumber == episode.EpisodeNumber &&
-                   HasTitleTokenMatch(show.Title, fileParsed.TitleTokens);
+            var fileParsed = TorrentCandidateParser.Parse($"{probe.TorrentName} {file.Path}", usesAnimeAbsolute);
+            var episodeMatches = fileParsed.AbsoluteEpisodeNumber is not null && fileParsed.SeasonNumber is null
+                ? fileParsed.AbsoluteEpisodeNumber == episode.EpisodeNumber
+                : fileParsed.SeasonNumber == episode.SeasonNumber && fileParsed.EpisodeNumber == episode.EpisodeNumber;
+            return episodeMatches && HasTitleTokenMatch(show.Title, fileParsed.TitleTokens);
         });
 
         return hasTargetEpisode
             ? null
-            : $"metadata files do not contain S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00}";
+            : usesAnimeAbsolute
+                ? $"metadata files do not contain absolute episode {episode.EpisodeNumber}"
+                : $"metadata files do not contain S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00}";
     }
 
     private bool ShouldProbeEpisodeCandidate(

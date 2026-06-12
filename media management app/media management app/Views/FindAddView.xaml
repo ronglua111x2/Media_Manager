@@ -4,6 +4,7 @@
              xmlns:common="clr-namespace:media_management_app.Common"
              xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
              xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes">
+    <!-- #region Local resources and templates -->
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
 
@@ -310,7 +311,9 @@
             <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
     </UserControl.Resources>
+    <!-- #endregion -->
 
+    <!-- #region Find/Add workspace layout -->
     <Grid Background="{StaticResource AppBrushCanvas}" Margin="16">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="230" />
@@ -318,6 +321,7 @@
             <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
 
+        <!-- #region Existing media list and filters -->
         <materialDesign:Card Grid.Column="0" Style="{StaticResource PanelCardStyle}">
             <DockPanel LastChildFill="True">
                 <StackPanel DockPanel.Dock="Top">
@@ -470,7 +474,9 @@
                 </ScrollViewer>
             </DockPanel>
         </materialDesign:Card>
+        <!-- #endregion -->
 
+        <!-- #region Search and selected result details -->
         <Grid Grid.Column="2">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
@@ -480,6 +486,7 @@
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
+            <!-- #region Search controls -->
             <materialDesign:Card Grid.Row="0" Style="{StaticResource PanelCardStyle}">
                 <Grid>
                     <Grid.ColumnDefinitions>
@@ -513,7 +520,9 @@
                     </Button>
                 </Grid>
             </materialDesign:Card>
+            <!-- #endregion -->
 
+            <!-- #region Search results -->
             <materialDesign:Card Grid.Row="2" Style="{StaticResource PanelCardStyle}">
                 <DockPanel>
                     <Grid DockPanel.Dock="Top" Margin="0,0,0,10">
@@ -710,7 +719,9 @@
                     </Grid>
                 </DockPanel>
             </materialDesign:Card>
+            <!-- #endregion -->
 
+            <!-- #region Selected result details -->
             <materialDesign:Card Grid.Row="4" Style="{StaticResource PanelCardStyle}">
                 <Grid>
                     <TextBlock Text="Select a search result to inspect it before adding."
@@ -909,6 +920,9 @@
                     </Grid>
                 </Grid>
             </materialDesign:Card>
+            <!-- #endregion -->
         </Grid>
+        <!-- #endregion -->
     </Grid>
+    <!-- #endregion -->
 </UserControl>

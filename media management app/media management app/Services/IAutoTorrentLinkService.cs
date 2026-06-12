@@ -12,6 +12,10 @@ public interface IAutoTorrentLinkService
 
     Task<AutoTorrentLinkResult> LinkMovieAsync(long movieId, CancellationToken cancellationToken = default);
 
+    AutoTorrentLinkResult RemoveEpisodeLinks(long showId, int seasonNumber, int episodeNumber);
+
+    AutoTorrentLinkResult RemoveSeasonPackLinks(long showId, int ownerSeasonNumber);
+
     AutoTorrentLinkResult RemoveShowLinks(long showId);
 
     AutoTorrentLinkResult RemoveMovieLinks(long movieId);

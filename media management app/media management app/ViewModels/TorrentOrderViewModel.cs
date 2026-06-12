@@ -95,7 +95,7 @@ public sealed partial class TorrentOrderViewModel : ObservableObject
     public bool CanAddToClient => Status == TorrentOrderStatus.Approved &&
                                   !string.IsNullOrWhiteSpace(SelectedCandidateName);
 
-    public bool CanLinkOutput => Status is TorrentOrderStatus.AddedToClient or TorrentOrderStatus.Downloading;
+    public bool CanLinkOutput => Status is TorrentOrderStatus.AddedToClient or TorrentOrderStatus.Downloading or TorrentOrderStatus.Completed;
 
     public string DetailText => string.IsNullOrWhiteSpace(StatusDetail) ? Summary : StatusDetail;
 

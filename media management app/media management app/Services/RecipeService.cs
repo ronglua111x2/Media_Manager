@@ -264,6 +264,7 @@ public sealed class RecipeService : IRecipeService
                     DisplayName = "Candidate Parser",
                     ExtensionData = new Dictionary<string, string>
                     {
+                        [RecipeRuntimeSettings.EpisodeNumberingModeKey] = RecipeRuntimeSettings.StandardTvEpisodeNumbering,
                         [RecipeRuntimeSettings.EnableCandidateMetadataProbeKey] = settings.EnableCandidateMetadataProbe.ToString()
                     }
                 },
@@ -322,6 +323,14 @@ public sealed class RecipeService : IRecipeService
             module.Category = string.IsNullOrWhiteSpace(module.Category) ? "all" : module.Category.Trim();
             module.ResultLimit = Math.Clamp(module.ResultLimit, 1, 5000);
             module.ExtensionData ??= [];
+            if (module.BlockType == RecipeBlockType.CandidateParser)
+            {
+                module.ExtensionData[RecipeRuntimeSettings.EpisodeNumberingModeKey] =
+                    RecipeRuntimeSettings.NormalizeEpisodeNumberingMode(
+                        module.ExtensionData.TryGetValue(RecipeRuntimeSettings.EpisodeNumberingModeKey, out var episodeNumberingMode)
+                            ? episodeNumberingMode
+                            : RecipeRuntimeSettings.StandardTvEpisodeNumbering);
+            }
         }
 
         recipe.Modules = recipe.Modules
