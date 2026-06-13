@@ -72,6 +72,12 @@ public sealed class TorrentOrderCandidateViewModel
 
     public string FileSizeDisplay => FormatSize(FileSize);
 
+    public string RankLabel => $"#{Rank}";
+
+    public string QualityLabel => QualityDisplay;
+
+    public string StatsLine => $"{FileSizeDisplay} · {Seeders} seeders · score {TotalScore}";
+
     public string DisplayText => IsMultiSeason
         ? $"#{Rank} {Name} | {QualityDisplay} | {FileSizeDisplay} | {Seeders} seeders | score {TotalScore} | covers {CoveredSeasonsDisplay}"
         : $"#{Rank} {Name} | {QualityDisplay} | {FileSizeDisplay} | {Seeders} seeders | score {TotalScore}";

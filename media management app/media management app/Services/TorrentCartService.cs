@@ -208,15 +208,18 @@ public sealed class TorrentCartService : ITorrentCartService
             if (removed == 0 &&
                 order.Status is not TorrentOrderStatus.CandidatesFound
                     and not TorrentOrderStatus.NoCandidates
-                    and not TorrentOrderStatus.Approved)
+                    and not TorrentOrderStatus.Approved
+                    and not TorrentOrderStatus.Failed)
             {
                 continue;
             }
 
             ClearSelectedCandidate(order);
+            ClearTorrentState(order);
             if (order.Status is TorrentOrderStatus.CandidatesFound
                 or TorrentOrderStatus.NoCandidates
-                or TorrentOrderStatus.Approved)
+                or TorrentOrderStatus.Approved
+                or TorrentOrderStatus.Failed)
             {
                 order.Status = TorrentOrderStatus.Draft;
                 order.StatusDetail = string.Empty;
@@ -298,8 +301,13 @@ public sealed class TorrentCartService : ITorrentCartService
         _databaseService.UpdateTorrentCartOrderCandidateSelection(orderId, candidateId);
         _databaseService.UpdateTorrentCartOrderCandidateAccepted(orderId, candidateId, isAccepted: false);
         ApplyCandidate(order, candidate);
-        if (order.Status == TorrentOrderStatus.Approved)
+        if (order.Status is TorrentOrderStatus.Approved or TorrentOrderStatus.Failed)
         {
+            if (order.Status == TorrentOrderStatus.Failed)
+            {
+                ClearTorrentState(order);
+            }
+
             order.Status = TorrentOrderStatus.CandidatesFound;
         }
 
@@ -385,6 +393,14 @@ public sealed class TorrentCartService : ITorrentCartService
         order.SelectedCandidateAudioCodec = string.Empty;
         order.SelectedCandidateCoveredSeasons = string.Empty;
         order.SelectedCandidateTotalScore = 0;
+    }
+
+    private static void ClearTorrentState(TorrentCartOrder order)
+    {
+        order.TorrentHash = string.Empty;
+        order.TorrentName = string.Empty;
+        order.TorrentState = string.Empty;
+        order.TorrentProgress = 0;
     }
 
     private static void ApplyCandidate(TorrentCartOrder order, TorrentCartOrderCandidate candidate)

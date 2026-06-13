@@ -3,7 +3,8 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:common="clr-namespace:media_management_app.Common"
              xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
-             xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes">
+             xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+             xmlns:views="clr-namespace:media_management_app.Views">
     <!-- #region Local resources and templates -->
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
@@ -33,29 +34,6 @@
             <Setter Property="FontSize" Value="14" />
         </Style>
 
-        <DataTemplate x:Key="CartCandidateComboBoxItemTemplate">
-            <StackPanel>
-                <TextBlock Text="{Binding DisplayText}"
-                           TextTrimming="CharacterEllipsis" />
-                <TextBlock Text="{Binding MultiSeasonWarningText}"
-                           Foreground="{StaticResource AppBrushAccent}"
-                           FontSize="12"
-                           Margin="0,2,0,0"
-                           TextWrapping="Wrap">
-                    <TextBlock.Style>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="Visibility" Value="Collapsed" />
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding IsMultiSeason}" Value="True">
-                                    <Setter Property="Visibility" Value="Visible" />
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </TextBlock.Style>
-                </TextBlock>
-            </StackPanel>
-        </DataTemplate>
-
         <DataTemplate x:Key="OrderCardTemplate">
             <Border Background="{StaticResource AppBrushSurface}"
                     BorderBrush="{StaticResource AppBrushBorder}"
@@ -64,10 +42,9 @@
                     Margin="0">
                 <Grid VerticalAlignment="Center">
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="270" />
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="130" />
-                        <ColumnDefinition Width="110" />
+                        <ColumnDefinition Width="250" MinWidth="200" />
+                        <ColumnDefinition Width="*" MinWidth="320" />
+                        <ColumnDefinition Width="120" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <Grid.RowDefinitions>
@@ -78,7 +55,7 @@
                     <StackPanel Grid.Column="0"
                                 Grid.RowSpan="2"
                                 VerticalAlignment="Center"
-                                Margin="0,0,18,0">
+                                Margin="0,0,14,0">
                         <TextBlock Text="{Binding Title}"
                                    FontWeight="SemiBold"
                                    FontSize="14"
@@ -91,7 +68,7 @@
 
                     <TextBlock Grid.Column="1"
                                Text="{Binding CandidateText}"
-                               Margin="0,0,16,0"
+                               Margin="0,0,12,0"
                                VerticalAlignment="Center"
                                TextTrimming="CharacterEllipsis">
                         <TextBlock.Style>
@@ -105,11 +82,13 @@
                             </Style>
                         </TextBlock.Style>
                     </TextBlock>
-                    <Grid Grid.Column="1"
-                          Margin="0,0,16,0"
-                          VerticalAlignment="Center">
-                        <Grid.Style>
-                            <Style TargetType="Grid">
+
+                    <views:CartCandidatePickerControl Grid.Column="1"
+                                                      Margin="0,0,12,0"
+                                                      VerticalAlignment="Center"
+                                                      DataContext="{Binding}">
+                        <views:CartCandidatePickerControl.Style>
+                            <Style TargetType="views:CartCandidatePickerControl">
                                 <Setter Property="Visibility" Value="Collapsed" />
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding HasCandidates}" Value="True">
@@ -117,62 +96,14 @@
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>
-                        </Grid.Style>
-                        <StackPanel>
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="8" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <ComboBox Grid.Column="0"
-                                          ItemsSource="{Binding Candidates}"
-                                          SelectedValue="{Binding SelectedCandidateId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                          SelectedValuePath="Id"
-                                          ItemTemplate="{StaticResource CartCandidateComboBoxItemTemplate}"
-                                          MinWidth="260"
-                                          HorizontalAlignment="Stretch"
-                                          ToolTip="Choose candidate for this order" />
-                                <Button Grid.Column="2"
-                                        Style="{StaticResource AppPrimaryButtonStyle}"
-                                        Command="{Binding AcceptCommand}"
-                                        IsEnabled="{Binding CanAccept}"
-                                        ToolTip="Accept selected candidate">
-                                    <StackPanel Orientation="Horizontal">
-                                        <iconPacks:PackIconLucide Kind="Check"
-                                                                   Width="14"
-                                                                   Height="14"
-                                                                   Margin="0,0,6,0"
-                                                                   Foreground="#ffffff"
-                                                                   VerticalAlignment="Center" />
-                                        <TextBlock Text="Accept" VerticalAlignment="Center" Foreground="#ffffff" />
-                                    </StackPanel>
-                                </Button>
-                            </Grid>
-                            <TextBlock Margin="0,6,0,0"
-                                       Text="{Binding SelectedCandidateMultiSeasonWarning}"
-                                       Foreground="{StaticResource AppBrushAccent}"
-                                       FontSize="12"
-                                       TextWrapping="Wrap">
-                                <TextBlock.Style>
-                                    <Style TargetType="TextBlock">
-                                        <Setter Property="Visibility" Value="Collapsed" />
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding SelectedCandidateIsMultiSeason}" Value="True">
-                                                <Setter Property="Visibility" Value="Visible" />
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </TextBlock.Style>
-                            </TextBlock>
-                        </StackPanel>
-                    </Grid>
+                        </views:CartCandidatePickerControl.Style>
+                    </views:CartCandidatePickerControl>
 
                     <TextBlock Grid.Column="1"
                                Grid.Row="1"
                                Text="{Binding TorrentText}"
                                Style="{StaticResource MutedTextStyle}"
-                               Margin="0,6,16,0"
+                               Margin="0,6,12,0"
                                TextTrimming="CharacterEllipsis" />
 
                     <Border Grid.Column="2"
@@ -184,36 +115,99 @@
                             Padding="8,3"
                             HorizontalAlignment="Left"
                             VerticalAlignment="Center">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding StatusLabel}" Value="Failed">
+                                        <Setter Property="Background" Value="#fce8e8" />
+                                        <Setter Property="BorderBrush" Value="{StaticResource AppBrushDanger}" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding StatusLabel}" Value="Canceled">
+                                        <Setter Property="Background" Value="#f3f4f6" />
+                                        <Setter Property="BorderBrush" Value="{StaticResource AppBrushBorder}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
                         <TextBlock Text="{Binding StatusLabel}"
                                    Foreground="{StaticResource AppBrushAccent}"
                                    FontSize="11"
-                                   FontWeight="SemiBold" />
+                                   FontWeight="SemiBold">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding StatusLabel}" Value="Failed">
+                                            <Setter Property="Foreground" Value="{StaticResource AppBrushDanger}" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding StatusLabel}" Value="Canceled">
+                                            <Setter Property="Foreground" Value="{StaticResource AppBrushMutedText}" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
                     </Border>
 
-                    <TextBlock Grid.Column="3"
-                               Grid.RowSpan="2"
-                               Text="{Binding TargetLabel}"
-                               Style="{StaticResource MutedTextStyle}"
-                               VerticalAlignment="Center"
-                               Margin="0,0,16,0" />
-
-                    <Button Grid.Column="4"
-                            Grid.RowSpan="2"
-                            Style="{StaticResource AppOutlinedButtonStyle}"
-                            Command="{Binding DataContext.RemoveOrderCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                            CommandParameter="{Binding}"
-                            Margin="0"
-                            VerticalAlignment="Center"
-                            ToolTip="Remove order from cart">
-                        <StackPanel Orientation="Horizontal">
+                    <StackPanel Grid.Column="3"
+                                Grid.RowSpan="2"
+                                Orientation="Horizontal"
+                                VerticalAlignment="Center">
+                        <Button Command="{Binding AcceptCommand}"
+                                Margin="0,0,2,0"
+                                ToolTip="Accept selected candidate">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource AppCompactIconButtonStyle}">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding CanAccept}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                            <iconPacks:PackIconLucide Kind="Check"
+                                                       Width="15"
+                                                       Height="15"
+                                                       Foreground="{StaticResource AppBrushAccent}" />
+                        </Button>
+                        <Button Margin="0,0,2,0"
+                                ToolTip="More actions (re-search, retry add)">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource AppCompactIconButtonStyle}">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding CanShowRecoveryMenu}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                            <iconPacks:PackIconLucide Kind="EllipsisVertical"
+                                                       Width="15"
+                                                       Height="15"
+                                                       Style="{StaticResource AppIconStyle}" />
+                            <Button.ContextMenu>
+                                <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                                    <MenuItem Header="Re-search candidates for this order"
+                                              Command="{Binding RetrySearchCommand}"
+                                              IsEnabled="{Binding CanRetrySearch}" />
+                                    <MenuItem Header="Retry add to qBittorrent"
+                                              Command="{Binding RetryAddCommand}"
+                                              IsEnabled="{Binding CanRetryAdd}" />
+                                </ContextMenu>
+                            </Button.ContextMenu>
+                        </Button>
+                        <Button Style="{StaticResource AppCompactIconButtonStyle}"
+                                Command="{Binding DataContext.RemoveOrderCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                CommandParameter="{Binding}"
+                                Margin="0"
+                                ToolTip="Remove order from cart">
                             <iconPacks:PackIconLucide Kind="X"
-                                                       Width="14"
-                                                       Height="14"
-                                                       Margin="0,0,6,0"
-                                                       VerticalAlignment="Center" />
-                            <TextBlock Text="Remove" VerticalAlignment="Center" />
-                        </StackPanel>
-                    </Button>
+                                                       Width="15"
+                                                       Height="15"
+                                                       Style="{StaticResource AppIconStyle}" />
+                        </Button>
+                    </StackPanel>
                 </Grid>
             </Border>
         </DataTemplate>
@@ -369,7 +363,8 @@
                     </Button>
                     <Button Style="{StaticResource AppDangerButtonStyle}"
                             Command="{Binding StopRunCartCommand}"
-                            Margin="0,0,8,0">
+                            Margin="0,0,8,0"
+                            ToolTip="Stop the current cart run, add, reconcile, or re-search operation">
                         <StackPanel Orientation="Horizontal">
                             <iconPacks:PackIconLucide Kind="Square"
                                                        Width="14"

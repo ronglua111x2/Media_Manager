@@ -1,0 +1,196 @@
+<UserControl x:Class="media_management_app.Views.CartCandidatePickerControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
+             x:Name="Root">
+    <UserControl.Resources>
+        <DataTemplate x:Key="CartCandidateFlyoutItemTemplate">
+            <Border Background="{StaticResource AppBrushSurfaceRaised}"
+                    BorderBrush="{StaticResource AppBrushBorder}"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Padding="10,8"
+                    Margin="0,0,0,2">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal">
+                        <Border Style="{StaticResource CandidateChipStyle}" Margin="0,0,6,0">
+                            <TextBlock Text="{Binding RankLabel}" Style="{StaticResource CandidateChipTextStyle}" />
+                        </Border>
+                        <Border Style="{StaticResource CandidateChipStyle}" Margin="0,0,6,0">
+                            <TextBlock Text="{Binding QualityLabel}" Style="{StaticResource CandidateChipTextStyle}" />
+                        </Border>
+                        <TextBlock Text="{Binding StatsLine}"
+                                   Style="{StaticResource MutedTextStyle}"
+                                   VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                    <TextBlock Text="{Binding Name}"
+                               Margin="0,6,0,0"
+                               FontSize="12"
+                               TextTrimming="CharacterEllipsis"
+                               MaxHeight="36"
+                               TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding MultiSeasonWarningText}"
+                               Foreground="{StaticResource AppBrushAccent}"
+                               FontSize="11"
+                               Margin="0,4,0,0"
+                               TextWrapping="Wrap">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsMultiSeason}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+    </UserControl.Resources>
+
+    <Grid>
+        <ToggleButton x:Name="PickerToggle"
+                      IsEnabled="{Binding CanChangeCandidate}"
+                      HorizontalAlignment="Stretch"
+                      VerticalAlignment="Center"
+                      Padding="0"
+                      Background="Transparent"
+                      BorderThickness="0"
+                      Focusable="True">
+            <ToggleButton.ToolTip>
+                <ToolTip>
+                    <TextBlock Text="{Binding CandidateCount, StringFormat=Choose torrent candidate ({0} available)}" />
+                </ToolTip>
+            </ToggleButton.ToolTip>
+            <ToggleButton.Style>
+                <Style TargetType="ToggleButton">
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="ToggleButton">
+                                <Border x:Name="CardBorder"
+                                        Background="{StaticResource AppBrushSurfaceRaised}"
+                                        BorderBrush="{StaticResource AppBrushBorder}"
+                                        BorderThickness="1"
+                                        CornerRadius="8"
+                                        Padding="10,8"
+                                        Cursor="Hand">
+                                    <ContentPresenter />
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="CardBorder" Property="BorderBrush" Value="{StaticResource AppBrushAccent}" />
+                                        <Setter TargetName="CardBorder" Property="Background" Value="{StaticResource AppBrushAccentSoft}" />
+                                    </Trigger>
+                                    <Trigger Property="IsChecked" Value="True">
+                                        <Setter TargetName="CardBorder" Property="BorderBrush" Value="{StaticResource AppBrushAccent}" />
+                                    </Trigger>
+                                    <Trigger Property="IsEnabled" Value="False">
+                                        <Setter TargetName="CardBorder" Property="Cursor" Value="Arrow" />
+                                        <Setter TargetName="CardBorder" Property="Opacity" Value="0.92" />
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </ToggleButton.Style>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0">
+                    <StackPanel Orientation="Horizontal">
+                        <Border Style="{StaticResource CandidateChipStyle}" Margin="0,0,6,0">
+                            <TextBlock Text="{Binding SelectedCandidate.RankLabel, FallbackValue='#—'}"
+                                       Style="{StaticResource CandidateChipTextStyle}" />
+                        </Border>
+                        <Border Style="{StaticResource CandidateChipStyle}" Margin="0,0,6,0">
+                            <TextBlock Text="{Binding SelectedCandidate.QualityLabel, FallbackValue='unknown'}"
+                                       Style="{StaticResource CandidateChipTextStyle}" />
+                        </Border>
+                        <TextBlock Text="{Binding SelectedCandidate.StatsLine, FallbackValue='No candidate selected'}"
+                                   Style="{StaticResource MutedTextStyle}"
+                                   VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                    <TextBlock Text="{Binding SelectedCandidate.Name, FallbackValue='Select a torrent candidate'}"
+                               Margin="0,6,0,0"
+                               FontSize="12"
+                               TextTrimming="CharacterEllipsis" />
+                    <TextBlock Text="{Binding SelectedCandidateMultiSeasonWarning}"
+                               Foreground="{StaticResource AppBrushAccent}"
+                               FontSize="11"
+                               Margin="0,4,0,0"
+                               TextWrapping="Wrap">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding SelectedCandidateIsMultiSeason}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </StackPanel>
+                <iconPacks:PackIconLucide Grid.Column="1"
+                                         Kind="ChevronDown"
+                                         Width="16"
+                                         Height="16"
+                                         Margin="8,0,0,0"
+                                         VerticalAlignment="Center"
+                                         Foreground="{StaticResource AppBrushMutedText}">
+                    <iconPacks:PackIconLucide.Style>
+                        <Style TargetType="iconPacks:PackIconLucide">
+                            <Setter Property="Visibility" Value="Visible" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding CanChangeCandidate}" Value="False">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </iconPacks:PackIconLucide.Style>
+                </iconPacks:PackIconLucide>
+            </Grid>
+        </ToggleButton>
+
+        <Popup x:Name="CandidatePopup"
+               Placement="Bottom"
+               PlacementTarget="{Binding ElementName=PickerToggle}"
+               StaysOpen="False"
+               AllowsTransparency="True"
+               PopupAnimation="Fade"
+               IsOpen="{Binding IsChecked, ElementName=PickerToggle}">
+            <Border Background="{StaticResource AppBrushSurfaceRaised}"
+                    BorderBrush="{StaticResource AppBrushBorder}"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Padding="6"
+                    MinWidth="{Binding ActualWidth, ElementName=PickerToggle}"
+                    MaxWidth="520"
+                    MaxHeight="280">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="12"
+                                      ShadowDepth="2"
+                                      Opacity="0.18"
+                                      Color="#000000" />
+                </Border.Effect>
+                <ListBox x:Name="CandidateListBox"
+                         ItemsSource="{Binding Candidates}"
+                         SelectedValue="{Binding SelectedCandidateId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                         SelectedValuePath="Id"
+                         ItemTemplate="{StaticResource CartCandidateFlyoutItemTemplate}"
+                         ItemContainerStyle="{StaticResource CartCandidateListItemStyle}"
+                         BorderThickness="0"
+                         Background="Transparent"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         SelectionChanged="CandidateListBox_OnSelectionChanged" />
+            </Border>
+        </Popup>
+    </Grid>
+</UserControl>

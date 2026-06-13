@@ -173,7 +173,7 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
             .Select(torrent => torrent.Hash)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        if (!string.IsNullOrWhiteSpace(request.PluginName))
+        if (!string.IsNullOrWhiteSpace(request.PluginName) && !ShouldSkipSearchPluginDownload(torrentUrl))
         {
             _logger.Info($"Trying qBittorrent search plugin download. Plugin='{request.PluginName}', Url='{torrentUrl}'", LogTarget.All);
             await PostSearchDownloadTorrentAsync(torrentUrl, request.PluginName, cancellationToken);
@@ -191,7 +191,14 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
 
             _logger.Warning("qBittorrent search plugin download did not create a torrent. Falling back to URL resolver.", LogTarget.All);
         }
+        else if (!string.IsNullOrWhiteSpace(request.PluginName) && ShouldSkipSearchPluginDownload(torrentUrl))
+        {
+            _logger.Info(
+                $"Skipping qBittorrent search plugin for details-page URL. Resolving magnet or .torrent directly. Url='{torrentUrl}'.",
+                LogTarget.All);
+        }
 
+        _logger.Info($"Resolving add sources for torrent. Url='{torrentUrl}', SavePath='{savePath ?? "(default)"}'.", LogTarget.All);
         var addSources = await ResolveAddSourcesAsync(torrentUrl, cancellationToken);
         foreach (var source in addSources)
         {
@@ -889,6 +896,18 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
     private static void AddStringContent(MultipartFormDataContent content, string name, string value)
     {
         content.Add(new StringContent(value), name);
+    }
+
+    private static bool ShouldSkipSearchPluginDownload(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https"))
+        {
+            return false;
+        }
+
+        var path = uri.AbsolutePath;
+        return path.EndsWith(".html", StringComparison.OrdinalIgnoreCase) ||
+               path.Contains("-torrent-", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsSupportedTorrentUrl(string url)

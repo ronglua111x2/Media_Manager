@@ -1,4 +1,6 @@
 using System.Collections.ObjectModel;
+using System.Windows;
+using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using media_management_app.Common;
@@ -13,7 +15,11 @@ public sealed partial class TorrentOrderViewModel : ObservableObject
     public TorrentOrderViewModel()
     {
         AcceptCommand = new RelayCommand(Accept, () => CanAccept);
+        RetryAddCommand = new RelayCommand(RetryAdd, () => CanRetryAdd);
+        RetrySearchCommand = new RelayCommand(RetrySearch, () => CanRetrySearch);
     }
+
+    public static bool CartOperationRunning { get; set; }
 
     public long Id { get; init; }
 
@@ -41,9 +47,17 @@ public sealed partial class TorrentOrderViewModel : ObservableObject
 
     public IRelayCommand AcceptCommand { get; }
 
+    public IRelayCommand RetryAddCommand { get; }
+
+    public IRelayCommand RetrySearchCommand { get; }
+
     public Action<long, long>? CandidateSelected { get; set; }
 
     public Action<long>? AcceptRequested { get; set; }
+
+    public Action<long>? RetryAddRequested { get; set; }
+
+    public Action<long>? RetrySearchRequested { get; set; }
 
     public long? SelectedCandidateId
     {
@@ -58,10 +72,18 @@ public sealed partial class TorrentOrderViewModel : ObservableObject
                 OnPropertyChanged(nameof(SelectedCandidateMultiSeasonWarning));
                 OnPropertyChanged(nameof(HasCandidates));
                 OnPropertyChanged(nameof(CanAccept));
+                OnPropertyChanged(nameof(CanRetryAdd));
+                OnPropertyChanged(nameof(CanRetrySearch));
                 AcceptCommand.NotifyCanExecuteChanged();
+                RetryAddCommand.NotifyCanExecuteChanged();
+                RetrySearchCommand.NotifyCanExecuteChanged();
                 if (!_isLoadingSelection && value is not null)
                 {
-                    CandidateSelected?.Invoke(Id, value.Value);
+                    var orderId = Id;
+                    var candidateId = value.Value;
+                    System.Windows.Application.Current.Dispatcher.BeginInvoke(
+                        DispatcherPriority.Background,
+                        () => CandidateSelected?.Invoke(orderId, candidateId));
                 }
             }
         }
@@ -100,6 +122,26 @@ public sealed partial class TorrentOrderViewModel : ObservableObject
     public bool CanAccept => HasCandidates &&
                              SelectedCandidateId is not null &&
                              Status is TorrentOrderStatus.CandidatesFound or TorrentOrderStatus.Approved;
+
+    public bool CanRetryAdd => !CartOperationRunning &&
+                               Status == TorrentOrderStatus.Failed &&
+                               SelectedCandidateId is not null &&
+                               !string.IsNullOrWhiteSpace(SelectedCandidateName);
+
+    public bool CanRetrySearch => !CartOperationRunning &&
+                                  Status is TorrentOrderStatus.Failed or TorrentOrderStatus.NoCandidates;
+
+    public bool CanShowRecoveryMenu => CanRetryAdd || CanRetrySearch;
+
+    public bool CanChangeCandidate =>
+        HasCandidates &&
+        !CartOperationRunning &&
+        Status is not TorrentOrderStatus.Searching
+            and not TorrentOrderStatus.Downloading
+            and not TorrentOrderStatus.Completed
+            and not TorrentOrderStatus.AddedToClient;
+
+    public int CandidateCount => Candidates.Count;
 
     public bool CanAddToClient => Status == TorrentOrderStatus.Approved &&
                                   !string.IsNullOrWhiteSpace(SelectedCandidateName);
@@ -147,15 +189,41 @@ public sealed partial class TorrentOrderViewModel : ObservableObject
 
         OnPropertyChanged(nameof(HasCandidates));
         OnPropertyChanged(nameof(CanAccept));
+        OnPropertyChanged(nameof(CanRetryAdd));
+        OnPropertyChanged(nameof(CanRetrySearch));
         OnPropertyChanged(nameof(SelectedCandidate));
         OnPropertyChanged(nameof(SelectedCandidateIsMultiSeason));
         OnPropertyChanged(nameof(SelectedCandidateCoveredSeasonsDisplay));
         OnPropertyChanged(nameof(SelectedCandidateMultiSeasonWarning));
         AcceptCommand.NotifyCanExecuteChanged();
+        RetryAddCommand.NotifyCanExecuteChanged();
+        RetrySearchCommand.NotifyCanExecuteChanged();
     }
 
     private void Accept()
     {
         AcceptRequested?.Invoke(Id);
+    }
+
+    private void RetryAdd()
+    {
+        RetryAddRequested?.Invoke(Id);
+    }
+
+    private void RetrySearch()
+    {
+        RetrySearchRequested?.Invoke(Id);
+    }
+
+    public void NotifyOperationRunningChanged()
+    {
+        OnPropertyChanged(nameof(CanChangeCandidate));
+        OnPropertyChanged(nameof(CanShowRecoveryMenu));
+        OnPropertyChanged(nameof(CanAccept));
+        OnPropertyChanged(nameof(CanRetryAdd));
+        OnPropertyChanged(nameof(CanRetrySearch));
+        AcceptCommand.NotifyCanExecuteChanged();
+        RetryAddCommand.NotifyCanExecuteChanged();
+        RetrySearchCommand.NotifyCanExecuteChanged();
     }
 }

@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Windows;
 using System.Windows.Media;
+using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using media_management_app.Common;
@@ -30,7 +31,7 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
 
     private IReadOnlyList<LibraryMediaCardViewModel> _allMediaCards = [];
     private bool _isLoadingRecipeAssignment;
-    private CancellationTokenSource? _runCartCts;
+    private CancellationTokenSource? _operationCts;
 
     public TorrentWorkspaceViewModel(
         ITrackedShowService trackedShowService,
@@ -218,12 +219,7 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
             SelectedMediaCard.Id,
             orders.Select(order => order.Id));
 
-        _runCartCts?.Cancel();
-        _runCartCts?.Dispose();
-        _runCartCts = new CancellationTokenSource();
-        var cancellationToken = _runCartCts.Token;
-
-        IsRunningCart = true;
+        var cancellationToken = BeginOperation();
         var candidateCount = 0;
         var noCandidateCount = 0;
         var failedCount = 0;
@@ -237,10 +233,18 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
                 .ToList();
             if (episodeOrders.Count > 0)
             {
-                var episodeResult = await SearchEpisodeOrdersAsync(episodeOrders, cancellationToken);
-                candidateCount += episodeResult.CandidateCount;
-                noCandidateCount += episodeResult.NoCandidateCount;
-                failedCount += episodeResult.FailedCount;
+                try
+                {
+                    var episodeResult = await SearchEpisodeOrdersAsync(episodeOrders, cancellationToken);
+                    candidateCount += episodeResult.CandidateCount;
+                    noCandidateCount += episodeResult.NoCandidateCount;
+                    failedCount += episodeResult.FailedCount;
+                }
+                catch (OperationCanceledException)
+                {
+                    MarkSearchingEpisodeOrdersCanceled(episodeOrders);
+                    throw;
+                }
             }
 
             var episodeOrderIds = episodeOrders.Select(order => order.Id).ToHashSet();
@@ -303,9 +307,7 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         }
         finally
         {
-            _runCartCts?.Dispose();
-            _runCartCts = null;
-            IsRunningCart = false;
+            EndOperation();
             _allMediaCards = _mediaCardCatalogService.LoadCards();
             ApplyMediaCardSort();
             if (SelectedMediaCard is not null)
@@ -323,8 +325,8 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
     [RelayCommand(CanExecute = nameof(IsRunningCart))]
     private void StopRunCart()
     {
-        _runCartCts?.Cancel();
-        StatusMessage = "Stopping cart run...";
+        _operationCts?.Cancel();
+        StatusMessage = "Stopping current operation...";
     }
 
     [RelayCommand(CanExecute = nameof(CanAddCart))]
@@ -358,9 +360,10 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
             return;
         }
 
-        IsRunningCart = true;
+        var cancellationToken = BeginOperation();
         var addedCount = 0;
         var failedCount = 0;
+        var canceledCount = 0;
         try
         {
             foreach (var seasonGroup in plan.Rows
@@ -374,13 +377,24 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
                     folder);
             }
 
+            var orderIndex = 0;
             foreach (var order in orders)
             {
+                cancellationToken.ThrowIfCancellationRequested();
+                orderIndex++;
+                StatusMessage = $"Adding {orderIndex}/{orders.Count}: {order.Title}...";
+
                 try
                 {
                     var savePath = plan.Rows.First(row => row.OrderId == order.Id).SelectedDownloadFolder;
-                    await AddOrderToClientAsync(order, savePath);
+                    await AddOrderToClientAsync(order, savePath, cancellationToken);
                     addedCount++;
+                }
+                catch (OperationCanceledException)
+                {
+                    canceledCount++;
+                    _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.Canceled, "Add stopped by user.");
+                    break;
                 }
                 catch (Exception ex)
                 {
@@ -391,15 +405,165 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
 
             _trackedShowService.RefreshAvailability();
             _trackedMovieService.RefreshAvailability();
-            StatusMessage = $"Add complete. Added={addedCount}, Failed={failedCount}.";
+            StatusMessage = canceledCount > 0
+                ? $"Add stopped. Added={addedCount}, Failed={failedCount}, Canceled={canceledCount}."
+                : $"Add complete. Added={addedCount}, Failed={failedCount}.";
+        }
+        catch (OperationCanceledException)
+        {
+            StatusMessage = "Add stopped by user.";
         }
         finally
         {
-            IsRunningCart = false;
+            EndOperation();
             if (SelectedMediaCard is not null)
             {
                 await LoadSelectedCartAsync(SelectedMediaCard);
             }
+        }
+    }
+
+    private async Task RetryAddOrderAsync(long orderId)
+    {
+        if (SelectedMediaCard is null)
+        {
+            return;
+        }
+
+        var order = _torrentCartService.GetOrder(orderId);
+        if (order is null ||
+            order.Status != TorrentOrderStatus.Failed ||
+            !order.HasSelectedCandidate)
+        {
+            return;
+        }
+
+        var plan = _torrentAddDiskAssignmentService.BuildPlan([order], GetSeasonDownloadFolder);
+        _torrentAddDiskAssignmentService.AutoAssign(plan);
+
+        var dialog = new TorrentAddDiskDialog(plan, _torrentAddDiskAssignmentService, _downloadFolderCatalogService)
+        {
+            Owner = System.Windows.Application.Current.MainWindow
+        };
+        if (dialog.ShowDialog() != true)
+        {
+            StatusMessage = "Retry add canceled.";
+            return;
+        }
+
+        var cancellationToken = BeginOperation();
+        try
+        {
+            foreach (var seasonGroup in plan.Rows
+                         .Where(row => row.SeasonNumber is not null && row.TargetKind != MediaKind.Movie)
+                         .GroupBy(row => (row.MediaId, row.SeasonNumber)))
+            {
+                var folder = seasonGroup.First().SelectedDownloadFolder;
+                _trackedShowService.UpdateSeasonDownloadFolder(
+                    seasonGroup.Key.MediaId,
+                    seasonGroup.Key.SeasonNumber!.Value,
+                    folder);
+            }
+
+            StatusMessage = $"Retrying add: {order.Title}...";
+            var savePath = plan.Rows.First(row => row.OrderId == order.Id).SelectedDownloadFolder;
+            await AddOrderToClientAsync(order, savePath, cancellationToken);
+            _trackedShowService.RefreshAvailability();
+            _trackedMovieService.RefreshAvailability();
+            StatusMessage = $"Added {order.Title} to qBittorrent.";
+        }
+        catch (OperationCanceledException)
+        {
+            _torrentCartService.UpdateOrderStatus(orderId, TorrentOrderStatus.Canceled, "Add stopped by user.");
+            StatusMessage = "Retry add stopped by user.";
+        }
+        catch (Exception ex)
+        {
+            _torrentCartService.UpdateOrderStatus(orderId, TorrentOrderStatus.Failed, ex.Message);
+            StatusMessage = $"Retry add failed: {ex.Message}";
+        }
+        finally
+        {
+            EndOperation();
+            await LoadSelectedCartAsync(SelectedMediaCard);
+        }
+    }
+
+    private async Task RetrySearchOrderAsync(long orderId)
+    {
+        if (SelectedMediaCard is null)
+        {
+            return;
+        }
+
+        var order = _torrentCartService.GetOrder(orderId);
+        if (order is null ||
+            order.Status is not (TorrentOrderStatus.Failed or TorrentOrderStatus.NoCandidates))
+        {
+            return;
+        }
+
+        _torrentCartService.ClearCandidates(SelectedMediaCard.MediaKind, SelectedMediaCard.Id, [orderId]);
+
+        var cancellationToken = BeginOperation();
+        try
+        {
+            if (order.TargetKind == MediaKind.TvEpisode && order.EpisodeId is not null)
+            {
+                try
+                {
+                    await SearchEpisodeOrdersAsync([order], cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    MarkSearchingEpisodeOrdersCanceled([order]);
+                    throw;
+                }
+            }
+            else
+            {
+                var recipeLabel = order.EpisodeId is null && order.SeasonNumber is not null
+                    ? GetRecipeName(SelectedPackRecipeId, MediaKind.TvSeasonPack)
+                    : order.TargetKind == MediaKind.Movie
+                        ? GetRecipeName(SelectedMovieRecipeId, MediaKind.Movie)
+                        : GetRecipeName(SelectedEpisodeRecipeId, MediaKind.TvEpisode);
+                _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.Searching, $"Searching with recipe: {recipeLabel}");
+
+                try
+                {
+                    var result = await SearchOrderAsync(order, cancellationToken);
+                    if (result.NoCandidates)
+                    {
+                        _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.NoCandidates, result.Detail);
+                    }
+                    else
+                    {
+                        _torrentCartService.ReplaceCandidates(result.Order.Id, result.Candidates);
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.Canceled, "Stopped by user.");
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.Failed, ex.Message);
+                }
+            }
+
+            _trackedShowService.RefreshAvailability();
+            _trackedMovieService.RefreshAvailability();
+            StatusMessage = $"Re-search complete for {order.Title}.";
+        }
+        catch (OperationCanceledException)
+        {
+            StatusMessage = "Re-search stopped by user.";
+        }
+        finally
+        {
+            EndOperation();
+            await LoadSelectedCartAsync(SelectedMediaCard);
         }
     }
 
@@ -411,14 +575,18 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
             return;
         }
 
-        IsRunningCart = true;
+        var cancellationToken = BeginOperation();
         try
         {
             StatusMessage = $"Reconciling existing qBittorrent torrents for {SelectedMediaCard.Title}...";
             var scope = TorrentReconciliationScope.ForMedia(SelectedMediaCard.MediaKind, SelectedMediaCard.Id);
-            var result = await _torrentReconciliationService.ReconcileAsync(scope);
+            var result = await _torrentReconciliationService.ReconcileAsync(scope, cancellationToken);
             await LoadSelectedCartAsync(SelectedMediaCard);
             StatusMessage = $"Torrent reconciliation complete. {result.Summary}.";
+        }
+        catch (OperationCanceledException)
+        {
+            StatusMessage = "Reconciliation stopped by user.";
         }
         catch (Exception ex)
         {
@@ -426,7 +594,7 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         }
         finally
         {
-            IsRunningCart = false;
+            EndOperation();
         }
     }
 
@@ -616,6 +784,12 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
 
     partial void OnIsRunningCartChanged(bool value)
     {
+        TorrentOrderViewModel.CartOperationRunning = value;
+        foreach (var order in Orders)
+        {
+            order.NotifyOperationRunningChanged();
+        }
+
         RunCartCommand.NotifyCanExecuteChanged();
         AddCartCommand.NotifyCanExecuteChanged();
         StopRunCartCommand.NotifyCanExecuteChanged();
@@ -656,7 +830,10 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         ApplyMediaCardSort();
         if (SelectedMediaCard is not null)
         {
-            _ = LoadSelectedCartAsync(SelectedMediaCard);
+            var card = SelectedMediaCard;
+            System.Windows.Application.Current.Dispatcher.BeginInvoke(
+                DispatcherPriority.Background,
+                () => _ = LoadSelectedCartAsync(card));
         }
 
         OnPropertyChanged(nameof(HasAnyCartOrders));
@@ -699,6 +876,8 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         };
         viewModel.CandidateSelected = SelectCandidate;
         viewModel.AcceptRequested = AcceptCandidate;
+        viewModel.RetryAddRequested = orderId => _ = RetryAddOrderAsync(orderId);
+        viewModel.RetrySearchRequested = orderId => _ = RetrySearchOrderAsync(orderId);
         viewModel.LoadCandidates(_torrentCartService.GetCandidates(order.Id)
             .Select(candidate => new TorrentOrderCandidateViewModel(candidate)));
         return viewModel;
@@ -856,6 +1035,34 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         return CartSearchResult.Found(order, $"Found {episodeResult.AcceptedCandidates.Count} episode candidate(s).", ToCartCandidates(episodeResult.AcceptedCandidates));
     }
 
+    private CancellationToken BeginOperation()
+    {
+        _operationCts?.Cancel();
+        _operationCts?.Dispose();
+        _operationCts = new CancellationTokenSource();
+        IsRunningCart = true;
+        return _operationCts.Token;
+    }
+
+    private void EndOperation()
+    {
+        _operationCts?.Dispose();
+        _operationCts = null;
+        IsRunningCart = false;
+    }
+
+    private void MarkSearchingEpisodeOrdersCanceled(IReadOnlyList<TorrentCartOrder> episodeOrders)
+    {
+        foreach (var order in episodeOrders)
+        {
+            var current = _torrentCartService.GetOrder(order.Id);
+            if (current?.Status == TorrentOrderStatus.Searching)
+            {
+                _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.Canceled, "Stopped by user.");
+            }
+        }
+    }
+
     private bool CanRunCart()
     {
         return HasOrders && !IsRunningCart;
@@ -960,9 +1167,12 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         }).ToList();
     }
 
-    private async Task AddOrderToClientAsync(TorrentCartOrder order, string savePath)
+    private async Task AddOrderToClientAsync(TorrentCartOrder order, string savePath, CancellationToken cancellationToken = default)
     {
-        var addedTorrent = await _qbittorrentClient.AddTorrentAsync(CreateAddTorrentRequest(order, savePath));
+        _logger.Info(
+            $"Adding torrent to qBittorrent. Order='{order.Title}', Url='{order.SelectedCandidateUrl}', SavePath='{savePath}'.",
+            LogTarget.All);
+        var addedTorrent = await _qbittorrentClient.AddTorrentAsync(CreateAddTorrentRequest(order, savePath), cancellationToken);
         order.TorrentHash = addedTorrent.Hash;
         order.TorrentName = addedTorrent.Name;
         order.TorrentState = addedTorrent.State;
