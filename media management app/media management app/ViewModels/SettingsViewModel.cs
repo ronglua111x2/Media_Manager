@@ -16,6 +16,8 @@ public partial class SettingsViewModel : ViewModelBase
     private readonly IDatabaseService _databaseService;
     private readonly ILibraryPathResolver _libraryPathResolver;
     private readonly IQbittorrentClient _qbittorrentClient;
+    private readonly IWindowsStartupService _windowsStartupService;
+    private readonly ITrayIconService _trayIconService;
     private readonly HttpClient _httpClient;
     private readonly IAppLogger _logger;
     private bool _isLoadingSettings;
@@ -57,6 +59,15 @@ public partial class SettingsViewModel : ViewModelBase
     private int logCleanupRetentionDays = AppConstants.DefaultLogCleanupRetentionDays;
 
     [ObservableProperty]
+    private bool runAtStartup;
+
+    [ObservableProperty]
+    private bool startMinimized;
+
+    [ObservableProperty]
+    private bool closeToTray;
+
+    [ObservableProperty]
     private string? selectedSourceFolder;
 
     [ObservableProperty]
@@ -70,6 +81,8 @@ public partial class SettingsViewModel : ViewModelBase
         IDatabaseService databaseService,
         ILibraryPathResolver libraryPathResolver,
         IQbittorrentClient qbittorrentClient,
+        IWindowsStartupService windowsStartupService,
+        ITrayIconService trayIconService,
         HttpClient httpClient,
         IAppLogger logger)
     {
@@ -77,6 +90,8 @@ public partial class SettingsViewModel : ViewModelBase
         _databaseService = databaseService;
         _libraryPathResolver = libraryPathResolver;
         _qbittorrentClient = qbittorrentClient;
+        _windowsStartupService = windowsStartupService;
+        _trayIconService = trayIconService;
         _httpClient = httpClient;
         _logger = logger;
         SourceFolders = [];
@@ -143,7 +158,20 @@ public partial class SettingsViewModel : ViewModelBase
         _settingsService.Current.TmdbReadAccessToken = string.IsNullOrWhiteSpace(TmdbReadAccessToken) ? null : TmdbReadAccessToken;
         ApplyAutoTorrentSettings();
         ApplyLogSettings();
+        ApplyStartupSettings();
         _settingsService.Save();
+        try
+        {
+            _windowsStartupService.SetEnabled(RunAtStartup);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Settings saved, but Windows startup registration failed: {ex.Message}";
+            _logger.Warning($"Windows startup registration failed: {ex.Message}", LogTarget.All);
+            return;
+        }
+
+        EnsureTrayInitialized();
         _databaseService.Initialize(_settingsService.Current.StateFolder);
         RefreshLibraryRootPreview();
         StatusMessage = $"Saved settings to {_settingsService.SettingsFilePath}";
@@ -310,6 +338,9 @@ public partial class SettingsViewModel : ViewModelBase
             AutoLinkCompletedDownloads = _settingsService.Current.AutoTorrent.AutoLinkCompletedDownloads;
             LogMaxLinesPerFile = _settingsService.Current.Logs.MaxLinesPerFile;
             LogCleanupRetentionDays = _settingsService.Current.Logs.CleanupRetentionDays;
+            RunAtStartup = _settingsService.Current.Startup.RunAtStartup;
+            StartMinimized = _settingsService.Current.Startup.StartMinimized;
+            CloseToTray = _settingsService.Current.Startup.CloseToTray;
             AutoTorrentDownloadFolders.Clear();
             foreach (var folder in _settingsService.Current.AutoTorrent.DownloadFolders)
             {
@@ -375,6 +406,31 @@ public partial class SettingsViewModel : ViewModelBase
 
         LogMaxLinesPerFile = _settingsService.Current.Logs.MaxLinesPerFile;
         LogCleanupRetentionDays = _settingsService.Current.Logs.CleanupRetentionDays;
+    }
+
+    private void ApplyStartupSettings()
+    {
+        _settingsService.Current.Startup.RunAtStartup = RunAtStartup;
+        _settingsService.Current.Startup.StartMinimized = StartMinimized;
+        _settingsService.Current.Startup.CloseToTray = CloseToTray;
+    }
+
+    private void EnsureTrayInitialized()
+    {
+        if (!StartMinimized && !CloseToTray)
+        {
+            return;
+        }
+
+        if (_trayIconService.IsInitialized)
+        {
+            return;
+        }
+
+        if (System.Windows.Application.Current.MainWindow is MainWindow mainWindow)
+        {
+            _trayIconService.Initialize(mainWindow);
+        }
     }
 
     private void RefreshLibraryRootPreview()

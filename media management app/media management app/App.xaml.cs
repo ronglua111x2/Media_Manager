@@ -48,11 +48,30 @@ public partial class App : System.Windows.Application
         database.Initialize(settings.Current.StateFolder);
 
         var mainWindow = _serviceProvider.GetRequiredService<MainWindow>();
-        mainWindow.Show();
+        var trayIconService = _serviceProvider.GetRequiredService<ITrayIconService>();
+        var startup = settings.Current.Startup;
+
+        if (startup.StartMinimized || startup.CloseToTray)
+        {
+            trayIconService.Initialize(mainWindow);
+        }
+
+        if (startup.StartMinimized)
+        {
+            mainWindow.ShowInTaskbar = false;
+            mainWindow.Visibility = Visibility.Hidden;
+            mainWindow.Show();
+            trayIconService.HideToTray();
+        }
+        else
+        {
+            mainWindow.Show();
+        }
     }
 
     protected override void OnExit(ExitEventArgs e)
     {
+        _serviceProvider?.GetService<ITrayIconService>()?.Dispose();
         _serviceProvider?.Dispose();
         if (_ownsSingleInstanceMutex)
         {
@@ -69,6 +88,8 @@ public partial class App : System.Windows.Application
         services.AddSingleton<HttpClient>();
 
         services.AddSingleton<ISettingsService, SettingsService>();
+        services.AddSingleton<IWindowsStartupService, WindowsStartupService>();
+        services.AddSingleton<ITrayIconService, TrayIconService>();
         services.AddSingleton<IAppLogger, AppLogger>();
         services.AddSingleton<ILogCleanupService, LogCleanupService>();
         services.AddSingleton<IOperationProgressService, OperationProgressService>();

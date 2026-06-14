@@ -97,6 +97,7 @@ public sealed class SettingsService : ISettingsService
 
         Current.AutoTorrent ??= new AutoTorrentSettings();
         Current.Logs ??= new LogSettings();
+        Current.Startup ??= new AppStartupSettings();
         Current.Logs.MaxLinesPerFile = Math.Clamp(
             Current.Logs.MaxLinesPerFile,
             AppConstants.MinLogLinesPerFile,

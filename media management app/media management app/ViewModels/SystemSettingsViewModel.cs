@@ -10,9 +10,11 @@ public sealed class SystemSettingsViewModel : SettingsViewModel
         IDatabaseService databaseService,
         ILibraryPathResolver libraryPathResolver,
         IQbittorrentClient qbittorrentClient,
+        IWindowsStartupService windowsStartupService,
+        ITrayIconService trayIconService,
         HttpClient httpClient,
         IAppLogger logger)
-        : base(settingsService, databaseService, libraryPathResolver, qbittorrentClient, httpClient, logger)
+        : base(settingsService, databaseService, libraryPathResolver, qbittorrentClient, windowsStartupService, trayIconService, httpClient, logger)
     {
     }
 }

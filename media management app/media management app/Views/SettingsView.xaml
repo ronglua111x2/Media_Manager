@@ -377,6 +377,28 @@
                                     </Border>
                                 </StackPanel>
                             </materialDesign:Card>
+
+                            <materialDesign:Card Style="{StaticResource SettingsCardStyle}">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <Border Width="8"
+                                                Height="24"
+                                                CornerRadius="4"
+                                                Background="{StaticResource AppBrushAccent}"
+                                                Margin="0,0,8,0" />
+                                        <TextBlock Text="Startup &amp; Tray" Style="{StaticResource SettingsSectionTitleStyle}" Margin="0" />
+                                    </StackPanel>
+                                    <CheckBox IsChecked="{Binding RunAtStartup, Mode=TwoWay}"
+                                              Margin="0,0,0,8"
+                                              Content="Run at Windows startup" />
+                                    <CheckBox IsChecked="{Binding StartMinimized, Mode=TwoWay}"
+                                              Margin="0,0,0,8"
+                                              Content="Start minimized to tray" />
+                                    <CheckBox IsChecked="{Binding CloseToTray, Mode=TwoWay}"
+                                              Margin="0,4,0,0"
+                                              Content="Close button minimizes to tray" />
+                                </StackPanel>
+                            </materialDesign:Card>
                         </StackPanel>
 
                         <Border Grid.Column="2" Style="{StaticResource SettingsGuidePanelStyle}">
@@ -400,6 +422,27 @@
                                     <StackPanel>
                                         <TextBlock Text="Log cleanup" Style="{StaticResource SettingsLabelStyle}" />
                                         <TextBlock Text="After Save, cleanup uses the retention value on the next background wakeup and deletes only old managed log files."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Windows startup" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Registers the app in the current user's Windows Run key. Save settings to apply."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Tray behavior" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Start minimized and close-to-tray keep the app running in the notification area. Minimize also goes to tray when either tray option is enabled."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Exit" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="When close-to-tray is off, the X button exits the app. Use the tray menu Exit option when the app is hidden to tray."
                                                    Style="{StaticResource SettingsHintStyle}" />
                                     </StackPanel>
                                 </Border>

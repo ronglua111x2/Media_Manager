@@ -10,6 +10,8 @@ public sealed class AppSettings
 
     public LogSettings Logs { get; set; } = new();
 
+    public AppStartupSettings Startup { get; set; } = new();
+
     public List<string> SourceFolders { get; set; } = [];
 
     public LibraryRootMode LibraryRootMode { get; set; } = LibraryRootMode.AutoPerDrive;
