@@ -71,6 +71,12 @@ public partial class SettingsViewModel : ViewModelBase
     private bool closeToTray;
 
     [ObservableProperty]
+    private bool autoTrackEnabled = true;
+
+    [ObservableProperty]
+    private int autoTrackIntervalHours = 6;
+
+    [ObservableProperty]
     private bool warpEnabled = true;
 
     [ObservableProperty]
@@ -194,6 +200,7 @@ public partial class SettingsViewModel : ViewModelBase
         ApplyWarpSettings();
         ApplyLogSettings();
         ApplyStartupSettings();
+        ApplyAutoTrackSettings();
         _settingsService.Save();
         try
         {
@@ -469,6 +476,8 @@ public partial class SettingsViewModel : ViewModelBase
             RunAtStartup = _settingsService.Current.Startup.RunAtStartup;
             StartMinimized = _settingsService.Current.Startup.StartMinimized;
             CloseToTray = _settingsService.Current.Startup.CloseToTray;
+            AutoTrackEnabled = _settingsService.Current.AutoTrack?.Enabled ?? true;
+            AutoTrackIntervalHours = _settingsService.Current.AutoTrack?.IntervalHours ?? 6;
             WarpEnabled = _settingsService.Current.Warp.Enabled;
             WarpExecutablePath = _settingsService.Current.Warp.ExecutablePath;
             WarpConnectTimeoutSeconds = _settingsService.Current.Warp.ConnectTimeoutSeconds;
@@ -563,6 +572,14 @@ public partial class SettingsViewModel : ViewModelBase
         _settingsService.Current.Startup.RunAtStartup = RunAtStartup;
         _settingsService.Current.Startup.StartMinimized = StartMinimized;
         _settingsService.Current.Startup.CloseToTray = CloseToTray;
+    }
+
+    private void ApplyAutoTrackSettings()
+    {
+        _settingsService.Current.AutoTrack ??= new AutoTrackSettings();
+        _settingsService.Current.AutoTrack.Enabled = AutoTrackEnabled;
+        _settingsService.Current.AutoTrack.IntervalHours = Math.Clamp(AutoTrackIntervalHours, 1, 168);
+        AutoTrackIntervalHours = _settingsService.Current.AutoTrack.IntervalHours;
     }
 
     private void EnsureTrayInitialized()

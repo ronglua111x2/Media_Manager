@@ -6,6 +6,7 @@ using CommunityToolkit.Mvvm.Input;
 using media_management_app.Common;
 using media_management_app.Models;
 using media_management_app.Services;
+using media_management_app.Views;
 using WinForms = System.Windows.Forms;
 
 namespace media_management_app.ViewModels;
@@ -24,6 +25,8 @@ public sealed partial class LibraryViewModel : ViewModelBase
     private readonly ITorrentReconciliationService _torrentReconciliationService;
     private readonly IMediaImportService _mediaImportService;
     private readonly IMediaMetadataSyncService _mediaMetadataSyncService;
+    private readonly ISettingsService _settingsService;
+    private readonly IDownloadFolderCatalogService _downloadFolderCatalogService;
 
     private IReadOnlyList<LibraryMediaCardViewModel> _allMediaCards = [];
     private long? _loadedDetailMediaId;
@@ -42,7 +45,9 @@ public sealed partial class LibraryViewModel : ViewModelBase
         IAutoTorrentLinkService autoTorrentLinkService,
         ITorrentReconciliationService torrentReconciliationService,
         IMediaImportService mediaImportService,
-        IMediaMetadataSyncService mediaMetadataSyncService)
+        IMediaMetadataSyncService mediaMetadataSyncService,
+        ISettingsService settingsService,
+        IDownloadFolderCatalogService downloadFolderCatalogService)
     {
         _trackedShowService = trackedShowService;
         _trackedMovieService = trackedMovieService;
@@ -56,6 +61,8 @@ public sealed partial class LibraryViewModel : ViewModelBase
         _torrentReconciliationService = torrentReconciliationService;
         _mediaImportService = mediaImportService;
         _mediaMetadataSyncService = mediaMetadataSyncService;
+        _settingsService = settingsService;
+        _downloadFolderCatalogService = downloadFolderCatalogService;
 
         _torrentCartService.CartChanged += (_, _) => RefreshCartStateOnSelectedDetail();
         _torrentReconciliationService.Reconciled += (_, _) => _ = ReloadSelectedDetailAsync();
@@ -606,6 +613,74 @@ public sealed partial class LibraryViewModel : ViewModelBase
             _ => ShowSeriesStatus.Unknown
         };
     }
+
+    [RelayCommand(CanExecute = nameof(IsSelectedShow))]
+    private void SetAutoTrack()
+    {
+        if (SelectedShow is null)
+        {
+            return;
+        }
+
+        var show = _trackedShowService.GetShows().FirstOrDefault(item => item.Id == SelectedShow.Id);
+        if (show is null)
+        {
+            StatusMessage = "Selected show was not found.";
+            return;
+        }
+
+        var episodes = _trackedShowService.GetEpisodes(show.Id);
+        if (episodes.Count == 0)
+        {
+            StatusMessage = "No episodes available. Sync from TMDB first.";
+            return;
+        }
+
+        var folderOptions = _downloadFolderCatalogService.GetKnownDownloadFolders();
+        var defaultFolder = _settingsService.Current.AutoTorrent.DownloadFolders.FirstOrDefault()
+            ?? _settingsService.Current.AutoTorrent.DownloadFolder;
+
+        var dialog = new SetAutoTrackDialog(
+            episodes,
+            folderOptions,
+            defaultFolder,
+            show.AutoTrackFromSeason,
+            show.AutoTrackFromEpisode,
+            show.AutoTrackDownloadFolder,
+            show.IsAutoTracked ? show.AutoTrackAutoReconcileAndLink : true)
+        {
+            Owner = System.Windows.Application.Current.MainWindow
+        };
+
+        if (dialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        _trackedShowService.SetAutoTrackCheckpoint(
+            show.Id,
+            dialog.SelectedSeason,
+            dialog.SelectedEpisode,
+            dialog.SelectedDownloadFolder,
+            dialog.AutoReconcileAndLink);
+        RebuildSelectedShowDetail();
+        StatusMessage = $"Auto-track enabled for {show.DisplayTitle} from S{dialog.SelectedSeason:00}E{dialog.SelectedEpisode:00}.";
+    }
+
+    [RelayCommand(CanExecute = nameof(CanStopAutoTrack))]
+    private void StopAutoTrack()
+    {
+        if (SelectedShow is null || !SelectedShow.IsAutoTracked)
+        {
+            return;
+        }
+
+        _trackedShowService.StopAutoTrack(SelectedShow.Id);
+        RebuildSelectedShowDetail();
+        StatusMessage = $"Stopped auto-tracking {SelectedShow.Title}.";
+    }
+
+    private bool CanStopAutoTrack() => SelectedShow?.IsAutoTracked == true;
 
     [RelayCommand(CanExecute = nameof(HasSelectedMedia))]
     private void DeleteSelectedMedia()

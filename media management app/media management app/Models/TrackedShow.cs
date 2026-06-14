@@ -28,6 +28,14 @@ public sealed class TrackedShow
 
     public ShowSeriesStatus SeriesStatus { get; set; } = ShowSeriesStatus.Unknown;
 
+    public int? AutoTrackFromSeason { get; set; }
+
+    public int? AutoTrackFromEpisode { get; set; }
+
+    public string? AutoTrackDownloadFolder { get; set; }
+
+    public bool AutoTrackAutoReconcileAndLink { get; set; } = true;
+
     public DateTime CreatedUtc { get; set; } = DateTime.UtcNow;
 
     public DateTime UpdatedUtc { get; set; } = DateTime.UtcNow;
@@ -44,4 +52,10 @@ public sealed class TrackedShow
     public int TotalEpisodes { get; set; }
 
     public int AvailableEpisodes { get; set; }
+
+    public bool IsAutoTracked => AutoTrackFromSeason is not null && AutoTrackFromEpisode is not null;
+
+    public string AutoTrackCheckpointLabel => IsAutoTracked
+        ? $"S{AutoTrackFromSeason:00}E{AutoTrackFromEpisode:00}+"
+        : string.Empty;
 }

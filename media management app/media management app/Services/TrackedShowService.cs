@@ -280,4 +280,40 @@ public sealed class TrackedShowService : ITrackedShowService
 
         return null;
     }
+
+    public IReadOnlyList<TrackedShow> GetAutoTrackedShows()
+    {
+        return _databaseService.GetAutoTrackedShows();
+    }
+
+    public void SetAutoTrackCheckpoint(long showId, int fromSeason, int fromEpisode, string? downloadFolder = null, bool autoReconcileAndLink = true)
+    {
+        _databaseService.UpdateTrackedShowAutoTrackSettings(
+            showId,
+            fromSeason,
+            fromEpisode,
+            downloadFolder,
+            autoReconcileAndLink);
+        _logger.Info(
+            $"Auto-track enabled for show {showId} from S{fromSeason:00}E{fromEpisode:00}, folder='{downloadFolder ?? "<default>"}', reconcile={autoReconcileAndLink}.",
+            LogTarget.All);
+    }
+
+    public void UpdateAutoTrackDownloadFolder(long showId, string? downloadFolder)
+    {
+        _databaseService.UpdateTrackedShowAutoTrackDownloadFolder(showId, downloadFolder);
+        _logger.Info($"Auto-track download folder updated for show {showId}: '{downloadFolder ?? "<cleared>"}'.", LogTarget.All);
+    }
+
+    public void UpdateAutoTrackReconcileAndLink(long showId, bool autoReconcileAndLink)
+    {
+        _databaseService.UpdateTrackedShowAutoTrackReconcileAndLink(showId, autoReconcileAndLink);
+        _logger.Info($"Auto-track reconcile/link for show {showId}: {autoReconcileAndLink}.", LogTarget.All);
+    }
+
+    public void StopAutoTrack(long showId)
+    {
+        _databaseService.UpdateTrackedShowAutoTrack(showId, null, null);
+        _logger.Info($"Auto-track disabled for show {showId}.", LogTarget.All);
+    }
 }

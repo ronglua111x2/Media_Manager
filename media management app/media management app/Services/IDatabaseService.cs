@@ -29,6 +29,21 @@ public interface IDatabaseService
 
     IReadOnlyList<TrackedShow> GetTrackedShowsBySeriesStatus(ShowSeriesStatus seriesStatus);
 
+    IReadOnlyList<TrackedShow> GetAutoTrackedShows();
+
+    void UpdateTrackedShowAutoTrack(long showId, int? fromSeason, int? fromEpisode);
+
+    void UpdateTrackedShowAutoTrackSettings(
+        long showId,
+        int? fromSeason,
+        int? fromEpisode,
+        string? downloadFolder,
+        bool? autoReconcileAndLink);
+
+    void UpdateTrackedShowAutoTrackDownloadFolder(long showId, string? downloadFolder);
+
+    void UpdateTrackedShowAutoTrackReconcileAndLink(long showId, bool autoReconcileAndLink);
+
     TrackedShow? GetTrackedShow(long id);
 
     TrackedShow? GetTrackedShowByTmdbId(int tmdbId);

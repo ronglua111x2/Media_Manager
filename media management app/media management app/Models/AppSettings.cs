@@ -10,6 +10,8 @@ public sealed class AppSettings
 
     public WarpSettings Warp { get; set; } = new();
 
+    public AutoTrackSettings AutoTrack { get; set; } = new();
+
     public LogSettings Logs { get; set; } = new();
 
     public AppStartupSettings Startup { get; set; } = new();

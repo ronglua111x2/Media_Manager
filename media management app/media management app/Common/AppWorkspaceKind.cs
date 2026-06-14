@@ -2,10 +2,11 @@ namespace media_management_app.Common;
 
 public enum AppWorkspaceKind
 {
-    FindAdd = 0,
-    Library = 1,
-    Torrent = 2,
-    Qbittorrent = 3,
-    Recipe = 4,
-    SystemSettings = 5
+    AutoTrack = 0,
+    FindAdd = 1,
+    Library = 2,
+    Torrent = 3,
+    Qbittorrent = 4,
+    Recipe = 5,
+    SystemSettings = 6
 }

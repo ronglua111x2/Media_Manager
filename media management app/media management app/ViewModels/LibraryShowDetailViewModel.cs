@@ -28,6 +28,8 @@ public sealed partial class LibraryShowDetailViewModel : ObservableObject
             $"Quality {show.PreferredQuality} | Audio {(string.IsNullOrWhiteSpace(show.PreferredAudioCodec) ? "Any" : show.PreferredAudioCodec)} | Min seeders {show.MinimumSeeders}";
         EpisodeRecipeName = episodeRecipeName;
         PackRecipeName = packRecipeName;
+        IsAutoTracked = show.IsAutoTracked;
+        AutoTrackCheckpointLabel = show.AutoTrackCheckpointLabel;
         Seasons = new ObservableCollection<LibrarySeasonViewModel>(seasonList);
     }
 
@@ -48,6 +50,10 @@ public sealed partial class LibraryShowDetailViewModel : ObservableObject
     public string EpisodeRecipeName { get; }
 
     public string PackRecipeName { get; }
+
+    public bool IsAutoTracked { get; }
+
+    public string AutoTrackCheckpointLabel { get; }
 
     public int HiddenSeasonCount { get; }
 

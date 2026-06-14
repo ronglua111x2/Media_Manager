@@ -1,0 +1,55 @@
+<Window x:Class="media_management_app.Views.SetAutoTrackDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Set Auto-Track Checkpoint"
+        Width="520"
+        MinWidth="420"
+        SizeToContent="Height"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource AppBrushCanvas}">
+    <DockPanel Margin="16">
+        <TextBlock DockPanel.Dock="Top"
+                   Text="Choose the first episode to auto-track and assign a fixed download folder for all episodes."
+                   TextWrapping="Wrap"
+                   Foreground="{StaticResource AppBrushMutedText}"
+                   Margin="0,0,0,12" />
+
+        <StackPanel DockPanel.Dock="Bottom"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Margin="0,16,0,0">
+            <Button Content="Cancel"
+                    Style="{StaticResource AppOutlinedButtonStyle}"
+                    Width="96"
+                    Margin="0,0,8,0"
+                    Click="Cancel_Click" />
+            <Button Content="Enable"
+                    Style="{StaticResource AppPrimaryButtonStyle}"
+                    Width="96"
+                    Click="Confirm_Click" />
+        </StackPanel>
+
+        <StackPanel>
+            <TextBlock Text="Checkpoint episode"
+                       Foreground="{StaticResource AppBrushMutedText}"
+                       FontSize="12"
+                       Margin="0,0,0,4" />
+            <ComboBox ItemsSource="{Binding CheckpointOptions}"
+                      SelectedItem="{Binding SelectedCheckpoint, Mode=TwoWay}"
+                      DisplayMemberPath="Label"
+                      MinHeight="36"
+                      Margin="0,0,0,12" />
+            <TextBlock Text="Download folder"
+                       Foreground="{StaticResource AppBrushMutedText}"
+                       FontSize="12"
+                       Margin="0,0,0,4" />
+            <ComboBox ItemsSource="{Binding DownloadFolderOptions}"
+                      SelectedItem="{Binding SelectedDownloadFolder, Mode=TwoWay}"
+                      MinHeight="36"
+                      Margin="0,0,0,12" />
+            <CheckBox IsChecked="{Binding AutoReconcileAndLink, Mode=TwoWay}"
+                      Content="Auto reconcile and hardlink when downloads complete" />
+        </StackPanel>
+    </DockPanel>
+</Window>

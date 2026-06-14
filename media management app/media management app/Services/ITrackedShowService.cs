@@ -53,4 +53,14 @@ public interface ITrackedShowService
     void UpdatePackRecipe(long showId, string? packRecipeId);
 
     void UpdateSeriesStatus(long showId, Common.ShowSeriesStatus seriesStatus);
+
+    IReadOnlyList<TrackedShow> GetAutoTrackedShows();
+
+    void SetAutoTrackCheckpoint(long showId, int fromSeason, int fromEpisode, string? downloadFolder = null, bool autoReconcileAndLink = true);
+
+    void UpdateAutoTrackDownloadFolder(long showId, string? downloadFolder);
+
+    void UpdateAutoTrackReconcileAndLink(long showId, bool autoReconcileAndLink);
+
+    void StopAutoTrack(long showId);
 }

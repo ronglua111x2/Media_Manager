@@ -421,6 +421,33 @@
                                               Content="Close button minimizes to tray" />
                                 </StackPanel>
                             </materialDesign:Card>
+
+                            <materialDesign:Card Style="{StaticResource SettingsCardStyle}">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <Border Width="8"
+                                                Height="24"
+                                                CornerRadius="4"
+                                                Background="{StaticResource AppBrushShowAccent}"
+                                                Margin="0,0,8,0" />
+                                        <TextBlock Text="Auto-Track" Style="{StaticResource SettingsSectionTitleStyle}" Margin="0" />
+                                    </StackPanel>
+                                    <CheckBox IsChecked="{Binding AutoTrackEnabled, Mode=TwoWay}"
+                                              Margin="0,0,0,8"
+                                              Content="Enable scheduled auto-track runs" />
+                                    <TextBlock Text="Run interval (hours)" Style="{StaticResource SettingsLabelStyle}" />
+                                    <Border Style="{StaticResource SettingsNumericChromeStyle}">
+                                        <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
+                                                                      Value="{Binding AutoTrackIntervalHours, UpdateSourceTrigger=PropertyChanged}"
+                                                                      Minimum="1"
+                                                                      Maximum="168" />
+                                    </Border>
+                                    <TextBlock Text="Checks auto-tracked shows, queues missing episodes, searches via WARP, and adds torrents automatically."
+                                               Style="{StaticResource SettingsHintStyle}"
+                                               Margin="0,8,0,0"
+                                               TextWrapping="Wrap" />
+                                </StackPanel>
+                            </materialDesign:Card>
                         </StackPanel>
 
                         <Border Grid.Column="2" Style="{StaticResource SettingsGuidePanelStyle}">

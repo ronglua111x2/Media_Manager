@@ -44,6 +44,7 @@ public partial class App : System.Windows.Application
         settings.Load();
 
         _serviceProvider.GetRequiredService<ILogCleanupService>().Start();
+        _serviceProvider.GetRequiredService<IAutoTrackSchedulerService>().Start();
 
         var database = _serviceProvider.GetRequiredService<IDatabaseService>();
         database.Initialize(settings.Current.StateFolder);
@@ -82,6 +83,7 @@ public partial class App : System.Windows.Application
     protected override void OnExit(ExitEventArgs e)
     {
         _serviceProvider?.GetService<ITrayIconService>()?.Dispose();
+        _serviceProvider?.GetService<IAutoTrackSchedulerService>()?.Dispose();
         _serviceProvider?.Dispose();
         if (_ownsSingleInstanceMutex)
         {
@@ -137,7 +139,10 @@ public partial class App : System.Windows.Application
         services.AddSingleton<IAutoTorrentLinkService, AutoTorrentLinkService>();
         services.AddSingleton<ITorrentReconciliationService, TorrentReconciliationService>();
         services.AddSingleton<ILibraryManagementService, LibraryManagementService>();
+        services.AddSingleton<IAutoTrackService, AutoTrackService>();
+        services.AddSingleton<IAutoTrackSchedulerService, AutoTrackSchedulerService>();
 
+        services.AddSingleton<AutoTrackViewModel>();
         services.AddSingleton<FindAddViewModel>();
         services.AddSingleton<LibraryViewModel>();
         services.AddSingleton<TorrentWorkspaceViewModel>();

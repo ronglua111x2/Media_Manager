@@ -467,7 +467,7 @@ public sealed class DatabaseService : IDatabaseService
 
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT s.Id, s.TmdbId, s.Title, s.FirstAirYear, s.Overview, s.PosterPath, s.RecipeId, s.PackRecipeId, s.PreferredQuality, s.PreferredAudioCodec, s.MinimumSeeders, s.SeriesStatus, s.CreatedUtc, s.UpdatedUtc,
+            SELECT s.Id, s.TmdbId, s.Title, s.FirstAirYear, s.Overview, s.PosterPath, s.RecipeId, s.PackRecipeId, s.PreferredQuality, s.PreferredAudioCodec, s.MinimumSeeders, s.SeriesStatus, s.AutoTrackFromSeason, s.AutoTrackFromEpisode, s.AutoTrackDownloadFolder, s.AutoTrackAutoReconcileAndLink, s.CreatedUtc, s.UpdatedUtc,
                    COUNT(e.Id), SUM(CASE WHEN e.Availability = 1 THEN 1 ELSE 0 END)
             FROM TrackedShows s
             LEFT JOIN TrackedEpisodes e ON e.ShowId = s.Id
@@ -492,7 +492,7 @@ public sealed class DatabaseService : IDatabaseService
 
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT s.Id, s.TmdbId, s.Title, s.FirstAirYear, s.Overview, s.PosterPath, s.RecipeId, s.PackRecipeId, s.PreferredQuality, s.PreferredAudioCodec, s.MinimumSeeders, s.SeriesStatus, s.CreatedUtc, s.UpdatedUtc,
+            SELECT s.Id, s.TmdbId, s.Title, s.FirstAirYear, s.Overview, s.PosterPath, s.RecipeId, s.PackRecipeId, s.PreferredQuality, s.PreferredAudioCodec, s.MinimumSeeders, s.SeriesStatus, s.AutoTrackFromSeason, s.AutoTrackFromEpisode, s.AutoTrackDownloadFolder, s.AutoTrackAutoReconcileAndLink, s.CreatedUtc, s.UpdatedUtc,
                    COUNT(e.Id), SUM(CASE WHEN e.Availability = 1 THEN 1 ELSE 0 END)
             FROM TrackedShows s
             LEFT JOIN TrackedEpisodes e ON e.ShowId = s.Id
@@ -509,6 +509,117 @@ public sealed class DatabaseService : IDatabaseService
         }
 
         return shows;
+    }
+
+    public IReadOnlyList<TrackedShow> GetAutoTrackedShows()
+    {
+        var shows = new List<TrackedShow>();
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT s.Id, s.TmdbId, s.Title, s.FirstAirYear, s.Overview, s.PosterPath, s.RecipeId, s.PackRecipeId, s.PreferredQuality, s.PreferredAudioCodec, s.MinimumSeeders, s.SeriesStatus, s.AutoTrackFromSeason, s.AutoTrackFromEpisode, s.AutoTrackDownloadFolder, s.AutoTrackAutoReconcileAndLink, s.CreatedUtc, s.UpdatedUtc,
+                   COUNT(e.Id), SUM(CASE WHEN e.Availability = 1 THEN 1 ELSE 0 END)
+            FROM TrackedShows s
+            LEFT JOIN TrackedEpisodes e ON e.ShowId = s.Id
+            WHERE s.AutoTrackFromSeason IS NOT NULL AND s.AutoTrackFromEpisode IS NOT NULL
+            GROUP BY s.Id
+            ORDER BY s.Title;
+            """;
+
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            shows.Add(ReadTrackedShow(reader));
+        }
+
+        return shows;
+    }
+
+    public void UpdateTrackedShowAutoTrack(long showId, int? fromSeason, int? fromEpisode)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE TrackedShows
+            SET AutoTrackFromSeason = $FromSeason,
+                AutoTrackFromEpisode = $FromEpisode,
+                UpdatedUtc = $UpdatedUtc
+            WHERE Id = $ShowId;
+            """;
+        command.Parameters.AddWithValue("$ShowId", showId);
+        command.Parameters.AddWithValue("$FromSeason", (object?)fromSeason ?? DBNull.Value);
+        command.Parameters.AddWithValue("$FromEpisode", (object?)fromEpisode ?? DBNull.Value);
+        command.Parameters.AddWithValue("$UpdatedUtc", DateTime.UtcNow.ToString("O"));
+        command.ExecuteNonQuery();
+    }
+
+    public void UpdateTrackedShowAutoTrackSettings(
+        long showId,
+        int? fromSeason,
+        int? fromEpisode,
+        string? downloadFolder,
+        bool? autoReconcileAndLink)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE TrackedShows
+            SET AutoTrackFromSeason = COALESCE($FromSeason, AutoTrackFromSeason),
+                AutoTrackFromEpisode = COALESCE($FromEpisode, AutoTrackFromEpisode),
+                AutoTrackDownloadFolder = COALESCE($DownloadFolder, AutoTrackDownloadFolder),
+                AutoTrackAutoReconcileAndLink = COALESCE($AutoReconcileAndLink, AutoTrackAutoReconcileAndLink),
+                UpdatedUtc = $UpdatedUtc
+            WHERE Id = $ShowId;
+            """;
+        command.Parameters.AddWithValue("$ShowId", showId);
+        command.Parameters.AddWithValue("$FromSeason", fromSeason.HasValue ? fromSeason.Value : DBNull.Value);
+        command.Parameters.AddWithValue("$FromEpisode", fromEpisode.HasValue ? fromEpisode.Value : DBNull.Value);
+        command.Parameters.AddWithValue("$DownloadFolder", string.IsNullOrWhiteSpace(downloadFolder) ? DBNull.Value : downloadFolder.Trim());
+        command.Parameters.AddWithValue("$AutoReconcileAndLink", autoReconcileAndLink.HasValue ? (autoReconcileAndLink.Value ? 1 : 0) : DBNull.Value);
+        command.Parameters.AddWithValue("$UpdatedUtc", DateTime.UtcNow.ToString("O"));
+        command.ExecuteNonQuery();
+    }
+
+    public void UpdateTrackedShowAutoTrackDownloadFolder(long showId, string? downloadFolder)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE TrackedShows
+            SET AutoTrackDownloadFolder = $DownloadFolder,
+                UpdatedUtc = $UpdatedUtc
+            WHERE Id = $ShowId;
+            """;
+        command.Parameters.AddWithValue("$ShowId", showId);
+        command.Parameters.AddWithValue("$DownloadFolder", string.IsNullOrWhiteSpace(downloadFolder) ? DBNull.Value : downloadFolder.Trim());
+        command.Parameters.AddWithValue("$UpdatedUtc", DateTime.UtcNow.ToString("O"));
+        command.ExecuteNonQuery();
+    }
+
+    public void UpdateTrackedShowAutoTrackReconcileAndLink(long showId, bool autoReconcileAndLink)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE TrackedShows
+            SET AutoTrackAutoReconcileAndLink = $AutoReconcileAndLink,
+                UpdatedUtc = $UpdatedUtc
+            WHERE Id = $ShowId;
+            """;
+        command.Parameters.AddWithValue("$ShowId", showId);
+        command.Parameters.AddWithValue("$AutoReconcileAndLink", autoReconcileAndLink ? 1 : 0);
+        command.Parameters.AddWithValue("$UpdatedUtc", DateTime.UtcNow.ToString("O"));
+        command.ExecuteNonQuery();
     }
 
     public TrackedShow? GetTrackedShow(long id)
@@ -1799,6 +1910,10 @@ public sealed class DatabaseService : IDatabaseService
         EnsureColumn(connection, "TrackedShows", "PreferredAudioCodec", "TEXT NOT NULL DEFAULT ''");
         EnsureColumn(connection, "TrackedShows", "MinimumSeeders", "INTEGER NOT NULL DEFAULT 0");
         EnsureColumn(connection, "TrackedShows", "SeriesStatus", "INTEGER NOT NULL DEFAULT 0");
+        EnsureColumn(connection, "TrackedShows", "AutoTrackFromSeason", "INTEGER NULL");
+        EnsureColumn(connection, "TrackedShows", "AutoTrackFromEpisode", "INTEGER NULL");
+        EnsureColumn(connection, "TrackedShows", "AutoTrackDownloadFolder", "TEXT NULL");
+        EnsureColumn(connection, "TrackedShows", "AutoTrackAutoReconcileAndLink", "INTEGER NOT NULL DEFAULT 1");
 
         using var seasons = connection.CreateCommand();
         seasons.CommandText = """
@@ -2045,7 +2160,7 @@ public sealed class DatabaseService : IDatabaseService
 
         using var command = connection.CreateCommand();
         command.CommandText = $"""
-            SELECT s.Id, s.TmdbId, s.Title, s.FirstAirYear, s.Overview, s.PosterPath, s.RecipeId, s.PackRecipeId, s.PreferredQuality, s.PreferredAudioCodec, s.MinimumSeeders, s.SeriesStatus, s.CreatedUtc, s.UpdatedUtc,
+            SELECT s.Id, s.TmdbId, s.Title, s.FirstAirYear, s.Overview, s.PosterPath, s.RecipeId, s.PackRecipeId, s.PreferredQuality, s.PreferredAudioCodec, s.MinimumSeeders, s.SeriesStatus, s.AutoTrackFromSeason, s.AutoTrackFromEpisode, s.AutoTrackDownloadFolder, s.AutoTrackAutoReconcileAndLink, s.CreatedUtc, s.UpdatedUtc,
                    COUNT(e.Id), SUM(CASE WHEN e.Availability = 1 THEN 1 ELSE 0 END)
             FROM TrackedShows s
             LEFT JOIN TrackedEpisodes e ON e.ShowId = s.Id
@@ -2075,10 +2190,14 @@ public sealed class DatabaseService : IDatabaseService
             PreferredAudioCodec = reader.IsDBNull(9) ? string.Empty : reader.GetString(9),
             MinimumSeeders = reader.IsDBNull(10) ? 0 : reader.GetInt32(10),
             SeriesStatus = reader.IsDBNull(11) ? ShowSeriesStatus.Unknown : (ShowSeriesStatus)reader.GetInt32(11),
-            CreatedUtc = DateTime.Parse(reader.GetString(12), null, System.Globalization.DateTimeStyles.RoundtripKind),
-            UpdatedUtc = DateTime.Parse(reader.GetString(13), null, System.Globalization.DateTimeStyles.RoundtripKind),
-            TotalEpisodes = reader.IsDBNull(14) ? 0 : Convert.ToInt32(reader.GetValue(14)),
-            AvailableEpisodes = reader.IsDBNull(15) ? 0 : Convert.ToInt32(reader.GetValue(15))
+            AutoTrackFromSeason = reader.IsDBNull(12) ? null : reader.GetInt32(12),
+            AutoTrackFromEpisode = reader.IsDBNull(13) ? null : reader.GetInt32(13),
+            AutoTrackDownloadFolder = reader.IsDBNull(14) ? null : reader.GetString(14),
+            AutoTrackAutoReconcileAndLink = !reader.IsDBNull(15) && reader.GetInt32(15) != 0,
+            CreatedUtc = DateTime.Parse(reader.GetString(16), null, System.Globalization.DateTimeStyles.RoundtripKind),
+            UpdatedUtc = DateTime.Parse(reader.GetString(17), null, System.Globalization.DateTimeStyles.RoundtripKind),
+            TotalEpisodes = reader.IsDBNull(18) ? 0 : Convert.ToInt32(reader.GetValue(18)),
+            AvailableEpisodes = reader.IsDBNull(19) ? 0 : Convert.ToInt32(reader.GetValue(19))
         };
     }
 

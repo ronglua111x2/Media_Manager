@@ -346,6 +346,11 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
         TorrentReconciliationResult result,
         CancellationToken cancellationToken)
     {
+        if (show.IsAutoTracked && !show.AutoTrackAutoReconcileAndLink)
+        {
+            return;
+        }
+
         if (!_settingsService.Current.AutoTorrent.AutoLinkCompletedDownloads || !torrent.IsComplete)
         {
             return;
