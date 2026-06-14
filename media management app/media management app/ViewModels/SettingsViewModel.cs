@@ -17,6 +17,7 @@ public partial class SettingsViewModel : ViewModelBase
     private readonly IDatabaseService _databaseService;
     private readonly ILibraryPathResolver _libraryPathResolver;
     private readonly IQbittorrentClient _qbittorrentClient;
+    private readonly IWarpCliService _warpCliService;
     private readonly IWindowsStartupService _windowsStartupService;
     private readonly ITrayIconService _trayIconService;
     private readonly IWindowsNotificationService _windowsNotificationService;
@@ -70,6 +71,24 @@ public partial class SettingsViewModel : ViewModelBase
     private bool closeToTray;
 
     [ObservableProperty]
+    private bool warpEnabled = true;
+
+    [ObservableProperty]
+    private string? warpExecutablePath;
+
+    [ObservableProperty]
+    private int warpConnectTimeoutSeconds = 30;
+
+    [ObservableProperty]
+    private bool warpCliAvailable;
+
+    [ObservableProperty]
+    private string warpCliResolvedPath = string.Empty;
+
+    [ObservableProperty]
+    private string warpCliAvailabilityLabel = "Not found";
+
+    [ObservableProperty]
     private string notificationTestTitle = "Media Manager";
 
     [ObservableProperty]
@@ -92,6 +111,7 @@ public partial class SettingsViewModel : ViewModelBase
         IDatabaseService databaseService,
         ILibraryPathResolver libraryPathResolver,
         IQbittorrentClient qbittorrentClient,
+        IWarpCliService warpCliService,
         IWindowsStartupService windowsStartupService,
         ITrayIconService trayIconService,
         IWindowsNotificationService windowsNotificationService,
@@ -102,6 +122,7 @@ public partial class SettingsViewModel : ViewModelBase
         _databaseService = databaseService;
         _libraryPathResolver = libraryPathResolver;
         _qbittorrentClient = qbittorrentClient;
+        _warpCliService = warpCliService;
         _windowsStartupService = windowsStartupService;
         _trayIconService = trayIconService;
         _windowsNotificationService = windowsNotificationService;
@@ -170,6 +191,7 @@ public partial class SettingsViewModel : ViewModelBase
             : DefaultLibraryFolderName.Trim();
         _settingsService.Current.TmdbReadAccessToken = string.IsNullOrWhiteSpace(TmdbReadAccessToken) ? null : TmdbReadAccessToken;
         ApplyAutoTorrentSettings();
+        ApplyWarpSettings();
         ApplyLogSettings();
         ApplyStartupSettings();
         _settingsService.Save();
@@ -291,6 +313,47 @@ public partial class SettingsViewModel : ViewModelBase
     }
 
     [RelayCommand]
+    private async Task TestWarpConnection()
+    {
+        ApplyWarpSettings();
+        RefreshWarpCliStatus();
+
+        if (!_warpCliService.IsAvailable)
+        {
+            StatusMessage = $"warp-cli.exe not found at {_warpCliService.ResolvedExecutablePath}.";
+            return;
+        }
+
+        try
+        {
+            StatusMessage = "Checking WARP status...";
+            if (await _warpCliService.IsConnectedAsync())
+            {
+                StatusMessage = "WARP is already connected.";
+                return;
+            }
+
+            StatusMessage = "Testing WARP connection...";
+            var connected = await _warpCliService.ConnectAsync(TimeSpan.FromSeconds(WarpConnectTimeoutSeconds));
+            if (!connected)
+            {
+                StatusMessage = $"WARP connect test failed or timed out after {WarpConnectTimeoutSeconds}s.";
+                _logger.Warning(StatusMessage, LogTarget.All);
+                return;
+            }
+
+            await _warpCliService.DisconnectAsync();
+            StatusMessage = "WARP connect test succeeded (disconnected after test). Save settings to persist changes.";
+            _logger.Info(StatusMessage, LogTarget.All);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = ex.Message;
+            _logger.Error($"WARP connection test failed: {ex.Message}", ex, LogTarget.All);
+        }
+    }
+
+    [RelayCommand]
     private void BrowseAutoTorrentDownloadFolder()
     {
         var selected = BrowseFolder(AutoTorrentDownloadFolder, "Select Auto Torrent download folder");
@@ -372,6 +435,17 @@ public partial class SettingsViewModel : ViewModelBase
         RefreshLibraryRootPreview();
     }
 
+    partial void OnWarpExecutablePathChanged(string? value)
+    {
+        if (_isLoadingSettings)
+        {
+            return;
+        }
+
+        ApplyWarpSettings();
+        RefreshWarpCliStatus();
+    }
+
     private void LoadFromSettings()
     {
         _logger.Info(
@@ -395,6 +469,9 @@ public partial class SettingsViewModel : ViewModelBase
             RunAtStartup = _settingsService.Current.Startup.RunAtStartup;
             StartMinimized = _settingsService.Current.Startup.StartMinimized;
             CloseToTray = _settingsService.Current.Startup.CloseToTray;
+            WarpEnabled = _settingsService.Current.Warp.Enabled;
+            WarpExecutablePath = _settingsService.Current.Warp.ExecutablePath;
+            WarpConnectTimeoutSeconds = _settingsService.Current.Warp.ConnectTimeoutSeconds;
             AutoTorrentDownloadFolders.Clear();
             foreach (var folder in _settingsService.Current.AutoTorrent.DownloadFolders)
             {
@@ -418,7 +495,26 @@ public partial class SettingsViewModel : ViewModelBase
         }
 
         RefreshLibraryRootPreview();
+        RefreshWarpCliStatus();
         _logger.Info($"Settings UI loaded. VisibleSourceFolders={SourceFolders.Count}, SelectedSourceFolder='{SelectedSourceFolder ?? "<none>"}'", LogTarget.All);
+    }
+
+    private void ApplyWarpSettings()
+    {
+        _settingsService.Current.Warp ??= new WarpSettings();
+        _settingsService.Current.Warp.Enabled = WarpEnabled;
+        _settingsService.Current.Warp.ExecutablePath = string.IsNullOrWhiteSpace(WarpExecutablePath)
+            ? null
+            : WarpExecutablePath.Trim();
+        _settingsService.Current.Warp.ConnectTimeoutSeconds = Math.Clamp(WarpConnectTimeoutSeconds, 5, 120);
+        WarpConnectTimeoutSeconds = _settingsService.Current.Warp.ConnectTimeoutSeconds;
+    }
+
+    private void RefreshWarpCliStatus()
+    {
+        WarpCliResolvedPath = _warpCliService.ResolvedExecutablePath;
+        WarpCliAvailable = _warpCliService.IsAvailable;
+        WarpCliAvailabilityLabel = WarpCliAvailable ? "Found" : "Not found";
     }
 
     private void ApplyAutoTorrentSettings()

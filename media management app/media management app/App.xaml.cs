@@ -111,6 +111,7 @@ public partial class App : System.Windows.Application
         services.AddSingleton<IHardlinkService, HardlinkService>();
         services.AddSingleton<ISourceReconciliationService, SourceReconciliationService>();
         services.AddSingleton<IQbittorrentClient, QbittorrentClient>();
+        services.AddSingleton<IWarpCliService, WarpCliService>();
         services.AddSingleton<IRecipeService, RecipeService>();
         services.AddSingleton<ISearchPlanBuilder, SearchPlanBuilder>();
         services.AddSingleton<ICandidateEvaluationService, CandidateEvaluationService>();

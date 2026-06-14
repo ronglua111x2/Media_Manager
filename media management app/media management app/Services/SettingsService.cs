@@ -96,6 +96,8 @@ public sealed class SettingsService : ISettingsService
         }
 
         Current.AutoTorrent ??= new AutoTorrentSettings();
+        Current.Warp ??= new WarpSettings();
+        Current.Warp.ConnectTimeoutSeconds = Math.Clamp(Current.Warp.ConnectTimeoutSeconds, 5, 120);
         Current.Logs ??= new LogSettings();
         Current.Startup ??= new AppStartupSettings();
         Current.Logs.MaxLinesPerFile = Math.Clamp(

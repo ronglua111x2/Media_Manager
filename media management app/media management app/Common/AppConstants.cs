@@ -10,6 +10,9 @@ public static class AppConstants
     public const string MoviesFolderName = "Movies";
     public const string LogFolderName = "logs";
 
+    public const string DefaultWarpCliPath =
+        @"C:\Program Files\Cloudflare\Cloudflare WARP\warp-cli.exe";
+
     public const string WindowsStartupRegistryValueName = "MediaManager";
 
     public const string WindowsNotificationAppUserModelId = "MediaManager.Desktop";

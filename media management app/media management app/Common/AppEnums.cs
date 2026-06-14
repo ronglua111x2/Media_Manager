@@ -32,7 +32,8 @@ public enum SettingsSection
     Library = 1,
     Integrations = 2,
     TorrentStorage = 3,
-    Notifications = 4
+    Notifications = 4,
+    Warp = 5
 }
 
 #endregion

@@ -8,6 +8,8 @@ public sealed class AppSettings
 
     public AutoTorrentSettings AutoTorrent { get; set; } = new();
 
+    public WarpSettings Warp { get; set; } = new();
+
     public LogSettings Logs { get; set; } = new();
 
     public AppStartupSettings Startup { get; set; } = new();

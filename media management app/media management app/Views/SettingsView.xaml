@@ -260,6 +260,14 @@
                 </DataTrigger>
             </Style.Triggers>
         </Style>
+
+        <Style x:Key="WarpSettingsSectionPanelStyle" TargetType="ScrollViewer" BasedOn="{StaticResource SettingsSectionPanelBaseStyle}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding SelectedSettingsSection}" Value="{x:Static common:SettingsSection.Warp}">
+                    <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
     </UserControl.Resources>
     <!-- #endregion -->
 
@@ -317,6 +325,9 @@
                              Style="{StaticResource SettingsSectionSelectorItemStyle}" />
                 <ListBoxItem Content="Notifications"
                              Tag="{x:Static common:SettingsSection.Notifications}"
+                             Style="{StaticResource SettingsSectionSelectorItemStyle}" />
+                <ListBoxItem Content="WARP"
+                             Tag="{x:Static common:SettingsSection.Warp}"
                              Style="{StaticResource SettingsSectionSelectorItemStyle}" />
             </ListBox>
             <!-- #endregion -->
@@ -895,6 +906,90 @@
                                     <StackPanel>
                                         <TextBlock Text="Troubleshooting" Style="{StaticResource SettingsLabelStyle}" />
                                         <TextBlock Text="If nothing appears, check Windows notification permissions for Media Manager and whether Focus Assist is blocking alerts."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                </ScrollViewer>
+            <!-- #endregion -->
+
+            <!-- #region WARP panel -->
+                <ScrollViewer Style="{StaticResource WarpSettingsSectionPanelStyle}">
+                    <Grid Margin="0,16,8,0"
+                          MaxWidth="1220"
+                          HorizontalAlignment="Left">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="24" />
+                            <ColumnDefinition Width="380" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0">
+                            <materialDesign:Card Style="{StaticResource SettingsCardStyle}">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <Border Width="8"
+                                                Height="24"
+                                                CornerRadius="4"
+                                                Background="{StaticResource AppBrushWarning}"
+                                                Margin="0,0,8,0" />
+                                        <TextBlock Text="Cloudflare WARP" Style="{StaticResource SettingsSectionTitleStyle}" Margin="0" />
+                                    </StackPanel>
+                                    <CheckBox IsChecked="{Binding WarpEnabled, Mode=TwoWay}"
+                                              Margin="0,0,0,8"
+                                              Content="Enable WARP CLI integration" />
+                                    <TextBlock Text="Executable path (optional override)" Style="{StaticResource SettingsLabelStyle}" />
+                                    <TextBox Text="{Binding WarpExecutablePath, UpdateSourceTrigger=PropertyChanged}"
+                                             Style="{StaticResource SettingsTextBoxStyle}" />
+                                    <TextBlock Style="{StaticResource SettingsHintStyle}" Margin="0,0,0,8">
+                                        <Run Text="Resolved path: " />
+                                        <Run Text="{Binding WarpCliResolvedPath, Mode=OneWay}" />
+                                        <Run Text=" (" />
+                                        <Run Text="{Binding WarpCliAvailabilityLabel, Mode=OneWay}" />
+                                        <Run Text=")" />
+                                    </TextBlock>
+                                    <TextBlock Text="Connect timeout (seconds)" Style="{StaticResource SettingsLabelStyle}" />
+                                    <Border Style="{StaticResource SettingsNumericChromeStyle}">
+                                        <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
+                                                                      Value="{Binding WarpConnectTimeoutSeconds, UpdateSourceTrigger=PropertyChanged}"
+                                                                      Minimum="5"
+                                                                      Maximum="120" />
+                                    </Border>
+                                    <Button Command="{Binding TestWarpConnectionCommand}"
+                                            Style="{StaticResource SettingsIconTextButtonStyle}"
+                                            HorizontalAlignment="Left">
+                                        <StackPanel Orientation="Horizontal">
+                                            <iconPacks:PackIconLucide Kind="Wifi" Width="16" Height="16" Margin="0,0,7,0" />
+                                            <TextBlock Text="Test Connection" />
+                                        </StackPanel>
+                                    </Button>
+                                </StackPanel>
+                            </materialDesign:Card>
+                        </StackPanel>
+
+                        <Border Grid.Column="2" Style="{StaticResource SettingsGuidePanelStyle}">
+                            <StackPanel>
+                                <TextBlock Text="Guide" Style="{StaticResource SettingsSectionTitleStyle}" />
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Cloudflare WARP" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Requires the Cloudflare WARP desktop client installed on Windows. The app uses warp-cli.exe to connect before torrent searches and disconnect afterward."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Test Connection" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Checks status first. If not connected, connects briefly then disconnects to verify the CLI works. Save settings to persist changes."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Executable path" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Leave blank to use the default install path. Override only if warp-cli.exe is in a non-standard location."
                                                    Style="{StaticResource SettingsHintStyle}" />
                                     </StackPanel>
                                 </Border>
