@@ -31,7 +31,8 @@ public enum SettingsSection
     System = 0,
     Library = 1,
     Integrations = 2,
-    TorrentStorage = 3
+    TorrentStorage = 3,
+    Notifications = 4
 }
 
 #endregion

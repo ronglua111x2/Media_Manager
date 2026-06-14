@@ -252,6 +252,14 @@
                 </DataTrigger>
             </Style.Triggers>
         </Style>
+
+        <Style x:Key="NotificationsSettingsSectionPanelStyle" TargetType="ScrollViewer" BasedOn="{StaticResource SettingsSectionPanelBaseStyle}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding SelectedSettingsSection}" Value="{x:Static common:SettingsSection.Notifications}">
+                    <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
     </UserControl.Resources>
     <!-- #endregion -->
 
@@ -306,6 +314,9 @@
                              Style="{StaticResource SettingsSectionSelectorItemStyle}" />
                 <ListBoxItem Content="Torrent Storage"
                              Tag="{x:Static common:SettingsSection.TorrentStorage}"
+                             Style="{StaticResource SettingsSectionSelectorItemStyle}" />
+                <ListBoxItem Content="Notifications"
+                             Tag="{x:Static common:SettingsSection.Notifications}"
                              Style="{StaticResource SettingsSectionSelectorItemStyle}" />
             </ListBox>
             <!-- #endregion -->
@@ -778,6 +789,112 @@
                                     <StackPanel>
                                         <TextBlock Text="Candidate maintenance" Style="{StaticResource SettingsLabelStyle}" />
                                         <TextBlock Text="These buttons clear saved candidate selections only. They do not delete media files or torrents."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                </ScrollViewer>
+            <!-- #endregion -->
+
+            <!-- #region Notifications panel -->
+                <ScrollViewer Style="{StaticResource NotificationsSettingsSectionPanelStyle}">
+                    <Grid Margin="0,16,8,0"
+                          MaxWidth="1220"
+                          HorizontalAlignment="Left">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="24" />
+                            <ColumnDefinition Width="380" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0">
+                            <materialDesign:Card Style="{StaticResource SettingsCardStyle}">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <Border Width="8"
+                                                Height="24"
+                                                CornerRadius="4"
+                                                Background="{StaticResource AppBrushAccent}"
+                                                Margin="0,0,8,0" />
+                                        <TextBlock Text="Test Notification" Style="{StaticResource SettingsSectionTitleStyle}" Margin="0" />
+                                    </StackPanel>
+                                    <TextBlock Text="Title" Style="{StaticResource SettingsLabelStyle}" />
+                                    <TextBox Text="{Binding NotificationTestTitle, UpdateSourceTrigger=PropertyChanged}"
+                                             Style="{StaticResource SettingsTextBoxStyle}" />
+                                    <TextBlock Text="Message" Style="{StaticResource SettingsLabelStyle}" />
+                                    <TextBox Text="{Binding NotificationTestMessage, UpdateSourceTrigger=PropertyChanged}"
+                                             Style="{StaticResource SettingsTextBoxStyle}"
+                                             AcceptsReturn="True"
+                                             TextWrapping="Wrap"
+                                             MinHeight="72"
+                                             VerticalScrollBarVisibility="Auto" />
+                                    <TextBlock Text="Cover image (optional)" Style="{StaticResource SettingsLabelStyle}" />
+                                    <DockPanel LastChildFill="True">
+                                        <Button DockPanel.Dock="Right"
+                                                Command="{Binding BrowseNotificationTestImageCommand}"
+                                                Style="{StaticResource SettingsIconTextButtonStyle}"
+                                                Margin="8,0,0,10">
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconLucide Kind="Image" Width="16" Height="16" Margin="0,0,7,0" />
+                                                <TextBlock Text="Browse" />
+                                            </StackPanel>
+                                        </Button>
+                                        <TextBox Text="{Binding NotificationTestImagePathOrUrl, UpdateSourceTrigger=PropertyChanged}"
+                                                 Style="{StaticResource SettingsTextBoxStyle}" />
+                                    </DockPanel>
+                                    <TextBlock Text="Local file path or HTTPS URL (e.g. TMDB poster)."
+                                               Style="{StaticResource SettingsHintStyle}"
+                                               Margin="0,0,0,10" />
+                                    <Button Command="{Binding SendTestNotificationCommand}"
+                                            Style="{StaticResource SettingsPrimaryIconTextButtonStyle}"
+                                            Margin="0,4,0,0"
+                                            HorizontalAlignment="Left">
+                                        <StackPanel Orientation="Horizontal">
+                                            <iconPacks:PackIconLucide Kind="Bell" Width="16" Height="16" Margin="0,0,7,0" />
+                                            <TextBlock Text="Send test notification" />
+                                        </StackPanel>
+                                    </Button>
+                                </StackPanel>
+                            </materialDesign:Card>
+                        </StackPanel>
+
+                        <Border Grid.Column="2" Style="{StaticResource SettingsGuidePanelStyle}">
+                            <StackPanel>
+                                <TextBlock Text="Guide" Style="{StaticResource SettingsSectionTitleStyle}" />
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Action Center" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Toasts appear in the Windows notification center. Edit the title and message, then send a test."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Click to open" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Clicking the notification should bring Media Manager to the foreground, including when the app is hidden in the tray."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Stacking" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Each test send creates a separate notification. Re-using the same tag replaces an existing toast instead of stacking."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Cover art" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Hero image shows as cover art in the toast. TMDB poster URLs work, for example: https://image.tmdb.org/t/p/w342/&lt;poster_path&gt;"
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Troubleshooting" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="If nothing appears, check Windows notification permissions for Media Manager and whether Focus Assist is blocking alerts."
                                                    Style="{StaticResource SettingsHintStyle}" />
                                     </StackPanel>
                                 </Border>

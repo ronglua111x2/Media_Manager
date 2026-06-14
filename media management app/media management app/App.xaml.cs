@@ -3,6 +3,7 @@ using System.Net.Http;
 using System.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Toolkit.Uwp.Notifications;
 using media_management_app.Services;
 using media_management_app.ViewModels;
 using Wpf.Ui.Appearance;
@@ -47,16 +48,25 @@ public partial class App : System.Windows.Application
         var database = _serviceProvider.GetRequiredService<IDatabaseService>();
         database.Initialize(settings.Current.StateFolder);
 
+        _serviceProvider.GetRequiredService<IWindowsNotificationService>().Initialize();
+
         var mainWindow = _serviceProvider.GetRequiredService<MainWindow>();
         var trayIconService = _serviceProvider.GetRequiredService<ITrayIconService>();
         var startup = settings.Current.Startup;
+        var launchedFromToast = ToastNotificationManagerCompat.WasCurrentProcessToastActivated();
 
         if (startup.StartMinimized || startup.CloseToTray)
         {
             trayIconService.Initialize(mainWindow);
         }
 
-        if (startup.StartMinimized)
+        if (launchedFromToast)
+        {
+            mainWindow.ShowInTaskbar = false;
+            mainWindow.Visibility = Visibility.Hidden;
+            mainWindow.Show();
+        }
+        else if (startup.StartMinimized)
         {
             mainWindow.ShowInTaskbar = false;
             mainWindow.Visibility = Visibility.Hidden;
@@ -90,6 +100,7 @@ public partial class App : System.Windows.Application
         services.AddSingleton<ISettingsService, SettingsService>();
         services.AddSingleton<IWindowsStartupService, WindowsStartupService>();
         services.AddSingleton<ITrayIconService, TrayIconService>();
+        services.AddSingleton<IWindowsNotificationService, WindowsNotificationService>();
         services.AddSingleton<IAppLogger, AppLogger>();
         services.AddSingleton<ILogCleanupService, LogCleanupService>();
         services.AddSingleton<IOperationProgressService, OperationProgressService>();

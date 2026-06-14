@@ -5,6 +5,7 @@ using System.Net.Http.Headers;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using media_management_app.Common;
+using media_management_app.Models;
 using media_management_app.Services;
 using WinForms = System.Windows.Forms;
 
@@ -18,6 +19,7 @@ public partial class SettingsViewModel : ViewModelBase
     private readonly IQbittorrentClient _qbittorrentClient;
     private readonly IWindowsStartupService _windowsStartupService;
     private readonly ITrayIconService _trayIconService;
+    private readonly IWindowsNotificationService _windowsNotificationService;
     private readonly HttpClient _httpClient;
     private readonly IAppLogger _logger;
     private bool _isLoadingSettings;
@@ -68,6 +70,15 @@ public partial class SettingsViewModel : ViewModelBase
     private bool closeToTray;
 
     [ObservableProperty]
+    private string notificationTestTitle = "Media Manager";
+
+    [ObservableProperty]
+    private string notificationTestMessage = "This is a test notification. Click to open the app.";
+
+    [ObservableProperty]
+    private string notificationTestImagePathOrUrl = string.Empty;
+
+    [ObservableProperty]
     private string? selectedSourceFolder;
 
     [ObservableProperty]
@@ -83,6 +94,7 @@ public partial class SettingsViewModel : ViewModelBase
         IQbittorrentClient qbittorrentClient,
         IWindowsStartupService windowsStartupService,
         ITrayIconService trayIconService,
+        IWindowsNotificationService windowsNotificationService,
         HttpClient httpClient,
         IAppLogger logger)
     {
@@ -92,6 +104,7 @@ public partial class SettingsViewModel : ViewModelBase
         _qbittorrentClient = qbittorrentClient;
         _windowsStartupService = windowsStartupService;
         _trayIconService = trayIconService;
+        _windowsNotificationService = windowsNotificationService;
         _httpClient = httpClient;
         _logger = logger;
         SourceFolders = [];
@@ -176,6 +189,47 @@ public partial class SettingsViewModel : ViewModelBase
         RefreshLibraryRootPreview();
         StatusMessage = $"Saved settings to {_settingsService.SettingsFilePath}";
         _logger.Info($"Saved settings to {_settingsService.SettingsFilePath}", LogTarget.All);
+    }
+
+    [RelayCommand]
+    private void SendTestNotification()
+    {
+        var title = string.IsNullOrWhiteSpace(NotificationTestTitle) ? "Media Manager" : NotificationTestTitle.Trim();
+        var message = string.IsNullOrWhiteSpace(NotificationTestMessage) ? "Test notification." : NotificationTestMessage.Trim();
+        var sent = _windowsNotificationService.TryShow(new WindowsNotificationRequest
+        {
+            Title = title,
+            Message = message,
+            Tag = null,
+            HeroImagePathOrUrl = string.IsNullOrWhiteSpace(NotificationTestImagePathOrUrl)
+                ? null
+                : NotificationTestImagePathOrUrl.Trim()
+        });
+        StatusMessage = sent
+            ? "Test notification sent. Check Windows Action Center."
+            : "Failed to send notification. Check Windows notification settings or Focus Assist.";
+    }
+
+    [RelayCommand]
+    private void BrowseNotificationTestImage()
+    {
+        using var dialog = new WinForms.OpenFileDialog
+        {
+            Title = "Select cover image",
+            Filter = "Image files (*.jpg;*.jpeg;*.png;*.webp;*.bmp)|*.jpg;*.jpeg;*.png;*.webp;*.bmp|All files (*.*)|*.*",
+            CheckFileExists = true
+        };
+
+        if (!string.IsNullOrWhiteSpace(NotificationTestImagePathOrUrl) && File.Exists(NotificationTestImagePathOrUrl))
+        {
+            dialog.InitialDirectory = Path.GetDirectoryName(NotificationTestImagePathOrUrl);
+            dialog.FileName = Path.GetFileName(NotificationTestImagePathOrUrl);
+        }
+
+        if (dialog.ShowDialog() == WinForms.DialogResult.OK)
+        {
+            NotificationTestImagePathOrUrl = dialog.FileName;
+        }
     }
 
     [RelayCommand]

@@ -12,6 +12,8 @@ public static class AppConstants
 
     public const string WindowsStartupRegistryValueName = "MediaManager";
 
+    public const string WindowsNotificationAppUserModelId = "MediaManager.Desktop";
+
     #endregion
 
     #region Logging
