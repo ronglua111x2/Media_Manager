@@ -27,6 +27,8 @@ public interface IDatabaseService
 
     IReadOnlyList<TrackedShow> GetTrackedShows();
 
+    IReadOnlyList<TrackedShow> GetTrackedShowsBySeriesStatus(ShowSeriesStatus seriesStatus);
+
     TrackedShow? GetTrackedShow(long id);
 
     TrackedShow? GetTrackedShowByTmdbId(int tmdbId);
@@ -77,8 +79,6 @@ public interface IDatabaseService
 
     IReadOnlyList<TrackedEpisode> GetTrackedEpisodes(long showId);
 
-    void UpdateTrackedEpisodeWanted(long episodeId, bool isWanted);
-
     void UpdateTrackedEpisodeAvailability(long episodeId, EpisodeAvailability availability);
 
     void UpdateTrackedEpisodeTorrent(
@@ -98,6 +98,8 @@ public interface IDatabaseService
 
     void UpdateTrackedShowPackRecipe(long showId, string? packRecipeId);
 
+    void UpdateTrackedShowSeriesStatus(long showId, ShowSeriesStatus seriesStatus);
+
     IReadOnlyList<TrackedMovie> GetTrackedMovies();
 
     TrackedMovie? GetTrackedMovie(long id);
@@ -105,8 +107,6 @@ public interface IDatabaseService
     TrackedMovie? GetTrackedMovieByTmdbId(int tmdbId);
 
     long UpsertTrackedMovie(TrackedMovie movie);
-
-    void UpdateTrackedMovieWanted(long movieId, bool isWanted);
 
     void UpdateTrackedMovieAvailability(long movieId, EpisodeAvailability availability);
 

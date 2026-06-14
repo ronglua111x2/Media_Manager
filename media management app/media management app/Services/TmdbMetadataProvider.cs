@@ -300,7 +300,8 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
             Overview = GetString(root, "overview"),
             PosterPath = GetString(root, "poster_path"),
             SeasonCount = GetInt(root, "number_of_seasons") ?? 0,
-            EpisodeCount = GetInt(root, "number_of_episodes") ?? 0
+            EpisodeCount = GetInt(root, "number_of_episodes") ?? 0,
+            SeriesStatus = MapTmdbSeriesStatus(GetString(root, "status"))
         };
 
         if (!root.TryGetProperty("seasons", out var seasonsElement) || seasonsElement.ValueKind != JsonValueKind.Array)
@@ -974,6 +975,16 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
             NumberOfEpisodes = candidate.NumberOfEpisodes,
             NumberOfSeasons = candidate.NumberOfSeasons,
             Genres = candidate.Genres.ToList()
+        };
+    }
+
+    private static ShowSeriesStatus MapTmdbSeriesStatus(string? status)
+    {
+        return status switch
+        {
+            "Returning Series" or "In Production" => ShowSeriesStatus.Ongoing,
+            "Ended" or "Canceled" => ShowSeriesStatus.Finished,
+            _ => ShowSeriesStatus.Unknown
         };
     }
 

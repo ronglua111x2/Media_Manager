@@ -16,5 +16,7 @@ public sealed class TmdbShowDetails
 
     public int EpisodeCount { get; set; }
 
+    public Common.ShowSeriesStatus SeriesStatus { get; set; } = Common.ShowSeriesStatus.Unknown;
+
     public List<TmdbSeasonDetails> Seasons { get; set; } = [];
 }

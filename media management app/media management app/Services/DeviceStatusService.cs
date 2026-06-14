@@ -8,23 +8,19 @@ public sealed class DeviceStatusService : IDeviceStatusService
 {
     private readonly ISettingsService _settingsService;
     private readonly IQbittorrentClient _qbittorrentClient;
-    private readonly IFetchJobService _fetchJobService;
     private readonly IOperationProgressService _progressService;
     private readonly IAppLogger _logger;
 
     public DeviceStatusService(
         ISettingsService settingsService,
         IQbittorrentClient qbittorrentClient,
-        IFetchJobService fetchJobService,
         IOperationProgressService progressService,
         IAppLogger logger)
     {
         _settingsService = settingsService;
         _qbittorrentClient = qbittorrentClient;
-        _fetchJobService = fetchJobService;
         _progressService = progressService;
         _logger = logger;
-        _fetchJobService.JobsChanged += (_, _) => RefreshJobOnly();
         _progressService.ProgressChanged += (_, _) => RefreshJobOnly();
     }
 
@@ -149,13 +145,8 @@ public sealed class DeviceStatusService : IDeviceStatusService
 
     private string GetJobStatus()
     {
-        if (_progressService.IsActive)
-        {
-            return $"Jobs: {_progressService.Message}";
-        }
-
-        var activeJobs = _fetchJobService.GetJobs()
-            .Count(job => job.Status is Common.FetchJobStatus.Pending or Common.FetchJobStatus.Running);
-        return activeJobs == 0 ? "Jobs: idle" : $"Jobs: {activeJobs} active";
+        return _progressService.IsActive
+            ? $"Jobs: {_progressService.Message}"
+            : "Jobs: idle";
     }
 }

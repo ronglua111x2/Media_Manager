@@ -38,6 +38,7 @@ public sealed class MediaCardCatalogService : IMediaCardCatalogService
             TotalCount = show.TotalEpisodes,
             Overview = show.Overview,
             PosterPath = show.PosterPath,
+            SeriesStatusLabel = show.SeriesStatusLabel,
             OrderCount = _torrentCartService.GetOrderCount(MediaKind.TvEpisode, show.Id)
         });
         var movies = _trackedMovieService.GetMovies().Select(movie => new LibraryMediaCardViewModel

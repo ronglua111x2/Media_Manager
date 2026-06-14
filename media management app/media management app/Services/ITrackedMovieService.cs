@@ -18,8 +18,6 @@ public interface ITrackedMovieService
 
     void RefreshAvailability(long movieId);
 
-    void UpdateWanted(long movieId, bool isWanted);
-
     void UpdateTorrentState(long movieId, AddedTorrentResult torrent);
 
     void MarkTorrentRemoved(long movieId, string torrentHash);

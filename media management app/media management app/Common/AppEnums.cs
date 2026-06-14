@@ -92,6 +92,13 @@ public enum SeasonManagementMode
     Pack = 1
 }
 
+public enum ShowSeriesStatus
+{
+    Unknown = 0,
+    Ongoing = 1,
+    Finished = 2
+}
+
 public enum AutoTorrentLinkKind
 {
     Episode = 1,

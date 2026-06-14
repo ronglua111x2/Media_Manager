@@ -175,13 +175,12 @@ public sealed class AutomationFlowService : IAutomationFlowService
             ?? throw new InvalidOperationException("Tracked show was not found.");
         var episodes = _databaseService.GetTrackedEpisodes(show.Id)
             .Where(episode => episode.Availability == EpisodeAvailability.Missing)
-            .OrderByDescending(episode => episode.IsWanted)
-            .ThenBy(episode => episode.SeasonNumber)
+            .OrderBy(episode => episode.SeasonNumber)
             .ThenBy(episode => episode.EpisodeNumber)
             .ToList();
         var episode = request.SeasonNumber is not null && request.EpisodeNumber is not null
             ? episodes.FirstOrDefault(item => item.SeasonNumber == request.SeasonNumber && item.EpisodeNumber == request.EpisodeNumber)
-            : episodes.FirstOrDefault(item => item.IsWanted) ?? episodes.FirstOrDefault();
+            : episodes.FirstOrDefault();
         return episode is null
             ? throw new InvalidOperationException("No missing episode is available for recipe run.")
             : (show, episode);

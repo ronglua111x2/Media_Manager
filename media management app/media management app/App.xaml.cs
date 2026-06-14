@@ -95,6 +95,7 @@ public partial class App : System.Windows.Application
         services.AddSingleton<ITmdbMovieCatalogService>(provider => provider.GetRequiredService<TmdbMetadataProvider>());
         services.AddSingleton<ITrackedShowService, TrackedShowService>();
         services.AddSingleton<ITrackedMovieService, TrackedMovieService>();
+        services.AddSingleton<IMediaMetadataSyncService, MediaMetadataSyncService>();
         services.AddSingleton<IPosterImageService, PosterImageService>();
         services.AddSingleton<ITorrentCartService, TorrentCartService>();
         services.AddSingleton<IMediaCardCatalogService, MediaCardCatalogService>();

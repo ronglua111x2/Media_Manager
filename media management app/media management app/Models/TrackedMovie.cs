@@ -26,8 +26,6 @@ public sealed class TrackedMovie
 
     public EpisodeAvailability Availability { get; set; } = EpisodeAvailability.Missing;
 
-    public bool IsWanted { get; set; } = true;
-
     public string? TorrentHash { get; set; }
 
     public string? TorrentName { get; set; }

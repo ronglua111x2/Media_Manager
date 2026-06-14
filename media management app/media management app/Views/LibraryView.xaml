@@ -8,6 +8,40 @@
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
 
+        <Style x:Key="SeriesStatusChipBorderStyle" TargetType="Border">
+            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="Padding" Value="8,3" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Background" Value="{StaticResource AppBrushNewSoft}" />
+            <Setter Property="BorderBrush" Value="{StaticResource AppBrushNewAccent}" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding SelectedShowSeriesStatus}" Value="{x:Static common:ShowSeriesStatus.Ongoing}">
+                    <Setter Property="Background" Value="{StaticResource AppBrushShowSoft}" />
+                    <Setter Property="BorderBrush" Value="{StaticResource AppBrushShowAccent}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding SelectedShowSeriesStatus}" Value="{x:Static common:ShowSeriesStatus.Finished}">
+                    <Setter Property="Background" Value="{StaticResource AppBrushAccentSoft}" />
+                    <Setter Property="BorderBrush" Value="{StaticResource AppBrushAccent}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="SeriesStatusChipTextStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{StaticResource AppBrushNewAccent}" />
+            <Setter Property="TextWrapping" Value="NoWrap" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding SelectedShowSeriesStatus}" Value="{x:Static common:ShowSeriesStatus.Ongoing}">
+                    <Setter Property="Foreground" Value="{StaticResource AppBrushShowAccent}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding SelectedShowSeriesStatus}" Value="{x:Static common:ShowSeriesStatus.Finished}">
+                    <Setter Property="Foreground" Value="{StaticResource AppBrushAccent}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
         <Style x:Key="CompactPrimaryIconButtonStyle" TargetType="Button" BasedOn="{StaticResource AppPrimaryButtonStyle}">
             <Setter Property="Width" Value="44" />
             <Setter Property="MinWidth" Value="44" />
@@ -451,6 +485,12 @@
                                             <iconPacks:PackIconLucide Kind="RefreshCw" Width="15" Height="15" />
                                         </MenuItem.Icon>
                                     </MenuItem>
+                                    <MenuItem Header="Refresh metadata from TMDB"
+                                              Command="{Binding RefreshAllFromTmdbCommand}">
+                                        <MenuItem.Icon>
+                                            <iconPacks:PackIconLucide Kind="CloudDownload" Width="15" Height="15" />
+                                        </MenuItem.Icon>
+                                    </MenuItem>
                                     <Separator />
                                     <MenuItem Header="Delete library"
                                               Command="{Binding DeleteEntireLibraryCommand}"
@@ -773,16 +813,56 @@
                                             </StackPanel>
                                         </Button>
                                     </Grid>
-                                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                                        <Border Style="{StaticResource MediaTypeChipStyle}">
-                                            <TextBlock Text="{Binding SelectedMediaCard.TypeLabel}"
-                                                       Style="{StaticResource MediaTypeChipTextStyle}" />
-                                        </Border>
-                                        <TextBlock Text="{Binding SelectedMediaCard.YearLabel, StringFormat=Year {0}}"
-                                                   Style="{StaticResource MutedTextStyle}"
-                                                   Margin="10,0,0,0"
-                                                   VerticalAlignment="Center" />
-                                    </StackPanel>
+                                    <Grid Margin="0,8,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <Border Style="{StaticResource MediaTypeChipStyle}"
+                                                    DataContext="{Binding SelectedMediaCard}"
+                                                    Visibility="{Binding IsSelectedMovie, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <TextBlock Text="{Binding TypeLabel}"
+                                                           Style="{StaticResource MediaTypeChipTextStyle}" />
+                                            </Border>
+                                            <Border Style="{StaticResource SeriesStatusChipBorderStyle}"
+                                                    ToolTip="Click to cycle status: Unknown → Ongoing → Finished"
+                                                    Visibility="{Binding IsSelectedShow, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <Border.InputBindings>
+                                                    <MouseBinding MouseAction="LeftClick"
+                                                                  Command="{Binding CycleSelectedShowSeriesStatusCommand}" />
+                                                </Border.InputBindings>
+                                                <TextBlock Text="{Binding SelectedShowSeriesStatusLabel}"
+                                                           Style="{StaticResource SeriesStatusChipTextStyle}" />
+                                            </Border>
+                                            <TextBlock Text="{Binding SelectedMediaCard.YearLabel, StringFormat=Year {0}}"
+                                                       Style="{StaticResource MutedTextStyle}"
+                                                       Margin="10,0,0,0"
+                                                       VerticalAlignment="Center" />
+                                        </StackPanel>
+                                        <Button Grid.Column="1"
+                                                Style="{StaticResource AppOutlinedButtonStyle}"
+                                                Command="{Binding RefreshSelectedShowFromTmdbCommand}"
+                                                Padding="10,6"
+                                                Margin="12,0,0,0"
+                                                VerticalAlignment="Center"
+                                                Visibility="{Binding IsSelectedShow, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                                ToolTip="Refresh this show from TMDB">
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconLucide Kind="RefreshCw"
+                                                                           Width="14"
+                                                                           Height="14"
+                                                                           Margin="0,0,6,0"
+                                                                           Foreground="{StaticResource AppBrushAccent}"
+                                                                           VerticalAlignment="Center" />
+                                                <TextBlock Text="Sync TMDB"
+                                                           FontSize="12"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="{StaticResource AppBrushAccent}"
+                                                           VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </Button>
+                                    </Grid>
                                     <TextBlock Text="{Binding SelectedShow.Stats}"
                                                Style="{StaticResource MutedTextStyle}"
                                                Margin="0,10,0,0"

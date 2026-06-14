@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
+using media_management_app.Common;
 using media_management_app.Models;
 
 namespace media_management_app.ViewModels;
@@ -18,6 +19,8 @@ public sealed partial class LibraryShowDetailViewModel : ObservableObject
         Overview = show.Overview ?? string.Empty;
         PosterPath = show.PosterPath;
         HiddenSeasonCount = hiddenSeasonCount;
+        SeriesStatus = show.SeriesStatus;
+        SeriesStatusLabel = show.SeriesStatusLabel;
         var seasonList = seasons.ToList();
         TotalEpisodes = seasonList.Sum(season => season.TotalEpisodes);
         AvailableEpisodes = seasonList.Sum(season => season.AvailableEpisodes);
@@ -47,6 +50,10 @@ public sealed partial class LibraryShowDetailViewModel : ObservableObject
     public string PackRecipeName { get; }
 
     public int HiddenSeasonCount { get; }
+
+    public ShowSeriesStatus SeriesStatus { get; }
+
+    public string SeriesStatusLabel { get; }
 
     public bool HasHiddenSeasons => HiddenSeasonCount > 0;
 

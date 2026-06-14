@@ -79,11 +79,6 @@ public sealed class TrackedShowService : ITrackedShowService
         RefreshAvailabilityCore(showId);
     }
 
-    public void UpdateWanted(long episodeId, bool isWanted)
-    {
-        _databaseService.UpdateTrackedEpisodeWanted(episodeId, isWanted);
-    }
-
     public void UpdateSeasonDownloadFolder(long showId, int seasonNumber, string? downloadFolder)
     {
         _databaseService.UpdateTrackedSeasonDownloadFolder(showId, seasonNumber, downloadFolder);
@@ -181,6 +176,12 @@ public sealed class TrackedShowService : ITrackedShowService
         _logger.Info($"Updated pack recipe assignment for show id={showId}: {packRecipeId ?? "<default>"}", LogTarget.All);
     }
 
+    public void UpdateSeriesStatus(long showId, ShowSeriesStatus seriesStatus)
+    {
+        _databaseService.UpdateTrackedShowSeriesStatus(showId, seriesStatus);
+        _logger.Info($"Updated series status for show id={showId}: {seriesStatus}", LogTarget.All);
+    }
+
     private long ImportShow(TmdbShowDetails details, string preferredQuality)
     {
         var existing = _databaseService.GetTrackedShowByTmdbId(details.TmdbId);
@@ -195,7 +196,8 @@ public sealed class TrackedShowService : ITrackedShowService
             PackRecipeId = existing?.PackRecipeId,
             PreferredQuality = existing?.PreferredQuality ?? preferredQuality,
             PreferredAudioCodec = existing?.PreferredAudioCodec ?? string.Empty,
-            MinimumSeeders = existing?.MinimumSeeders ?? 0
+            MinimumSeeders = existing?.MinimumSeeders ?? 0,
+            SeriesStatus = details.SeriesStatus
         });
 
         foreach (var season in details.Seasons)

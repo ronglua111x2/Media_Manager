@@ -20,8 +20,6 @@ public sealed class TrackedEpisode
 
     public EpisodeAvailability Availability { get; set; } = EpisodeAvailability.Missing;
 
-    public bool IsWanted { get; set; }
-
     public string? TorrentHash { get; set; }
 
     public string? TorrentName { get; set; }

@@ -87,11 +87,6 @@ public sealed class TrackedMovieService : ITrackedMovieService
         }
     }
 
-    public void UpdateWanted(long movieId, bool isWanted)
-    {
-        _databaseService.UpdateTrackedMovieWanted(movieId, isWanted);
-    }
-
     public void UpdateTorrentState(long movieId, AddedTorrentResult torrent)
     {
         _databaseService.UpdateTrackedMovieTorrent(
@@ -142,7 +137,6 @@ public sealed class TrackedMovieService : ITrackedMovieService
             PreferredAudioCodec = existing?.PreferredAudioCodec ?? string.Empty,
             MinimumSeeders = existing?.MinimumSeeders ?? 0,
             Availability = existing?.Availability ?? EpisodeAvailability.Missing,
-            IsWanted = existing?.IsWanted ?? true,
             TorrentHash = existing?.TorrentHash,
             TorrentName = existing?.TorrentName,
             TorrentState = existing?.TorrentState,

@@ -26,15 +26,22 @@ public sealed class TrackedShow
 
     public int MinimumSeeders { get; set; }
 
+    public ShowSeriesStatus SeriesStatus { get; set; } = ShowSeriesStatus.Unknown;
+
     public DateTime CreatedUtc { get; set; } = DateTime.UtcNow;
 
     public DateTime UpdatedUtc { get; set; } = DateTime.UtcNow;
 
     public string DisplayTitle => FirstAirYear is null ? Title : $"{Title} ({FirstAirYear})";
 
+    public string SeriesStatusLabel => SeriesStatus switch
+    {
+        ShowSeriesStatus.Ongoing => "Ongoing",
+        ShowSeriesStatus.Finished => "Finished",
+        _ => "Unknown"
+    };
+
     public int TotalEpisodes { get; set; }
 
     public int AvailableEpisodes { get; set; }
-
-    public int WantedEpisodes { get; set; }
 }

@@ -15,8 +15,7 @@
         WindowStyle="None"
         ResizeMode="CanResize"
         Background="{StaticResource AppBrushCanvas}"
-        Icon="Assets/app-icon.ico"
-        Closing="Window_Closing">
+        Icon="Assets/app-icon.ico">
     <!-- #region Window chrome -->
     <shell:WindowChrome.WindowChrome>
         <shell:WindowChrome CaptionHeight="0"

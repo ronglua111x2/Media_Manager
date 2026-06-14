@@ -52,6 +52,12 @@
                                TextTrimming="CharacterEllipsis"
                                TextWrapping="NoWrap"
                                Margin="0,6,0,0" />
+                    <TextBlock Text="{Binding SeriesStatusLabel}"
+                               Style="{StaticResource MutedTextStyle}"
+                               TextTrimming="CharacterEllipsis"
+                               TextWrapping="NoWrap"
+                               Margin="0,2,0,0"
+                               Visibility="{Binding HasSeriesStatusLabel, Converter={StaticResource BooleanToVisibilityConverter}}" />
                     <Border Style="{StaticResource OrderCountBadgeStyle}"
                             Visibility="{Binding HasOrders, Converter={StaticResource BooleanToVisibilityConverter}}">
                         <StackPanel Orientation="Horizontal">

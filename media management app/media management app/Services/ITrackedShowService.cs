@@ -22,8 +22,6 @@ public interface ITrackedShowService
 
     void RefreshAvailability(long showId);
 
-    void UpdateWanted(long episodeId, bool isWanted);
-
     void UpdateSeasonDownloadFolder(long showId, int seasonNumber, string? downloadFolder);
 
     void UpdateSeasonPackMode(long showId, int seasonNumber, Common.SeasonManagementMode mode);
@@ -53,4 +51,6 @@ public interface ITrackedShowService
     void UpdateRecipe(long showId, string? recipeId);
 
     void UpdatePackRecipe(long showId, string? packRecipeId);
+
+    void UpdateSeriesStatus(long showId, Common.ShowSeriesStatus seriesStatus);
 }

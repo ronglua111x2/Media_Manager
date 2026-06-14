@@ -28,6 +28,10 @@ public partial class LibraryMediaCardViewModel : ObservableObject
 
     public string TypeLabel => MediaKind == MediaKind.Movie ? "Movie" : "Show";
 
+    public string? SeriesStatusLabel { get; init; }
+
+    public bool HasSeriesStatusLabel => IsShow && !string.IsNullOrWhiteSpace(SeriesStatusLabel) && SeriesStatusLabel != "Unknown";
+
     public string YearLabel => Year?.ToString() ?? "Unknown";
 
     public string AddedLabel => CreatedUtc.ToLocalTime().ToString("yyyy-MM-dd");

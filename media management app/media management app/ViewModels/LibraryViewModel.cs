@@ -23,10 +23,12 @@ public sealed partial class LibraryViewModel : ViewModelBase
     private readonly IAutoTorrentLinkService _autoTorrentLinkService;
     private readonly ITorrentReconciliationService _torrentReconciliationService;
     private readonly IMediaImportService _mediaImportService;
+    private readonly IMediaMetadataSyncService _mediaMetadataSyncService;
 
     private IReadOnlyList<LibraryMediaCardViewModel> _allMediaCards = [];
     private long? _loadedDetailMediaId;
     private MediaKind? _loadedDetailMediaKind;
+    private bool _suppressSeriesStatusUpdate;
 
     public LibraryViewModel(
         ITrackedShowService trackedShowService,
@@ -39,7 +41,8 @@ public sealed partial class LibraryViewModel : ViewModelBase
         IRecipeService recipeService,
         IAutoTorrentLinkService autoTorrentLinkService,
         ITorrentReconciliationService torrentReconciliationService,
-        IMediaImportService mediaImportService)
+        IMediaImportService mediaImportService,
+        IMediaMetadataSyncService mediaMetadataSyncService)
     {
         _trackedShowService = trackedShowService;
         _trackedMovieService = trackedMovieService;
@@ -52,6 +55,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
         _autoTorrentLinkService = autoTorrentLinkService;
         _torrentReconciliationService = torrentReconciliationService;
         _mediaImportService = mediaImportService;
+        _mediaMetadataSyncService = mediaMetadataSyncService;
 
         _torrentCartService.CartChanged += (_, _) => RefreshCartStateOnSelectedDetail();
         _torrentReconciliationService.Reconciled += (_, _) => _ = ReloadSelectedDetailAsync();
@@ -86,6 +90,9 @@ public sealed partial class LibraryViewModel : ViewModelBase
 
     [ObservableProperty]
     private LibraryMovieDetailViewModel? selectedMovie;
+
+    [ObservableProperty]
+    private ShowSeriesStatus selectedShowSeriesStatus;
 
     [ObservableProperty]
     private ImageSource? selectedPosterImage;
@@ -124,6 +131,13 @@ public sealed partial class LibraryViewModel : ViewModelBase
     public bool IsTypeSortSelected => MediaSortMode == MediaCardSortMode.TypeThenTitle;
 
     public bool IsNameSortSelected => MediaSortMode == MediaCardSortMode.Title;
+
+    public string SelectedShowSeriesStatusLabel => SelectedShowSeriesStatus switch
+    {
+        ShowSeriesStatus.Ongoing => "Ongoing",
+        ShowSeriesStatus.Finished => "Finished",
+        _ => "Unknown"
+    };
 
     public bool HasImportFolders => ImportFolders.Count > 0;
 
@@ -525,6 +539,74 @@ public sealed partial class LibraryViewModel : ViewModelBase
         }
     }
 
+    [RelayCommand]
+    private async Task RefreshAllFromTmdb()
+    {
+        var confirm = System.Windows.MessageBox.Show(
+            "Refresh metadata from TMDB for all shows and movies?\n\nShow status and aired episodes will be updated from TMDB.",
+            "Refresh Metadata from TMDB",
+            System.Windows.MessageBoxButton.YesNo,
+            System.Windows.MessageBoxImage.Question);
+        if (confirm != System.Windows.MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        await RunImportActionAsync(async () =>
+        {
+            StatusMessage = "Refreshing metadata from TMDB...";
+            var result = await _mediaMetadataSyncService.RefreshAllLibraryFromTmdbAsync();
+            RefreshLibrary();
+            await ReloadSelectedDetailAsync();
+            StatusMessage = $"TMDB refresh complete. {result.Summary}";
+        });
+    }
+
+    [RelayCommand(CanExecute = nameof(IsSelectedShow))]
+    private async Task RefreshSelectedShowFromTmdb()
+    {
+        if (SelectedMediaCard?.IsShow != true)
+        {
+            return;
+        }
+
+        await RunImportActionAsync(async () =>
+        {
+            StatusMessage = $"Refreshing {SelectedMediaCard.Title} from TMDB...";
+            var result = await _mediaMetadataSyncService.RefreshShowAsync(SelectedMediaCard.Id);
+            RefreshLibrary();
+            await ReloadSelectedDetailAsync();
+            StatusMessage = result.Success
+                ? $"TMDB refresh complete for {result.Title}. {result.NewEpisodesAdded} new episode(s) added."
+                : $"TMDB refresh failed for {result.Title}: {result.ErrorMessage}";
+        });
+    }
+
+    partial void OnSelectedShowSeriesStatusChanged(ShowSeriesStatus value)
+    {
+        OnPropertyChanged(nameof(SelectedShowSeriesStatusLabel));
+
+        if (_suppressSeriesStatusUpdate || SelectedShow is null || SelectedShow.SeriesStatus == value)
+        {
+            return;
+        }
+
+        _trackedShowService.UpdateSeriesStatus(SelectedShow.Id, value);
+        RebuildSelectedShowDetail();
+        RefreshLibrary();
+    }
+
+    [RelayCommand(CanExecute = nameof(IsSelectedShow))]
+    private void CycleSelectedShowSeriesStatus()
+    {
+        SelectedShowSeriesStatus = SelectedShowSeriesStatus switch
+        {
+            ShowSeriesStatus.Unknown => ShowSeriesStatus.Ongoing,
+            ShowSeriesStatus.Ongoing => ShowSeriesStatus.Finished,
+            _ => ShowSeriesStatus.Unknown
+        };
+    }
+
     [RelayCommand(CanExecute = nameof(HasSelectedMedia))]
     private void DeleteSelectedMedia()
     {
@@ -674,6 +756,9 @@ public sealed partial class LibraryViewModel : ViewModelBase
             }
 
             SelectedShow = BuildShowDetail(show, expandedSeasons);
+            _suppressSeriesStatusUpdate = true;
+            SelectedShowSeriesStatus = show.SeriesStatus;
+            _suppressSeriesStatusUpdate = false;
             SelectedPosterImage = await _posterImageService.LoadAsync(card.PosterPath);
             StatusMessage = $"Viewing show: {show.DisplayTitle}";
             return;
@@ -800,6 +885,9 @@ public sealed partial class LibraryViewModel : ViewModelBase
             .ToHashSet() ?? [];
 
         SelectedShow = BuildShowDetail(show, expandedSeasons);
+        _suppressSeriesStatusUpdate = true;
+        SelectedShowSeriesStatus = show.SeriesStatus;
+        _suppressSeriesStatusUpdate = false;
 
         if (ShowHiddenSeasons && SelectedShow?.HasHiddenSeasons != true)
         {
