@@ -47,13 +47,16 @@ public partial class App : System.Windows.Application
         database.Initialize(settings.Current.StateFolder);
 
         _serviceProvider.GetRequiredService<ILogCleanupService>().Start();
-        _serviceProvider.GetRequiredService<IAutoTrackSchedulerService>().Start();
+
+        var autoTrackScheduler = _serviceProvider.GetRequiredService<IAutoTrackSchedulerService>();
+        var trayIconService = _serviceProvider.GetRequiredService<ITrayIconService>();
+        autoTrackScheduler.RunCompleted += (_, result) => trayIconService.ShowAutoTrackRunCompleted(result);
+        autoTrackScheduler.Start();
 
         _serviceProvider.GetRequiredService<IWindowsNotificationService>().Initialize();
         WarmupPosterCache();
 
         var mainWindow = _serviceProvider.GetRequiredService<MainWindow>();
-        var trayIconService = _serviceProvider.GetRequiredService<ITrayIconService>();
         var startup = settings.Current.Startup;
         var launchedFromToast = ToastNotificationManagerCompat.WasCurrentProcessToastActivated();
 
@@ -110,6 +113,7 @@ public partial class App : System.Windows.Application
 
         services.AddSingleton<ISettingsService, SettingsService>();
         services.AddSingleton<IThemeService, ThemeService>();
+        services.AddSingleton<IAppLifecycleService, AppLifecycleService>();
         services.AddSingleton<IWindowsStartupService, WindowsStartupService>();
         services.AddSingleton<ITrayIconService, TrayIconService>();
         services.AddSingleton<IWindowsNotificationService, WindowsNotificationService>();

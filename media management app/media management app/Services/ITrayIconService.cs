@@ -1,3 +1,5 @@
+using media_management_app.Models;
+
 namespace media_management_app.Services;
 
 public interface ITrayIconService : IDisposable
@@ -11,4 +13,6 @@ public interface ITrayIconService : IDisposable
     void RestoreFromTray();
 
     void RequestShutdown();
+
+    void ShowAutoTrackRunCompleted(AutoTrackRunResult result);
 }

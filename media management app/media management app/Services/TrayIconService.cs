@@ -1,16 +1,27 @@
 using System.Drawing;
 using System.Windows;
+using media_management_app.Models;
 using WinForms = System.Windows.Forms;
 
 namespace media_management_app.Services;
 
 public sealed class TrayIconService : ITrayIconService
 {
-    private const string TrayTooltip = "Media Manager";
+    private const string AppName = "Media Manager";
+    private const string DefaultTrayTooltip = AppName;
+    private const string BackgroundModeTrayTooltip = $"{AppName} - Background Mode";
+
+    private readonly IAppLifecycleService _lifecycleService;
 
     private MainWindow? _window;
     private WinForms.NotifyIcon? _notifyIcon;
     private bool _disposed;
+
+    public TrayIconService(IAppLifecycleService lifecycleService)
+    {
+        _lifecycleService = lifecycleService;
+        _lifecycleService.AppModeChanged += OnAppModeChanged;
+    }
 
     public bool IsInitialized => _notifyIcon is not null;
 
@@ -19,6 +30,7 @@ public sealed class TrayIconService : ITrayIconService
         if (_notifyIcon is not null)
         {
             _window = window;
+            UpdateTrayTooltip();
             return;
         }
 
@@ -28,7 +40,7 @@ public sealed class TrayIconService : ITrayIconService
         _notifyIcon = new WinForms.NotifyIcon
         {
             Icon = trayIcon,
-            Text = TrayTooltip,
+            Text = DefaultTrayTooltip,
             Visible = true
         };
 
@@ -44,6 +56,7 @@ public sealed class TrayIconService : ITrayIconService
         contextMenu.Items.Add(exitItem);
 
         _notifyIcon.ContextMenuStrip = contextMenu;
+        UpdateTrayTooltip();
     }
 
     public void HideToTray()
@@ -55,6 +68,8 @@ public sealed class TrayIconService : ITrayIconService
 
         _window.ShowInTaskbar = false;
         _window.Hide();
+        _lifecycleService.EnterBackgroundMode();
+        UpdateTrayTooltip();
     }
 
     public void RestoreFromTray()
@@ -64,6 +79,7 @@ public sealed class TrayIconService : ITrayIconService
             return;
         }
 
+        _lifecycleService.EnterForegroundMode();
         _window.ShowInTaskbar = true;
         _window.Visibility = Visibility.Visible;
         if (_window.WindowState == WindowState.Minimized)
@@ -73,6 +89,7 @@ public sealed class TrayIconService : ITrayIconService
 
         _window.Show();
         _window.Activate();
+        UpdateTrayTooltip();
     }
 
     public void RequestShutdown()
@@ -94,12 +111,67 @@ public sealed class TrayIconService : ITrayIconService
         }
 
         _disposed = true;
+        _lifecycleService.AppModeChanged -= OnAppModeChanged;
+
         if (_notifyIcon is not null)
         {
             _notifyIcon.Visible = false;
             _notifyIcon.Dispose();
             _notifyIcon = null;
         }
+    }
+
+    public void ShowAutoTrackRunCompleted(AutoTrackRunResult result)
+    {
+        if (_notifyIcon is null || _lifecycleService.CurrentMode != AppMode.Background)
+        {
+            return;
+        }
+
+        var title = result.Succeeded ? "Auto-Track" : "Auto-Track (issues)";
+        var icon = result.Succeeded ? WinForms.ToolTipIcon.Info : WinForms.ToolTipIcon.Warning;
+        var message = string.IsNullOrWhiteSpace(result.Summary)
+            ? "Auto-track cycle completed."
+            : Truncate(result.Summary, 240);
+
+        try
+        {
+            _notifyIcon.ShowBalloonTip(3000, title, message, icon);
+        }
+        catch
+        {
+        }
+
+        UpdateTrayTooltip();
+    }
+
+    private void OnAppModeChanged(object? sender, AppMode mode)
+    {
+        UpdateTrayTooltip();
+    }
+
+    private void UpdateTrayTooltip()
+    {
+        if (_notifyIcon is null)
+        {
+            return;
+        }
+
+        _notifyIcon.Text = _lifecycleService.CurrentMode == AppMode.Background
+            ? BuildBackgroundTooltip()
+            : DefaultTrayTooltip;
+    }
+
+    private static string BuildBackgroundTooltip() => BackgroundModeTrayTooltip;
+
+    private static string Truncate(string value, int maxLength)
+    {
+        if (value.Length <= maxLength)
+        {
+            return value;
+        }
+
+        return value[..(maxLength - 3)] + "...";
     }
 
     private static Icon LoadTrayIcon()

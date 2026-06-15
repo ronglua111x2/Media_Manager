@@ -14,6 +14,8 @@
         WindowStartupLocation="CenterScreen"
         WindowStyle="None"
         ResizeMode="CanResize"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
         Background="{StaticResource AppBrushCanvas}"
         Icon="Assets/app-icon.ico">
     <!-- #region Window chrome -->
@@ -165,7 +167,8 @@
     <!-- #endregion -->
 
     <!-- #region App shell -->
-    <Border Background="{StaticResource AppBrushCanvas}"
+    <Border x:Name="ShellBorder"
+            Background="{StaticResource AppBrushCanvas}"
             BorderBrush="{StaticResource AppBrushBorder}"
             BorderThickness="1">
         <Grid>
@@ -222,16 +225,19 @@
                                 Orientation="Horizontal"
                                 HorizontalAlignment="Right">
                         <Button Style="{StaticResource TitleButtonStyle}"
+                                Focusable="False"
                                 Click="MinimizeButton_Click"
                                 ToolTip="Minimize">
                             <iconPacks:PackIconLucide Kind="Minus" Style="{StaticResource ChromeIconStyle}" />
                         </Button>
                         <Button Style="{StaticResource TitleButtonStyle}"
+                                Focusable="False"
                                 Click="MaximizeRestoreButton_Click"
                                 ToolTip="Maximize or restore">
                             <iconPacks:PackIconLucide Kind="Square" Style="{StaticResource ChromeIconStyle}" />
                         </Button>
                         <Button Style="{StaticResource CloseTitleButtonStyle}"
+                                Focusable="False"
                                 Click="CloseButton_Click"
                                 ToolTip="Close">
                             <iconPacks:PackIconLucide Kind="X" Style="{StaticResource ChromeIconStyle}" />

@@ -48,7 +48,8 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         ITorrentReconciliationService torrentReconciliationService,
         ITorrentAddDiskAssignmentService torrentAddDiskAssignmentService,
         IDownloadFolderCatalogService downloadFolderCatalogService,
-        IAppLogger logger)
+        IAppLogger logger,
+        IAppLifecycleService lifecycleService)
     {
         _trackedShowService = trackedShowService;
         _trackedMovieService = trackedMovieService;
@@ -68,6 +69,7 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
 
         _torrentCartService.CartChanged += (_, _) => OnCartChanged();
         _recipeService.RecipesChanged += (_, _) => LoadRecipeAssignment(SelectedMediaCard);
+        lifecycleService.AppModeChanged += OnAppModeChanged;
         RefreshWorkspace();
         StatusMessage = "Select a media card to view its cart.";
     }
@@ -1516,5 +1518,41 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         {
             SelectedMediaCard = MediaCards.FirstOrDefault(card => card.Id == selectedId && card.MediaKind == selectedKind);
         }
+    }
+
+    private void OnAppModeChanged(object? sender, AppMode mode)
+    {
+        if (mode == AppMode.Background)
+        {
+            ReleasePosterMemory();
+            return;
+        }
+
+        if (SelectedMediaCard is not null)
+        {
+            _ = ReloadPosterOnForegroundAsync();
+        }
+    }
+
+    private void ReleasePosterMemory()
+    {
+        SelectedPosterImage = null;
+        foreach (var card in MediaCards)
+        {
+            card.PosterImage = null;
+        }
+    }
+
+    private async Task ReloadPosterOnForegroundAsync()
+    {
+        if (SelectedMediaCard is null)
+        {
+            return;
+        }
+
+        SelectedPosterImage = await _posterImageService.LoadAsync(
+            SelectedMediaCard.PosterPath,
+            SelectedMediaCard.MediaKind,
+            SelectedMediaCard.TmdbId);
     }
 }

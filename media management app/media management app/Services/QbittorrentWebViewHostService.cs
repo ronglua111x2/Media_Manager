@@ -15,10 +15,14 @@ public sealed class QbittorrentWebViewHostService : IQbittorrentWebViewHostServi
     private Task? _initializationTask;
     private WpfPanel? _currentHost;
 
-    public QbittorrentWebViewHostService(ISettingsService settingsService, IAppLogger logger)
+    public QbittorrentWebViewHostService(
+        ISettingsService settingsService,
+        IAppLogger logger,
+        IAppLifecycleService lifecycleService)
     {
         _settingsService = settingsService;
         _logger = logger;
+        lifecycleService.AppModeChanged += OnAppModeChanged;
     }
 
     public event EventHandler<QbittorrentWebViewStatusChangedEventArgs>? StatusChanged;
@@ -210,5 +214,51 @@ public sealed class QbittorrentWebViewHostService : IQbittorrentWebViewHostServi
                 HasError = hasError,
                 CurrentUrl = CurrentUrl
             });
+    }
+
+    private void OnAppModeChanged(object? sender, AppMode mode)
+    {
+        if (mode != AppMode.Background)
+        {
+            return;
+        }
+
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher is null)
+        {
+            return;
+        }
+
+        if (!dispatcher.CheckAccess())
+        {
+            dispatcher.BeginInvoke(ReleaseWebView);
+            return;
+        }
+
+        ReleaseWebView();
+    }
+
+    private void ReleaseWebView()
+    {
+        if (_webView is null)
+        {
+            return;
+        }
+
+        if (_webView.Parent is WpfPanel parent)
+        {
+            parent.Children.Remove(_webView);
+        }
+
+        _webView.Dispose();
+        _webView = null;
+        _initializationTask = null;
+        _currentHost = null;
+        CurrentUrl = null;
+        UpdateStatus(
+            "qBittorrent WebView released while app is in background mode.",
+            isLoading: false,
+            isReady: false,
+            hasError: false);
     }
 }

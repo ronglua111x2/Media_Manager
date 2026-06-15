@@ -24,7 +24,8 @@ public partial class MainViewModel : ViewModelBase
         RecipeWorkspaceViewModel recipeWorkspaceViewModel,
         SystemSettingsViewModel systemSettingsViewModel,
         IDeviceStatusService deviceStatusService,
-        IConsoleWindowService consoleWindowService)
+        IConsoleWindowService consoleWindowService,
+        IAppLifecycleService lifecycleService)
     {
         _deviceStatusService = deviceStatusService;
         _consoleWindowService = consoleWindowService;
@@ -103,6 +104,8 @@ public partial class MainViewModel : ViewModelBase
         _statusTimer.Tick += async (_, _) => await RefreshStatusAsync();
         _statusTimer.Start();
         _ = RefreshStatusAsync();
+
+        lifecycleService.AppModeChanged += OnAppModeChanged;
     }
 
     public ObservableCollection<ShellNavigationItem> NavigationItems { get; }
@@ -186,5 +189,17 @@ public partial class MainViewModel : ViewModelBase
         JobStatus = status.JobStatus;
         HasLowSpace = status.HasLowSpace;
         IsQbittorrentConnected = status.IsQbittorrentConnected;
+    }
+
+    private void OnAppModeChanged(object? sender, AppMode mode)
+    {
+        if (mode == AppMode.Background)
+        {
+            _statusTimer.Stop();
+            return;
+        }
+
+        _statusTimer.Start();
+        _ = RefreshStatusAsync();
     }
 }

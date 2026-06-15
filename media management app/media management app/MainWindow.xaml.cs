@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Shell;
 using media_management_app.Services;
 using media_management_app.ViewModels;
 
@@ -8,16 +9,28 @@ namespace media_management_app;
 
 public partial class MainWindow : Window
 {
+    private const double NormalCornerRadius = 8;
+    private static readonly Thickness NormalShellBorderThickness = new(1);
+    private static readonly Thickness NormalResizeBorderThickness = new(6);
+
     private readonly ISettingsService _settingsService;
     private readonly ITrayIconService _trayIconService;
+    private readonly IAppLifecycleService _lifecycleService;
     private bool _allowClose;
+    private bool _chromeIsMaximized;
+    private WindowState _previousWindowState = WindowState.Normal;
 
-    public MainWindow(MainViewModel viewModel, ISettingsService settingsService, ITrayIconService trayIconService)
+    public MainWindow(
+        MainViewModel viewModel,
+        ISettingsService settingsService,
+        ITrayIconService trayIconService,
+        IAppLifecycleService lifecycleService)
     {
         InitializeComponent();
         DataContext = viewModel;
         _settingsService = settingsService;
         _trayIconService = trayIconService;
+        _lifecycleService = lifecycleService;
     }
 
     public void CloseForShutdown()
@@ -43,6 +56,64 @@ public partial class MainWindow : Window
     {
         base.OnClosed(e);
         System.Windows.Application.Current.Shutdown();
+    }
+
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+        UpdateWindowChromeForState();
+    }
+
+    protected override void OnStateChanged(EventArgs e)
+    {
+        var wasMinimized = _previousWindowState == WindowState.Minimized;
+        _previousWindowState = WindowState;
+        base.OnStateChanged(e);
+        UpdateWindowChromeForState();
+        UpdateLifecycleForWindowState(wasMinimized);
+    }
+
+    private void UpdateWindowChromeForState()
+    {
+        if (WindowChrome.GetWindowChrome(this) is not WindowChrome chrome)
+        {
+            return;
+        }
+
+        var isMaximized = WindowState == WindowState.Maximized;
+        // Guard: skip the property mutations if already in the correct state to avoid
+        // triggering unnecessary WPF chrome invalidation and layout passes.
+        if (isMaximized == _chromeIsMaximized)
+        {
+            return;
+        }
+
+        _chromeIsMaximized = isMaximized;
+        chrome.CornerRadius = isMaximized
+            ? new CornerRadius(0)
+            : new CornerRadius(NormalCornerRadius);
+        chrome.ResizeBorderThickness = isMaximized
+            ? new Thickness(0)
+            : NormalResizeBorderThickness;
+        ShellBorder.BorderThickness = isMaximized
+            ? new Thickness(0)
+            : NormalShellBorderThickness;
+    }
+
+    private void UpdateLifecycleForWindowState(bool wasMinimized)
+    {
+        if (WindowState == WindowState.Minimized && !ShouldUseTray())
+        {
+            _lifecycleService.EnterBackgroundMode();
+            return;
+        }
+
+        // Only signal foreground when genuinely restoring from minimized state,
+        // not on Normal↔Maximized transitions which are not lifecycle events.
+        if (wasMinimized && WindowState != WindowState.Minimized && IsVisible)
+        {
+            _lifecycleService.EnterForegroundMode();
+        }
     }
 
     private void Header_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)

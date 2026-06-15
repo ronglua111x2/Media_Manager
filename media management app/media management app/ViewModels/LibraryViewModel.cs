@@ -48,7 +48,8 @@ public sealed partial class LibraryViewModel : ViewModelBase
         IMediaImportService mediaImportService,
         IMediaMetadataSyncService mediaMetadataSyncService,
         ISettingsService settingsService,
-        IDownloadFolderCatalogService downloadFolderCatalogService)
+        IDownloadFolderCatalogService downloadFolderCatalogService,
+        IAppLifecycleService lifecycleService)
     {
         _trackedShowService = trackedShowService;
         _trackedMovieService = trackedMovieService;
@@ -77,6 +78,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
             RefreshCartStateOnSelectedDetail();
         };
         _torrentReconciliationService.Reconciled += (_, _) => _ = ReloadSelectedDetailAsync();
+        lifecycleService.AppModeChanged += OnAppModeChanged;
         RefreshLibrary();
         StatusMessage = "Select a media card to view details.";
     }
@@ -1210,4 +1212,40 @@ public sealed partial class LibraryViewModel : ViewModelBase
     private bool CanLinkEpisode(LibraryEpisodeRowViewModel? episode) => episode?.CanLink == true;
 
     private bool CanLinkSeasonPack(LibrarySeasonViewModel? season) => season?.CanLinkPack == true;
+
+    private void OnAppModeChanged(object? sender, AppMode mode)
+    {
+        if (mode == AppMode.Background)
+        {
+            ReleasePosterMemory();
+            return;
+        }
+
+        if (SelectedMediaCard is not null)
+        {
+            _ = ReloadPosterOnForegroundAsync();
+        }
+    }
+
+    private void ReleasePosterMemory()
+    {
+        SelectedPosterImage = null;
+        foreach (var card in MediaCards)
+        {
+            card.PosterImage = null;
+        }
+    }
+
+    private async Task ReloadPosterOnForegroundAsync()
+    {
+        if (SelectedMediaCard is null)
+        {
+            return;
+        }
+
+        SelectedPosterImage = await _posterImageService.LoadAsync(
+            SelectedMediaCard.PosterPath,
+            SelectedMediaCard.MediaKind,
+            SelectedMediaCard.TmdbId);
+    }
 }
