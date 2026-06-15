@@ -102,6 +102,7 @@ public sealed class SettingsService : ISettingsService
         MigrateAutoTrackSettings(Current.AutoTrack);
         Current.Logs ??= new LogSettings();
         Current.Startup ??= new AppStartupSettings();
+        Current.Ui ??= new UiSettings();
         Current.Logs.MaxLinesPerFile = Math.Clamp(
             Current.Logs.MaxLinesPerFile,
             AppConstants.MinLogLinesPerFile,

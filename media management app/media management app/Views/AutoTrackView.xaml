@@ -109,7 +109,7 @@
                                                 <Border Width="48"
                                                         Height="72"
                                                         CornerRadius="4"
-                                                        Background="#eef2f6"
+                                                        Background="{StaticResource AppBrushChipMuted}"
                                                         ClipToBounds="True">
                                                     <Image Source="{Binding PosterImage}"
                                                            Stretch="UniformToFill" />
@@ -151,8 +151,7 @@
                                                            Style="{StaticResource MutedTextStyle}"
                                                            Margin="0,0,0,4" />
                                                 <ComboBox ItemsSource="{Binding DownloadFolderOptions}"
-                                                          SelectedItem="{Binding DownloadFolder, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                                          MinHeight="32" />
+                                                          SelectedItem="{Binding DownloadFolder, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                                                 <TextBlock Text="Assign a download folder on Home before the next run."
                                                            Foreground="{StaticResource AppBrushDanger}"
                                                            FontSize="11"

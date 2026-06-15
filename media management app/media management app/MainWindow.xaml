@@ -43,12 +43,18 @@
             <Setter Property="Margin" Value="0" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Background" Value="Transparent" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template" Value="{StaticResource AppButtonControlTemplate}" />
             <Setter Property="HorizontalContentAlignment" Value="Center" />
             <Setter Property="VerticalContentAlignment" Value="Center" />
             <Setter Property="shell:WindowChrome.IsHitTestVisibleInChrome" Value="True" />
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
                     <Setter Property="Background" Value="{StaticResource AppBrushAccentSoft}" />
+                </Trigger>
+                <Trigger Property="IsKeyboardFocused" Value="True">
+                    <Setter Property="BorderBrush" Value="{StaticResource AppBrushAccent}" />
+                    <Setter Property="BorderThickness" Value="1" />
                 </Trigger>
             </Style.Triggers>
         </Style>
@@ -57,7 +63,7 @@
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
                     <Setter Property="Background" Value="{StaticResource AppBrushDanger}" />
-                    <Setter Property="Foreground" Value="#ffffff" />
+                    <Setter Property="Foreground" Value="{StaticResource AppBrushOnAccent}" />
                 </Trigger>
             </Style.Triggers>
         </Style>
@@ -99,11 +105,19 @@
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderBrush" Value="Transparent" />
             <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template" Value="{StaticResource AppButtonControlTemplate}" />
             <Setter Property="shell:WindowChrome.IsHitTestVisibleInChrome" Value="True" />
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
                     <Setter Property="Background" Value="{StaticResource AppBrushAccentSoft}" />
                     <Setter Property="BorderBrush" Value="{StaticResource AppBrushBorderStrong}" />
+                </Trigger>
+                <Trigger Property="IsKeyboardFocused" Value="True">
+                    <Setter Property="BorderBrush" Value="{StaticResource AppBrushAccent}" />
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Opacity" Value="0.45" />
                 </Trigger>
                 <DataTrigger Binding="{Binding IsSelected}" Value="True">
                     <Setter Property="Background" Value="{StaticResource AppBrushAccentSoft}" />
@@ -178,19 +192,20 @@
                                 Margin="14,0,0,0">
                         <Border Width="25"
                                 Height="25"
-                                Background="{StaticResource AppBrushText}"
+                                Background="{StaticResource AppBrushAccent}"
                                 CornerRadius="5"
                                 Margin="0,0,9,0">
                             <Grid>
                                 <iconPacks:PackIconLucide Kind="MonitorPlay"
                                                           Width="16"
                                                           Height="16"
-                                                          Foreground="#ffffff"
+                                                          Foreground="{StaticResource AppBrushOnAccent}"
                                                           HorizontalAlignment="Center"
                                                           VerticalAlignment="Center" />
                                 <Border Width="5"
                                         Height="5"
-                                        Background="{StaticResource AppBrushAccent}"
+                                        Background="{StaticResource AppBrushOnAccent}"
+                                        Opacity="0.85"
                                         CornerRadius="2.5"
                                         HorizontalAlignment="Right"
                                         VerticalAlignment="Bottom"

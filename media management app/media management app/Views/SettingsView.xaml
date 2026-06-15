@@ -60,6 +60,8 @@
             <Setter Property="HorizontalAlignment" Value="Stretch" />
             <Setter Property="Padding" Value="10,7" />
             <Setter Property="Margin" Value="0,0,0,10" />
+            <Setter Property="Foreground" Value="{StaticResource AppBrushText}" />
+            <Setter Property="CaretBrush" Value="{StaticResource AppBrushText}" />
         </Style>
 
         <Style x:Key="SettingsListBoxStyle" TargetType="ListBox" BasedOn="{StaticResource {x:Type ListBox}}">
@@ -207,7 +209,7 @@
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
                                 <Setter TargetName="Root" Property="Background" Value="{StaticResource AppBrushAccent}" />
-                                <Setter Property="Foreground" Value="#ffffff" />
+                                <Setter Property="Foreground" Value="{StaticResource AppBrushOnAccent}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -264,6 +266,13 @@
         <Style x:Key="WarpSettingsSectionPanelStyle" TargetType="ScrollViewer" BasedOn="{StaticResource SettingsSectionPanelBaseStyle}">
             <Style.Triggers>
                 <DataTrigger Binding="{Binding SelectedSettingsSection}" Value="{x:Static common:SettingsSection.Warp}">
+                    <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="UiSettingsSectionPanelStyle" TargetType="ScrollViewer" BasedOn="{StaticResource SettingsSectionPanelBaseStyle}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding SelectedSettingsSection}" Value="{x:Static common:SettingsSection.Ui}">
                     <Setter Property="Visibility" Value="Visible" />
                 </DataTrigger>
             </Style.Triggers>
@@ -328,6 +337,9 @@
                              Style="{StaticResource SettingsSectionSelectorItemStyle}" />
                 <ListBoxItem Content="WARP"
                              Tag="{x:Static common:SettingsSection.Warp}"
+                             Style="{StaticResource SettingsSectionSelectorItemStyle}" />
+                <ListBoxItem Content="UI"
+                             Tag="{x:Static common:SettingsSection.Ui}"
                              Style="{StaticResource SettingsSectionSelectorItemStyle}" />
             </ListBox>
             <!-- #endregion -->
@@ -1083,6 +1095,54 @@
                                     <StackPanel>
                                         <TextBlock Text="Executable path" Style="{StaticResource SettingsLabelStyle}" />
                                         <TextBlock Text="Leave blank to use the default install path. Override only if warp-cli.exe is in a non-standard location."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                </ScrollViewer>
+            <!-- #region UI panel -->
+                <ScrollViewer Style="{StaticResource UiSettingsSectionPanelStyle}">
+                    <Grid Margin="0,16,8,0"
+                          MaxWidth="1220"
+                          HorizontalAlignment="Left">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="24" />
+                            <ColumnDefinition Width="380" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0">
+                            <materialDesign:Card Style="{StaticResource SettingsCardStyle}">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <Border Width="8"
+                                                Height="24"
+                                                CornerRadius="4"
+                                                Background="{StaticResource AppBrushAccent}"
+                                                Margin="0,0,8,0" />
+                                        <TextBlock Text="Appearance" Style="{StaticResource SettingsSectionTitleStyle}" Margin="0" />
+                                    </StackPanel>
+                                    <TextBlock Text="Theme" Style="{StaticResource SettingsLabelStyle}" />
+                                    <ComboBox SelectedItem="{Binding SelectedTheme, Mode=TwoWay}"
+                                              ItemsSource="{Binding ThemeOptions}"
+                                              Margin="0,0,0,8"
+                                              MinWidth="220"
+                                              HorizontalAlignment="Left" />
+                                    <TextBlock Text="Choose Light or Dark for the application interface."
+                                               Style="{StaticResource SettingsHintStyle}" />
+                                </StackPanel>
+                            </materialDesign:Card>
+                        </StackPanel>
+
+                        <Border Grid.Column="2" Style="{StaticResource SettingsGuidePanelStyle}">
+                            <StackPanel>
+                                <TextBlock Text="Guide" Style="{StaticResource SettingsSectionTitleStyle}" />
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Theme" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Theme changes apply after you click Save. The selected theme is stored in settings.json and restored on the next launch."
                                                    Style="{StaticResource SettingsHintStyle}" />
                                     </StackPanel>
                                 </Border>

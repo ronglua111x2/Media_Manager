@@ -16,7 +16,7 @@
 
         <Style x:Key="DriveProgressBarStyle" TargetType="ProgressBar">
             <Setter Property="Height" Value="6" />
-            <Setter Property="Background" Value="#e8eef4" />
+            <Setter Property="Background" Value="{StaticResource AppBrushPlaceholderSurface}" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Foreground" Value="{StaticResource AppBrushAccent}" />
             <Style.Triggers>
@@ -51,7 +51,7 @@
             <Setter Property="Padding" Value="10,8" />
             <Style.Triggers>
                 <DataTrigger Binding="{Binding HasError}" Value="True">
-                    <Setter Property="Background" Value="#fce8e8" />
+                    <Setter Property="Background" Value="{StaticResource AppBrushStatusErrorBg}" />
                 </DataTrigger>
             </Style.Triggers>
         </Style>
@@ -91,7 +91,7 @@
 
         <!-- Validation banner -->
         <Border DockPanel.Dock="Top"
-                Background="#fce8e8"
+                Background="{StaticResource AppBrushStatusErrorBg}"
                 BorderBrush="{StaticResource AppBrushDanger}"
                 BorderThickness="1"
                 CornerRadius="8"
@@ -143,7 +143,7 @@
                             Command="{Binding ConfirmCommand}"
                             CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}"
                             IsEnabled="{Binding CanConfirm}">
-                        <TextBlock Text="{Binding ConfirmButtonText}" Foreground="#ffffff" />
+                        <TextBlock Text="{Binding ConfirmButtonText}" Foreground="{StaticResource AppBrushOnAccent}" />
                     </Button>
                 </StackPanel>
             </Grid>
@@ -200,7 +200,7 @@
                                                    FontSize="11"
                                                    FontWeight="SemiBold" />
                                     </Border>
-                                    <Border Background="#fce8e8"
+                                    <Border Background="{StaticResource AppBrushStatusErrorBg}"
                                             BorderBrush="{StaticResource AppBrushDanger}"
                                             BorderThickness="1"
                                             CornerRadius="10"
@@ -247,7 +247,7 @@
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <StackPanel>
-                                    <Border Background="#f4f8fb"
+                                    <Border Background="{StaticResource AppBrushPlaceholderInfo}"
                                             BorderBrush="{StaticResource AppBrushBorder}"
                                             BorderThickness="4,0,0,0"
                                             Padding="10,6"

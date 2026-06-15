@@ -15,9 +15,8 @@
                        VerticalAlignment="Center" />
         </DataTemplate>
 
-        <Style x:Key="CartRecipeComboBoxStyle" TargetType="ComboBox">
+        <Style x:Key="CartRecipeComboBoxStyle" TargetType="ComboBox" BasedOn="{StaticResource AppComboBoxStyle}">
             <Setter Property="MinWidth" Value="220" />
-            <Setter Property="Padding" Value="10,6" />
             <Setter Property="ItemTemplate" Value="{StaticResource RecipeComboBoxItemTemplate}" />
         </Style>
 
@@ -119,11 +118,11 @@
                             <Style TargetType="Border">
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding StatusLabel}" Value="Failed">
-                                        <Setter Property="Background" Value="#fce8e8" />
+                                        <Setter Property="Background" Value="{StaticResource AppBrushStatusErrorBg}" />
                                         <Setter Property="BorderBrush" Value="{StaticResource AppBrushDanger}" />
                                     </DataTrigger>
                                     <DataTrigger Binding="{Binding StatusLabel}" Value="Canceled">
-                                        <Setter Property="Background" Value="#f3f4f6" />
+                                        <Setter Property="Background" Value="{StaticResource AppBrushStatusMutedBg}" />
                                         <Setter Property="BorderBrush" Value="{StaticResource AppBrushBorder}" />
                                     </DataTrigger>
                                 </Style.Triggers>
@@ -370,9 +369,9 @@
                                                        Width="14"
                                                        Height="14"
                                                        Margin="0,0,6,0"
-                                                       Foreground="#ffffff"
+                                                       Foreground="{StaticResource AppBrushOnAccent}"
                                                        VerticalAlignment="Center" />
-                            <TextBlock Text="Stop" VerticalAlignment="Center" Foreground="#ffffff" />
+                            <TextBlock Text="Stop" VerticalAlignment="Center" Foreground="{StaticResource AppBrushOnAccent}" />
                         </StackPanel>
                     </Button>
                     <Button Style="{StaticResource AppPrimaryButtonStyle}"
@@ -383,9 +382,9 @@
                                                        Width="14"
                                                        Height="14"
                                                        Margin="0,0,6,0"
-                                                       Foreground="#ffffff"
+                                                       Foreground="{StaticResource AppBrushOnAccent}"
                                                        VerticalAlignment="Center" />
-                            <TextBlock Text="Run Cart" VerticalAlignment="Center" Foreground="#ffffff" />
+                            <TextBlock Text="Run Cart" VerticalAlignment="Center" Foreground="{StaticResource AppBrushOnAccent}" />
                         </StackPanel>
                     </Button>
                     <Button Style="{StaticResource AppOutlinedButtonStyle}"

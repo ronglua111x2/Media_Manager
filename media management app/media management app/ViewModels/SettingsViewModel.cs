@@ -21,6 +21,7 @@ public partial class SettingsViewModel : ViewModelBase
     private readonly IWindowsStartupService _windowsStartupService;
     private readonly ITrayIconService _trayIconService;
     private readonly IWindowsNotificationService _windowsNotificationService;
+    private readonly IThemeService _themeService;
     private readonly HttpClient _httpClient;
     private readonly IAppLogger _logger;
     private bool _isLoadingSettings;
@@ -153,6 +154,11 @@ public partial class SettingsViewModel : ViewModelBase
     [ObservableProperty]
     private SettingsSection selectedSettingsSection = SettingsSection.System;
 
+    [ObservableProperty]
+    private AppTheme selectedTheme = AppTheme.Light;
+
+    public Array ThemeOptions => Enum.GetValues(typeof(AppTheme));
+
     public SettingsViewModel(
         ISettingsService settingsService,
         IDatabaseService databaseService,
@@ -162,6 +168,7 @@ public partial class SettingsViewModel : ViewModelBase
         IWindowsStartupService windowsStartupService,
         ITrayIconService trayIconService,
         IWindowsNotificationService windowsNotificationService,
+        IThemeService themeService,
         HttpClient httpClient,
         IAppLogger logger)
     {
@@ -173,6 +180,7 @@ public partial class SettingsViewModel : ViewModelBase
         _windowsStartupService = windowsStartupService;
         _trayIconService = trayIconService;
         _windowsNotificationService = windowsNotificationService;
+        _themeService = themeService;
         _httpClient = httpClient;
         _logger = logger;
         SourceFolders = [];
@@ -242,6 +250,7 @@ public partial class SettingsViewModel : ViewModelBase
         ApplyLogSettings();
         ApplyStartupSettings();
         ApplyAutoTrackSettings();
+        ApplyUiSettings();
         _settingsService.Save();
         try
         {
@@ -255,6 +264,7 @@ public partial class SettingsViewModel : ViewModelBase
         }
 
         EnsureTrayInitialized();
+        _themeService.Apply(SelectedTheme);
         _databaseService.Initialize(_settingsService.Current.StateFolder);
         RefreshLibraryRootPreview();
         StatusMessage = $"Saved settings to {_settingsService.SettingsFilePath}";
@@ -517,6 +527,7 @@ public partial class SettingsViewModel : ViewModelBase
             RunAtStartup = _settingsService.Current.Startup.RunAtStartup;
             StartMinimized = _settingsService.Current.Startup.StartMinimized;
             CloseToTray = _settingsService.Current.Startup.CloseToTray;
+            SelectedTheme = _settingsService.Current.Ui?.Theme ?? AppTheme.Light;
             AutoTrackEnabled = _settingsService.Current.AutoTrack?.Enabled ?? true;
             var autoTrack = _settingsService.Current.AutoTrack ?? new AutoTrackSettings();
             AutoTrackAnchorDay = autoTrack.AnchorDayOfWeek;
@@ -627,6 +638,12 @@ public partial class SettingsViewModel : ViewModelBase
         _settingsService.Current.Startup.RunAtStartup = RunAtStartup;
         _settingsService.Current.Startup.StartMinimized = StartMinimized;
         _settingsService.Current.Startup.CloseToTray = CloseToTray;
+    }
+
+    private void ApplyUiSettings()
+    {
+        _settingsService.Current.Ui ??= new UiSettings();
+        _settingsService.Current.Ui.Theme = SelectedTheme;
     }
 
     private void ApplyAutoTrackSettings()

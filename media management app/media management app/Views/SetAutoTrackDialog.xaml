@@ -38,7 +38,6 @@
             <ComboBox ItemsSource="{Binding CheckpointOptions}"
                       SelectedItem="{Binding SelectedCheckpoint, Mode=TwoWay}"
                       DisplayMemberPath="Label"
-                      MinHeight="36"
                       Margin="0,0,0,12" />
             <TextBlock Text="Download folder"
                        Foreground="{StaticResource AppBrushMutedText}"
@@ -46,7 +45,6 @@
                        Margin="0,0,0,4" />
             <ComboBox ItemsSource="{Binding DownloadFolderOptions}"
                       SelectedItem="{Binding SelectedDownloadFolder, Mode=TwoWay}"
-                      MinHeight="36"
                       Margin="0,0,0,12" />
             <CheckBox IsChecked="{Binding AutoReconcileAndLink, Mode=TwoWay}"
                       Content="Auto reconcile and hardlink when downloads complete" />

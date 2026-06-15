@@ -26,6 +26,12 @@ public enum AppLogLevel
 
 #region Settings
 
+public enum AppTheme
+{
+    Light = 0,
+    Dark = 1
+}
+
 public enum SettingsSection
 {
     System = 0,
@@ -33,7 +39,8 @@ public enum SettingsSection
     Integrations = 2,
     TorrentStorage = 3,
     Notifications = 4,
-    Warp = 5
+    Warp = 5,
+    Ui = 6
 }
 
 #endregion

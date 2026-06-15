@@ -14,9 +14,10 @@ public sealed class SystemSettingsViewModel : SettingsViewModel
         IWindowsStartupService windowsStartupService,
         ITrayIconService trayIconService,
         IWindowsNotificationService windowsNotificationService,
+        IThemeService themeService,
         HttpClient httpClient,
         IAppLogger logger)
-        : base(settingsService, databaseService, libraryPathResolver, qbittorrentClient, warpCliService, windowsStartupService, trayIconService, windowsNotificationService, httpClient, logger)
+        : base(settingsService, databaseService, libraryPathResolver, qbittorrentClient, warpCliService, windowsStartupService, trayIconService, windowsNotificationService, themeService, httpClient, logger)
     {
     }
 }

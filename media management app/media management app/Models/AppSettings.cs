@@ -16,6 +16,8 @@ public sealed class AppSettings
 
     public AppStartupSettings Startup { get; set; } = new();
 
+    public UiSettings Ui { get; set; } = new();
+
     public List<string> SourceFolders { get; set; } = [];
 
     public LibraryRootMode LibraryRootMode { get; set; } = LibraryRootMode.AutoPerDrive;

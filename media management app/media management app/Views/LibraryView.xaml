@@ -132,7 +132,7 @@
                             <iconPacks:PackIconLucide Kind="ShoppingCart"
                                                        Width="15"
                                                        Height="15"
-                                                       Foreground="#ffffff"
+                                                       Foreground="{StaticResource AppBrushOnAccent}"
                                                        VerticalAlignment="Center" />
                         </Button>
                         <Button Style="{StaticResource CompactOutlinedIconButtonStyle}"
@@ -180,7 +180,8 @@
                                                                Foreground="{StaticResource AppBrushShowAccent}"
                                                                VerticalAlignment="Center" />
                                     <TextBlock Text="{Binding Header}"
-                                               FontWeight="SemiBold">
+                                               FontWeight="SemiBold"
+                                               Foreground="{StaticResource AppBrushText}">
                                         <TextBlock.Style>
                                             <Style TargetType="TextBlock">
                                                 <Setter Property="FontStyle" Value="Normal" />
@@ -242,9 +243,9 @@
                                                                Width="14"
                                                                Height="14"
                                                                Margin="0,0,6,0"
-                                                               Foreground="#ffffff"
+                                                               Foreground="{StaticResource AppBrushOnAccent}"
                                                                VerticalAlignment="Center" />
-                                    <TextBlock Text="Add Pack" VerticalAlignment="Center" Foreground="#ffffff" />
+                                    <TextBlock Text="Add Pack" VerticalAlignment="Center" Foreground="{StaticResource AppBrushOnAccent}" />
                                 </StackPanel>
                             </Button>
                             <Button Style="{StaticResource AppOutlinedButtonStyle}"
@@ -665,9 +666,9 @@
                                                                Width="14"
                                                                Height="14"
                                                                Margin="0,0,6,0"
-                                                               Foreground="#ffffff"
+                                                               Foreground="{StaticResource AppBrushOnAccent}"
                                                                VerticalAlignment="Center" />
-                                    <TextBlock Text="Scan" Foreground="#ffffff" VerticalAlignment="Center" />
+                                    <TextBlock Text="Scan" Foreground="{StaticResource AppBrushOnAccent}" VerticalAlignment="Center" />
                                 </StackPanel>
                             </Button>
                             <Button Style="{StaticResource AppPrimaryButtonStyle}"
@@ -679,9 +680,9 @@
                                                                Width="14"
                                                                Height="14"
                                                                Margin="0,0,6,0"
-                                                               Foreground="#ffffff"
+                                                               Foreground="{StaticResource AppBrushOnAccent}"
                                                                VerticalAlignment="Center" />
-                                    <TextBlock Text="Import" Foreground="#ffffff" VerticalAlignment="Center" />
+                                    <TextBlock Text="Import" Foreground="{StaticResource AppBrushOnAccent}" VerticalAlignment="Center" />
                                 </StackPanel>
                             </Button>
                         </StackPanel>
@@ -768,7 +769,7 @@
                                         CornerRadius="8"
                                         ClipToBounds="True"
                                         materialDesign:ElevationAssist.Elevation="Dp2">
-                                    <Grid Background="#0f172a">
+                                    <Grid Background="{StaticResource AppBrushOverlayScrim}">
                                         <StackPanel HorizontalAlignment="Center"
                                                     VerticalAlignment="Center">
                                             <iconPacks:PackIconLucide Kind="ImageOff"
@@ -807,9 +808,9 @@
                                                                            Width="14"
                                                                            Height="14"
                                                                            Margin="0,0,6,0"
-                                                                           Foreground="#ffffff"
+                                                                           Foreground="{StaticResource AppBrushOnAccent}"
                                                                            VerticalAlignment="Center" />
-                                                <TextBlock Text="Delete" VerticalAlignment="Center" Foreground="#ffffff" />
+                                                <TextBlock Text="Delete" VerticalAlignment="Center" Foreground="{StaticResource AppBrushOnAccent}" />
                                             </StackPanel>
                                         </Button>
                                     </Grid>
@@ -1003,9 +1004,9 @@
                                                                                Width="14"
                                                                                Height="14"
                                                                                Margin="0,0,6,0"
-                                                                               Foreground="#ffffff"
+                                                                               Foreground="{StaticResource AppBrushOnAccent}"
                                                                                VerticalAlignment="Center" />
-                                                    <TextBlock Text="Add to Cart" VerticalAlignment="Center" Foreground="#ffffff" />
+                                                    <TextBlock Text="Add to Cart" VerticalAlignment="Center" Foreground="{StaticResource AppBrushOnAccent}" />
                                                 </StackPanel>
                                             </Button>
                                             <Button Style="{StaticResource AppOutlinedButtonStyle}"

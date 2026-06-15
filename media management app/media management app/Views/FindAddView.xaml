@@ -34,10 +34,10 @@
             <Setter Property="Background" Value="Transparent" />
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="#f7fbff" />
+                    <Setter Property="Background" Value="{StaticResource AppBrushListHover}" />
                 </Trigger>
                 <Trigger Property="IsSelected" Value="True">
-                    <Setter Property="Background" Value="#edf7f5" />
+                    <Setter Property="Background" Value="{StaticResource AppBrushListSelected}" />
                 </Trigger>
             </Style.Triggers>
         </Style>
@@ -257,7 +257,7 @@
                                 <Setter TargetName="Root" Property="BorderBrush" Value="{StaticResource AppBrushAccent}" />
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="Root" Property="Background" Value="#d7ebe6" />
+                                <Setter TargetName="Root" Property="Background" Value="{StaticResource AppBrushSortPressed}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -280,23 +280,16 @@
                        VerticalAlignment="Center" />
         </DataTemplate>
 
-        <Style x:Key="DetailRecipeComboBoxStyle" TargetType="ComboBox">
+        <Style x:Key="DetailRecipeComboBoxStyle" TargetType="ComboBox" BasedOn="{StaticResource AppComboBoxStyle}">
             <Setter Property="Width" Value="270" />
-            <Setter Property="Height" Value="36" />
             <Setter Property="MinHeight" Value="36" />
-            <Setter Property="Padding" Value="12,0" />
-            <Setter Property="Background" Value="{StaticResource AppBrushSurface}" />
-            <Setter Property="BorderBrush" Value="{StaticResource AppBrushBorder}" />
-            <Setter Property="Foreground" Value="{StaticResource AppBrushText}" />
             <Setter Property="HorizontalContentAlignment" Value="Center" />
-            <Setter Property="VerticalContentAlignment" Value="Center" />
             <Setter Property="ItemTemplate" Value="{StaticResource RecipeComboBoxItemTemplate}" />
             <Setter Property="ToolTip" Value="Recipe used after adding this media" />
         </Style>
 
-        <Style x:Key="DetailAddButtonStyle" TargetType="Button">
+        <Style x:Key="DetailAddButtonStyle" TargetType="Button" BasedOn="{StaticResource AppOutlinedButtonStyle}">
             <Setter Property="Width" Value="144" />
-            <Setter Property="Height" Value="36" />
             <Setter Property="MinHeight" Value="36" />
             <Setter Property="Padding" Value="12,0" />
             <Setter Property="Margin" Value="0" />
@@ -766,7 +759,7 @@
                                     BorderThickness="1"
                                     CornerRadius="8"
                                     ClipToBounds="True">
-                                <Grid Background="#0f172a">
+                                <Grid Background="{StaticResource AppBrushOverlayScrim}">
                                     <TextBlock Text="No cover"
                                                Style="{StaticResource MutedTextStyle}"
                                                HorizontalAlignment="Center"

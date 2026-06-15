@@ -1,0 +1,92 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Color x:Key="AppColorCanvas">#121820</Color>
+    <Color x:Key="AppColorSurface">#1a2230</Color>
+    <Color x:Key="AppColorSurfaceRaised">#232d3d</Color>
+    <Color x:Key="AppColorSidebar">#161e2a</Color>
+    <Color x:Key="AppColorBorder">#2f3a4d</Color>
+    <Color x:Key="AppColorBorderStrong">#3d4a60</Color>
+    <Color x:Key="AppColorText">#e8edf5</Color>
+    <Color x:Key="AppColorMutedText">#93a0b8</Color>
+    <Color x:Key="AppColorAccent">#4fa88f</Color>
+    <Color x:Key="AppColorAccentSoft">#1e3a32</Color>
+    <Color x:Key="AppColorAccentHover">#254038</Color>
+    <Color x:Key="AppColorAccentPressed">#3d9480</Color>
+    <Color x:Key="AppColorOnAccent">#ffffff</Color>
+    <Color x:Key="AppColorWarning">#d99a3a</Color>
+    <Color x:Key="AppColorDanger">#e05555</Color>
+    <Color x:Key="AppColorDangerPressed">#d04a4a</Color>
+    <Color x:Key="AppColorShowAccent">#2ec4bf</Color>
+    <Color x:Key="AppColorShowSoft">#163432</Color>
+    <Color x:Key="AppColorMovieAccent">#6b94e8</Color>
+    <Color x:Key="AppColorMovieSoft">#1a2740</Color>
+    <Color x:Key="AppColorNewAccent">#7a94b0</Color>
+    <Color x:Key="AppColorNewSoft">#1e2a38</Color>
+    <Color x:Key="AppColorListHover">#283548</Color>
+    <Color x:Key="AppColorListSelected">#1e3a32</Color>
+    <Color x:Key="AppColorDataGridBackground">#232d3d</Color>
+    <Color x:Key="AppColorDataGridBorder">#2f3a4d</Color>
+    <Color x:Key="AppColorDataGridAltRow">#1a2230</Color>
+    <Color x:Key="AppColorDataGridHeader">#1e2838</Color>
+    <Color x:Key="AppColorDataGridHeaderText">#c8d4e8</Color>
+    <Color x:Key="AppColorDataGridHeaderBorder">#2f3a4d</Color>
+    <Color x:Key="AppColorIconStroke">#e8edf5</Color>
+    <Color x:Key="AppColorSortPressed">#254038</Color>
+    <Color x:Key="AppColorProgressForeground">#4f8ef7</Color>
+    <Color x:Key="AppColorProgressBackground">#1a2230</Color>
+    <Color x:Key="AppColorProgressBorder">#2f3a4d</Color>
+    <Color x:Key="AppColorOverlayScrim">#0a0f18</Color>
+    <Color x:Key="AppColorOverlayLight">#cc232d3d</Color>
+    <Color x:Key="AppColorOverlayLightStrong">#ea232d3d</Color>
+    <Color x:Key="AppColorStatusErrorBg">#3d2020</Color>
+    <Color x:Key="AppColorStatusMutedBg">#252d3d</Color>
+    <Color x:Key="AppColorPlaceholderSurface">#252d3d</Color>
+    <Color x:Key="AppColorPlaceholderInfo">#1e2838</Color>
+    <Color x:Key="AppColorChipMuted">#252d3d</Color>
+    <Color x:Key="AppColorDisabledBackground">#252d3d</Color>
+
+    <SolidColorBrush x:Key="AppBrushCanvas" Color="{StaticResource AppColorCanvas}" />
+    <SolidColorBrush x:Key="AppBrushSurface" Color="{StaticResource AppColorSurface}" />
+    <SolidColorBrush x:Key="AppBrushSurfaceRaised" Color="{StaticResource AppColorSurfaceRaised}" />
+    <SolidColorBrush x:Key="AppBrushSidebar" Color="{StaticResource AppColorSidebar}" />
+    <SolidColorBrush x:Key="AppBrushBorder" Color="{StaticResource AppColorBorder}" />
+    <SolidColorBrush x:Key="AppBrushBorderStrong" Color="{StaticResource AppColorBorderStrong}" />
+    <SolidColorBrush x:Key="AppBrushText" Color="{StaticResource AppColorText}" />
+    <SolidColorBrush x:Key="AppBrushMutedText" Color="{StaticResource AppColorMutedText}" />
+    <SolidColorBrush x:Key="AppBrushAccent" Color="{StaticResource AppColorAccent}" />
+    <SolidColorBrush x:Key="AppBrushAccentSoft" Color="{StaticResource AppColorAccentSoft}" />
+    <SolidColorBrush x:Key="AppBrushAccentHover" Color="{StaticResource AppColorAccentHover}" />
+    <SolidColorBrush x:Key="AppBrushAccentPressed" Color="{StaticResource AppColorAccentPressed}" />
+    <SolidColorBrush x:Key="AppBrushOnAccent" Color="{StaticResource AppColorOnAccent}" />
+    <SolidColorBrush x:Key="AppBrushWarning" Color="{StaticResource AppColorWarning}" />
+    <SolidColorBrush x:Key="AppBrushDanger" Color="{StaticResource AppColorDanger}" />
+    <SolidColorBrush x:Key="AppBrushDangerPressed" Color="{StaticResource AppColorDangerPressed}" />
+    <SolidColorBrush x:Key="AppBrushShowAccent" Color="{StaticResource AppColorShowAccent}" />
+    <SolidColorBrush x:Key="AppBrushShowSoft" Color="{StaticResource AppColorShowSoft}" />
+    <SolidColorBrush x:Key="AppBrushMovieAccent" Color="{StaticResource AppColorMovieAccent}" />
+    <SolidColorBrush x:Key="AppBrushMovieSoft" Color="{StaticResource AppColorMovieSoft}" />
+    <SolidColorBrush x:Key="AppBrushNewAccent" Color="{StaticResource AppColorNewAccent}" />
+    <SolidColorBrush x:Key="AppBrushNewSoft" Color="{StaticResource AppColorNewSoft}" />
+    <SolidColorBrush x:Key="AppBrushListHover" Color="{StaticResource AppColorListHover}" />
+    <SolidColorBrush x:Key="AppBrushListSelected" Color="{StaticResource AppColorListSelected}" />
+    <SolidColorBrush x:Key="AppBrushDataGridBackground" Color="{StaticResource AppColorDataGridBackground}" />
+    <SolidColorBrush x:Key="AppBrushDataGridBorder" Color="{StaticResource AppColorDataGridBorder}" />
+    <SolidColorBrush x:Key="AppBrushDataGridAltRow" Color="{StaticResource AppColorDataGridAltRow}" />
+    <SolidColorBrush x:Key="AppBrushDataGridHeader" Color="{StaticResource AppColorDataGridHeader}" />
+    <SolidColorBrush x:Key="AppBrushDataGridHeaderText" Color="{StaticResource AppColorDataGridHeaderText}" />
+    <SolidColorBrush x:Key="AppBrushDataGridHeaderBorder" Color="{StaticResource AppColorDataGridHeaderBorder}" />
+    <SolidColorBrush x:Key="AppBrushIconStroke" Color="{StaticResource AppColorIconStroke}" />
+    <SolidColorBrush x:Key="AppBrushSortPressed" Color="{StaticResource AppColorSortPressed}" />
+    <SolidColorBrush x:Key="AppBrushProgressForeground" Color="{StaticResource AppColorProgressForeground}" />
+    <SolidColorBrush x:Key="AppBrushProgressBackground" Color="{StaticResource AppColorProgressBackground}" />
+    <SolidColorBrush x:Key="AppBrushProgressBorder" Color="{StaticResource AppColorProgressBorder}" />
+    <SolidColorBrush x:Key="AppBrushOverlayScrim" Color="{StaticResource AppColorOverlayScrim}" />
+    <SolidColorBrush x:Key="AppBrushOverlayLight" Color="{StaticResource AppColorOverlayLight}" />
+    <SolidColorBrush x:Key="AppBrushOverlayLightStrong" Color="{StaticResource AppColorOverlayLightStrong}" />
+    <SolidColorBrush x:Key="AppBrushStatusErrorBg" Color="{StaticResource AppColorStatusErrorBg}" />
+    <SolidColorBrush x:Key="AppBrushStatusMutedBg" Color="{StaticResource AppColorStatusMutedBg}" />
+    <SolidColorBrush x:Key="AppBrushPlaceholderSurface" Color="{StaticResource AppColorPlaceholderSurface}" />
+    <SolidColorBrush x:Key="AppBrushPlaceholderInfo" Color="{StaticResource AppColorPlaceholderInfo}" />
+    <SolidColorBrush x:Key="AppBrushChipMuted" Color="{StaticResource AppColorChipMuted}" />
+    <SolidColorBrush x:Key="AppBrushDisabledBackground" Color="{StaticResource AppColorDisabledBackground}" />
+</ResourceDictionary>

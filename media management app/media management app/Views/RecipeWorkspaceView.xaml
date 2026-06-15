@@ -140,6 +140,8 @@
             <Setter Property="Padding" Value="10,8" />
             <Setter Property="MinHeight" Value="36" />
             <Setter Property="Background" Value="{StaticResource AppBrushSurface}" />
+            <Setter Property="Foreground" Value="{StaticResource AppBrushText}" />
+            <Setter Property="CaretBrush" Value="{StaticResource AppBrushText}" />
         </Style>
 
         <Style x:Key="RecipeNumericChromeStyle" TargetType="Border" BasedOn="{StaticResource RecipeInputChromeStyle}">
@@ -162,6 +164,7 @@
 
         <Style x:Key="RecipeQualityChromeStyle" TargetType="Border" BasedOn="{StaticResource RecipeInputChromeStyle}">
             <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="Padding" Value="0" />
         </Style>
 
         <Style x:Key="ModuleHelpPanelStyle" TargetType="Border">
@@ -312,9 +315,9 @@
                                                    Width="14"
                                                    Height="14"
                                                    Margin="0,0,6,0"
-                                                   Foreground="#ffffff"
+                                                   Foreground="{StaticResource AppBrushOnAccent}"
                                                    VerticalAlignment="Center" />
-                        <TextBlock Text="Save Recipe" Foreground="#ffffff" VerticalAlignment="Center" />
+                        <TextBlock Text="Save Recipe" Foreground="{StaticResource AppBrushOnAccent}" VerticalAlignment="Center" />
                     </StackPanel>
                 </Button>
             </Grid>
@@ -330,13 +333,13 @@
 
                             <StackPanel Grid.Column="0" Margin="0,0,14,0">
                                 <TextBlock Text="Recipe name" Style="{StaticResource RecipeLabelStyle}" />
-                                <TextBox Text="{Binding SelectedRecipeName, UpdateSourceTrigger=PropertyChanged}" />
+                                <TextBox Text="{Binding SelectedRecipeName, UpdateSourceTrigger=PropertyChanged}"
+                                         Style="{StaticResource RecipeTextBoxStyle}" />
                             </StackPanel>
                             <StackPanel Grid.Column="1">
                                 <TextBlock Text="Target" Style="{StaticResource RecipeLabelStyle}" />
                                 <ComboBox ItemsSource="{Binding TargetKinds}"
-                                          SelectedItem="{Binding SelectedRecipeTargetKind}"
-                                          Padding="10,7" />
+                                          SelectedItem="{Binding SelectedRecipeTargetKind}" />
                             </StackPanel>
                         </Grid>
 
@@ -440,7 +443,8 @@
                                                               BorderThickness="0">
                                                         <Expander.Header>
                                                             <TextBlock Text="{Binding SelectedQualitiesSummary}"
-                                                                       Padding="10,8" />
+                                                                       Padding="10,8"
+                                                                       Foreground="{StaticResource AppBrushText}" />
                                                         </Expander.Header>
                                                         <ItemsControl ItemsSource="{Binding QualityOptions}"
                                                                       ItemTemplate="{StaticResource QualityCheckItemTemplate}"
@@ -481,7 +485,6 @@
                                                 <TextBlock Text="Search mode" Style="{StaticResource RecipeLabelStyle}" />
                                                 <ComboBox ItemsSource="{Binding SearchModeOptions}"
                                                           SelectedItem="{Binding SearchMode, Mode=TwoWay}"
-                                                          Padding="10,7"
                                                           Margin="0,0,0,12" />
                                                 <TextBlock Text="Plugins" Style="{StaticResource RecipeLabelStyle}" />
                                                 <TextBox Text="{Binding Plugins, UpdateSourceTrigger=PropertyChanged}"
@@ -625,7 +628,8 @@
                                                               BorderThickness="0">
                                                         <Expander.Header>
                                                             <TextBlock Text="{Binding SelectedQualitiesSummary}"
-                                                                       Padding="10,8" />
+                                                                       Padding="10,8"
+                                                                       Foreground="{StaticResource AppBrushText}" />
                                                         </Expander.Header>
                                                         <ItemsControl ItemsSource="{Binding QualityOptions}"
                                                                       ItemTemplate="{StaticResource QualityCheckItemTemplate}"
@@ -694,7 +698,6 @@
                                                 <TextBlock Text="Episode numbering" Style="{StaticResource RecipeLabelStyle}" />
                                                 <ComboBox ItemsSource="{Binding EpisodeNumberingModeOptions}"
                                                           SelectedItem="{Binding EpisodeNumberingMode, Mode=TwoWay}"
-                                                          Padding="10,7"
                                                           Margin="0,0,0,12" />
                                                 <CheckBox Content="Probe candidate metadata"
                                                           IsChecked="{Binding EnableCandidateMetadataProbe}" />

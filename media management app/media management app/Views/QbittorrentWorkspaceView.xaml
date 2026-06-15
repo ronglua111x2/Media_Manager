@@ -125,7 +125,7 @@
             <Grid>
                 <Grid x:Name="BrowserHost" />
 
-                <Border Background="#ccffffff"
+                <Border Background="{StaticResource AppBrushOverlayLight}"
                         Visibility="{Binding IsLoading, Converter={StaticResource BooleanToVisibilityConverter}}">
                     <StackPanel HorizontalAlignment="Center"
                                 VerticalAlignment="Center"
@@ -140,7 +140,7 @@
                     </StackPanel>
                 </Border>
 
-                <Border Background="#eaffffff"
+                <Border Background="{StaticResource AppBrushOverlayLightStrong}"
                         Visibility="{Binding HasError, Converter={StaticResource BooleanToVisibilityConverter}}">
                     <StackPanel HorizontalAlignment="Center"
                                 VerticalAlignment="Center"

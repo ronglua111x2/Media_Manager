@@ -7,7 +7,6 @@ using Microsoft.Toolkit.Uwp.Notifications;
 using media_management_app.Common;
 using media_management_app.Services;
 using media_management_app.ViewModels;
-using Wpf.Ui.Appearance;
 
 namespace media_management_app;
 
@@ -34,8 +33,6 @@ public partial class App : System.Windows.Application
         }
 
         base.OnStartup(e);
-        ApplicationThemeManager.Apply(ApplicationTheme.Light);
-        ApplicationAccentColorManager.Apply(System.Windows.Media.Color.FromRgb(0x3d, 0x7d, 0x6b), ApplicationTheme.Light);
 
         var services = new ServiceCollection();
         ConfigureServices(services);
@@ -43,6 +40,8 @@ public partial class App : System.Windows.Application
 
         var settings = _serviceProvider.GetRequiredService<ISettingsService>();
         settings.Load();
+
+        _serviceProvider.GetRequiredService<IThemeService>().Apply(settings.Current.Ui?.Theme ?? AppTheme.Light);
 
         var database = _serviceProvider.GetRequiredService<IDatabaseService>();
         database.Initialize(settings.Current.StateFolder);
@@ -110,6 +109,7 @@ public partial class App : System.Windows.Application
         services.AddSingleton<HttpClient>();
 
         services.AddSingleton<ISettingsService, SettingsService>();
+        services.AddSingleton<IThemeService, ThemeService>();
         services.AddSingleton<IWindowsStartupService, WindowsStartupService>();
         services.AddSingleton<ITrayIconService, TrayIconService>();
         services.AddSingleton<IWindowsNotificationService, WindowsNotificationService>();
