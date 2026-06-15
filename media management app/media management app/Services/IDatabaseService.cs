@@ -44,6 +44,23 @@ public interface IDatabaseService
 
     void UpdateTrackedShowAutoTrackReconcileAndLink(long showId, bool autoReconcileAndLink);
 
+    void UpdateTrackedShowAutoTrackTmdbState(long showId, AutoTrackTmdbState tmdbState, string? lastTmdbWeekKey);
+
+    void UpdateTrackedShowAutoTrackScheduleOverrides(
+        long showId,
+        DayOfWeek? anchorDayOfWeek,
+        string? anchorTimeLocal,
+        bool clearOverrides);
+
+    void UpdateTrackedShowAutoTrackQualityOverrides(
+        long showId,
+        string? minQuality,
+        int? minSeeders,
+        int? minFileSizeMb,
+        int? maxFileSizeMb,
+        string? allowedQualities,
+        bool clearOverrides);
+
     TrackedShow? GetTrackedShow(long id);
 
     TrackedShow? GetTrackedShowByTmdbId(int tmdbId);

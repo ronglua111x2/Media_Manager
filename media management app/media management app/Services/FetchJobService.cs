@@ -111,7 +111,8 @@ public sealed class FetchJobService : IFetchJobService
         IReadOnlyList<long> episodeIds,
         string? recipeId = null,
         Action<long, string>? statusChanged = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        EpisodeFetchOptions? options = null)
     {
         var show = _databaseService.GetTrackedShow(showId) ?? throw new InvalidOperationException("Tracked show was not found.");
         var requestedEpisodeIds = episodeIds.Distinct().ToHashSet();
@@ -127,7 +128,9 @@ public sealed class FetchJobService : IFetchJobService
 
         ClearEpisodeCandidateCache(targetEpisodes);
         var recipe = _recipeService.GetRecipeOrDefault(recipeId ?? show.RecipeId, MediaKind.TvEpisode);
-        var useSnapshot = RecipeRuntimeSettings.GetUseShowSnapshotSearch(recipe, _settingsService.Current.AutoTorrent);
+        var useSnapshot = options?.ForceParallelEpisodeSearch == true
+            ? false
+            : RecipeRuntimeSettings.GetUseShowSnapshotSearch(recipe, _settingsService.Current.AutoTorrent);
         var mode = useSnapshot ? "Show snapshot search" : "Parallel episode search";
         _logger.Info(
             $"Cart episode run for {show.DisplayTitle}. Recipe='{recipe.Name}', Mode='{mode}', Orders={targetEpisodes.Count}.",
@@ -135,7 +138,7 @@ public sealed class FetchJobService : IFetchJobService
 
         return useSnapshot
             ? await FetchEpisodeCandidatesSnapshotAsync(show, targetEpisodes, recipe, statusChanged, cancellationToken)
-            : await FetchEpisodeCandidatesParallelAsync(show, targetEpisodes, recipe, statusChanged, cancellationToken);
+            : await FetchEpisodeCandidatesParallelAsync(show, targetEpisodes, recipe, statusChanged, cancellationToken, options?.MaxParallelWorkers);
     }
 
     public async Task FetchSeasonPacksAsync(long showId, IReadOnlyList<int> seasonNumbers, CancellationToken cancellationToken = default, int? maxCandidatesOverride = null)
@@ -202,11 +205,14 @@ public sealed class FetchJobService : IFetchJobService
         IReadOnlyList<TrackedEpisode> targetEpisodes,
         SearchRecipe recipe,
         Action<long, string>? statusChanged,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int? maxParallelWorkersOverride = null)
     {
-        var parallelSearches = Math.Min(
-            RecipeRuntimeSettings.GetParallelSearchCount(recipe, _settingsService.Current.AutoTorrent),
-            Math.Max(targetEpisodes.Count, 1));
+        var parallelSearches = maxParallelWorkersOverride is > 0
+            ? Math.Clamp(maxParallelWorkersOverride.Value, 1, 4)
+            : Math.Min(
+                RecipeRuntimeSettings.GetParallelSearchCount(recipe, _settingsService.Current.AutoTorrent),
+                Math.Max(targetEpisodes.Count, 1));
         var nextIndex = 0;
         var results = new Dictionary<long, IReadOnlyList<EpisodeFetchCandidate>>();
         var resultGate = new object();

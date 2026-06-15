@@ -435,14 +435,80 @@
                                     <CheckBox IsChecked="{Binding AutoTrackEnabled, Mode=TwoWay}"
                                               Margin="0,0,0,8"
                                               Content="Enable scheduled auto-track runs" />
-                                    <TextBlock Text="Run interval (hours)" Style="{StaticResource SettingsLabelStyle}" />
-                                    <Border Style="{StaticResource SettingsNumericChromeStyle}">
+                                    <TextBlock Text="Weekly anchor day" Style="{StaticResource SettingsLabelStyle}" />
+                                    <ComboBox ItemsSource="{Binding AnchorDayOptions}"
+                                              SelectedItem="{Binding AutoTrackAnchorDay, Mode=TwoWay}"
+                                              Margin="0,0,0,8" />
+                                    <TextBlock Text="Weekly anchor time (HH:mm)" Style="{StaticResource SettingsLabelStyle}" />
+                                    <TextBox Text="{Binding AutoTrackAnchorTimeLocal, UpdateSourceTrigger=PropertyChanged}"
+                                             Margin="0,0,0,8" />
+                                    <TextBlock Text="TMDB check interval (minutes)" Style="{StaticResource SettingsLabelStyle}" />
+                                    <Border Style="{StaticResource SettingsNumericChromeStyle}" Margin="0,0,0,8">
                                         <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
-                                                                      Value="{Binding AutoTrackIntervalHours, UpdateSourceTrigger=PropertyChanged}"
-                                                                      Minimum="1"
-                                                                      Maximum="168" />
+                                                                      Value="{Binding AutoTrackTmdbCheckIntervalMinutes, UpdateSourceTrigger=PropertyChanged}"
+                                                                      Minimum="5"
+                                                                      Maximum="1440" />
                                     </Border>
-                                    <TextBlock Text="Checks auto-tracked shows, queues missing episodes, searches via WARP, and adds torrents automatically."
+                                    <TextBlock Text="Torrent hunt interval (minutes)" Style="{StaticResource SettingsLabelStyle}" />
+                                    <Border Style="{StaticResource SettingsNumericChromeStyle}" Margin="0,0,0,8">
+                                        <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
+                                                                      Value="{Binding AutoTrackTorrentHuntIntervalMinutes, UpdateSourceTrigger=PropertyChanged}"
+                                                                      Minimum="15"
+                                                                      Maximum="1440" />
+                                    </Border>
+                                    <TextBlock Text="Reconcile interval (minutes)" Style="{StaticResource SettingsLabelStyle}" />
+                                    <Border Style="{StaticResource SettingsNumericChromeStyle}" Margin="0,0,0,8">
+                                        <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
+                                                                      Value="{Binding AutoTrackReconcileIntervalMinutes, UpdateSourceTrigger=PropertyChanged}"
+                                                                      Minimum="5"
+                                                                      Maximum="1440" />
+                                    </Border>
+                                    <TextBlock Text="Max TMDB refreshes per day" Style="{StaticResource SettingsLabelStyle}" />
+                                    <Border Style="{StaticResource SettingsNumericChromeStyle}" Margin="0,0,0,8">
+                                        <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
+                                                                      Value="{Binding AutoTrackMaxTmdbRefreshesPerDay, UpdateSourceTrigger=PropertyChanged}"
+                                                                      Minimum="1"
+                                                                      Maximum="500" />
+                                    </Border>
+                                    <TextBlock Text="Shows per hunt cycle" Style="{StaticResource SettingsLabelStyle}" />
+                                    <Border Style="{StaticResource SettingsNumericChromeStyle}" Margin="0,0,0,8">
+                                        <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
+                                                                      Value="{Binding AutoTrackMaxShowsPerHuntCycle, UpdateSourceTrigger=PropertyChanged}"
+                                                                      Minimum="1"
+                                                                      Maximum="20" />
+                                    </Border>
+                                    <CheckBox IsChecked="{Binding AutoTrackForceParallelEpisodeSearch, Mode=TwoWay}"
+                                              Margin="0,0,0,8"
+                                              Content="Force parallel episode search (no snapshot)" />
+                                    <TextBlock Text="Auto-Track quality" Style="{StaticResource SettingsSectionTitleStyle}" Margin="0,8,0,8" />
+                                    <TextBlock Text="Min quality" Style="{StaticResource SettingsLabelStyle}" />
+                                    <TextBox Text="{Binding AutoTrackMinQuality, UpdateSourceTrigger=PropertyChanged}"
+                                             Margin="0,0,0,8" />
+                                    <TextBlock Text="Min seeders" Style="{StaticResource SettingsLabelStyle}" />
+                                    <Border Style="{StaticResource SettingsNumericChromeStyle}" Margin="0,0,0,8">
+                                        <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
+                                                                      Value="{Binding AutoTrackMinSeeders, UpdateSourceTrigger=PropertyChanged}"
+                                                                      Minimum="0"
+                                                                      Maximum="99999" />
+                                    </Border>
+                                    <TextBlock Text="Min file size (MB, 0 = off)" Style="{StaticResource SettingsLabelStyle}" />
+                                    <Border Style="{StaticResource SettingsNumericChromeStyle}" Margin="0,0,0,8">
+                                        <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
+                                                                      Value="{Binding AutoTrackMinFileSizeMb, UpdateSourceTrigger=PropertyChanged}"
+                                                                      Minimum="0"
+                                                                      Maximum="50000" />
+                                    </Border>
+                                    <TextBlock Text="Max file size (MB, 0 = off)" Style="{StaticResource SettingsLabelStyle}" />
+                                    <Border Style="{StaticResource SettingsNumericChromeStyle}" Margin="0,0,0,8">
+                                        <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
+                                                                      Value="{Binding AutoTrackMaxFileSizeMb, UpdateSourceTrigger=PropertyChanged}"
+                                                                      Minimum="0"
+                                                                      Maximum="50000" />
+                                    </Border>
+                                    <TextBlock Text="Allowed qualities (comma-separated, optional)" Style="{StaticResource SettingsLabelStyle}" />
+                                    <TextBox Text="{Binding AutoTrackAllowedQualities, UpdateSourceTrigger=PropertyChanged}"
+                                             Margin="0,0,0,8" />
+                                    <TextBlock Text="After the weekly anchor, TMDB discovery runs once per show per week. Torrent hunt batches the latest missing episode per show."
                                                Style="{StaticResource SettingsHintStyle}"
                                                Margin="0,8,0,0"
                                                TextWrapping="Wrap" />

@@ -111,7 +111,7 @@
                                                         CornerRadius="4"
                                                         Background="#eef2f6"
                                                         ClipToBounds="True">
-                                                    <Image Source="{Binding PosterUrl}"
+                                                    <Image Source="{Binding PosterImage}"
                                                            Stretch="UniformToFill" />
                                                 </Border>
                                                 <StackPanel Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center">
@@ -128,6 +128,15 @@
                                                                Foreground="{StaticResource AppBrushAccent}"
                                                                FontSize="12"
                                                                Margin="0,4,0,0" />
+                                                    <TextBlock Text="{Binding ScheduleStatusLine}"
+                                                               Style="{StaticResource MutedTextStyle}"
+                                                               Margin="0,2,0,0" />
+                                                    <TextBlock Text="{Binding TmdbStatusLine}"
+                                                               Style="{StaticResource MutedTextStyle}"
+                                                               Margin="0,2,0,0" />
+                                                    <TextBlock Text="{Binding HuntStatusLine}"
+                                                               Style="{StaticResource MutedTextStyle}"
+                                                               Margin="0,2,0,0" />
                                                 </StackPanel>
                                                 <Button Grid.Column="2"
                                                         Style="{StaticResource AppOutlinedButtonStyle}"
@@ -152,6 +161,37 @@
                                                 <CheckBox IsChecked="{Binding AutoReconcileAndLink, Mode=TwoWay}"
                                                           Margin="0,8,0,0"
                                                           Content="Auto reconcile and hardlink" />
+                                                <CheckBox IsChecked="{Binding UseCustomSchedule, Mode=TwoWay}"
+                                                          Margin="0,8,0,0"
+                                                          Content="Use custom schedule" />
+                                                <StackPanel Margin="0,4,0,0"
+                                                            Visibility="{Binding UseCustomSchedule, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                    <ComboBox ItemsSource="{Binding AnchorDayOptions}"
+                                                              SelectedItem="{Binding CustomAnchorDay, Mode=TwoWay}"
+                                                              Margin="0,0,0,4" />
+                                                    <TextBox Text="{Binding CustomAnchorTimeLocal, UpdateSourceTrigger=PropertyChanged}"
+                                                             ToolTip="HH:mm" />
+                                                </StackPanel>
+                                                <CheckBox IsChecked="{Binding UseCustomQuality, Mode=TwoWay}"
+                                                          Margin="0,8,0,0"
+                                                          Content="Use custom quality" />
+                                                <StackPanel Margin="0,4,0,0"
+                                                            Visibility="{Binding UseCustomQuality, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                    <TextBox Text="{Binding CustomMinQuality, UpdateSourceTrigger=PropertyChanged}"
+                                                             Margin="0,0,0,4"
+                                                             ToolTip="Min quality" />
+                                                    <TextBox Text="{Binding CustomMinSeeders, UpdateSourceTrigger=PropertyChanged}"
+                                                             Margin="0,0,0,4"
+                                                             ToolTip="Min seeders" />
+                                                    <TextBox Text="{Binding CustomMinFileSizeMb, UpdateSourceTrigger=PropertyChanged}"
+                                                             Margin="0,0,0,4"
+                                                             ToolTip="Min file size MB (0=off)" />
+                                                    <TextBox Text="{Binding CustomMaxFileSizeMb, UpdateSourceTrigger=PropertyChanged}"
+                                                             Margin="0,0,0,4"
+                                                             ToolTip="Max file size MB (0=off)" />
+                                                    <TextBox Text="{Binding CustomAllowedQualities, UpdateSourceTrigger=PropertyChanged}"
+                                                             ToolTip="Allowed qualities (comma-separated)" />
+                                                </StackPanel>
                                             </StackPanel>
                                         </Grid>
                                     </Border>

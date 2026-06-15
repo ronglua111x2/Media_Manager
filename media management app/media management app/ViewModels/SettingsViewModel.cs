@@ -74,7 +74,48 @@ public partial class SettingsViewModel : ViewModelBase
     private bool autoTrackEnabled = true;
 
     [ObservableProperty]
-    private int autoTrackIntervalHours = 6;
+    private DayOfWeek autoTrackAnchorDay = DayOfWeek.Sunday;
+
+    public Array AnchorDayOptions => Enum.GetValues(typeof(DayOfWeek));
+
+    [ObservableProperty]
+    private string autoTrackAnchorTimeLocal = "21:00";
+
+    [ObservableProperty]
+    private int autoTrackTmdbCheckIntervalMinutes = 30;
+
+    [ObservableProperty]
+    private int autoTrackTorrentHuntIntervalMinutes = 60;
+
+    [ObservableProperty]
+    private int autoTrackReconcileIntervalMinutes = 10;
+
+    [ObservableProperty]
+    private int autoTrackMaxTmdbRefreshesPerDay = 20;
+
+    [ObservableProperty]
+    private string autoTrackMinQuality = "1080p";
+
+    [ObservableProperty]
+    private int autoTrackMinSeeders;
+
+    [ObservableProperty]
+    private int autoTrackMinFileSizeMb;
+
+    [ObservableProperty]
+    private int autoTrackMaxFileSizeMb;
+
+    [ObservableProperty]
+    private string autoTrackAllowedQualities = string.Empty;
+
+    [ObservableProperty]
+    private int autoTrackMaxShowsPerHuntCycle = 3;
+
+    [ObservableProperty]
+    private int autoTrackMaxParallelWorkersPerShow = 1;
+
+    [ObservableProperty]
+    private bool autoTrackForceParallelEpisodeSearch = true;
 
     [ObservableProperty]
     private bool warpEnabled = true;
@@ -477,7 +518,21 @@ public partial class SettingsViewModel : ViewModelBase
             StartMinimized = _settingsService.Current.Startup.StartMinimized;
             CloseToTray = _settingsService.Current.Startup.CloseToTray;
             AutoTrackEnabled = _settingsService.Current.AutoTrack?.Enabled ?? true;
-            AutoTrackIntervalHours = _settingsService.Current.AutoTrack?.IntervalHours ?? 6;
+            var autoTrack = _settingsService.Current.AutoTrack ?? new AutoTrackSettings();
+            AutoTrackAnchorDay = autoTrack.AnchorDayOfWeek;
+            AutoTrackAnchorTimeLocal = autoTrack.AnchorTimeLocal;
+            AutoTrackTmdbCheckIntervalMinutes = autoTrack.TmdbCheckIntervalMinutes;
+            AutoTrackTorrentHuntIntervalMinutes = autoTrack.TorrentHuntIntervalMinutes;
+            AutoTrackReconcileIntervalMinutes = autoTrack.ReconcileIntervalMinutes;
+            AutoTrackMaxTmdbRefreshesPerDay = autoTrack.MaxTmdbRefreshesPerDay;
+            AutoTrackMinQuality = autoTrack.Quality?.MinQuality ?? "1080p";
+            AutoTrackMinSeeders = autoTrack.Quality?.MinSeeders ?? 0;
+            AutoTrackMinFileSizeMb = autoTrack.Quality?.MinFileSizeMb ?? 0;
+            AutoTrackMaxFileSizeMb = autoTrack.Quality?.MaxFileSizeMb ?? 0;
+            AutoTrackAllowedQualities = string.Join(", ", autoTrack.Quality?.AllowedQualities ?? []);
+            AutoTrackMaxShowsPerHuntCycle = autoTrack.Search?.MaxShowsPerHuntCycle ?? 3;
+            AutoTrackMaxParallelWorkersPerShow = autoTrack.Search?.MaxParallelWorkersPerShow ?? 1;
+            AutoTrackForceParallelEpisodeSearch = autoTrack.Search?.ForceParallelEpisodeSearch ?? true;
             WarpEnabled = _settingsService.Current.Warp.Enabled;
             WarpExecutablePath = _settingsService.Current.Warp.ExecutablePath;
             WarpConnectTimeoutSeconds = _settingsService.Current.Warp.ConnectTimeoutSeconds;
@@ -577,9 +632,36 @@ public partial class SettingsViewModel : ViewModelBase
     private void ApplyAutoTrackSettings()
     {
         _settingsService.Current.AutoTrack ??= new AutoTrackSettings();
-        _settingsService.Current.AutoTrack.Enabled = AutoTrackEnabled;
-        _settingsService.Current.AutoTrack.IntervalHours = Math.Clamp(AutoTrackIntervalHours, 1, 168);
-        AutoTrackIntervalHours = _settingsService.Current.AutoTrack.IntervalHours;
+        var autoTrack = _settingsService.Current.AutoTrack;
+        autoTrack.Enabled = AutoTrackEnabled;
+        autoTrack.AnchorDayOfWeek = AutoTrackAnchorDay;
+        autoTrack.AnchorTimeLocal = string.IsNullOrWhiteSpace(AutoTrackAnchorTimeLocal) ? "21:00" : AutoTrackAnchorTimeLocal.Trim();
+        autoTrack.TmdbCheckIntervalMinutes = Math.Clamp(AutoTrackTmdbCheckIntervalMinutes, 5, 1440);
+        autoTrack.TorrentHuntIntervalMinutes = Math.Clamp(AutoTrackTorrentHuntIntervalMinutes, 15, 1440);
+        autoTrack.ReconcileIntervalMinutes = Math.Clamp(AutoTrackReconcileIntervalMinutes, 5, 1440);
+        autoTrack.MaxTmdbRefreshesPerDay = Math.Clamp(AutoTrackMaxTmdbRefreshesPerDay, 1, 500);
+        autoTrack.Quality ??= new AutoTrackQualityPolicy();
+        autoTrack.Quality.MinQuality = string.IsNullOrWhiteSpace(AutoTrackMinQuality) ? null : AutoTrackMinQuality.Trim();
+        autoTrack.Quality.MinSeeders = Math.Max(0, AutoTrackMinSeeders);
+        autoTrack.Quality.MinFileSizeMb = AutoTrackMinFileSizeMb > 0 ? AutoTrackMinFileSizeMb : null;
+        autoTrack.Quality.MaxFileSizeMb = AutoTrackMaxFileSizeMb > 0 ? AutoTrackMaxFileSizeMb : null;
+        autoTrack.Quality.AllowedQualities = string.IsNullOrWhiteSpace(AutoTrackAllowedQualities)
+            ? null
+            : AutoTrackAllowedQualities.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+        autoTrack.Search ??= new AutoTrackSearchSettings();
+        autoTrack.Search.MaxShowsPerHuntCycle = Math.Clamp(AutoTrackMaxShowsPerHuntCycle, 1, 20);
+        autoTrack.Search.MaxParallelWorkersPerShow = Math.Clamp(AutoTrackMaxParallelWorkersPerShow, 1, 4);
+        autoTrack.Search.ForceParallelEpisodeSearch = AutoTrackForceParallelEpisodeSearch;
+
+        AutoTrackAnchorDay = autoTrack.AnchorDayOfWeek;
+        AutoTrackAnchorTimeLocal = autoTrack.AnchorTimeLocal;
+        AutoTrackTmdbCheckIntervalMinutes = autoTrack.TmdbCheckIntervalMinutes;
+        AutoTrackTorrentHuntIntervalMinutes = autoTrack.TorrentHuntIntervalMinutes;
+        AutoTrackReconcileIntervalMinutes = autoTrack.ReconcileIntervalMinutes;
+        AutoTrackMaxTmdbRefreshesPerDay = autoTrack.MaxTmdbRefreshesPerDay;
+        AutoTrackMinSeeders = autoTrack.Quality.MinSeeders;
+        AutoTrackMaxShowsPerHuntCycle = autoTrack.Search.MaxShowsPerHuntCycle;
+        AutoTrackMaxParallelWorkersPerShow = autoTrack.Search.MaxParallelWorkersPerShow;
     }
 
     private void EnsureTrayInitialized()

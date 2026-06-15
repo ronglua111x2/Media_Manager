@@ -62,5 +62,16 @@ public interface ITrackedShowService
 
     void UpdateAutoTrackReconcileAndLink(long showId, bool autoReconcileAndLink);
 
+    void UpdateAutoTrackScheduleOverrides(long showId, DayOfWeek? anchorDayOfWeek, string? anchorTimeLocal, bool clearOverrides);
+
+    void UpdateAutoTrackQualityOverrides(
+        long showId,
+        string? minQuality,
+        int? minSeeders,
+        int? minFileSizeMb,
+        int? maxFileSizeMb,
+        string? allowedQualities,
+        bool clearOverrides);
+
     void StopAutoTrack(long showId);
 }

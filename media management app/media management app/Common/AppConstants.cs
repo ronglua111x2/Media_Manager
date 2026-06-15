@@ -9,6 +9,9 @@ public static class AppConstants
     public const string ShowsFolderName = "Shows";
     public const string MoviesFolderName = "Movies";
     public const string LogFolderName = "logs";
+    public const string PostersFolderName = "posters";
+    public const string PosterShowsFolderName = "shows";
+    public const string PosterMoviesFolderName = "movies";
 
     public const string DefaultWarpCliPath =
         @"C:\Program Files\Cloudflare\Cloudflare WARP\warp-cli.exe";

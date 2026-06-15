@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Windows.Media;
+using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using media_management_app.Common;
@@ -64,7 +65,17 @@ public sealed partial class LibraryViewModel : ViewModelBase
         _settingsService = settingsService;
         _downloadFolderCatalogService = downloadFolderCatalogService;
 
-        _torrentCartService.CartChanged += (_, _) => RefreshCartStateOnSelectedDetail();
+        _torrentCartService.CartChanged += (_, _) =>
+        {
+            var dispatcher = System.Windows.Application.Current?.Dispatcher;
+            if (dispatcher is not null && !dispatcher.CheckAccess())
+            {
+                dispatcher.BeginInvoke(DispatcherPriority.Background, RefreshCartStateOnSelectedDetail);
+                return;
+            }
+
+            RefreshCartStateOnSelectedDetail();
+        };
         _torrentReconciliationService.Reconciled += (_, _) => _ = ReloadSelectedDetailAsync();
         RefreshLibrary();
         StatusMessage = "Select a media card to view details.";
@@ -834,7 +845,10 @@ public sealed partial class LibraryViewModel : ViewModelBase
             _suppressSeriesStatusUpdate = true;
             SelectedShowSeriesStatus = show.SeriesStatus;
             _suppressSeriesStatusUpdate = false;
-            SelectedPosterImage = await _posterImageService.LoadAsync(card.PosterPath);
+            SelectedPosterImage = await _posterImageService.LoadAsync(
+                card.PosterPath,
+                card.MediaKind,
+                card.TmdbId);
             StatusMessage = $"Viewing show: {show.DisplayTitle}";
             return;
         }
@@ -847,7 +861,10 @@ public sealed partial class LibraryViewModel : ViewModelBase
         }
 
         SelectedMovie = BuildMovieDetail(movie);
-        SelectedPosterImage = await _posterImageService.LoadAsync(card.PosterPath);
+        SelectedPosterImage = await _posterImageService.LoadAsync(
+            card.PosterPath,
+            card.MediaKind,
+            card.TmdbId);
         StatusMessage = $"Viewing movie: {movie.DisplayTitle}";
     }
 

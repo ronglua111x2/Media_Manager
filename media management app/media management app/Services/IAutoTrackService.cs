@@ -6,5 +6,19 @@ public interface IAutoTrackService
 {
     bool IsRunning { get; }
 
+    bool IsTmdbDiscoveryRunning { get; }
+
+    bool IsTorrentHuntRunning { get; }
+
+    bool IsReconcileRunning { get; }
+
     Task<AutoTrackRunResult> RunAsync(CancellationToken cancellationToken = default);
+
+    Task<AutoTrackRunResult> RunTmdbDiscoveryAsync(bool bypassAnchor = false, CancellationToken cancellationToken = default);
+
+    Task<AutoTrackRunResult> RunTorrentHuntAsync(CancellationToken cancellationToken = default);
+
+    Task<AutoTrackRunResult> RunBackgroundReconcileAsync(CancellationToken cancellationToken = default);
+
+    void RecordRunResult(AutoTrackRunResult result);
 }

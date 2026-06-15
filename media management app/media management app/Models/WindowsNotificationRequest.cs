@@ -11,9 +11,9 @@ public sealed class WindowsNotificationRequest
 
     public string Group { get; init; } = "MediaManager";
 
-    /// <summary>Local file path or https URL for large cover art (hero image).</summary>
+    /// <summary>Large banner image at the bottom of the toast.</summary>
     public string? HeroImagePathOrUrl { get; init; }
 
-    /// <summary>Optional small logo/thumbnail override (path or https URL).</summary>
+    /// <summary>Small square thumbnail beside the title/body (app logo override).</summary>
     public string? AppLogoOverridePathOrUrl { get; init; }
 }

@@ -56,5 +56,7 @@ public sealed class TorrentCartOrder
 
     public DateTime UpdatedUtc { get; set; } = DateTime.UtcNow;
 
+    public TorrentOrderSource Source { get; set; } = TorrentOrderSource.Manual;
+
     public bool HasSelectedCandidate => !string.IsNullOrWhiteSpace(SelectedCandidateUrl);
 }

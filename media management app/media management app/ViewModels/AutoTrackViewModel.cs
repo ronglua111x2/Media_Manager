@@ -15,6 +15,7 @@ public sealed partial class AutoTrackViewModel : ViewModelBase
     private readonly IAutoTrackService _autoTrackService;
     private readonly IAutoTrackSchedulerService _autoTrackSchedulerService;
     private readonly IDownloadFolderCatalogService _downloadFolderCatalogService;
+    private readonly IPosterImageService _posterImageService;
 
     public AutoTrackViewModel(
         ISettingsService settingsService,
@@ -22,7 +23,8 @@ public sealed partial class AutoTrackViewModel : ViewModelBase
         ITorrentCartService torrentCartService,
         IAutoTrackService autoTrackService,
         IAutoTrackSchedulerService autoTrackSchedulerService,
-        IDownloadFolderCatalogService downloadFolderCatalogService)
+        IDownloadFolderCatalogService downloadFolderCatalogService,
+        IPosterImageService posterImageService)
     {
         _settingsService = settingsService;
         _trackedShowService = trackedShowService;
@@ -30,8 +32,9 @@ public sealed partial class AutoTrackViewModel : ViewModelBase
         _autoTrackService = autoTrackService;
         _autoTrackSchedulerService = autoTrackSchedulerService;
         _downloadFolderCatalogService = downloadFolderCatalogService;
+        _posterImageService = posterImageService;
 
-        _autoTrackSchedulerService.RunCompleted += (_, result) =>
+        _autoTrackSchedulerService.RunCompleted += (_, _) =>
         {
             System.Windows.Application.Current.Dispatcher.Invoke(RefreshDashboard);
         };
@@ -92,7 +95,7 @@ public sealed partial class AutoTrackViewModel : ViewModelBase
             ? "No runs yet."
             : autoTrack.LastRunSummary;
         SchedulerStatus = autoTrack.Enabled
-            ? $"Scheduled every {Math.Clamp(autoTrack.IntervalHours, 1, 168)} hour(s)"
+            ? $"TMDB every {Math.Clamp(autoTrack.TmdbCheckIntervalMinutes, 5, 1440)}m · Hunt every {Math.Clamp(autoTrack.TorrentHuntIntervalMinutes, 15, 1440)}m · Reconcile every {Math.Clamp(autoTrack.ReconcileIntervalMinutes, 5, 1440)}m · Anchor {autoTrack.AnchorDayOfWeek} {autoTrack.AnchorTimeLocal}"
             : "Scheduler disabled in settings";
 
         TrackedShows.Clear();
@@ -107,13 +110,24 @@ public sealed partial class AutoTrackViewModel : ViewModelBase
 
         foreach (var show in shows)
         {
-            var pending = CountPendingEpisodes(show);
+            var episodes = _trackedShowService.GetEpisodes(show.Id);
+            var pending = CountPendingEpisodes(show, episodes);
             pendingTotal += pending;
-            TrackedShows.Add(new AutoTrackShowCardViewModel(
+            var latestPending = AutoTrackTmdbEligibility.FindLatestPendingEpisode(
+                show,
+                episodes,
+                episodeId =>
+                    _torrentCartService.TryGetAutoTrackHuntBlockingEpisodeOrder(episodeId, out _) ||
+                    _torrentCartService.HasActiveManualEpisodeOrder(episodeId));
+            var card = new AutoTrackShowCardViewModel(
                 show,
                 pending,
+                latestPending,
+                autoTrack,
                 folderOptions,
-                _trackedShowService));
+                _trackedShowService);
+            TrackedShows.Add(card);
+            _ = LoadShowPosterAsync(card, show);
 
             foreach (var episode in _trackedShowService.GetEpisodes(show.Id)
                          .Where(episode => episode.AirDate is not null && episode.AirDate.Value.Date >= weekStart)
@@ -145,22 +159,26 @@ public sealed partial class AutoTrackViewModel : ViewModelBase
         RefreshDashboard();
     }
 
-    private int CountPendingEpisodes(TrackedShow show)
+    private int CountPendingEpisodes(TrackedShow show, IReadOnlyList<TrackedEpisode> episodes)
     {
         if (!show.IsAutoTracked)
         {
             return 0;
         }
 
-        return _trackedShowService.GetEpisodes(show.Id)
+        var today = DateTime.Now.Date;
+
+        return episodes
             .Where(episode => IsAtOrAfterCheckpoint(
                 episode,
                 show.AutoTrackFromSeason!.Value,
                 show.AutoTrackFromEpisode!.Value))
+            .Where(episode => episode.AirDate is null || episode.AirDate.Value.Date <= today)
             .Count(episode =>
                 episode.Availability == EpisodeAvailability.Missing &&
                 string.IsNullOrWhiteSpace(episode.TorrentHash) &&
-                !_torrentCartService.TryGetActiveEpisodeOrder(episode.Id, out _));
+                !_torrentCartService.TryGetAutoTrackHuntBlockingEpisodeOrder(episode.Id, out _) &&
+                !_torrentCartService.HasActiveManualEpisodeOrder(episode.Id));
     }
 
     private static bool IsAtOrAfterCheckpoint(TrackedEpisode episode, int fromSeason, int fromEpisode)
@@ -170,4 +188,13 @@ public sealed partial class AutoTrackViewModel : ViewModelBase
     }
 
     private bool CanRunNow() => !IsRunning && !_autoTrackService.IsRunning;
+
+    private async Task LoadShowPosterAsync(AutoTrackShowCardViewModel card, TrackedShow show)
+    {
+        card.PosterImage = await _posterImageService.LoadAsync(
+            show.PosterPath,
+            MediaKind.TvEpisode,
+            show.TmdbId,
+            width: 154);
+    }
 }

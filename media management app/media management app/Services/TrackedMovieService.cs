@@ -7,12 +7,18 @@ public sealed class TrackedMovieService : ITrackedMovieService
 {
     private readonly IDatabaseService _databaseService;
     private readonly ITmdbMovieCatalogService _catalogService;
+    private readonly IPosterImageService _posterImageService;
     private readonly IAppLogger _logger;
 
-    public TrackedMovieService(IDatabaseService databaseService, ITmdbMovieCatalogService catalogService, IAppLogger logger)
+    public TrackedMovieService(
+        IDatabaseService databaseService,
+        ITmdbMovieCatalogService catalogService,
+        IPosterImageService posterImageService,
+        IAppLogger logger)
     {
         _databaseService = databaseService;
         _catalogService = catalogService;
+        _posterImageService = posterImageService;
         _logger = logger;
     }
 
@@ -25,6 +31,7 @@ public sealed class TrackedMovieService : ITrackedMovieService
     {
         var details = await _catalogService.GetMovieDetailsAsync(result.TmdbId, cancellationToken);
         var movieId = ImportMovie(details, null);
+        await CachePosterAsync(details.TmdbId, details.PosterPath, cancellationToken);
         RefreshAvailability(movieId);
         var movie = _databaseService.GetTrackedMovie(movieId) ?? throw new InvalidOperationException("Tracked movie was not saved.");
         _logger.Info($"Tracked movie added: {movie.DisplayTitle}", LogTarget.All);
@@ -35,6 +42,7 @@ public sealed class TrackedMovieService : ITrackedMovieService
     {
         var details = await _catalogService.GetMovieDetailsAsync(tmdbId, cancellationToken);
         var movieId = ImportMovie(details, null);
+        await CachePosterAsync(details.TmdbId, details.PosterPath, cancellationToken);
         RefreshAvailability(movieId);
         var movie = _databaseService.GetTrackedMovie(movieId) ?? throw new InvalidOperationException("Tracked movie was not imported.");
         _logger.Info($"Tracked movie imported from existing media: {movie.DisplayTitle}", LogTarget.All);
@@ -45,6 +53,7 @@ public sealed class TrackedMovieService : ITrackedMovieService
     {
         var details = await _catalogService.GetMovieDetailsAsync(movie.TmdbId, cancellationToken);
         var movieId = ImportMovie(details, movie);
+        await CachePosterAsync(details.TmdbId, details.PosterPath, cancellationToken);
         RefreshAvailability(movieId);
         var refreshed = _databaseService.GetTrackedMovie(movieId) ?? throw new InvalidOperationException("Tracked movie was not refreshed.");
         _logger.Info($"Tracked movie refreshed: {refreshed.DisplayTitle}", LogTarget.All);
@@ -143,5 +152,10 @@ public sealed class TrackedMovieService : ITrackedMovieService
             TorrentProgress = existing?.TorrentProgress ?? 0,
             TorrentUpdatedUtc = existing?.TorrentUpdatedUtc
         });
+    }
+
+    private Task CachePosterAsync(int tmdbId, string? posterPath, CancellationToken cancellationToken)
+    {
+        return _posterImageService.EnsureCachedAsync(MediaKind.Movie, tmdbId, posterPath, cancellationToken);
     }
 }

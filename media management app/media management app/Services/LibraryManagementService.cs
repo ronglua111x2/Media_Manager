@@ -19,17 +19,20 @@ public sealed class LibraryManagementService : ILibraryManagementService
     private readonly IDatabaseService _databaseService;
     private readonly IAutoTorrentLinkService _autoTorrentLinkService;
     private readonly ITorrentCartService _torrentCartService;
+    private readonly IPosterImageService _posterImageService;
     private readonly IAppLogger _logger;
 
     public LibraryManagementService(
         IDatabaseService databaseService,
         IAutoTorrentLinkService autoTorrentLinkService,
         ITorrentCartService torrentCartService,
+        IPosterImageService posterImageService,
         IAppLogger logger)
     {
         _databaseService = databaseService;
         _autoTorrentLinkService = autoTorrentLinkService;
         _torrentCartService = torrentCartService;
+        _posterImageService = posterImageService;
         _logger = logger;
     }
 
@@ -50,6 +53,7 @@ public sealed class LibraryManagementService : ILibraryManagementService
         result.DeletedShowCount = _databaseService.DeleteAllTrackedShows();
         result.DeletedMovieCount = _databaseService.DeleteAllTrackedMovies();
         _torrentCartService.ClearAllCarts();
+        _posterImageService.DeleteAllCached();
 
         _logger.Warning(
             $"Deleted entire library. {result.Summary} FetchJobs={result.DeletedFetchJobCount}.",
@@ -72,7 +76,8 @@ public sealed class LibraryManagementService : ILibraryManagementService
         var result = new LibraryDeleteResult();
         if (mediaKind == MediaKind.Movie)
         {
-            if (_databaseService.GetTrackedMovie(mediaId) is null)
+            var movie = _databaseService.GetTrackedMovie(mediaId);
+            if (movie is null)
             {
                 result.Messages.Add("Tracked movie was not found.");
                 return result;
@@ -81,12 +86,14 @@ public sealed class LibraryManagementService : ILibraryManagementService
             MergeLinkResult(result, _autoTorrentLinkService.RemoveMovieLinks(mediaId));
             result.DeletedFetchJobCount = _databaseService.DeleteFetchJobsForMedia(mediaId, MediaKind.Movie);
             _databaseService.DeleteTrackedMovie(mediaId);
+            _posterImageService.DeleteCached(MediaKind.Movie, movie.TmdbId);
             result.DeletedMovieCount = 1;
             _torrentCartService.ClearCart(MediaKind.Movie, mediaId);
         }
         else
         {
-            if (_databaseService.GetTrackedShow(mediaId) is null)
+            var show = _databaseService.GetTrackedShow(mediaId);
+            if (show is null)
             {
                 result.Messages.Add("Tracked show was not found.");
                 return result;
@@ -95,6 +102,7 @@ public sealed class LibraryManagementService : ILibraryManagementService
             MergeLinkResult(result, _autoTorrentLinkService.RemoveShowLinks(mediaId));
             result.DeletedFetchJobCount = _databaseService.DeleteFetchJobsForMedia(mediaId, MediaKind.TvEpisode);
             _databaseService.DeleteTrackedShow(mediaId);
+            _posterImageService.DeleteCached(MediaKind.TvEpisode, show.TmdbId);
             result.DeletedShowCount = 1;
             _torrentCartService.ClearCart(MediaKind.TvEpisode, mediaId);
         }

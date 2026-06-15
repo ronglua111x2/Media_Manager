@@ -351,7 +351,7 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
             return;
         }
 
-        if (!_settingsService.Current.AutoTorrent.AutoLinkCompletedDownloads || !torrent.IsComplete)
+        if (!ShouldAutoLinkCompleted(show, torrent))
         {
             return;
         }
@@ -362,6 +362,12 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
             episode.EpisodeNumber,
             cancellationToken);
         result.LinkedCount += linkResult.LinkedCount;
+        if (linkResult.LinkedCount == 0 && linkResult.ErrorCount > 0)
+        {
+            _logger.Warning(
+                $"Auto-link failed for '{show.DisplayTitle}' S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00}: {string.Join("; ", linkResult.Messages)}",
+                LogTarget.All);
+        }
     }
 
     private async Task AutoLinkSeasonPackIfConfiguredAsync(
@@ -371,7 +377,7 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
         TorrentReconciliationResult result,
         CancellationToken cancellationToken)
     {
-        if (!_settingsService.Current.AutoTorrent.AutoLinkCompletedDownloads || !torrent.IsComplete)
+        if (!ShouldAutoLinkCompleted(show, torrent))
         {
             return;
         }
@@ -389,13 +395,33 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
         TorrentReconciliationResult result,
         CancellationToken cancellationToken)
     {
-        if (!_settingsService.Current.AutoTorrent.AutoLinkCompletedDownloads || !torrent.IsComplete)
+        if (!torrent.IsComplete)
+        {
+            return;
+        }
+
+        if (!_settingsService.Current.AutoTorrent.AutoLinkCompletedDownloads)
         {
             return;
         }
 
         var linkResult = await _autoTorrentLinkService.LinkMovieAsync(movie.Id, cancellationToken);
         result.LinkedCount += linkResult.LinkedCount;
+    }
+
+    private bool ShouldAutoLinkCompleted(TrackedShow show, AddedTorrentResult torrent)
+    {
+        if (!torrent.IsComplete)
+        {
+            return false;
+        }
+
+        if (show.IsAutoTracked && show.AutoTrackAutoReconcileAndLink)
+        {
+            return true;
+        }
+
+        return _settingsService.Current.AutoTorrent.AutoLinkCompletedDownloads;
     }
 
     private static bool MatchesEpisode(string torrentName, TrackedShow show, TrackedEpisode episode)

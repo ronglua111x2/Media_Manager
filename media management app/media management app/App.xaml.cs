@@ -4,6 +4,7 @@ using System.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Toolkit.Uwp.Notifications;
+using media_management_app.Common;
 using media_management_app.Services;
 using media_management_app.ViewModels;
 using Wpf.Ui.Appearance;
@@ -43,13 +44,14 @@ public partial class App : System.Windows.Application
         var settings = _serviceProvider.GetRequiredService<ISettingsService>();
         settings.Load();
 
-        _serviceProvider.GetRequiredService<ILogCleanupService>().Start();
-        _serviceProvider.GetRequiredService<IAutoTrackSchedulerService>().Start();
-
         var database = _serviceProvider.GetRequiredService<IDatabaseService>();
         database.Initialize(settings.Current.StateFolder);
 
+        _serviceProvider.GetRequiredService<ILogCleanupService>().Start();
+        _serviceProvider.GetRequiredService<IAutoTrackSchedulerService>().Start();
+
         _serviceProvider.GetRequiredService<IWindowsNotificationService>().Initialize();
+        WarmupPosterCache();
 
         var mainWindow = _serviceProvider.GetRequiredService<MainWindow>();
         var trayIconService = _serviceProvider.GetRequiredService<ITrayIconService>();
@@ -82,8 +84,16 @@ public partial class App : System.Windows.Application
 
     protected override void OnExit(ExitEventArgs e)
     {
-        _serviceProvider?.GetService<ITrayIconService>()?.Dispose();
-        _serviceProvider?.GetService<IAutoTrackSchedulerService>()?.Dispose();
+        try
+        {
+            _serviceProvider?.GetService<IAutoTrackSchedulerService>()?.Dispose();
+            _serviceProvider?.GetService<ILogCleanupService>()?.Dispose();
+            _serviceProvider?.GetService<ITrayIconService>()?.Dispose();
+        }
+        catch (Exception)
+        {
+        }
+
         _serviceProvider?.Dispose();
         if (_ownsSingleInstanceMutex)
         {
@@ -140,6 +150,7 @@ public partial class App : System.Windows.Application
         services.AddSingleton<ITorrentReconciliationService, TorrentReconciliationService>();
         services.AddSingleton<ILibraryManagementService, LibraryManagementService>();
         services.AddSingleton<IAutoTrackService, AutoTrackService>();
+        services.AddSingleton<AutoTrackCandidatePolicyService>();
         services.AddSingleton<IAutoTrackSchedulerService, AutoTrackSchedulerService>();
 
         services.AddSingleton<AutoTrackViewModel>();
@@ -151,5 +162,41 @@ public partial class App : System.Windows.Application
         services.AddSingleton<SystemSettingsViewModel>();
         services.AddSingleton<MainViewModel>();
         services.AddSingleton<MainWindow>();
+    }
+
+    private void WarmupPosterCache()
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var provider = _serviceProvider;
+                if (provider is null)
+                {
+                    return;
+                }
+
+                var posterService = provider.GetRequiredService<IPosterImageService>();
+                var database = provider.GetRequiredService<IDatabaseService>();
+                foreach (var show in database.GetTrackedShows())
+                {
+                    await posterService.EnsureCachedAsync(
+                        MediaKind.TvEpisode,
+                        show.TmdbId,
+                        show.PosterPath);
+                }
+
+                foreach (var movie in database.GetTrackedMovies())
+                {
+                    await posterService.EnsureCachedAsync(
+                        MediaKind.Movie,
+                        movie.TmdbId,
+                        movie.PosterPath);
+                }
+            }
+            catch
+            {
+            }
+        });
     }
 }

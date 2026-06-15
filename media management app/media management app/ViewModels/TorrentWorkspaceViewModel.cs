@@ -812,7 +812,10 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
             return;
         }
 
-        SelectedPosterImage = await _posterImageService.LoadAsync(card.PosterPath);
+        SelectedPosterImage = await _posterImageService.LoadAsync(
+            card.PosterPath,
+            card.MediaKind,
+            card.TmdbId);
         foreach (var order in _torrentCartService.GetOrders(card.MediaKind, card.Id))
         {
             Orders.Add(MapOrder(order));
@@ -826,14 +829,18 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
 
     private void OnCartChanged()
     {
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher is not null && !dispatcher.CheckAccess())
+        {
+            dispatcher.BeginInvoke(DispatcherPriority.Background, OnCartChanged);
+            return;
+        }
+
         _allMediaCards = _mediaCardCatalogService.LoadCards();
         ApplyMediaCardSort();
         if (SelectedMediaCard is not null)
         {
-            var card = SelectedMediaCard;
-            System.Windows.Application.Current.Dispatcher.BeginInvoke(
-                DispatcherPriority.Background,
-                () => _ = LoadSelectedCartAsync(card));
+            _ = LoadSelectedCartAsync(SelectedMediaCard);
         }
 
         OnPropertyChanged(nameof(HasAnyCartOrders));

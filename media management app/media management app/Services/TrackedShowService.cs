@@ -7,12 +7,18 @@ public sealed class TrackedShowService : ITrackedShowService
 {
     private readonly IDatabaseService _databaseService;
     private readonly ITmdbShowCatalogService _catalogService;
+    private readonly IPosterImageService _posterImageService;
     private readonly IAppLogger _logger;
 
-    public TrackedShowService(IDatabaseService databaseService, ITmdbShowCatalogService catalogService, IAppLogger logger)
+    public TrackedShowService(
+        IDatabaseService databaseService,
+        ITmdbShowCatalogService catalogService,
+        IPosterImageService posterImageService,
+        IAppLogger logger)
     {
         _databaseService = databaseService;
         _catalogService = catalogService;
+        _posterImageService = posterImageService;
         _logger = logger;
     }
 
@@ -25,6 +31,7 @@ public sealed class TrackedShowService : ITrackedShowService
     {
         var details = await _catalogService.GetTvShowDetailsAsync(result.TmdbId, cancellationToken);
         var showId = ImportShow(details, "1080p");
+        await CachePosterAsync(details.TmdbId, details.PosterPath, cancellationToken);
         RefreshAvailabilityCore(showId);
         var show = _databaseService.GetTrackedShow(showId) ?? throw new InvalidOperationException("Tracked show was not saved.");
         _logger.Info($"Tracked show added: {show.DisplayTitle}, Episodes={show.TotalEpisodes}", LogTarget.All);
@@ -35,6 +42,7 @@ public sealed class TrackedShowService : ITrackedShowService
     {
         var details = await _catalogService.GetTvShowDetailsAsync(tmdbId, cancellationToken);
         var showId = ImportShow(details, "1080p");
+        await CachePosterAsync(details.TmdbId, details.PosterPath, cancellationToken);
         RefreshAvailabilityCore(showId);
         var show = _databaseService.GetTrackedShow(showId) ?? throw new InvalidOperationException("Tracked show was not imported.");
         _logger.Info($"Tracked show imported from existing media: {show.DisplayTitle}, Episodes={show.TotalEpisodes}", LogTarget.All);
@@ -45,6 +53,7 @@ public sealed class TrackedShowService : ITrackedShowService
     {
         var details = await _catalogService.GetTvShowDetailsAsync(show.TmdbId, cancellationToken);
         var showId = ImportShow(details, show.PreferredQuality);
+        await CachePosterAsync(details.TmdbId, details.PosterPath, cancellationToken);
         RefreshAvailabilityCore(showId);
         var refreshed = _databaseService.GetTrackedShow(showId) ?? throw new InvalidOperationException("Tracked show was not refreshed.");
         _logger.Info($"Tracked show refreshed: {refreshed.DisplayTitle}, Episodes={refreshed.TotalEpisodes}", LogTarget.All);
@@ -311,9 +320,40 @@ public sealed class TrackedShowService : ITrackedShowService
         _logger.Info($"Auto-track reconcile/link for show {showId}: {autoReconcileAndLink}.", LogTarget.All);
     }
 
+    public void UpdateAutoTrackScheduleOverrides(long showId, DayOfWeek? anchorDayOfWeek, string? anchorTimeLocal, bool clearOverrides)
+    {
+        _databaseService.UpdateTrackedShowAutoTrackScheduleOverrides(showId, anchorDayOfWeek, anchorTimeLocal, clearOverrides);
+        _logger.Info($"Auto-track schedule overrides updated for show {showId}. Clear={clearOverrides}.", LogTarget.All);
+    }
+
+    public void UpdateAutoTrackQualityOverrides(
+        long showId,
+        string? minQuality,
+        int? minSeeders,
+        int? minFileSizeMb,
+        int? maxFileSizeMb,
+        string? allowedQualities,
+        bool clearOverrides)
+    {
+        _databaseService.UpdateTrackedShowAutoTrackQualityOverrides(
+            showId,
+            minQuality,
+            minSeeders,
+            minFileSizeMb,
+            maxFileSizeMb,
+            allowedQualities,
+            clearOverrides);
+        _logger.Info($"Auto-track quality overrides updated for show {showId}. Clear={clearOverrides}.", LogTarget.All);
+    }
+
     public void StopAutoTrack(long showId)
     {
         _databaseService.UpdateTrackedShowAutoTrack(showId, null, null);
         _logger.Info($"Auto-track disabled for show {showId}.", LogTarget.All);
+    }
+
+    private Task CachePosterAsync(int tmdbId, string? posterPath, CancellationToken cancellationToken)
+    {
+        return _posterImageService.EnsureCachedAsync(MediaKind.TvEpisode, tmdbId, posterPath, cancellationToken);
     }
 }

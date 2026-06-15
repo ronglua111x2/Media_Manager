@@ -36,6 +36,24 @@ public sealed class TrackedShow
 
     public bool AutoTrackAutoReconcileAndLink { get; set; } = true;
 
+    public DayOfWeek? AutoTrackAnchorDayOfWeek { get; set; }
+
+    public string? AutoTrackAnchorTimeLocal { get; set; }
+
+    public string? AutoTrackLastTmdbWeekKey { get; set; }
+
+    public AutoTrackTmdbState AutoTrackTmdbState { get; set; } = AutoTrackTmdbState.Active;
+
+    public string? AutoTrackMinQuality { get; set; }
+
+    public int? AutoTrackMinSeeders { get; set; }
+
+    public int? AutoTrackMinFileSizeMb { get; set; }
+
+    public int? AutoTrackMaxFileSizeMb { get; set; }
+
+    public string? AutoTrackAllowedQualities { get; set; }
+
     public DateTime CreatedUtc { get; set; } = DateTime.UtcNow;
 
     public DateTime UpdatedUtc { get; set; } = DateTime.UtcNow;

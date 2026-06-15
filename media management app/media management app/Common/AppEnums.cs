@@ -122,4 +122,10 @@ public enum TorrentOrderStatus
     Canceled = 9
 }
 
+public enum TorrentOrderSource
+{
+    Manual = 0,
+    AutoTrack = 1
+}
+
 #endregion

@@ -5,12 +5,15 @@ namespace media_management_app.Services;
 public sealed class LogCleanupService : ILogCleanupService, IDisposable
 {
     private static readonly TimeSpan CleanupInterval = TimeSpan.FromMinutes(10);
+    private static readonly TimeSpan ShutdownWaitTimeout = TimeSpan.FromSeconds(5);
 
     private readonly ISettingsService _settingsService;
     private readonly IAppLogger _logger;
     private readonly CancellationTokenSource _shutdown = new();
     private readonly object _startLock = new();
+    private readonly object _disposeLock = new();
     private Task? _worker;
+    private bool _disposed;
 
     public LogCleanupService(ISettingsService settingsService, IAppLogger logger)
     {
@@ -28,17 +31,44 @@ public sealed class LogCleanupService : ILogCleanupService, IDisposable
 
     public void Dispose()
     {
-        _shutdown.Cancel();
+        lock (_disposeLock)
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+        }
 
         try
         {
-            _worker?.Wait(TimeSpan.FromSeconds(2));
+            _shutdown.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+
+        try
+        {
+            if (_worker is not null && !_worker.Wait(ShutdownWaitTimeout))
+            {
+                _logger.Warning(
+                    $"Log cleanup service did not stop within {ShutdownWaitTimeout.TotalSeconds:0} seconds.",
+                    LogTarget.File | LogTarget.Console);
+            }
         }
         catch (AggregateException)
         {
         }
 
-        _shutdown.Dispose();
+        try
+        {
+            _shutdown.Dispose();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
     }
 
     private async Task RunAsync()

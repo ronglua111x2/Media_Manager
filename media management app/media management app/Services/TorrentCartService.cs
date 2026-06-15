@@ -23,6 +23,12 @@ public interface ITorrentCartService
 
     bool TryGetActiveEpisodeOrder(long episodeId, out TorrentCartOrder? order);
 
+    bool TryGetAutoTrackHuntBlockingEpisodeOrder(long episodeId, out TorrentCartOrder? order);
+
+    TorrentCartOrder PrepareAutoTrackEpisodeOrder(long showId, long episodeId, int seasonNumber, int episodeNumber, string title);
+
+    bool HasActiveManualEpisodeOrder(long episodeId);
+
     bool TryGetActiveMovieOrder(long movieId, out TorrentCartOrder? order);
 
     bool TryGetActiveSeasonPackOrder(long showId, int seasonNumber, out TorrentCartOrder? order);
@@ -43,7 +49,7 @@ public interface ITorrentCartService
 
     void AcceptSelectedCandidate(long orderId);
 
-    int AcceptSelectedCandidates(MediaKind mediaKind, long mediaId);
+    int AcceptSelectedCandidates(MediaKind mediaKind, long mediaId, IReadOnlyList<long>? orderIds = null);
 
     void UpdateOrderStatus(long orderId, TorrentOrderStatus status, string statusDetail = "");
 }
@@ -95,7 +101,8 @@ public sealed class TorrentCartService : ITorrentCartService
             EpisodeNumber = episodeNumber,
             Title = $"S{seasonNumber:00}E{episodeNumber:00} - {title}",
             Summary = "Episode order",
-            Status = TorrentOrderStatus.Draft
+            Status = TorrentOrderStatus.Draft,
+            Source = TorrentOrderSource.Manual
         };
         _databaseService.UpsertTorrentCartOrder(order);
         NotifyChanged();
@@ -149,6 +156,81 @@ public sealed class TorrentCartService : ITorrentCartService
             item.EpisodeId == episodeId &&
             item.Status is not TorrentOrderStatus.Completed and not TorrentOrderStatus.Canceled and not TorrentOrderStatus.Failed);
         return order is not null;
+    }
+
+    public bool TryGetAutoTrackHuntBlockingEpisodeOrder(long episodeId, out TorrentCartOrder? order)
+    {
+        order = _databaseService.GetTorrentCartOrders().FirstOrDefault(item =>
+            item.EpisodeId == episodeId &&
+            item.Status is TorrentOrderStatus.Searching
+                or TorrentOrderStatus.CandidatesFound
+                or TorrentOrderStatus.Approved
+                or TorrentOrderStatus.AddedToClient
+                or TorrentOrderStatus.Downloading);
+        return order is not null;
+    }
+
+    public TorrentCartOrder PrepareAutoTrackEpisodeOrder(long showId, long episodeId, int seasonNumber, int episodeNumber, string title)
+    {
+        if (TryGetAutoTrackHuntBlockingEpisodeOrder(episodeId, out _))
+        {
+            throw new InvalidOperationException($"Episode S{seasonNumber:00}E{episodeNumber:00} hunt is already in progress.");
+        }
+
+        if (HasActiveManualEpisodeOrder(episodeId))
+        {
+            throw new InvalidOperationException($"Episode S{seasonNumber:00}E{episodeNumber:00} has an active manual cart order.");
+        }
+
+        var existing = _databaseService.GetTorrentCartOrders().FirstOrDefault(item => item.EpisodeId == episodeId);
+        if (existing is not null &&
+            existing.Source == TorrentOrderSource.AutoTrack &&
+            existing.Status is TorrentOrderStatus.Draft
+                or TorrentOrderStatus.NoCandidates
+                or TorrentOrderStatus.Failed)
+        {
+            _databaseService.DeleteTorrentCartOrderCandidates(existing.Id);
+            ClearSelectedCandidate(existing);
+            ClearTorrentState(existing);
+            existing.Status = TorrentOrderStatus.Draft;
+            existing.StatusDetail = string.Empty;
+            existing.Source = TorrentOrderSource.AutoTrack;
+            existing.Summary = "Auto-track episode order";
+            _databaseService.UpsertTorrentCartOrder(existing);
+            NotifyChanged();
+            return existing;
+        }
+
+        if (existing is not null)
+        {
+            throw new InvalidOperationException($"Episode S{seasonNumber:00}E{episodeNumber:00} already has a cart order.");
+        }
+
+        var order = new TorrentCartOrder
+        {
+            TargetKind = MediaKind.TvEpisode,
+            MediaId = showId,
+            EpisodeId = episodeId,
+            SeasonNumber = seasonNumber,
+            EpisodeNumber = episodeNumber,
+            Title = $"S{seasonNumber:00}E{episodeNumber:00} - {title}",
+            Summary = "Auto-track episode order",
+            Status = TorrentOrderStatus.Draft,
+            Source = TorrentOrderSource.AutoTrack
+        };
+        _databaseService.UpsertTorrentCartOrder(order);
+        NotifyChanged();
+        return order;
+    }
+
+    public bool HasActiveManualEpisodeOrder(long episodeId)
+    {
+        return _databaseService.GetTorrentCartOrders().Any(item =>
+            item.EpisodeId == episodeId &&
+            item.Source == TorrentOrderSource.Manual &&
+            item.Status is not TorrentOrderStatus.Completed
+                and not TorrentOrderStatus.Canceled
+                and not TorrentOrderStatus.Failed);
     }
 
     public bool TryGetActiveMovieOrder(long movieId, out TorrentCartOrder? order)
@@ -334,10 +416,17 @@ public sealed class TorrentCartService : ITorrentCartService
         NotifyChanged();
     }
 
-    public int AcceptSelectedCandidates(MediaKind mediaKind, long mediaId)
+    public int AcceptSelectedCandidates(MediaKind mediaKind, long mediaId, IReadOnlyList<long>? orderIds = null)
     {
         var acceptedCount = 0;
-        foreach (var order in _databaseService.GetTorrentCartOrders(mediaKind, mediaId))
+        var orders = _databaseService.GetTorrentCartOrders(mediaKind, mediaId);
+        if (orderIds is not null)
+        {
+            var idSet = orderIds.ToHashSet();
+            orders = orders.Where(order => idSet.Contains(order.Id)).ToList();
+        }
+
+        foreach (var order in orders)
         {
             var selected = _databaseService.GetTorrentCartOrderCandidates(order.Id)
                 .FirstOrDefault(candidate => candidate.IsSelected);

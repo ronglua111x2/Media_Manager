@@ -99,7 +99,7 @@ public sealed class SettingsService : ISettingsService
         Current.Warp ??= new WarpSettings();
         Current.Warp.ConnectTimeoutSeconds = Math.Clamp(Current.Warp.ConnectTimeoutSeconds, 5, 120);
         Current.AutoTrack ??= new AutoTrackSettings();
-        Current.AutoTrack.IntervalHours = Math.Clamp(Current.AutoTrack.IntervalHours, 1, 168);
+        MigrateAutoTrackSettings(Current.AutoTrack);
         Current.Logs ??= new LogSettings();
         Current.Startup ??= new AppStartupSettings();
         Current.Logs.MaxLinesPerFile = Math.Clamp(
@@ -143,6 +143,30 @@ public sealed class SettingsService : ISettingsService
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
         Current.DriveLibraryRoots ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static void MigrateAutoTrackSettings(AutoTrackSettings autoTrack)
+    {
+        autoTrack.IntervalHours = Math.Clamp(autoTrack.IntervalHours, 1, 168);
+        if (autoTrack.TorrentHuntIntervalMinutes <= 0)
+        {
+            autoTrack.TorrentHuntIntervalMinutes = Math.Clamp(autoTrack.IntervalHours * 60, 15, 1440);
+        }
+
+        autoTrack.TmdbCheckIntervalMinutes = Math.Clamp(autoTrack.TmdbCheckIntervalMinutes, 5, 1440);
+        autoTrack.TorrentHuntIntervalMinutes = Math.Clamp(autoTrack.TorrentHuntIntervalMinutes, 15, 1440);
+        autoTrack.ReconcileIntervalMinutes = Math.Clamp(autoTrack.ReconcileIntervalMinutes, 5, 1440);
+        autoTrack.MaxTmdbRefreshesPerDay = Math.Clamp(autoTrack.MaxTmdbRefreshesPerDay, 1, 500);
+
+        if (string.IsNullOrWhiteSpace(autoTrack.AnchorTimeLocal))
+        {
+            autoTrack.AnchorTimeLocal = "21:00";
+        }
+
+        autoTrack.Quality ??= new AutoTrackQualityPolicy();
+        autoTrack.Search ??= new AutoTrackSearchSettings();
+        autoTrack.Search.MaxShowsPerHuntCycle = Math.Clamp(autoTrack.Search.MaxShowsPerHuntCycle, 1, 20);
+        autoTrack.Search.MaxParallelWorkersPerShow = Math.Clamp(autoTrack.Search.MaxParallelWorkersPerShow, 1, 4);
     }
 
     private static void WriteBootstrapLog(string stateFolder, string message)
