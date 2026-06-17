@@ -6,6 +6,8 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Toolkit.Uwp.Notifications;
 using media_management_app.Common;
 using media_management_app.Services;
+using media_management_app.Services.Events;
+using media_management_app.Services.Symlink;
 using media_management_app.ViewModels;
 
 namespace media_management_app;
@@ -48,6 +50,9 @@ public partial class App : System.Windows.Application
 
         _serviceProvider.GetRequiredService<ILogCleanupService>().Start();
 
+        var symlinkCoordinator = _serviceProvider.GetRequiredService<ISymlinkCoordinatorService>();
+        symlinkCoordinator.Start();
+
         var autoTrackScheduler = _serviceProvider.GetRequiredService<IAutoTrackSchedulerService>();
         var trayIconService = _serviceProvider.GetRequiredService<ITrayIconService>();
         autoTrackScheduler.RunCompleted += (_, result) => trayIconService.ShowAutoTrackRunCompleted(result);
@@ -89,6 +94,7 @@ public partial class App : System.Windows.Application
         try
         {
             _serviceProvider?.GetService<IAutoTrackSchedulerService>()?.Dispose();
+            _serviceProvider?.GetService<ISymlinkCoordinatorService>()?.Dispose();
             _serviceProvider?.GetService<ILogCleanupService>()?.Dispose();
             _serviceProvider?.GetService<ITrayIconService>()?.Dispose();
         }
@@ -124,7 +130,11 @@ public partial class App : System.Windows.Application
         services.AddSingleton<IParserService, ParserService>();
         services.AddSingleton<IScannerService, ScannerService>();
         services.AddSingleton<ILibraryPathResolver, LibraryPathResolver>();
+        services.AddSingleton<ILibraryLinkEventHub, LibraryLinkEventHub>();
         services.AddSingleton<IHardlinkService, HardlinkService>();
+        services.AddSingleton<ISymlinkService, SymlinkService>();
+        services.AddSingleton<ISymlinkSyncService, SymlinkSyncService>();
+        services.AddSingleton<ISymlinkCoordinatorService, SymlinkCoordinatorService>();
         services.AddSingleton<ISourceReconciliationService, SourceReconciliationService>();
         services.AddSingleton<IQbittorrentClient, QbittorrentClient>();
         services.AddSingleton<IWarpCliService, WarpCliService>();

@@ -26,6 +26,8 @@ public sealed class AppSettings
 
     public Dictionary<string, string> DriveLibraryRoots { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
+    public SymlinkSettings Symlink { get; set; } = new();
+
     public string? OutputLibraryFolder { get; set; }
 
     public string? TmdbReadAccessToken { get; set; }

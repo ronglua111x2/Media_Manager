@@ -89,6 +89,7 @@ public sealed class DatabaseService : IDatabaseService
         EnsureColumn(connection, "SourceItems", "AutoTorrentTorrentHash", "TEXT NULL");
         EnsureColumn(connection, "SourceItems", "AutoTorrentPackOwnerSeasonNumber", "INTEGER NULL");
         EnsureColumn(connection, "SourceItems", "IsExternalImport", "INTEGER NOT NULL DEFAULT 0");
+        EnsureColumn(connection, "SourceItems", "SymlinkPath", "TEXT NULL");
         InitializeSeriesMappings(connection);
         InitializeTrackedShows(connection);
         InitializeTrackedMovies(connection);
@@ -113,7 +114,7 @@ public sealed class DatabaseService : IDatabaseService
                    EpisodeTitle,
                    MatchedTitle, MatchedYear, Provider, ProviderId, MatchConfidence, MatchReason,
                    RequiresManualReview, MatchAccepted, UseAbsoluteAnimeMapping,
-                   State, Notes, LinkedPath, AutoTorrentLinkKind, AutoTorrentTorrentHash,
+                   State, Notes, LinkedPath, SymlinkPath, AutoTorrentLinkKind, AutoTorrentTorrentHash,
                    AutoTorrentPackOwnerSeasonNumber, IsExternalImport, LastSeenUtc
             FROM SourceItems
             ORDER BY LastSeenUtc DESC;
@@ -150,6 +151,9 @@ public sealed class DatabaseService : IDatabaseService
         var linkedPathUpdateSql = preserveLinkedState
             ? "LinkedPath = COALESCE(excluded.LinkedPath, SourceItems.LinkedPath),"
             : "LinkedPath = excluded.LinkedPath,";
+        var symlinkPathUpdateSql = preserveLinkedState
+            ? "SymlinkPath = COALESCE(excluded.SymlinkPath, SourceItems.SymlinkPath),"
+            : "SymlinkPath = excluded.SymlinkPath,";
         var autoTorrentMetadataUpdateSql = preserveLinkedState
             ? """
                 AutoTorrentLinkKind = COALESCE(excluded.AutoTorrentLinkKind, SourceItems.AutoTorrentLinkKind),
@@ -166,8 +170,8 @@ public sealed class DatabaseService : IDatabaseService
             : "IsExternalImport = excluded.IsExternalImport,";
 
         command.CommandText = $"""
-            INSERT INTO SourceItems (SourceRootFolder, ParentFolder, FilePath, FileName, ScanText, MediaKind, ParserPattern, ShowTitle, MovieTitle, MovieYear, SeasonNumber, EpisodeNumber, MappedSeasonNumber, MappedEpisodeNumber, EpisodeMappingSource, EpisodeMappingConfidence, EpisodeMappingReason, EpisodeTitle, MatchedTitle, MatchedYear, Provider, ProviderId, MatchConfidence, MatchReason, RequiresManualReview, MatchAccepted, UseAbsoluteAnimeMapping, State, Notes, LinkedPath, AutoTorrentLinkKind, AutoTorrentTorrentHash, AutoTorrentPackOwnerSeasonNumber, IsExternalImport, LastSeenUtc)
-            VALUES ($SourceRootFolder, $ParentFolder, $FilePath, $FileName, $ScanText, $MediaKind, $ParserPattern, $ShowTitle, $MovieTitle, $MovieYear, $SeasonNumber, $EpisodeNumber, $MappedSeasonNumber, $MappedEpisodeNumber, $EpisodeMappingSource, $EpisodeMappingConfidence, $EpisodeMappingReason, $EpisodeTitle, $MatchedTitle, $MatchedYear, $Provider, $ProviderId, $MatchConfidence, $MatchReason, $RequiresManualReview, $MatchAccepted, $UseAbsoluteAnimeMapping, $State, $Notes, $LinkedPath, $AutoTorrentLinkKind, $AutoTorrentTorrentHash, $AutoTorrentPackOwnerSeasonNumber, $IsExternalImport, $LastSeenUtc)
+            INSERT INTO SourceItems (SourceRootFolder, ParentFolder, FilePath, FileName, ScanText, MediaKind, ParserPattern, ShowTitle, MovieTitle, MovieYear, SeasonNumber, EpisodeNumber, MappedSeasonNumber, MappedEpisodeNumber, EpisodeMappingSource, EpisodeMappingConfidence, EpisodeMappingReason, EpisodeTitle, MatchedTitle, MatchedYear, Provider, ProviderId, MatchConfidence, MatchReason, RequiresManualReview, MatchAccepted, UseAbsoluteAnimeMapping, State, Notes, LinkedPath, SymlinkPath, AutoTorrentLinkKind, AutoTorrentTorrentHash, AutoTorrentPackOwnerSeasonNumber, IsExternalImport, LastSeenUtc)
+            VALUES ($SourceRootFolder, $ParentFolder, $FilePath, $FileName, $ScanText, $MediaKind, $ParserPattern, $ShowTitle, $MovieTitle, $MovieYear, $SeasonNumber, $EpisodeNumber, $MappedSeasonNumber, $MappedEpisodeNumber, $EpisodeMappingSource, $EpisodeMappingConfidence, $EpisodeMappingReason, $EpisodeTitle, $MatchedTitle, $MatchedYear, $Provider, $ProviderId, $MatchConfidence, $MatchReason, $RequiresManualReview, $MatchAccepted, $UseAbsoluteAnimeMapping, $State, $Notes, $LinkedPath, $SymlinkPath, $AutoTorrentLinkKind, $AutoTorrentTorrentHash, $AutoTorrentPackOwnerSeasonNumber, $IsExternalImport, $LastSeenUtc)
             ON CONFLICT(FilePath) DO UPDATE SET
                 SourceRootFolder = excluded.SourceRootFolder,
                 ParentFolder = excluded.ParentFolder,
@@ -198,6 +202,7 @@ public sealed class DatabaseService : IDatabaseService
                 {stateUpdateSql}
                 Notes = excluded.Notes,
                 {linkedPathUpdateSql}
+                {symlinkPathUpdateSql}
                 {autoTorrentMetadataUpdateSql}
                 {externalImportUpdateSql}
                 LastSeenUtc = excluded.LastSeenUtc;
@@ -322,6 +327,7 @@ public sealed class DatabaseService : IDatabaseService
         command.Parameters.AddWithValue("$State", (int)item.State);
         command.Parameters.AddWithValue("$Notes", (object?)item.Notes ?? DBNull.Value);
         command.Parameters.AddWithValue("$LinkedPath", (object?)item.LinkedPath ?? DBNull.Value);
+        command.Parameters.AddWithValue("$SymlinkPath", (object?)item.SymlinkPath ?? DBNull.Value);
         command.Parameters.AddWithValue("$AutoTorrentLinkKind", item.AutoTorrentLinkKind is null ? DBNull.Value : (int)item.AutoTorrentLinkKind.Value);
         command.Parameters.AddWithValue("$AutoTorrentTorrentHash", (object?)item.AutoTorrentTorrentHash ?? DBNull.Value);
         command.Parameters.AddWithValue("$AutoTorrentPackOwnerSeasonNumber", (object?)item.AutoTorrentPackOwnerSeasonNumber ?? DBNull.Value);
@@ -382,11 +388,12 @@ public sealed class DatabaseService : IDatabaseService
             State = (ItemState)reader.GetInt32(28),
             Notes = reader.IsDBNull(29) ? null : reader.GetString(29),
             LinkedPath = reader.IsDBNull(30) ? null : reader.GetString(30),
-            AutoTorrentLinkKind = reader.IsDBNull(31) ? null : (AutoTorrentLinkKind)reader.GetInt32(31),
-            AutoTorrentTorrentHash = reader.IsDBNull(32) ? null : reader.GetString(32),
-            AutoTorrentPackOwnerSeasonNumber = reader.IsDBNull(33) ? null : reader.GetInt32(33),
-            IsExternalImport = reader.GetInt32(34) == 1,
-            LastSeenUtc = DateTime.Parse(reader.GetString(35), null, System.Globalization.DateTimeStyles.RoundtripKind)
+            SymlinkPath = reader.IsDBNull(31) ? null : reader.GetString(31),
+            AutoTorrentLinkKind = reader.IsDBNull(32) ? null : (AutoTorrentLinkKind)reader.GetInt32(32),
+            AutoTorrentTorrentHash = reader.IsDBNull(33) ? null : reader.GetString(33),
+            AutoTorrentPackOwnerSeasonNumber = reader.IsDBNull(34) ? null : reader.GetInt32(34),
+            IsExternalImport = reader.GetInt32(35) == 1,
+            LastSeenUtc = DateTime.Parse(reader.GetString(36), null, System.Globalization.DateTimeStyles.RoundtripKind)
         };
     }
 

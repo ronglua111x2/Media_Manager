@@ -7,6 +7,7 @@ using CommunityToolkit.Mvvm.Input;
 using media_management_app.Common;
 using media_management_app.Models;
 using media_management_app.Services;
+using media_management_app.Services.Symlink;
 using WinForms = System.Windows.Forms;
 
 namespace media_management_app.ViewModels;
@@ -22,6 +23,8 @@ public partial class SettingsViewModel : ViewModelBase
     private readonly ITrayIconService _trayIconService;
     private readonly IWindowsNotificationService _windowsNotificationService;
     private readonly IThemeService _themeService;
+    private readonly ISymlinkCoordinatorService _symlinkCoordinatorService;
+    private readonly ISymlinkService _symlinkService;
     private readonly HttpClient _httpClient;
     private readonly IAppLogger _logger;
     private bool _isLoadingSettings;
@@ -31,6 +34,27 @@ public partial class SettingsViewModel : ViewModelBase
 
     [ObservableProperty]
     private string defaultLibraryFolderName = string.Empty;
+
+    [ObservableProperty]
+    private bool symlinkEnabled = true;
+
+    [ObservableProperty]
+    private string symlinkUnifiedRoot = AppConstants.DefaultSymlinkUnifiedRoot;
+
+    [ObservableProperty]
+    private bool symlinkSyncOnStartup = true;
+
+    [ObservableProperty]
+    private bool isRunningAsAdministrator;
+
+    [ObservableProperty]
+    private string administratorStatusLabel = "Unknown";
+
+    [ObservableProperty]
+    private string symlinkPreviewShowsPath = string.Empty;
+
+    [ObservableProperty]
+    private string symlinkPreviewMoviesPath = string.Empty;
 
     [ObservableProperty]
     private string? tmdbReadAccessToken;
@@ -169,6 +193,8 @@ public partial class SettingsViewModel : ViewModelBase
         ITrayIconService trayIconService,
         IWindowsNotificationService windowsNotificationService,
         IThemeService themeService,
+        ISymlinkCoordinatorService symlinkCoordinatorService,
+        ISymlinkService symlinkService,
         HttpClient httpClient,
         IAppLogger logger)
     {
@@ -181,6 +207,8 @@ public partial class SettingsViewModel : ViewModelBase
         _trayIconService = trayIconService;
         _windowsNotificationService = windowsNotificationService;
         _themeService = themeService;
+        _symlinkCoordinatorService = symlinkCoordinatorService;
+        _symlinkService = symlinkService;
         _httpClient = httpClient;
         _logger = logger;
         SourceFolders = [];
@@ -236,6 +264,37 @@ public partial class SettingsViewModel : ViewModelBase
     }
 
     [RelayCommand]
+    private async Task SyncSymlinksNow()
+    {
+        try
+        {
+            var result = await _symlinkCoordinatorService.SyncNowAsync();
+            StatusMessage = result.ErrorCount > 0
+                ? $"{result.Summary} See logs for details."
+                : result.Summary;
+            _logger.Info($"Manual symlink sync finished. {result.Summary}", LogTarget.All);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Symlink sync failed: {ex.Message}";
+            _logger.Error("Manual symlink sync failed.", ex, LogTarget.All);
+        }
+    }
+
+    [RelayCommand]
+    private void BrowseSymlinkUnifiedRoot()
+    {
+        var selected = BrowseFolder(SymlinkUnifiedRoot, "Select Jellyfin symlink library root");
+        if (string.IsNullOrWhiteSpace(selected))
+        {
+            return;
+        }
+
+        SymlinkUnifiedRoot = selected;
+        RefreshSymlinkPreview();
+    }
+
+    [RelayCommand]
     private void Save()
     {
         _settingsService.Current.StateFolder = StateFolder;
@@ -251,6 +310,7 @@ public partial class SettingsViewModel : ViewModelBase
         ApplyStartupSettings();
         ApplyAutoTrackSettings();
         ApplyUiSettings();
+        ApplySymlinkSettings();
         _settingsService.Save();
         try
         {
@@ -493,6 +553,16 @@ public partial class SettingsViewModel : ViewModelBase
         RefreshLibraryRootPreview();
     }
 
+    partial void OnSymlinkUnifiedRootChanged(string value)
+    {
+        if (_isLoadingSettings)
+        {
+            return;
+        }
+
+        RefreshSymlinkPreview();
+    }
+
     partial void OnWarpExecutablePathChanged(string? value)
     {
         if (_isLoadingSettings)
@@ -515,6 +585,9 @@ public partial class SettingsViewModel : ViewModelBase
         {
             StateFolder = _settingsService.Current.StateFolder;
             DefaultLibraryFolderName = _settingsService.Current.DefaultLibraryFolderName;
+            SymlinkEnabled = _settingsService.Current.Symlink?.Enabled ?? true;
+            SymlinkUnifiedRoot = _settingsService.Current.Symlink?.UnifiedRoot ?? AppConstants.DefaultSymlinkUnifiedRoot;
+            SymlinkSyncOnStartup = _settingsService.Current.Symlink?.SyncOnStartup ?? true;
             TmdbReadAccessToken = _settingsService.Current.TmdbReadAccessToken;
             QbittorrentWebUiUrl = _settingsService.Current.AutoTorrent.QbittorrentWebUiUrl;
             QbittorrentUsername = _settingsService.Current.AutoTorrent.Username;
@@ -570,6 +643,8 @@ public partial class SettingsViewModel : ViewModelBase
         }
 
         RefreshLibraryRootPreview();
+        RefreshSymlinkPreview();
+        RefreshAdministratorStatus();
         RefreshWarpCliStatus();
         _logger.Info($"Settings UI loaded. VisibleSourceFolders={SourceFolders.Count}, SelectedSourceFolder='{SelectedSourceFolder ?? "<none>"}'", LogTarget.All);
     }
@@ -646,6 +721,17 @@ public partial class SettingsViewModel : ViewModelBase
         _settingsService.Current.Ui.Theme = SelectedTheme;
     }
 
+    private void ApplySymlinkSettings()
+    {
+        _settingsService.Current.Symlink ??= new SymlinkSettings();
+        _settingsService.Current.Symlink.Enabled = SymlinkEnabled;
+        _settingsService.Current.Symlink.UnifiedRoot = string.IsNullOrWhiteSpace(SymlinkUnifiedRoot)
+            ? AppConstants.DefaultSymlinkUnifiedRoot
+            : SymlinkUnifiedRoot.Trim();
+        _settingsService.Current.Symlink.SyncOnStartup = SymlinkSyncOnStartup;
+        SymlinkUnifiedRoot = _settingsService.Current.Symlink.UnifiedRoot;
+    }
+
     private void ApplyAutoTrackSettings()
     {
         _settingsService.Current.AutoTrack ??= new AutoTrackSettings();
@@ -714,6 +800,21 @@ public partial class SettingsViewModel : ViewModelBase
             LibraryRootPreview.Add($"    Movies: {Path.Combine(root, AppConstants.MoviesFolderName)}");
             _logger.Debug($"Library root preview generated: {root}", LogTarget.File | LogTarget.Console);
         }
+    }
+
+    private void RefreshSymlinkPreview()
+    {
+        var root = string.IsNullOrWhiteSpace(SymlinkUnifiedRoot)
+            ? AppConstants.DefaultSymlinkUnifiedRoot
+            : SymlinkUnifiedRoot.Trim();
+        SymlinkPreviewShowsPath = Path.Combine(root, AppConstants.ShowsFolderName);
+        SymlinkPreviewMoviesPath = Path.Combine(root, AppConstants.MoviesFolderName);
+    }
+
+    private void RefreshAdministratorStatus()
+    {
+        IsRunningAsAdministrator = _symlinkService.IsRunningAsAdministrator();
+        AdministratorStatusLabel = IsRunningAsAdministrator ? "Running as Administrator" : "Not elevated";
     }
 
     private static string? BrowseFolder(string? initialFolder, string description)

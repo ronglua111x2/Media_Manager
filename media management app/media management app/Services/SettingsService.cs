@@ -144,6 +144,11 @@ public sealed class SettingsService : ISettingsService
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
         Current.DriveLibraryRoots ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        Current.Symlink ??= new SymlinkSettings();
+        if (string.IsNullOrWhiteSpace(Current.Symlink.UnifiedRoot))
+        {
+            Current.Symlink.UnifiedRoot = AppConstants.DefaultSymlinkUnifiedRoot;
+        }
     }
 
     private static void MigrateAutoTrackSettings(AutoTrackSettings autoTrack)

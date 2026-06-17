@@ -15,6 +15,7 @@
 	<RuntimeIdentifier>win-x64</RuntimeIdentifier>
 
 	<IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
 
   <ItemGroup>

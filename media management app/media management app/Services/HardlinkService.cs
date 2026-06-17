@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using System.ComponentModel;
 using media_management_app.Common;
 using media_management_app.Models;
+using media_management_app.Services.Events;
 
 namespace media_management_app.Services;
 
@@ -10,12 +11,18 @@ public sealed class HardlinkService : IHardlinkService
     private readonly IAppLogger _logger;
     private readonly ILibraryPathResolver _libraryPathResolver;
     private readonly ISettingsService _settingsService;
+    private readonly ILibraryLinkEventHub _eventHub;
 
-    public HardlinkService(IAppLogger logger, ILibraryPathResolver libraryPathResolver, ISettingsService settingsService)
+    public HardlinkService(
+        IAppLogger logger,
+        ILibraryPathResolver libraryPathResolver,
+        ISettingsService settingsService,
+        ILibraryLinkEventHub eventHub)
     {
         _logger = logger;
         _libraryPathResolver = libraryPathResolver;
         _settingsService = settingsService;
+        _eventHub = eventHub;
     }
 
     public string BuildOutputPath(SourceItem item, string outputRoot)
@@ -104,6 +111,7 @@ public sealed class HardlinkService : IHardlinkService
 
         createdPath = targetPath;
         _logger.Info($"Created hardlink: {targetPath}", LogTarget.All);
+        _eventHub.PublishHardlinkCreated(item, targetPath);
         return true;
     }
 
@@ -146,6 +154,7 @@ public sealed class HardlinkService : IHardlinkService
         {
             _logger.Warning($"Linked path no longer exists, clearing state only: {item.LinkedPath}", LogTarget.All);
             CleanupEmptyLibraryFolders(linkedDirectory, cleanupRoot);
+            _eventHub.PublishHardlinkRemoved(item, removedPath);
             return true;
         }
 
@@ -154,6 +163,7 @@ public sealed class HardlinkService : IHardlinkService
             File.Delete(item.LinkedPath);
             _logger.Info($"Removed hardlink path: {item.LinkedPath}", LogTarget.All);
             CleanupEmptyLibraryFolders(linkedDirectory, cleanupRoot);
+            _eventHub.PublishHardlinkRemoved(item, removedPath);
             return true;
         }
         catch (Exception ex)
@@ -220,8 +230,13 @@ public sealed class HardlinkService : IHardlinkService
 
     private static string BuildMovieFolderName(SourceItem item)
     {
-        var title = Sanitize(item.MovieTitle ?? item.ShowTitle ?? "Unknown Movie");
-        return item.MovieYear is null ? title : $"{title} ({item.MovieYear})";
+        var title = Sanitize(item.MatchedTitle ?? item.MovieTitle ?? item.ShowTitle ?? "Unknown Movie");
+        var year = item.MovieYear ?? item.MatchedYear;
+        var yearSuffix = year is null ? string.Empty : $" ({year})";
+        var providerSuffix = !string.IsNullOrWhiteSpace(item.ProviderId)
+            ? $" [{(item.Provider ?? "tmdb").ToLowerInvariant()}id-{item.ProviderId}]"
+            : string.Empty;
+        return $"{title}{yearSuffix}{providerSuffix}";
     }
 
     private static string BuildSeriesFolderName(SourceItem item)

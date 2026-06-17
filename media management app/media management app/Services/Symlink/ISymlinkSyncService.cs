@@ -1,0 +1,12 @@
+using media_management_app.Models;
+
+namespace media_management_app.Services.Symlink;
+
+public interface ISymlinkSyncService
+{
+    SymlinkSyncResult SyncItem(SourceItem item, string? linkedPath = null);
+
+    SymlinkSyncResult RemoveItem(SourceItem item, string? linkedPath = null);
+
+    SymlinkSyncResult ReconcileAll();
+}

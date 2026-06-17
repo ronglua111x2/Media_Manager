@@ -643,6 +643,65 @@
                                              MinHeight="140" />
                                 </StackPanel>
                             </materialDesign:Card>
+
+                            <materialDesign:Card Style="{StaticResource SettingsCardStyle}">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <Border Width="8"
+                                                Height="24"
+                                                CornerRadius="4"
+                                                Background="{StaticResource AppBrushAccent}"
+                                                Margin="0,0,8,0" />
+                                        <TextBlock Text="Jellyfin Symlink Library" Style="{StaticResource SettingsSectionTitleStyle}" Margin="0" />
+                                    </StackPanel>
+                                    <CheckBox Content="Enable symlink aggregation for Jellyfin"
+                                              IsChecked="{Binding SymlinkEnabled}"
+                                              Margin="0,0,0,8" />
+                                    <CheckBox Content="Reconcile symlinks on app startup"
+                                              IsChecked="{Binding SymlinkSyncOnStartup}"
+                                              Margin="0,0,0,8" />
+                                    <TextBlock Text="Unified Jellyfin root" Style="{StaticResource SettingsLabelStyle}" />
+                                    <Grid Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBox Grid.Column="0"
+                                                 Text="{Binding SymlinkUnifiedRoot, UpdateSourceTrigger=PropertyChanged}"
+                                                 Style="{StaticResource SettingsTextBoxStyle}" />
+                                        <Button Grid.Column="1"
+                                                Command="{Binding BrowseSymlinkUnifiedRootCommand}"
+                                                Style="{StaticResource SettingsIconTextButtonStyle}"
+                                                Margin="8,0,0,0">
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconLucide Kind="FolderOpen" Width="16" Height="16" Margin="0,0,7,0" />
+                                                <TextBlock Text="Browse" />
+                                            </StackPanel>
+                                        </Button>
+                                    </Grid>
+                                    <TextBlock Text="Jellyfin library paths" Style="{StaticResource SettingsLabelStyle}" />
+                                    <TextBlock Text="{Binding SymlinkPreviewShowsPath, StringFormat=Shows: {0}}"
+                                               Style="{StaticResource SettingsHintStyle}"
+                                               FontFamily="Consolas"
+                                               Margin="0,0,0,4" />
+                                    <TextBlock Text="{Binding SymlinkPreviewMoviesPath, StringFormat=Movies: {0}}"
+                                               Style="{StaticResource SettingsHintStyle}"
+                                               FontFamily="Consolas"
+                                               Margin="0,0,0,8" />
+                                    <TextBlock Text="Administrator status" Style="{StaticResource SettingsLabelStyle}" />
+                                    <TextBlock Text="{Binding AdministratorStatusLabel}"
+                                               Style="{StaticResource SettingsHintStyle}"
+                                               Margin="0,0,0,8" />
+                                    <Button Command="{Binding SyncSymlinksNowCommand}"
+                                            Style="{StaticResource SettingsIconTextButtonStyle}"
+                                            HorizontalAlignment="Left">
+                                        <StackPanel Orientation="Horizontal">
+                                            <iconPacks:PackIconLucide Kind="RefreshCw" Width="16" Height="16" Margin="0,0,7,0" />
+                                            <TextBlock Text="Sync Symlinks Now" />
+                                        </StackPanel>
+                                    </Button>
+                                </StackPanel>
+                            </materialDesign:Card>
                         </StackPanel>
 
                         <Border Grid.Column="2" Style="{StaticResource SettingsGuidePanelStyle}">
@@ -665,7 +724,14 @@
                                 <Border Style="{StaticResource SettingsGuideItemStyle}">
                                     <StackPanel>
                                         <TextBlock Text="Jellyfin" Style="{StaticResource SettingsLabelStyle}" />
-                                        <TextBlock Text="In Jellyfin, add every generated Shows path to one Shows library and every generated Movies path to one Movies library."
+                                        <TextBlock Text="Point Jellyfin only to the unified symlink library on drive C (Shows and Movies folders). Do not add per-drive hardlink folders."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Symlinks" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="When a hardlink is created, the app mirrors it to the unified root via symlink. Startup reconcile repairs missing links. Administrator elevation is required by the app manifest."
                                                    Style="{StaticResource SettingsHintStyle}" />
                                     </StackPanel>
                                 </Border>
