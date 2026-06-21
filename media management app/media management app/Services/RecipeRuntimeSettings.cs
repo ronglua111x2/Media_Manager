@@ -16,6 +16,8 @@ public static class RecipeRuntimeSettings
     public const string FuzzyDeduplicateSizeToleranceMbKey = "fuzzyDeduplicateSizeToleranceMb";
     public const string EnableCandidateMetadataProbeKey = "enableCandidateMetadataProbe";
     public const string EpisodeNumberingModeKey = "episodeNumberingMode";
+    public const string CustomQueryLegacyKey = "customQuery";
+    public const string SkipDefaultTitleKey = "skipDefaultTitle";
     public const string StandardTvEpisodeNumbering = "Standard TV";
     public const string AnimeAbsoluteEpisodeNumbering = "Anime absolute";
 

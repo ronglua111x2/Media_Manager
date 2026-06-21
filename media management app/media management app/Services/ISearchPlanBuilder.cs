@@ -7,4 +7,6 @@ public interface ISearchPlanBuilder
     IReadOnlyList<string> BuildEpisodeQueries(SearchRecipe recipe, TrackedShow show, TrackedEpisode episode);
 
     IReadOnlyList<string> BuildMovieQueries(SearchRecipe recipe, TrackedMovie movie);
+
+    IReadOnlyList<string> BuildShowSnapshotQueries(SearchRecipe recipe, TrackedShow show);
 }

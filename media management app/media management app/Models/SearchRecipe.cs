@@ -35,6 +35,8 @@ public sealed class RecipeModuleConfig
 
     public List<string> QueryTemplates { get; set; } = [];
 
+    public List<string> CustomQueries { get; set; } = [];
+
     public List<string> QualityAllowList { get; set; } = ["1080p"];
 
     public string PreferredAudioCodec { get; set; } = string.Empty;

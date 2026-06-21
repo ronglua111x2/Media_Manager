@@ -314,6 +314,16 @@ public sealed class RecipeService : IRecipeService
             module.DisplayName = string.IsNullOrWhiteSpace(module.DisplayName) ? module.BlockType.ToString() : module.DisplayName.Trim();
             module.Aliases ??= [];
             module.QueryTemplates ??= [];
+            module.CustomQueries ??= [];
+            if (module.BlockType == RecipeBlockType.QueryBuilder &&
+                module.CustomQueries.Count == 0 &&
+                module.ExtensionData.TryGetValue(RecipeRuntimeSettings.CustomQueryLegacyKey, out var legacyCustomQuery) &&
+                !string.IsNullOrWhiteSpace(legacyCustomQuery))
+            {
+                module.CustomQueries.Add(legacyCustomQuery.Trim());
+                module.ExtensionData.Remove(RecipeRuntimeSettings.CustomQueryLegacyKey);
+            }
+
             module.QualityAllowList ??= [];
             module.IncludeTerms ??= [];
             module.ExcludeTerms ??= [];

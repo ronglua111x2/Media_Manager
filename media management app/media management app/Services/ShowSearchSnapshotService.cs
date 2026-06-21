@@ -9,17 +9,20 @@ public sealed class ShowSearchSnapshotService
 
     private readonly ISettingsService _settingsService;
     private readonly IRecipeService _recipeService;
+    private readonly ISearchPlanBuilder _searchPlanBuilder;
     private readonly IQbittorrentClient _qbittorrentClient;
     private readonly IAppLogger _logger;
 
     public ShowSearchSnapshotService(
         ISettingsService settingsService,
         IRecipeService recipeService,
+        ISearchPlanBuilder searchPlanBuilder,
         IQbittorrentClient qbittorrentClient,
         IAppLogger logger)
     {
         _settingsService = settingsService;
         _recipeService = recipeService;
+        _searchPlanBuilder = searchPlanBuilder;
         _qbittorrentClient = qbittorrentClient;
         _logger = logger;
     }
@@ -34,6 +37,7 @@ public sealed class ShowSearchSnapshotService
         {
             _logger.Info($"Starting snapshot search for {show.DisplayTitle}.", LogTarget.All);
         }
+
         var fallback = _settingsService.Current.AutoTorrent;
         var recipe = recipeKind == MediaKind.TvSeasonPack
             ? _recipeService.GetRecipeOrDefault(show.PackRecipeId, MediaKind.TvSeasonPack)
@@ -41,33 +45,44 @@ public sealed class ShowSearchSnapshotService
         var targetResults = RecipeRuntimeSettings.GetSnapshotTargetResults(recipe, fallback);
         var timeoutSeconds = RecipeRuntimeSettings.GetSnapshotTimeoutSeconds(recipe, fallback);
         var idleTimeoutSeconds = RecipeRuntimeSettings.GetSnapshotIdleTimeoutSeconds(recipe, fallback);
-        var query = BuildPrimaryQuery(show);
-        var snapshot = await CaptureSnapshotAsync(query, targetResults, timeoutSeconds, idleTimeoutSeconds, progressService, cancellationToken);
-        if (snapshot.Count >= Math.Max(targetResults / 2, 50) || show.FirstAirYear is null)
+        var queries = _searchPlanBuilder.BuildShowSnapshotQueries(recipe, show);
+        if (queries.Count == 0)
         {
-            return snapshot;
+            _logger.Info($"Snapshot search skipped for {show.DisplayTitle}: no queries were built from recipe '{recipe.Name}'.", LogTarget.All);
+            return [];
         }
 
-        var fallbackQuery = show.Title;
-        if (string.Equals(fallbackQuery, query, StringComparison.OrdinalIgnoreCase))
+        _logger.Info(
+            $"Snapshot search queries for {show.DisplayTitle}. Recipe='{recipe.Name}', Queries={queries.Count}: {string.Join(" | ", queries)}",
+            LogTarget.All);
+
+        var combined = new List<TorrentSearchResult>();
+        foreach (var query in queries)
         {
-            return snapshot;
+            cancellationToken.ThrowIfCancellationRequested();
+            var snapshot = await CaptureSnapshotAsync(
+                query,
+                targetResults,
+                timeoutSeconds,
+                idleTimeoutSeconds,
+                progressService,
+                cancellationToken);
+            combined = combined
+                .Concat(snapshot)
+                .GroupBy(result => result.FileUrl, StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.OrderByDescending(result => result.Seeders).First())
+                .ToList();
+
+            if (combined.Count >= targetResults)
+            {
+                break;
+            }
         }
 
-        var fallbackSnapshot = await CaptureSnapshotAsync(fallbackQuery, targetResults, timeoutSeconds, idleTimeoutSeconds, progressService, cancellationToken);
-        var combined = snapshot
-            .Concat(fallbackSnapshot)
-            .GroupBy(result => result.FileUrl, StringComparer.OrdinalIgnoreCase)
-            .Select(group => group.OrderByDescending(result => result.Seeders).First())
+        return combined
+            .OrderByDescending(result => result.Seeders)
+            .ThenBy(result => result.FileSize)
             .ToList();
-        return combined;
-    }
-
-    private static string BuildPrimaryQuery(TrackedShow show)
-    {
-        return show.FirstAirYear is null
-            ? show.Title
-            : $"{show.Title} {show.FirstAirYear}";
     }
 
     private async Task<IReadOnlyList<TorrentSearchResult>> CaptureSnapshotAsync(

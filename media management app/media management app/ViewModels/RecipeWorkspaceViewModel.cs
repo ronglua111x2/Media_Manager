@@ -255,6 +255,7 @@ public sealed partial class RecipeWorkspaceViewModel : ViewModelBase
             DisplayName = module.DisplayName,
             Aliases = module.Aliases.ToList(),
             QueryTemplates = module.QueryTemplates.ToList(),
+            CustomQueries = module.CustomQueries.ToList(),
             QualityAllowList = module.QualityAllowList.ToList(),
             PreferredAudioCodec = module.PreferredAudioCodec,
             MinimumSeeders = module.MinimumSeeders,
@@ -308,7 +309,6 @@ public sealed partial class RecipeListItemViewModel : ObservableObject
 
 public sealed partial class RecipeModuleEditorViewModel : ObservableObject
 {
-    private const string CustomQueryKey = "customQuery";
     private const string ParallelSearchMode = "Parallel episode search";
     private const string SnapshotSearchMode = "Show snapshot search";
     private static readonly string[] StandardQualities = ["2160p", "1080p", "720p", "480p"];
@@ -362,7 +362,7 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
     public string ModuleHint => _module.BlockType switch
     {
         RecipeBlockType.Identity => "Aliases and title matching for the media item.",
-        RecipeBlockType.QueryBuilder => "Query templates, custom query, preferred quality, and audio tokens.",
+        RecipeBlockType.QueryBuilder => "Query templates, custom queries, preferred quality, and audio tokens.",
         RecipeBlockType.SearchSource => "Choose parallel per-episode search or show-level snapshot matching.",
         RecipeBlockType.CandidateParser => "Candidate filename parsing is currently automatic.",
         RecipeBlockType.CandidateFilter => "Quality, seeders, size, include/exclude terms, and release groups.",
@@ -407,10 +407,16 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
         set => SetListValue(_module.QueryTemplates, SplitLines(value));
     }
 
-    public string CustomQuery
+    public string CustomQueriesText
     {
-        get => GetExtensionValue(CustomQueryKey);
-        set => SetExtensionValue(CustomQueryKey, value);
+        get => ToLines(_module.CustomQueries);
+        set => SetListValue(_module.CustomQueries, SplitLines(value));
+    }
+
+    public bool SkipDefaultTitle
+    {
+        get => GetExtensionBool(RecipeRuntimeSettings.SkipDefaultTitleKey, false);
+        set => SetExtensionValue(RecipeRuntimeSettings.SkipDefaultTitleKey, value.ToString());
     }
 
     public string QualityAllowListText
@@ -666,7 +672,8 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
             $"Qualities: {SelectedQualitiesSummary}",
             $"Preferred audio: {DisplayOrEmpty(PreferredAudioCodec)}",
             $"Query templates: {CountLines(QueryTemplatesText)}",
-            $"Custom query: {DisplayOrEmpty(CustomQuery)}"
+            $"Custom queries: {CountLines(CustomQueriesText)}",
+            $"Skip default title: {(SkipDefaultTitle ? "Yes" : "No")}"
         ],
         RecipeBlockType.SearchSource =>
         [
@@ -798,7 +805,8 @@ internal static class ModuleFieldHelp
                 new() { FieldName = "Quality allow list", Description = "Accepted quality labels such as 1080p or 2160p.", OutputImpact = "Generates one search query per quality token. More qualities mean more queries and broader search coverage." },
                 new() { FieldName = "Preferred audio", Description = "Audio codec or label to prefer, e.g. DDP5.1 or Atmos.", OutputImpact = "Inserted into query templates as {audio}. Candidates containing this token receive a higher score." },
                 new() { FieldName = "Query templates", Description = "Patterns sent to qBittorrent search.", OutputImpact = "Each template is expanded with title, year, season, episode, quality, and audio. More templates increase candidate discovery at the cost of more searches." },
-                new() { FieldName = "Custom query", Description = "One extra template appended after the generated list.", OutputImpact = "Useful for manual search phrases that do not fit the standard templates." }
+                new() { FieldName = "Custom queries", Description = "Extra templates appended after the generated list, one entry per line.", OutputImpact = "Useful for manual search phrases that do not fit the standard templates. Each entry is expanded like a normal template." },
+                new() { FieldName = "Skip default title", Description = "Exclude the library show or movie title from {title} expansion.", OutputImpact = "When enabled, only Identity aliases are used for {title}. Useful when the TMDB title differs from how releases are named." }
             ],
             RecipeBlockType.SearchSource =>
             [
