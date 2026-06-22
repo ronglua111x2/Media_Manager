@@ -82,5 +82,7 @@ public sealed class SourceItem
 
     public bool IsExternalImport { get; set; }
 
+    public bool IsOrphanPackSpecial { get; set; }
+
     public DateTime LastSeenUtc { get; set; } = DateTime.UtcNow;
 }

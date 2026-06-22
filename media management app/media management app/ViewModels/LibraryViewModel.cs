@@ -46,6 +46,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
         IRecipeService recipeService,
         IAutoTorrentLinkService autoTorrentLinkService,
         ITorrentReconciliationService torrentReconciliationService,
+        IPackLinkCoordinatorService packLinkCoordinatorService,
         IMediaImportService mediaImportService,
         IMediaMetadataSyncService mediaMetadataSyncService,
         ISettingsService settingsService,
@@ -79,6 +80,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
             RefreshCartStateOnSelectedDetail();
         };
         _torrentReconciliationService.Reconciled += (_, _) => _ = ReloadSelectedDetailAsync();
+        packLinkCoordinatorService.PackReconciled += (_, _) => _ = ReloadSelectedDetailAsync();
         lifecycleService.AppModeChanged += OnAppModeChanged;
         RefreshLibrary();
         StatusMessage = "Select a media card to view details.";
@@ -448,6 +450,20 @@ public sealed partial class LibraryViewModel : ViewModelBase
 
         try
         {
+            if (episode.IsOrphan && episode.SourceItemId is long sourceItemId)
+            {
+                StatusMessage = $"Removing orphan library entry for {episode.Title}...";
+                var orphanResult = _autoTorrentLinkService.RemoveOrphanPackSpecialLink(sourceItemId);
+                await ReloadSelectedDetailAsync();
+                StatusMessage = $"Removed orphan entry: {orphanResult.Summary}.";
+                return;
+            }
+
+            if (episode.IsOrphanSeparator || !episode.IsTrackedEpisode)
+            {
+                return;
+            }
+
             if (episode.IsLinked)
             {
                 StatusMessage = $"Removing library link for {episode.EpisodeCode}...";
@@ -611,6 +627,30 @@ public sealed partial class LibraryViewModel : ViewModelBase
 
         System.Windows.Clipboard.SetText(text.Trim());
         StatusMessage = $"Copied \"{text.Trim()}\" to clipboard.";
+    }
+
+    [RelayCommand]
+    private void ToggleAlternativeTitleRecipeSearchExclusion(AlternativeTitleChipViewModel? chip)
+    {
+        if (chip is null || string.IsNullOrWhiteSpace(chip.Title))
+        {
+            return;
+        }
+
+        var exclude = !chip.IsExcludedFromRecipeSearch;
+        if (chip.IsMovie)
+        {
+            _trackedMovieService.SetAlternativeTitleExcludedFromSearch(chip.MediaId, chip.Title, exclude);
+        }
+        else
+        {
+            _trackedShowService.SetAlternativeTitleExcludedFromSearch(chip.MediaId, chip.Title, exclude);
+        }
+
+        chip.IsExcludedFromRecipeSearch = exclude;
+        StatusMessage = exclude
+            ? $"Excluded \"{chip.Title}\" from recipe search."
+            : $"Included \"{chip.Title}\" in recipe search.";
     }
 
     [RelayCommand(CanExecute = nameof(HasSelectedMedia))]
@@ -993,10 +1033,16 @@ public sealed partial class LibraryViewModel : ViewModelBase
             .Select(group =>
             {
                 seasonRecords.TryGetValue(group.Key, out var seasonRecord);
+                var seasonRows = group.ToList();
+                if (group.Key == AppConstants.SpecialsSeasonNumber)
+                {
+                    seasonRows = AppendOrphanPackRows(show.Id, show.TmdbId, seasonRows);
+                }
+
                 return new LibrarySeasonViewModel(
                     show.Id,
                     group.Key,
-                    group,
+                    seasonRows,
                     UpdateSeasonManagementMode,
                     seasonRecord)
                 {
@@ -1170,6 +1216,34 @@ public sealed partial class LibraryViewModel : ViewModelBase
         StatusMessage = $"Season {seasonNumber:00} set to {mode} mode.";
     }
 
+    private List<LibraryEpisodeRowViewModel> AppendOrphanPackRows(
+        long showId,
+        int tmdbId,
+        List<LibraryEpisodeRowViewModel> trackedRows)
+    {
+        var providerId = tmdbId.ToString();
+        var orphanItems = _databaseService.GetSourceItems()
+            .Where(item =>
+                item.IsOrphanPackSpecial &&
+                item.MatchAccepted &&
+                item.State == ItemState.Linked &&
+                !string.IsNullOrWhiteSpace(item.LinkedPath) &&
+                File.Exists(item.LinkedPath) &&
+                string.Equals(item.Provider, "tmdb", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(item.ProviderId, providerId, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(item => item.FileName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (orphanItems.Count == 0)
+        {
+            return trackedRows;
+        }
+
+        var rows = new List<LibraryEpisodeRowViewModel>(trackedRows);
+        rows.Add(LibraryEpisodeRowViewModel.CreateOrphanSeparator());
+        rows.AddRange(orphanItems.Select(item => LibraryEpisodeRowViewModel.CreateOrphan(item, showId)));
+        return rows;
+    }
+
     private Dictionary<(int SeasonNumber, int EpisodeNumber), string> GetLinkedEpisodeStatuses(int tmdbId)
     {
         var providerId = tmdbId.ToString();
@@ -1177,6 +1251,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
         foreach (var item in _databaseService.GetSourceItems()
                      .Where(item =>
                          item.MediaKind == MediaKind.TvEpisode &&
+                         !item.IsOrphanPackSpecial &&
                          item.MatchAccepted &&
                          item.State == ItemState.Linked &&
                          !string.IsNullOrWhiteSpace(item.LinkedPath) &&

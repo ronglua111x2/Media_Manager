@@ -19,6 +19,8 @@ public sealed class TrackedMovie
 
     public string? AlternativeTitlesJson { get; set; }
 
+    public string? ExcludedAlternativeTitlesJson { get; set; }
+
     public string? RecipeId { get; set; }
 
     public string PreferredQuality { get; set; } = "1080p";
@@ -60,6 +62,12 @@ public sealed class TrackedMovie
     public string DisplayTitle => ReleaseYear is null ? Title : $"{Title} ({ReleaseYear})";
 
     public IReadOnlyList<string> AlternativeTitles => TrackedShow.ParseAlternativeTitles(AlternativeTitlesJson);
+
+    public IReadOnlyList<string> ExcludedFromSearchAlternativeTitles =>
+        TrackedShow.ParseAlternativeTitles(ExcludedAlternativeTitlesJson);
+
+    public IReadOnlyList<string> GetSearchableAlternativeTitles() =>
+        TrackedShow.GetSearchableAlternativeTitles(AlternativeTitles, ExcludedFromSearchAlternativeTitles);
 
     public static string? SerializeAlternativeTitles(IEnumerable<string> titles) =>
         TrackedShow.SerializeAlternativeTitles(titles);

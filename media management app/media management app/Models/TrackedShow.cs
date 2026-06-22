@@ -19,6 +19,8 @@ public sealed class TrackedShow
 
     public string? AlternativeTitlesJson { get; set; }
 
+    public string? ExcludedAlternativeTitlesJson { get; set; }
+
     public string? RecipeId { get; set; }
 
     public string? PackRecipeId { get; set; }
@@ -81,6 +83,27 @@ public sealed class TrackedShow
         : string.Empty;
 
     public IReadOnlyList<string> AlternativeTitles => ParseAlternativeTitles(AlternativeTitlesJson);
+
+    public IReadOnlyList<string> ExcludedFromSearchAlternativeTitles =>
+        ParseAlternativeTitles(ExcludedAlternativeTitlesJson);
+
+    public IReadOnlyList<string> GetSearchableAlternativeTitles() =>
+        GetSearchableAlternativeTitles(AlternativeTitles, ExcludedFromSearchAlternativeTitles);
+
+    public static IReadOnlyList<string> GetSearchableAlternativeTitles(
+        IReadOnlyList<string> alternativeTitles,
+        IReadOnlyList<string> excludedFromSearchAlternativeTitles)
+    {
+        if (excludedFromSearchAlternativeTitles.Count == 0)
+        {
+            return alternativeTitles;
+        }
+
+        var excluded = new HashSet<string>(excludedFromSearchAlternativeTitles, StringComparer.OrdinalIgnoreCase);
+        return alternativeTitles
+            .Where(title => !string.IsNullOrWhiteSpace(title) && !excluded.Contains(title.Trim()))
+            .ToList();
+    }
 
     public static IReadOnlyList<string> ParseAlternativeTitles(string? json)
     {

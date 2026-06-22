@@ -20,6 +20,7 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
     private readonly ITrackedShowService _trackedShowService;
     private readonly ITrackedMovieService _trackedMovieService;
     private readonly IAutoTorrentLinkService _autoTorrentLinkService;
+    private readonly IPackLinkCoordinatorService _packLinkCoordinatorService;
     private readonly ISettingsService _settingsService;
     private readonly IAppLogger _logger;
 
@@ -31,6 +32,7 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
         ITrackedShowService trackedShowService,
         ITrackedMovieService trackedMovieService,
         IAutoTorrentLinkService autoTorrentLinkService,
+        IPackLinkCoordinatorService packLinkCoordinatorService,
         ISettingsService settingsService,
         IAppLogger logger)
     {
@@ -39,6 +41,7 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
         _trackedShowService = trackedShowService;
         _trackedMovieService = trackedMovieService;
         _autoTorrentLinkService = autoTorrentLinkService;
+        _packLinkCoordinatorService = packLinkCoordinatorService;
         _settingsService = settingsService;
         _logger = logger;
     }
@@ -147,10 +150,18 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
             cancellationToken.ThrowIfCancellationRequested();
             if (torrentsByHash.TryGetValue(season.PackTorrentHash!, out var torrent))
             {
-                _trackedShowService.UpdateSeasonPackTorrent(show.Id, season.SeasonNumber, torrent);
+                var previousProgress = season.PackTorrentProgress;
+                var ownerSeasonNumber = season.SelectedPackOwnerSeasonNumber ?? season.SeasonNumber;
+                _trackedShowService.UpdateSeasonPackTorrent(show.Id, ownerSeasonNumber, torrent);
                 usedHashes.Add(torrent.Hash);
                 CountMatched(torrent, result);
-                await AutoLinkSeasonPackIfConfiguredAsync(show, season, torrent, result, cancellationToken);
+                await _packLinkCoordinatorService.TryAutoReconcilePackAsync(
+                    show,
+                    season,
+                    torrent,
+                    previousProgress,
+                    result,
+                    cancellationToken);
                 continue;
             }
 
@@ -236,11 +247,17 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
             {
                 if (MatchesSeasonPack(torrent.Name, show, season))
                 {
-                    matches.Add(() =>
+                    matches.Add(async () =>
                     {
                         _trackedShowService.UpdateSeasonPackTorrent(show.Id, season.SeasonNumber, torrent);
                         CountMatched(torrent, result);
-                        return AutoLinkSeasonPackIfConfiguredAsync(show, season, torrent, result, cancellationToken);
+                        await _packLinkCoordinatorService.TryAutoReconcilePackAsync(
+                            show,
+                            season,
+                            torrent,
+                            previousProgress: 0,
+                            result,
+                            cancellationToken);
                     });
                 }
             }
@@ -368,25 +385,6 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
                 $"Auto-link failed for '{show.DisplayTitle}' S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00}: {string.Join("; ", linkResult.Messages)}",
                 LogTarget.All);
         }
-    }
-
-    private async Task AutoLinkSeasonPackIfConfiguredAsync(
-        TrackedShow show,
-        TrackedSeason season,
-        AddedTorrentResult torrent,
-        TorrentReconciliationResult result,
-        CancellationToken cancellationToken)
-    {
-        if (!ShouldAutoLinkCompleted(show, torrent))
-        {
-            return;
-        }
-
-        var linkResult = await _autoTorrentLinkService.LinkSeasonPackAsync(
-            show.Id,
-            season.SeasonNumber,
-            cancellationToken);
-        result.LinkedCount += linkResult.LinkedCount;
     }
 
     private async Task AutoLinkMovieIfConfiguredAsync(

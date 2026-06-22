@@ -27,4 +27,6 @@ public interface ITrackedMovieService
     void UpdatePreferences(long movieId, string preferredQuality, string preferredAudioCodec, int minimumSeeders);
 
     void UpdateRecipe(long movieId, string? recipeId);
+
+    void SetAlternativeTitleExcludedFromSearch(long movieId, string title, bool excluded);
 }

@@ -329,7 +329,7 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
         foreach (var seasonElement in seasonsElement.EnumerateArray())
         {
             var seasonNumber = GetInt(seasonElement, "season_number") ?? 0;
-            if (seasonNumber <= 0)
+            if (seasonNumber < 0)
             {
                 continue;
             }
@@ -596,7 +596,7 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
             }
 
             var remainingEpisode = targetEpisode;
-            foreach (var season in seasons)
+            foreach (var season in seasons.Where(season => season.SeasonNumber > AppConstants.SpecialsSeasonNumber))
             {
                 if (season.EpisodeCount <= 0)
                 {
@@ -715,7 +715,7 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
         var seasons = root.TryGetProperty("seasons", out var seasonsElement) && seasonsElement.ValueKind == JsonValueKind.Array
             ? seasonsElement.EnumerateArray()
                 .Select(ReadSeasonSummary)
-                .Where(season => season.SeasonNumber > 0)
+                .Where(season => season.SeasonNumber >= AppConstants.SpecialsSeasonNumber)
                 .OrderBy(season => season.SeasonNumber)
                 .ToList()
             : [];
@@ -775,11 +775,22 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
             return details;
         }
 
+        var isSpecialsSeason = seasonNumber == AppConstants.SpecialsSeasonNumber;
         foreach (var episodeElement in episodesElement.EnumerateArray())
         {
             var episodeNumber = GetInt(episodeElement, "episode_number") ?? 0;
+            if (episodeNumber <= 0)
+            {
+                continue;
+            }
+
             var airDate = ParseDate(GetString(episodeElement, "air_date"));
-            if (episodeNumber <= 0 || airDate is null || airDate.Value.Date > today)
+            if (!isSpecialsSeason && (airDate is null || airDate.Value.Date > today))
+            {
+                continue;
+            }
+
+            if (isSpecialsSeason && airDate is not null && airDate.Value.Date > today)
             {
                 continue;
             }

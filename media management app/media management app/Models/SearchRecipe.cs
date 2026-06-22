@@ -79,5 +79,7 @@ public enum RecipeBlockType
     CandidateFilter = 4,
     Scoring = 5,
     AddTorrent = 6,
-    LinkOutput = 7
+    LinkOutput = 7,
+    /// <summary>Pack recipes only: boosts season-pack candidates whose torrent name mentions OVA, special, or extra content.</summary>
+    PackExtrasPriority = 8
 }

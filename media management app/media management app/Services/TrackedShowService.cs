@@ -191,6 +191,36 @@ public sealed class TrackedShowService : ITrackedShowService
         _logger.Info($"Updated series status for show id={showId}: {seriesStatus}", LogTarget.All);
     }
 
+    public void SetAlternativeTitleExcludedFromSearch(long showId, string title, bool excluded)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            return;
+        }
+
+        var show = _databaseService.GetTrackedShow(showId)
+            ?? throw new InvalidOperationException($"Tracked show id={showId} was not found.");
+        var excludedTitles = show.ExcludedFromSearchAlternativeTitles.ToList();
+        var normalizedTitle = title.Trim();
+        if (excluded)
+        {
+            if (!excludedTitles.Any(existing => string.Equals(existing, normalizedTitle, StringComparison.OrdinalIgnoreCase)))
+            {
+                excludedTitles.Add(normalizedTitle);
+            }
+        }
+        else
+        {
+            excludedTitles.RemoveAll(existing => string.Equals(existing, normalizedTitle, StringComparison.OrdinalIgnoreCase));
+        }
+
+        var json = TrackedShow.SerializeAlternativeTitles(excludedTitles);
+        _databaseService.UpdateTrackedShowExcludedAlternativeTitles(showId, json);
+        _logger.Info(
+            $"Alternative title '{normalizedTitle}' {(excluded ? "excluded from" : "included in")} recipe search for show id={showId}.",
+            LogTarget.All);
+    }
+
     private long ImportShow(TmdbShowDetails details, string preferredQuality)
     {
         var existing = _databaseService.GetTrackedShowByTmdbId(details.TmdbId);
@@ -202,6 +232,7 @@ public sealed class TrackedShowService : ITrackedShowService
             Overview = details.Overview,
             PosterPath = details.PosterPath,
             AlternativeTitlesJson = TrackedShow.SerializeAlternativeTitles(details.AlternativeTitles),
+            ExcludedAlternativeTitlesJson = existing?.ExcludedAlternativeTitlesJson,
             RecipeId = existing?.RecipeId,
             PackRecipeId = existing?.PackRecipeId,
             PreferredQuality = existing?.PreferredQuality ?? preferredQuality,
@@ -222,6 +253,11 @@ public sealed class TrackedShowService : ITrackedShowService
                     : _databaseService.GetTrackedSeasons(existing.Id)
                         .FirstOrDefault(item => item.SeasonNumber == season.SeasonNumber)?.DownloadFolder
             });
+
+            if (season.SeasonNumber == AppConstants.SpecialsSeasonNumber)
+            {
+                _databaseService.UpdateTrackedSeasonPackMode(showId, season.SeasonNumber, SeasonManagementMode.Episode);
+            }
 
             foreach (var episode in season.Episodes)
             {

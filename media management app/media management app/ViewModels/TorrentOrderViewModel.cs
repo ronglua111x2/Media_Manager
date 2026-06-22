@@ -4,6 +4,7 @@ using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using media_management_app.Common;
+using media_management_app.Models;
 
 namespace media_management_app.ViewModels;
 
@@ -17,13 +18,20 @@ public sealed partial class TorrentOrderViewModel : ObservableObject
         AcceptCommand = new RelayCommand(Accept, () => CanAccept);
         RetryAddCommand = new RelayCommand(RetryAdd, () => CanRetryAdd);
         RetrySearchCommand = new RelayCommand(RetrySearch, () => CanRetrySearch);
+        ReconcilePackCommand = new RelayCommand(ReconcilePack, () => CanReconcilePack);
     }
 
     public static bool CartOperationRunning { get; set; }
 
     public long Id { get; init; }
 
+    public long MediaId { get; init; }
+
     public MediaKind TargetKind { get; init; }
+
+    public int? SeasonNumber { get; init; }
+
+    public long? EpisodeId { get; init; }
 
     public string Title { get; init; } = string.Empty;
 
@@ -51,6 +59,8 @@ public sealed partial class TorrentOrderViewModel : ObservableObject
 
     public IRelayCommand RetrySearchCommand { get; }
 
+    public IRelayCommand ReconcilePackCommand { get; }
+
     public Action<long, long>? CandidateSelected { get; set; }
 
     public Action<long>? AcceptRequested { get; set; }
@@ -58,6 +68,14 @@ public sealed partial class TorrentOrderViewModel : ObservableObject
     public Action<long>? RetryAddRequested { get; set; }
 
     public Action<long>? RetrySearchRequested { get; set; }
+
+    public Action<long>? ReconcilePackRequested { get; set; }
+
+    public bool IsSeasonPackOrder => EpisodeId is null && SeasonNumber is not null && TargetKind != MediaKind.Movie;
+
+    public bool IsPackTorrentComplete => TorrentProgress >= 0.999 && !string.IsNullOrWhiteSpace(TorrentName);
+
+    public bool CanReconcilePack => IsSeasonPackOrder && IsPackTorrentComplete && !CartOperationRunning;
 
     public long? SelectedCandidateId
     {
@@ -70,6 +88,8 @@ public sealed partial class TorrentOrderViewModel : ObservableObject
                 OnPropertyChanged(nameof(SelectedCandidateIsMultiSeason));
                 OnPropertyChanged(nameof(SelectedCandidateCoveredSeasonsDisplay));
                 OnPropertyChanged(nameof(SelectedCandidateMultiSeasonWarning));
+                OnPropertyChanged(nameof(SelectedCandidateContentProfileWarning));
+                OnPropertyChanged(nameof(HasSelectedCandidateContentWarning));
                 OnPropertyChanged(nameof(HasCandidates));
                 OnPropertyChanged(nameof(CanAccept));
                 OnPropertyChanged(nameof(CanRetryAdd));
@@ -119,6 +139,10 @@ public sealed partial class TorrentOrderViewModel : ObservableObject
 
     public string SelectedCandidateMultiSeasonWarning => SelectedCandidate?.MultiSeasonWarningText ?? string.Empty;
 
+    public string SelectedCandidateContentProfileWarning => SelectedCandidate?.ContentProfileWarning ?? string.Empty;
+
+    public bool HasSelectedCandidateContentWarning => SelectedCandidate?.HasContentProfileWarning == true;
+
     public bool CanAccept => HasCandidates &&
                              SelectedCandidateId is not null &&
                              Status is TorrentOrderStatus.CandidatesFound or TorrentOrderStatus.Approved;
@@ -149,6 +173,23 @@ public sealed partial class TorrentOrderViewModel : ObservableObject
     public bool CanLinkOutput => Status is TorrentOrderStatus.AddedToClient or TorrentOrderStatus.Downloading or TorrentOrderStatus.Completed;
 
     public string DetailText => string.IsNullOrWhiteSpace(StatusDetail) ? Summary : StatusDetail;
+
+    public bool HasPackInspectionLines => StatusDetail.Contains('\n', StringComparison.Ordinal);
+
+    private PackInspectionDisplay PackInspection => PackInspectionDisplay.ParseStatusDetail(StatusDetail);
+
+    public string InspectionCoversLine =>
+        HasPackInspectionLines ? PackInspection.CoversLine : DetailText;
+
+    public string InspectionExtrasLine =>
+        HasPackInspectionLines ? PackInspection.ExtrasLine : string.Empty;
+
+    public string InspectionMoviesLine =>
+        HasPackInspectionLines ? PackInspection.MoviesLine : string.Empty;
+
+    public bool HasInspectionExtrasLine => HasPackInspectionLines && PackInspection.HasExtrasLine;
+
+    public bool HasInspectionMoviesLine => HasPackInspectionLines && PackInspection.HasMoviesLine;
 
     public string CandidateText
     {
@@ -195,6 +236,8 @@ public sealed partial class TorrentOrderViewModel : ObservableObject
         OnPropertyChanged(nameof(SelectedCandidateIsMultiSeason));
         OnPropertyChanged(nameof(SelectedCandidateCoveredSeasonsDisplay));
         OnPropertyChanged(nameof(SelectedCandidateMultiSeasonWarning));
+        OnPropertyChanged(nameof(SelectedCandidateContentProfileWarning));
+        OnPropertyChanged(nameof(HasSelectedCandidateContentWarning));
         AcceptCommand.NotifyCanExecuteChanged();
         RetryAddCommand.NotifyCanExecuteChanged();
         RetrySearchCommand.NotifyCanExecuteChanged();
@@ -215,6 +258,11 @@ public sealed partial class TorrentOrderViewModel : ObservableObject
         RetrySearchRequested?.Invoke(Id);
     }
 
+    private void ReconcilePack()
+    {
+        ReconcilePackRequested?.Invoke(Id);
+    }
+
     public void NotifyOperationRunningChanged()
     {
         OnPropertyChanged(nameof(CanChangeCandidate));
@@ -222,8 +270,10 @@ public sealed partial class TorrentOrderViewModel : ObservableObject
         OnPropertyChanged(nameof(CanAccept));
         OnPropertyChanged(nameof(CanRetryAdd));
         OnPropertyChanged(nameof(CanRetrySearch));
+        OnPropertyChanged(nameof(CanReconcilePack));
         AcceptCommand.NotifyCanExecuteChanged();
         RetryAddCommand.NotifyCanExecuteChanged();
         RetrySearchCommand.NotifyCanExecuteChanged();
+        ReconcilePackCommand.NotifyCanExecuteChanged();
     }
 }

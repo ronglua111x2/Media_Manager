@@ -1,5 +1,6 @@
 using media_management_app.Common;
 using media_management_app.Models;
+using media_management_app.Services.Events;
 
 namespace media_management_app.Services;
 
@@ -8,17 +9,20 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
     private readonly IDatabaseService _databaseService;
     private readonly IQbittorrentClient _qbittorrentClient;
     private readonly IHardlinkService _hardlinkService;
+    private readonly ILibraryLinkEventHub _eventHub;
     private readonly IAppLogger _logger;
 
     public AutoTorrentLinkService(
         IDatabaseService databaseService,
         IQbittorrentClient qbittorrentClient,
         IHardlinkService hardlinkService,
+        ILibraryLinkEventHub eventHub,
         IAppLogger logger)
     {
         _databaseService = databaseService;
         _qbittorrentClient = qbittorrentClient;
         _hardlinkService = hardlinkService;
+        _eventHub = eventHub;
         _logger = logger;
     }
 
@@ -86,6 +90,32 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
         }
 
         return await LinkSeasonPackCoreAsync(show, season, _databaseService.GetTrackedEpisodes(showId), cancellationToken);
+    }
+
+    public async Task<AutoTorrentLinkResult> LinkSeasonPackFromInventoryAsync(
+        long showId,
+        int ownerSeasonNumber,
+        PackTorrentInventory inventory,
+        CancellationToken cancellationToken = default)
+    {
+        var show = _databaseService.GetTrackedShow(showId);
+        var season = _databaseService.GetTrackedSeasons(showId)
+            .FirstOrDefault(item => item.SeasonNumber == ownerSeasonNumber);
+        if (show is null || season is null)
+        {
+            return new AutoTorrentLinkResult
+            {
+                SkippedCount = 1,
+                Messages = { $"Tracked pack owner season S{ownerSeasonNumber:00} was not found." }
+            };
+        }
+
+        return await LinkSeasonPackFromInventoryCoreAsync(
+            show,
+            season,
+            _databaseService.GetTrackedEpisodes(showId),
+            inventory,
+            cancellationToken);
     }
 
     public async Task<AutoTorrentLinkResult> LinkMovieAsync(long movieId, CancellationToken cancellationToken = default)
@@ -159,10 +189,11 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
         return string.IsNullOrWhiteSpace(providerId)
             ? new AutoTorrentLinkResult { SkippedCount = 1, Messages = { "Tracked show was not found." } }
             : RemoveLinks(item => item.MediaKind == MediaKind.TvEpisode &&
-                                  item.AutoTorrentLinkKind == AutoTorrentLinkKind.SeasonPack &&
-                                  item.AutoTorrentPackOwnerSeasonNumber == ownerSeasonNumber &&
                                   string.Equals(item.Provider, "tmdb", StringComparison.OrdinalIgnoreCase) &&
-                                  string.Equals(item.ProviderId, providerId, StringComparison.OrdinalIgnoreCase));
+                                  string.Equals(item.ProviderId, providerId, StringComparison.OrdinalIgnoreCase) &&
+                                  item.AutoTorrentPackOwnerSeasonNumber == ownerSeasonNumber &&
+                                  (item.AutoTorrentLinkKind == AutoTorrentLinkKind.SeasonPack ||
+                                   item.IsOrphanPackSpecial));
     }
 
     public AutoTorrentLinkResult RemoveMovieLinks(long movieId)
@@ -174,6 +205,21 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             : RemoveLinks(item => item.MediaKind == MediaKind.Movie &&
                                   string.Equals(item.Provider, "tmdb", StringComparison.OrdinalIgnoreCase) &&
                                   string.Equals(item.ProviderId, providerId, StringComparison.OrdinalIgnoreCase));
+    }
+
+    public AutoTorrentLinkResult RemoveOrphanPackSpecialLink(long sourceItemId)
+    {
+        var item = _databaseService.GetSourceItems().FirstOrDefault(candidate => candidate.Id == sourceItemId);
+        if (item is null || !item.IsOrphanPackSpecial)
+        {
+            return new AutoTorrentLinkResult
+            {
+                SkippedCount = 1,
+                Messages = { "Orphan pack entry was not found." }
+            };
+        }
+
+        return RemoveOrphanItem(item);
     }
 
     public AutoTorrentLinkResult RefreshLinkStatus(long? showId = null, long? movieId = null)
@@ -275,41 +321,194 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             coveredSeasons.Add(ownerSeason.SeasonNumber);
         }
 
-        var episodesByKey = episodes.ToDictionary(episode => (episode.SeasonNumber, episode.EpisodeNumber));
+        var seasons = _databaseService.GetTrackedSeasons(show.Id);
         var files = await GetCompletedVideoFilesAsync(torrent, cancellationToken);
-        foreach (var file in files)
-        {
-            var parsed = TorrentCandidateParser.Parse(file.Name);
-            if (parsed.SeasonNumber is null ||
-                parsed.EpisodeNumber is null ||
-                !coveredSeasons.Contains(parsed.SeasonNumber.Value) ||
-                !episodesByKey.TryGetValue((parsed.SeasonNumber.Value, parsed.EpisodeNumber.Value), out var episode))
-            {
-                AddSkip(result, $"{show.DisplayTitle}: skipped unmatched pack file '{file.Name}'.");
-                continue;
-            }
+        var inventory = PackTorrentInventoryAnalyzer.Analyze(
+            files.Select(file => (file.Name, Path.GetFileName(file.Name))).ToList(),
+            episodes,
+            seasons,
+            coveredSeasons,
+            PackAnalyzeMode.Link);
 
-            LinkSourceItem(
-                CreateEpisodeSourceItem(
-                    show,
-                    episode,
-                    torrent,
-                    BuildSourcePath(torrent, file),
-                    AutoTorrentLinkKind.SeasonPack,
-                    ownerSeason.SeasonNumber),
-                result);
+        return await LinkSeasonPackFromInventoryCoreAsync(
+            show,
+            ownerSeason,
+            episodes,
+            inventory,
+            cancellationToken);
+    }
+
+    private async Task<AutoTorrentLinkResult> LinkSeasonPackFromInventoryCoreAsync(
+        TrackedShow show,
+        TrackedSeason ownerSeason,
+        IReadOnlyList<TrackedEpisode> episodes,
+        PackTorrentInventory inventory,
+        CancellationToken cancellationToken)
+    {
+        var result = new AutoTorrentLinkResult();
+        if (string.IsNullOrWhiteSpace(ownerSeason.PackTorrentHash))
+        {
+            AddSkip(result, $"{show.DisplayTitle} S{ownerSeason.SeasonNumber:00}: no mapped pack torrent hash.");
+            return result;
         }
 
+        var torrent = await GetTorrentAsync(ownerSeason.PackTorrentHash, cancellationToken);
+        if (torrent is null)
+        {
+            AddSkip(result, $"{show.DisplayTitle} S{ownerSeason.SeasonNumber:00}: pack torrent is not present in qBittorrent.");
+            return result;
+        }
+
+        var episodesByKey = episodes.ToDictionary(episode => (episode.SeasonNumber, episode.EpisodeNumber));
+        var linkableEntries = inventory.Files
+            .Where(file => file.Classification is PackFileClassification.RegularEpisode
+                or PackFileClassification.MatchedSpecial
+                or PackFileClassification.UnmatchedExtra)
+            .ToList();
+
+        var regularLinked = 0;
+        var specialsMatched = 0;
+        var orphansLinked = 0;
+
+        foreach (var entry in inventory.Files.Where(file => file.Classification == PackFileClassification.Movie))
+        {
+            AddSkip(result, $"{show.DisplayTitle}: skipped movie pack file '{entry.FileName}'.");
+        }
+
+        foreach (var entry in inventory.Files.Where(file => file.Classification == PackFileClassification.Skipped))
+        {
+            AddSkip(result, $"{show.DisplayTitle}: skipped unmatched pack file '{entry.FileName}'.");
+        }
+
+        foreach (var entry in linkableEntries)
+        {
+            var sourcePath = BuildSourcePath(torrent, new TorrentContentFile
+            {
+                Name = entry.RelativePath,
+                Size = 0,
+                Progress = 1
+            });
+
+            switch (entry.Classification)
+            {
+                case PackFileClassification.UnmatchedExtra:
+                    if (LinkOrphanPackItem(show, torrent, sourcePath, ownerSeason.SeasonNumber, result))
+                    {
+                        orphansLinked++;
+                    }
+
+                    break;
+                case PackFileClassification.MatchedSpecial when entry.MatchedSeasonNumber is not null &&
+                                                                entry.MatchedEpisodeNumber is not null &&
+                                                                episodesByKey.TryGetValue(
+                                                                    (entry.MatchedSeasonNumber.Value, entry.MatchedEpisodeNumber.Value),
+                                                                    out var specialEpisode):
+                    LinkSourceItem(
+                        CreateEpisodeSourceItem(
+                            show,
+                            specialEpisode,
+                            torrent,
+                            sourcePath,
+                            AutoTorrentLinkKind.SeasonPack,
+                            ownerSeason.SeasonNumber),
+                        result);
+                    specialsMatched++;
+                    break;
+                case PackFileClassification.RegularEpisode when entry.MatchedSeasonNumber is not null &&
+                                                                  entry.MatchedEpisodeNumber is not null &&
+                                                                  episodesByKey.TryGetValue(
+                                                                      (entry.MatchedSeasonNumber.Value, entry.MatchedEpisodeNumber.Value),
+                                                                      out var episode):
+                    LinkSourceItem(
+                        CreateEpisodeSourceItem(
+                            show,
+                            episode,
+                            torrent,
+                            sourcePath,
+                            AutoTorrentLinkKind.SeasonPack,
+                            ownerSeason.SeasonNumber),
+                        result);
+                    regularLinked++;
+                    break;
+            }
+        }
+
+        result.Messages.Add(inventory.BuildSummaryText());
+        if (regularLinked > 0 || specialsMatched > 0 || orphansLinked > 0)
+        {
+            result.Messages.Add(
+                $"Pack summary: {regularLinked} episodes, {specialsMatched} Extras/Specials/OVAs (TMDB matched), {orphansLinked} orphan Extras/Specials/OVAs.");
+        }
+
+        if (inventory.Warnings.Count > 0)
+        {
+            result.Messages.AddRange(inventory.Warnings);
+        }
+
+        _logger.Info(
+            $"Pack inventory link for '{show.DisplayTitle}' S{ownerSeason.SeasonNumber:00}: {regularLinked} episodes, {specialsMatched} specials, {orphansLinked} unmatched extras.",
+            LogTarget.All);
         return result;
+    }
+
+    private bool LinkOrphanPackItem(
+        TrackedShow show,
+        AddedTorrentResult torrent,
+        string sourcePath,
+        int packOwnerSeasonNumber,
+        AutoTorrentLinkResult result)
+    {
+        var beforeLinked = result.LinkedCount;
+        LinkSourceItem(
+            CreateOrphanPackSourceItem(show, torrent, sourcePath, packOwnerSeasonNumber),
+            result);
+        return result.LinkedCount > beforeLinked;
+    }
+
+    private static SourceItem CreateOrphanPackSourceItem(
+        TrackedShow show,
+        AddedTorrentResult torrent,
+        string sourcePath,
+        int packOwnerSeasonNumber)
+    {
+        return new SourceItem
+        {
+            SourceRootFolder = torrent.SavePath,
+            ParentFolder = Path.GetDirectoryName(sourcePath) ?? torrent.SavePath,
+            FilePath = sourcePath,
+            FileName = Path.GetFileName(sourcePath),
+            ScanText = Path.GetFileNameWithoutExtension(sourcePath),
+            MediaKind = MediaKind.TvEpisode,
+            ParserPattern = ParserPattern.StandardTv,
+            ShowTitle = show.Title,
+            SeasonNumber = AppConstants.SpecialsSeasonNumber,
+            MatchedTitle = show.Title,
+            MatchedYear = show.FirstAirYear,
+            Provider = "tmdb",
+            ProviderId = show.TmdbId.ToString(),
+            MatchConfidence = 100,
+            MatchReason = "Orphan pack extra/special/OVA from season pack link.",
+            RequiresManualReview = false,
+            MatchAccepted = true,
+            State = ItemState.Parsed,
+            AutoTorrentLinkKind = AutoTorrentLinkKind.SeasonPack,
+            AutoTorrentTorrentHash = torrent.Hash,
+            AutoTorrentPackOwnerSeasonNumber = packOwnerSeasonNumber,
+            IsOrphanPackSpecial = true,
+            LastSeenUtc = DateTime.UtcNow
+        };
     }
 
     private void LinkSourceItem(SourceItem sourceItem, AutoTorrentLinkResult result)
     {
+        TryMigrateLegacyOrphanPath(sourceItem, result);
+
         if (TryGetExistingLinkedItem(sourceItem, out var existingItem) && existingItem is not null)
         {
             existingItem.AutoTorrentLinkKind = sourceItem.AutoTorrentLinkKind;
             existingItem.AutoTorrentTorrentHash = sourceItem.AutoTorrentTorrentHash;
             existingItem.AutoTorrentPackOwnerSeasonNumber = sourceItem.AutoTorrentPackOwnerSeasonNumber;
+            existingItem.IsOrphanPackSpecial = sourceItem.IsOrphanPackSpecial;
             existingItem.LastSeenUtc = DateTime.UtcNow;
             _databaseService.UpdateSourceItem(existingItem);
             AddSkip(result, $"{sourceItem.DisplayTitle}: already linked.");
@@ -322,6 +521,7 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             sourceItem.LinkedPath = linkedPath;
             sourceItem.Notes = null;
             _databaseService.UpdateSourceItem(sourceItem);
+            _eventHub.PublishHardlinkCreated(sourceItem, linkedPath!);
             result.LinkedCount++;
             result.Messages.Add($"Linked {sourceItem.FileName}");
             return;
@@ -329,6 +529,44 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
 
         result.ErrorCount++;
         result.Messages.Add($"{sourceItem.FileName}: {errorMessage}");
+    }
+
+    private void TryMigrateLegacyOrphanPath(SourceItem sourceItem, AutoTorrentLinkResult result)
+    {
+        if (!sourceItem.IsOrphanPackSpecial)
+        {
+            return;
+        }
+
+        var existingOrphan = _databaseService.GetSourceItems().FirstOrDefault(item =>
+            string.Equals(item.FilePath, sourceItem.FilePath, StringComparison.OrdinalIgnoreCase) &&
+            item.IsOrphanPackSpecial &&
+            !string.IsNullOrWhiteSpace(item.LinkedPath) &&
+            File.Exists(item.LinkedPath) &&
+            IsLegacyOrphanSeasonPath(item.LinkedPath));
+
+        if (existingOrphan is null)
+        {
+            return;
+        }
+
+        if (_hardlinkService.RemoveHardLink(existingOrphan, out _, out var errorMessage))
+        {
+            existingOrphan.LinkedPath = null;
+            existingOrphan.State = ItemState.Parsed;
+            _databaseService.UpdateSourceItem(existingOrphan);
+            result.Messages.Add($"Migrated orphan {existingOrphan.FileName} from Season 00 to extras/.");
+            return;
+        }
+
+        _logger.Warning($"Could not migrate legacy orphan path for {existingOrphan.FileName}: {errorMessage}", LogTarget.All);
+    }
+
+    private static bool IsLegacyOrphanSeasonPath(string linkedPath)
+    {
+        var normalized = linkedPath.Replace('\\', '/');
+        return normalized.Contains("/Season 00/", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains("/Season 0/", StringComparison.OrdinalIgnoreCase);
     }
 
     private bool TryGetExistingLinkedItem(SourceItem sourceItem, out SourceItem? existingItem)
@@ -358,7 +596,22 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
                 continue;
             }
 
-            if (_hardlinkService.RemoveHardLink(item, out _, out var errorMessage))
+            if (item.IsOrphanPackSpecial)
+            {
+                if (_hardlinkService.RemoveHardLink(item, out _, out var errorMessage))
+                {
+                    _databaseService.DeleteSourceItem(item.Id);
+                    result.RemovedCount++;
+                    result.Messages.Add($"Removed orphan pack entry {item.FileName}.");
+                    continue;
+                }
+
+                result.ErrorCount++;
+                result.Messages.Add($"{item.FileName}: {errorMessage}");
+                continue;
+            }
+
+            if (_hardlinkService.RemoveHardLink(item, out _, out var removeErrorMessage))
             {
                 item.LinkedPath = null;
                 item.State = ItemState.Parsed;
@@ -372,9 +625,33 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             }
 
             result.ErrorCount++;
-            result.Messages.Add($"{item.FileName}: {errorMessage}");
+            result.Messages.Add($"{item.FileName}: {removeErrorMessage}");
         }
 
+        return result;
+    }
+
+    private AutoTorrentLinkResult RemoveOrphanItem(SourceItem item)
+    {
+        var result = new AutoTorrentLinkResult();
+        if (string.IsNullOrWhiteSpace(item.LinkedPath))
+        {
+            _databaseService.DeleteSourceItem(item.Id);
+            result.RemovedCount++;
+            result.Messages.Add($"Removed orphan pack entry {item.FileName}.");
+            return result;
+        }
+
+        if (_hardlinkService.RemoveHardLink(item, out _, out var errorMessage))
+        {
+            _databaseService.DeleteSourceItem(item.Id);
+            result.RemovedCount++;
+            result.Messages.Add($"Removed orphan pack entry {item.FileName}.");
+            return result;
+        }
+
+        result.ErrorCount++;
+        result.Messages.Add($"{item.FileName}: {errorMessage}");
         return result;
     }
 

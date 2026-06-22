@@ -877,8 +877,11 @@
                                         <TextBox Text="{Binding AutoTorrentDownloadFolder, UpdateSourceTrigger=PropertyChanged}"
                                                  Style="{StaticResource SettingsTextBoxStyle}" />
                                     </DockPanel>
-                                    <TextBlock Text="Category name" Style="{StaticResource SettingsLabelStyle}" />
-                                    <TextBox Text="{Binding AutoTorrentCategoryName, UpdateSourceTrigger=PropertyChanged}"
+                                    <TextBlock Text="TV Show category" Style="{StaticResource SettingsLabelStyle}" />
+                                    <TextBox Text="{Binding AutoTorrentTvShowCategoryName, UpdateSourceTrigger=PropertyChanged}"
+                                             Style="{StaticResource SettingsTextBoxStyle}" />
+                                    <TextBlock Text="Movie category" Style="{StaticResource SettingsLabelStyle}" />
+                                    <TextBox Text="{Binding AutoTorrentMovieCategoryName, UpdateSourceTrigger=PropertyChanged}"
                                              Style="{StaticResource SettingsTextBoxStyle}" />
                                     <CheckBox IsChecked="{Binding AutoLinkCompletedDownloads, Mode=TwoWay}"
                                               Margin="0,4,0,0"

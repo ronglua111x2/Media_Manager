@@ -427,6 +427,30 @@
                                                            Style="{StaticResource MutedTextStyle}"
                                                            TextWrapping="Wrap"
                                                            Margin="0,0,0,12" />
+                                                <StackPanel Margin="0,0,0,12">
+                                                    <StackPanel.Style>
+                                                        <Style TargetType="StackPanel">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsUseLibraryEnglishTitlesEnabled}" Value="True">
+                                                                    <Setter Property="Visibility" Value="Visible" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </StackPanel.Style>
+                                                    <TextBlock Text="Max library alt titles for search"
+                                                               Style="{StaticResource RecipeLabelStyle}" />
+                                                    <Border Style="{StaticResource RecipeNumericChromeStyle}">
+                                                        <materialDesign:NumericUpDown Style="{StaticResource RecipeNumericUpDownStyle}"
+                                                                                      Value="{Binding MaxLibraryAlternativeTitlesForSearch, UpdateSourceTrigger=PropertyChanged}"
+                                                                                      Minimum="0"
+                                                                                      Maximum="16" />
+                                                    </Border>
+                                                    <TextBlock Text="Ranked TMDB alts used in queries (0–16). Library detail may show more chips."
+                                                               Style="{StaticResource MutedTextStyle}"
+                                                               TextWrapping="Wrap"
+                                                               Margin="0,4,0,0" />
+                                                </StackPanel>
                                                 <TextBlock Text="Title aliases" Style="{StaticResource RecipeLabelStyle}" />
                                                 <TextBox Text="{Binding AliasesText, UpdateSourceTrigger=LostFocus}"
                                                          Style="{StaticResource RecipeMultilineTextBoxStyle}"
@@ -714,7 +738,7 @@
                                         </Border>
                                     </StackPanel>
 
-                                    <!-- Info-only modules -->
+                                    <!-- Scoring -->
                                     <Border>
                                         <Border.Style>
                                             <Style TargetType="Border" BasedOn="{StaticResource RecipeModuleFieldsStyle}">
@@ -726,9 +750,37 @@
                                                 </Style.Triggers>
                                             </Style>
                                         </Border.Style>
-                                        <TextBlock Text="This module has no editable parameters. See the help panel on the right."
-                                                   Style="{StaticResource MutedTextStyle}"
-                                                   TextWrapping="Wrap" />
+                                        <StackPanel>
+                                            <TextBlock Text="Quality, audio, seeders, and title match weights are applied automatically when ranking candidates."
+                                                       Style="{StaticResource MutedTextStyle}"
+                                                       TextWrapping="Wrap"
+                                                       Margin="0,0,0,12" />
+                                            <StackPanel>
+                                                <StackPanel.Style>
+                                                    <Style TargetType="StackPanel">
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding ShowPackExtrasPrioritySettings}" Value="True">
+                                                                <Setter Property="Visibility" Value="Visible" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </StackPanel.Style>
+                                                <TextBlock Text="Pack recipe only: prioritize torrents whose name mentions OVA, special, or extra content."
+                                                           Style="{StaticResource MutedTextStyle}"
+                                                           TextWrapping="Wrap"
+                                                           Margin="0,0,0,12" />
+                                                <CheckBox Content="Prioritize OVA / special / extra in torrent name"
+                                                          IsChecked="{Binding PackExtrasPriorityEnabled}"
+                                                          Margin="0,0,0,12" />
+                                                <TextBlock Text="Name-match bonus score" Style="{StaticResource RecipeLabelStyle}" />
+                                                <TextBox Text="{Binding PackExtrasPriorityScore, UpdateSourceTrigger=LostFocus}"
+                                                         Margin="0,0,0,8" />
+                                                <TextBlock Text="Higher values prefer complete bundles (season + OVAs + extras) over season-only packs."
+                                                           Style="{StaticResource MutedTextStyle}"
+                                                           TextWrapping="Wrap" />
+                                            </StackPanel>
+                                        </StackPanel>
                                     </Border>
                                 </StackPanel>
                             </Border>

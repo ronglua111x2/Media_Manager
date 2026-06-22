@@ -20,7 +20,7 @@ public sealed partial class LibraryShowDetailViewModel : ObservableObject
         HiddenSeasonCount = hiddenSeasonCount;
         SeriesStatus = show.SeriesStatus;
         SeriesStatusLabel = show.SeriesStatusLabel;
-        AlternativeTitles = show.AlternativeTitles;
+        AlternativeTitleChips = BuildAlternativeTitleChips(show.Id, isMovie: false, show.AlternativeTitles, show.ExcludedFromSearchAlternativeTitles);
         var seasonList = seasons.ToList();
         TotalEpisodes = seasonList.Sum(season => season.TotalEpisodes);
         AvailableEpisodes = seasonList.Sum(season => season.AvailableEpisodes);
@@ -47,9 +47,9 @@ public sealed partial class LibraryShowDetailViewModel : ObservableObject
 
     public string PreferencesSummary { get; }
 
-    public IReadOnlyList<string> AlternativeTitles { get; }
+    public ObservableCollection<AlternativeTitleChipViewModel> AlternativeTitleChips { get; }
 
-    public bool HasAlternativeTitles => AlternativeTitles.Count > 0;
+    public bool HasAlternativeTitles => AlternativeTitleChips.Count > 0;
 
     public bool IsAutoTracked { get; }
 
@@ -72,4 +72,19 @@ public sealed partial class LibraryShowDetailViewModel : ObservableObject
         : $"https://image.tmdb.org/t/p/w342{PosterPath}";
 
     public ObservableCollection<LibrarySeasonViewModel> Seasons { get; }
+
+    internal static ObservableCollection<AlternativeTitleChipViewModel> BuildAlternativeTitleChips(
+        long mediaId,
+        bool isMovie,
+        IReadOnlyList<string> alternativeTitles,
+        IReadOnlyList<string> excludedFromSearchAlternativeTitles)
+    {
+        var excluded = new HashSet<string>(excludedFromSearchAlternativeTitles, StringComparer.OrdinalIgnoreCase);
+        return new ObservableCollection<AlternativeTitleChipViewModel>(
+            alternativeTitles.Select(title => new AlternativeTitleChipViewModel(
+                mediaId,
+                isMovie,
+                title,
+                excluded.Contains(title))));
+    }
 }

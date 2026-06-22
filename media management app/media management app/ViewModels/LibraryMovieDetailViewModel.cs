@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using media_management_app.Common;
 using media_management_app.Models;
+using System.Collections.ObjectModel;
 
 namespace media_management_app.ViewModels;
 
@@ -13,7 +14,11 @@ public sealed partial class LibraryMovieDetailViewModel : ObservableObject
         Title = movie.DisplayTitle;
         Overview = movie.Overview ?? string.Empty;
         PosterPath = movie.PosterPath;
-        AlternativeTitles = movie.AlternativeTitles;
+        AlternativeTitleChips = LibraryShowDetailViewModel.BuildAlternativeTitleChips(
+            movie.Id,
+            isMovie: true,
+            movie.AlternativeTitles,
+            movie.ExcludedFromSearchAlternativeTitles);
         Availability = movie.Availability;
         TorrentHash = movie.TorrentHash ?? string.Empty;
         TorrentState = movie.TorrentState ?? string.Empty;
@@ -32,9 +37,9 @@ public sealed partial class LibraryMovieDetailViewModel : ObservableObject
 
     public string? PosterPath { get; }
 
-    public IReadOnlyList<string> AlternativeTitles { get; }
+    public ObservableCollection<AlternativeTitleChipViewModel> AlternativeTitleChips { get; }
 
-    public bool HasAlternativeTitles => AlternativeTitles.Count > 0;
+    public bool HasAlternativeTitles => AlternativeTitleChips.Count > 0;
 
     public EpisodeAvailability Availability { get; }
 

@@ -6,6 +6,8 @@ public sealed class TorrentCandidateParseResult
 {
     public string RawTitle { get; init; } = string.Empty;
 
+    public string? RelativePath { get; init; }
+
     public string NormalizedTitle { get; init; } = string.Empty;
 
     public int? ExplicitYear { get; init; }
@@ -25,6 +27,16 @@ public sealed class TorrentCandidateParseResult
     public IReadOnlyList<int> CoveredSeasons { get; init; } = [];
 
     public IReadOnlyList<string> TitleTokens { get; init; } = [];
+
+    public bool IsSpecialContent { get; init; }
+
+    public bool IsExtraContent { get; init; }
+
+    public int? ReleaseSeasonHint { get; init; }
+
+    public int? ReleaseSpecialIndex { get; init; }
+
+    public bool PreferEpisodeIndexMatch { get; init; }
 }
 
 public static class TorrentCandidateParser
@@ -38,13 +50,37 @@ public static class TorrentCandidateParser
     private static readonly Regex YearRegex = new(@"\b(19|20)\d{2}\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex YearRangeRegex = new(@"\b(?<from>(?:19|20)\d{2})\s*(?:-|to)\s*(?<to>(?:19|20)\d{2})\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex SeasonRangeRegex = new(@"\bS(?<from>\d{1,3})\s*(?:-|to)\s*S?(?<to>\d{1,3})\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-    private static readonly Regex SeasonWordRangeRegex = new(@"\bSeasons?\s*(?<from>\d{1,3})(?:\s*(?:-|to)\s*(?<to>\d{1,3}))?\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex SeasonWordRangeRegex = new(@"\bSeasons?\s*(?<from>\d{1,3})(?:\s*(?:-|to)\s*(?<to>\d{1,3}))?(?!\s*\+)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex SeasonPlusListRegex = new(
+        @"\bSeasons?\s+(?<list>\d{1,3}(?:\s*\+\s*\d{1,3})+(?:\s*\+\s*(?:OVA|OVAs?|Specials?|Movies?))?)\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex SeasonSingleRegex = new(@"\bS(?<season>\d{1,3})\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex ReleaseTokenRegex = new(
         @"\b(?:1080p|720p|2160p|480p|bluray|brrip|webrip|web-dl|webdl|hdtv|x264|x265|h264|h265|hevc|aac|dts|hdr|dv|proper|repack|extended|remux|yify|rarbg|truehd|atmos|ddp|dd\+|ac3|flac|opus)\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex OvaBeforeEpisodeRegex = new(
+        @"\bOVA\s+S(?<season>\d{1,2})E(?<episode>\d{1,4})\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex SeasonOvaRegex = new(
+        @"\bS(?<season>\d{1,2})OVA\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex SeasonSpecialRegex = new(
+        @"\bS(?<season>\d{1,2})S(?<special>\d{1,2})\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex OvaFolderRegex = new(
+        @"\bOVA\s*[-._]?\s*(?<index>\d{1,2})\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex OvaIndexRegex = new(
+        @"\bOVA\s*[-._]?\s*(?<index>\d{1,2})\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex ExtraContentRegex = new(
+        @"\b(?:NCED|NCOP)\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    public static TorrentCandidateParseResult Parse(string fileName, bool allowAnimeAbsolute = false)
+    public static TorrentCandidateParseResult Parse(string fileName, bool allowAnimeAbsolute = false) =>
+        Parse(fileName, relativePath: null, allowAnimeAbsolute);
+
+    public static TorrentCandidateParseResult Parse(string fileName, string? relativePath, bool allowAnimeAbsolute = false)
     {
         if (string.IsNullOrWhiteSpace(fileName))
         {
@@ -87,10 +123,15 @@ public static class TorrentCandidateParser
         var explicitYear = ExtractYear(showPart);
         var normalizedTitle = NormalizeTitle(showPart);
         var episodeTitle = CleanEpisodeTitle(rest);
+        var normalizedPath = NormalizePath(relativePath ?? fileName);
+        var isExtraContent = DetectExtraContent(normalizedPath, fileName);
+        var specialSignals = DetectSpecialContent(normalizedPath, fileName, normalized);
+        var isSpecialContent = !isExtraContent && specialSignals.IsSpecialContent;
 
         return new TorrentCandidateParseResult
         {
             RawTitle = fileName,
+            RelativePath = relativePath,
             NormalizedTitle = normalizedTitle,
             ExplicitYear = explicitYear,
             SeasonNumber = season,
@@ -100,9 +141,198 @@ public static class TorrentCandidateParser
             Quality = TorrentQuality.Detect(fileName),
             AudioCodec = DetectAudioCodec(fileName),
             CoveredSeasons = coveredSeasons,
-            TitleTokens = Tokenize(normalizedTitle).ToList()
+            TitleTokens = Tokenize(normalizedTitle).ToList(),
+            IsSpecialContent = isSpecialContent,
+            IsExtraContent = isExtraContent,
+            ReleaseSeasonHint = specialSignals.ReleaseSeasonHint,
+            ReleaseSpecialIndex = specialSignals.ReleaseSpecialIndex,
+            PreferEpisodeIndexMatch = specialSignals.PreferEpisodeIndexMatch
         };
     }
+
+    private static bool DetectExtraContent(string normalizedPath, string fileName)
+    {
+        return PathContainsFolder(normalizedPath, "extras") ||
+               ExtraContentRegex.IsMatch(fileName);
+    }
+
+    private static (bool IsSpecialContent, int? ReleaseSeasonHint, int? ReleaseSpecialIndex, bool PreferEpisodeIndexMatch) DetectSpecialContent(
+        string normalizedPath,
+        string fileName,
+        string normalizedFileName)
+    {
+        if (PathContainsFolder(normalizedPath, "extras"))
+        {
+            return (false, null, null, false);
+        }
+
+        var ovaBeforeEpisode = OvaBeforeEpisodeRegex.Match(normalizedFileName);
+        if (ovaBeforeEpisode.Success)
+        {
+            var season = int.TryParse(ovaBeforeEpisode.Groups["season"].Value, out var seasonValue) ? seasonValue : (int?)null;
+            var episode = int.TryParse(ovaBeforeEpisode.Groups["episode"].Value, out var episodeValue) ? episodeValue : (int?)null;
+            return (true, season, episode, true);
+        }
+
+        var seasonOva = SeasonOvaRegex.Match(normalizedFileName);
+        if (seasonOva.Success)
+        {
+            var season = int.TryParse(seasonOva.Groups["season"].Value, out var seasonValue) ? seasonValue : (int?)null;
+            return (true, season, null, false);
+        }
+
+        var seasonSpecial = SeasonSpecialRegex.Match(normalizedFileName);
+        if (seasonSpecial.Success)
+        {
+            var season = int.TryParse(seasonSpecial.Groups["season"].Value, out var seasonValue) ? seasonValue : (int?)null;
+            var special = int.TryParse(seasonSpecial.Groups["special"].Value, out var specialValue) ? specialValue : (int?)null;
+            return (true, season, special, false);
+        }
+
+        if (PathContainsFolder(normalizedPath, "specials") ||
+            PathContainsOvaFolder(normalizedPath) ||
+            ContainsKeyword(normalizedFileName, "ova") ||
+            ContainsKeyword(normalizedFileName, "special"))
+        {
+            var fileIndex = ExtractOvaIndexFromText(normalizedFileName);
+            var folderIndex = ExtractOvaFolderIndex(normalizedPath);
+            var index = fileIndex ?? folderIndex;
+            return (true, ExtractSeasonFolderHint(normalizedPath), index, index is not null);
+        }
+
+        return (false, null, null, false);
+    }
+
+    private static int? ExtractOvaIndexFromText(string normalizedText)
+    {
+        var match = OvaIndexRegex.Match(normalizedText);
+        return match.Success && int.TryParse(match.Groups["index"].Value, out var index)
+            ? index
+            : null;
+    }
+
+    private static int? ExtractOvaFolderIndex(string normalizedPath)
+    {
+        foreach (var segment in normalizedPath.Split('/', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var index = ExtractOvaIndexFromText(segment);
+            if (index is not null)
+            {
+                return index;
+            }
+        }
+
+        return null;
+    }
+
+    public static int? TryParseSeasonFolderSegment(string segment)
+    {
+        if (string.IsNullOrWhiteSpace(segment))
+        {
+            return null;
+        }
+
+        var seasonPartMatch = Regex.Match(
+            segment,
+            @"\bSeason\s*(?<season>\d{1,2})(?:\s*Part\s*\d+)?\b",
+            RegexOptions.IgnoreCase);
+        if (seasonPartMatch.Success &&
+            int.TryParse(seasonPartMatch.Groups["season"].Value, out var seasonFromPart))
+        {
+            return seasonFromPart;
+        }
+
+        var shortMatch = Regex.Match(segment, @"^S(?<season>\d{1,2})$", RegexOptions.IgnoreCase);
+        if (shortMatch.Success && int.TryParse(shortMatch.Groups["season"].Value, out var shortSeason))
+        {
+            return shortSeason;
+        }
+
+        return null;
+    }
+
+    public static int? TryGetSeasonHintFromPath(string? relativePath)
+    {
+        if (string.IsNullOrWhiteSpace(relativePath))
+        {
+            return null;
+        }
+
+        var normalizedPath = NormalizePath(relativePath);
+        var segments = normalizedPath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        for (var index = segments.Length - 2; index >= 0; index--)
+        {
+            var season = TryParseSeasonFolderSegment(segments[index]);
+            if (season is > 0)
+            {
+                return season;
+            }
+        }
+
+        return null;
+    }
+
+    public static int? TryParseBareEpisodeIndex(string fileName)
+    {
+        if (string.IsNullOrWhiteSpace(fileName))
+        {
+            return null;
+        }
+
+        var nameWithoutExtension = Path.GetFileNameWithoutExtension(fileName);
+        if (string.IsNullOrWhiteSpace(nameWithoutExtension))
+        {
+            return null;
+        }
+
+        var episodeMatch = Regex.Match(
+            nameWithoutExtension,
+            @"(?:^|\s)-\s*(?<episode>\d{1,4})\s*$",
+            RegexOptions.IgnoreCase);
+        if (episodeMatch.Success && int.TryParse(episodeMatch.Groups["episode"].Value, out var dashEpisode))
+        {
+            return dashEpisode;
+        }
+
+        var explicitMatch = Regex.Match(
+            nameWithoutExtension,
+            @"\b(?:EP|Episode)\s*(?<episode>\d{1,4})\b",
+            RegexOptions.IgnoreCase);
+        if (explicitMatch.Success && int.TryParse(explicitMatch.Groups["episode"].Value, out var explicitEpisode))
+        {
+            return explicitEpisode;
+        }
+
+        var eMatch = Regex.Match(nameWithoutExtension, @"\bE(?<episode>\d{1,4})\b", RegexOptions.IgnoreCase);
+        if (eMatch.Success && int.TryParse(eMatch.Groups["episode"].Value, out var eEpisode))
+        {
+            return eEpisode;
+        }
+
+        return null;
+    }
+
+    private static int? ExtractSeasonFolderHint(string normalizedPath) =>
+        TryGetSeasonHintFromPath(normalizedPath);
+
+    private static bool PathContainsFolder(string normalizedPath, string folderName)
+    {
+        return normalizedPath
+            .Split('/', StringSplitOptions.RemoveEmptyEntries)
+            .Any(segment => string.Equals(segment, folderName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool PathContainsOvaFolder(string normalizedPath)
+    {
+        return normalizedPath
+            .Split('/', StringSplitOptions.RemoveEmptyEntries)
+            .Any(segment => segment.StartsWith("OVA", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool ContainsKeyword(string value, string keyword) =>
+        Regex.IsMatch(value, $@"\b{Regex.Escape(keyword)}s?\b", RegexOptions.IgnoreCase);
+
+    private static string NormalizePath(string path) => path.Replace('\\', '/');
 
     internal static IEnumerable<string> Tokenize(string value)
     {
@@ -150,6 +380,11 @@ public static class TorrentCandidateParser
             AddSeasonRange(seasons, match.Groups["from"].Value, match.Groups["to"].Value);
         }
 
+        foreach (Match match in SeasonPlusListRegex.Matches(value))
+        {
+            AddSeasonsFromPlusList(seasons, match.Groups["list"].Value);
+        }
+
         foreach (Match match in SeasonWordRangeRegex.Matches(value))
         {
             if (match.Groups["to"].Success)
@@ -171,6 +406,17 @@ public static class TorrentCandidateParser
         }
 
         return seasons;
+    }
+
+    private static void AddSeasonsFromPlusList(SortedSet<int> seasons, string list)
+    {
+        foreach (Match digit in Regex.Matches(list, @"\d{1,3}"))
+        {
+            if (int.TryParse(digit.Value, out var season) && season > 0)
+            {
+                seasons.Add(season);
+            }
+        }
     }
 
     private static void AddSeasonRange(SortedSet<int> seasons, string fromText, string toText)

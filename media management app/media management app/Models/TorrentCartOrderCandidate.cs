@@ -30,5 +30,7 @@ public sealed class TorrentCartOrderCandidate
 
     public string CoveredSeasons { get; set; } = string.Empty;
 
+    public string ContentProfileJson { get; set; } = string.Empty;
+
     public int TotalScore { get; set; }
 }

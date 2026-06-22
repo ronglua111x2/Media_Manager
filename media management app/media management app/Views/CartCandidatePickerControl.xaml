@@ -46,6 +46,22 @@
                             </Style>
                         </TextBlock.Style>
                     </TextBlock>
+                    <TextBlock Text="{Binding ContentProfileWarning}"
+                               Foreground="{StaticResource AppBrushWarning}"
+                               FontSize="11"
+                               Margin="0,4,0,0"
+                               TextWrapping="Wrap">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasContentProfileWarning}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
                 </StackPanel>
             </Border>
         </DataTemplate>
@@ -131,6 +147,22 @@
                                 <Setter Property="Visibility" Value="Collapsed" />
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding SelectedCandidateIsMultiSeason}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                    <TextBlock Text="{Binding SelectedCandidateContentProfileWarning}"
+                               Foreground="{StaticResource AppBrushWarning}"
+                               FontSize="11"
+                               Margin="0,4,0,0"
+                               TextWrapping="Wrap">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasSelectedCandidateContentWarning}" Value="True">
                                         <Setter Property="Visibility" Value="Visible" />
                                     </DataTrigger>
                                 </Style.Triggers>

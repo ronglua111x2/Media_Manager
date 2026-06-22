@@ -32,6 +32,8 @@ public sealed class TrackedSeason
 
     public string? SelectedPackCoveredSeasons { get; set; }
 
+    public string? SelectedPackContentProfile { get; set; }
+
     public int? SelectedPackOwnerSeasonNumber { get; set; }
 
     public string? PackTorrentHash { get; set; }
@@ -41,6 +43,10 @@ public sealed class TrackedSeason
     public string? PackTorrentState { get; set; }
 
     public double PackTorrentProgress { get; set; }
+
+    public string? LastPackLinkTorrentHash { get; set; }
+
+    public DateTime? LastPackLinkUtc { get; set; }
 
     public bool IsHidden { get; set; }
 }

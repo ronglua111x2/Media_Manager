@@ -18,7 +18,7 @@ public sealed class SearchPlanBuilder : ISearchPlanBuilder
             ? queryModule.QueryTemplates
             : ["{title} S{season:00}E{episode:00} {quality}", "{title} {year} S{season:00}E{episode:00}", "{title} {season}x{episode:00}"];
         templates = AppendCustomQueries(templates, queryModule).ToList();
-        var titles = ResolveTitles(recipe, show.Title, show.AlternativeTitles);
+        var titles = ResolveTitles(recipe, show.Title, show.GetSearchableAlternativeTitles());
         var qualities = GetQualities(queryModule).ToList();
         var audio = queryModule?.PreferredAudioCodec ?? string.Empty;
         var queries = new List<string>();
@@ -50,7 +50,7 @@ public sealed class SearchPlanBuilder : ISearchPlanBuilder
             ? queryModule.QueryTemplates
             : ["{title} {year} {quality}", "{title} {quality}", "{title} {year}"];
         templates = AppendCustomQueries(templates, queryModule).ToList();
-        var titles = ResolveTitles(recipe, movie.Title, movie.AlternativeTitles);
+        var titles = ResolveTitles(recipe, movie.Title, movie.GetSearchableAlternativeTitles());
         var qualities = GetQualities(queryModule).ToList();
         var audio = queryModule?.PreferredAudioCodec ?? string.Empty;
         var queries = new List<string>();
@@ -83,7 +83,7 @@ public sealed class SearchPlanBuilder : ISearchPlanBuilder
         }
 
         templates = AppendCustomQueries(templates, queryModule).ToList();
-        var titles = ResolveTitles(recipe, show.Title, show.AlternativeTitles);
+        var titles = ResolveTitles(recipe, show.Title, show.GetSearchableAlternativeTitles());
         var qualities = GetQualities(queryModule).ToList();
         var audio = queryModule?.PreferredAudioCodec ?? string.Empty;
         var queries = new List<string>();
@@ -174,10 +174,19 @@ public sealed class SearchPlanBuilder : ISearchPlanBuilder
 
     private static IReadOnlyList<string> NormalizeQueries(IEnumerable<string> queries)
     {
-        return queries
-            .Select(query => string.Join(' ', query.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)))
-            .Where(query => !string.IsNullOrWhiteSpace(query))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        var seenKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var result = new List<string>();
+
+        foreach (var query in queries
+                     .Select(query => string.Join(' ', query.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)))
+                     .Where(query => !string.IsNullOrWhiteSpace(query)))
+        {
+            if (seenKeys.Add(EnglishAlternativeTitleFilter.NormalizeForSearchKey(query)))
+            {
+                result.Add(query);
+            }
+        }
+
+        return result;
     }
 }

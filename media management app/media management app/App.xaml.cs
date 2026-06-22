@@ -162,6 +162,7 @@ public partial class App : System.Windows.Application
         services.AddSingleton<IMediaImportService, MediaImportService>();
         services.AddSingleton<IFetchJobService, FetchJobService>();
         services.AddSingleton<IAutoTorrentLinkService, AutoTorrentLinkService>();
+        services.AddSingleton<IPackLinkCoordinatorService, PackLinkCoordinatorService>();
         services.AddSingleton<ITorrentReconciliationService, TorrentReconciliationService>();
         services.AddSingleton<ILibraryManagementService, LibraryManagementService>();
         services.AddSingleton<IAutoTrackService, AutoTrackService>();

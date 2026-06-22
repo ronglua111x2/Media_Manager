@@ -17,6 +17,8 @@ public interface IRecipeService
 
     SearchRecipe SaveRecipe(SearchRecipe recipe);
 
+    void PrepareRecipe(SearchRecipe recipe);
+
     SearchRecipe DuplicateRecipe(string recipeId);
 
     void DeleteRecipe(string recipeId);

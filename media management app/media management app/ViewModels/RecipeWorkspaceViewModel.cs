@@ -67,6 +67,8 @@ public sealed partial class RecipeWorkspaceViewModel : ViewModelBase
             }
 
             SelectedRecipe.TargetKind = value;
+            _recipeService.PrepareRecipe(SelectedRecipe);
+            LoadModules(SelectedRecipe);
             SelectedRecipeItem!.Refresh();
             OnPropertyChanged();
         }
@@ -220,7 +222,12 @@ public sealed partial class RecipeWorkspaceViewModel : ViewModelBase
 
         foreach (var module in recipe.Modules.OrderBy(module => module.Order))
         {
-            Modules.Add(new RecipeModuleEditorViewModel(module));
+            if (module.BlockType == RecipeBlockType.PackExtrasPriority)
+            {
+                continue;
+            }
+
+            Modules.Add(new RecipeModuleEditorViewModel(module, recipe.TargetKind));
         }
 
         SelectedModule = selectedBlockType is not null
@@ -314,10 +321,12 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
     private static readonly string[] StandardQualities = ["2160p", "1080p", "720p", "480p"];
 
     private readonly RecipeModuleConfig _module;
+    private readonly MediaKind _recipeTargetKind;
 
-    public RecipeModuleEditorViewModel(RecipeModuleConfig module)
+    public RecipeModuleEditorViewModel(RecipeModuleConfig module, MediaKind recipeTargetKind = MediaKind.TvEpisode)
     {
         _module = module;
+        _recipeTargetKind = recipeTargetKind;
         QualityOptions = new ObservableCollection<QualityOptionViewModel>(
             StandardQualities.Select(label => new QualityOptionViewModel(
                 label,
@@ -366,7 +375,9 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
         RecipeBlockType.SearchSource => "Choose parallel per-episode search or show-level snapshot matching.",
         RecipeBlockType.CandidateParser => "Candidate filename parsing is currently automatic.",
         RecipeBlockType.CandidateFilter => "Quality, seeders, size, include/exclude terms, and release groups.",
-        RecipeBlockType.Scoring => "Ranking weights are currently fixed by the candidate scoring service.",
+        RecipeBlockType.Scoring => _recipeTargetKind == MediaKind.TvSeasonPack
+            ? "Ranking weights plus pack-only bonus for torrent names that mention OVA, special, or extra content."
+            : "Ranking weights are currently fixed by the candidate scoring service.",
         _ => "Recipe module settings."
     };
 
@@ -404,7 +415,28 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
     public bool UseLibraryEnglishTitles
     {
         get => GetExtensionBool(RecipeRuntimeSettings.UseLibraryEnglishTitlesKey, false);
-        set => SetExtensionValue(RecipeRuntimeSettings.UseLibraryEnglishTitlesKey, value.ToString());
+        set
+        {
+            SetExtensionValue(RecipeRuntimeSettings.UseLibraryEnglishTitlesKey, value.ToString());
+            OnPropertyChanged(nameof(IsUseLibraryEnglishTitlesEnabled));
+        }
+    }
+
+    public bool IsUseLibraryEnglishTitlesEnabled => UseLibraryEnglishTitles;
+
+    public int MaxLibraryAlternativeTitlesForSearch
+    {
+        get => GetExtensionInt(
+            RecipeRuntimeSettings.MaxLibraryAlternativeTitlesForSearchKey,
+            RecipeRuntimeSettings.DefaultMaxLibraryAlternativeTitlesForSearch,
+            RecipeRuntimeSettings.MinMaxLibraryAlternativeTitlesForSearch,
+            RecipeRuntimeSettings.MaxMaxLibraryAlternativeTitlesForSearch);
+        set => SetExtensionValue(
+            RecipeRuntimeSettings.MaxLibraryAlternativeTitlesForSearchKey,
+            Math.Clamp(
+                value,
+                RecipeRuntimeSettings.MinMaxLibraryAlternativeTitlesForSearch,
+                RecipeRuntimeSettings.MaxMaxLibraryAlternativeTitlesForSearch).ToString());
     }
 
     public string QueryTemplatesText
@@ -605,6 +637,27 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
             RecipeRuntimeSettings.NormalizeEpisodeNumberingMode(value));
     }
 
+    public bool ShowPackExtrasPrioritySettings =>
+        _recipeTargetKind == MediaKind.TvSeasonPack && _module.BlockType == RecipeBlockType.Scoring;
+
+    public bool PackExtrasPriorityEnabled
+    {
+        get => GetExtensionBool(RecipeRuntimeSettings.PackExtrasPriorityEnabledKey, true);
+        set => SetExtensionValue(RecipeRuntimeSettings.PackExtrasPriorityEnabledKey, value.ToString());
+    }
+
+    public int PackExtrasPriorityScore
+    {
+        get => GetExtensionInt(
+            RecipeRuntimeSettings.PackExtrasPriorityScoreKey,
+            RecipeRuntimeSettings.DefaultPackExtrasPriorityScore,
+            0,
+            50000);
+        set => SetExtensionValue(
+            RecipeRuntimeSettings.PackExtrasPriorityScoreKey,
+            Math.Clamp(value, 0, 50000).ToString());
+    }
+
     public string SavePath
     {
         get => _module.SavePath;
@@ -671,6 +724,7 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
         [
             $"Enabled: {(IsEnabled ? "Yes" : "No")}",
             $"Use library alt titles: {(UseLibraryEnglishTitles ? "Yes" : "No")}",
+            $"Max library alt titles for search: {MaxLibraryAlternativeTitlesForSearch}",
             $"Aliases: {CountLines(AliasesText)}"
         ],
         RecipeBlockType.QueryBuilder =>
@@ -717,13 +771,25 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
             $"Episode numbering: {EpisodeNumberingMode}",
             $"Probe metadata: {(EnableCandidateMetadataProbe ? "On" : "Off")}"
         ],
-        RecipeBlockType.Scoring =>
-        [
-            $"Enabled: {(IsEnabled ? "Yes" : "No")}",
-            "Scoring uses quality, audio, seeders, and title match weights."
-        ],
+        RecipeBlockType.Scoring => BuildScoringSummary(),
         _ => [$"Enabled: {(IsEnabled ? "Yes" : "No")}"]
     };
+
+    private IReadOnlyList<string> BuildScoringSummary()
+    {
+        var lines = new List<string>
+        {
+            $"Enabled: {(IsEnabled ? "Yes" : "No")}",
+            "Scoring uses quality, audio, seeders, and title match weights."
+        };
+        if (ShowPackExtrasPrioritySettings)
+        {
+            lines.Add($"Pack extras/OVA/special priority: {(PackExtrasPriorityEnabled ? "On" : "Off")}");
+            lines.Add($"Pack name-match bonus: {PackExtrasPriorityScore}");
+        }
+
+        return lines;
+    }
 
     private static string DisplayOrEmpty(string? value) =>
         string.IsNullOrWhiteSpace(value) ? "(empty)" : value.Trim();
@@ -806,6 +872,7 @@ internal static class ModuleFieldHelp
             [
                 new() { FieldName = "Enabled", Description = "Turns identity matching on or off for this recipe.", OutputImpact = "When disabled, only the primary library title is used. Aliases are ignored during search and candidate filtering." },
                 new() { FieldName = "Use library alternative titles", Description = "Include TMDB English and Japanese romaji alternative titles stored on the tracked show or movie.", OutputImpact = "Adds those library alternative titles to {title} expansion and torrent title matching. Works with Skip default title." },
+                new() { FieldName = "Max library alt titles for search", Description = "How many ranked TMDB library alternative titles to expand into search queries. Library UI may still show more.", OutputImpact = "Lower values run fewer snapshot and fetch queries. Titles are ranked by short romaji or abbreviations first; near-duplicate EN variants are skipped. 0 disables library alt expansion even when the checkbox above is enabled." },
                 new() { FieldName = "Title aliases", Description = "Alternative names for the show or movie.", OutputImpact = "Each alias is used as an extra {title} variant in queries and helps accept torrents that use abbreviations or alternate spellings." }
             ],
             RecipeBlockType.QueryBuilder =>
@@ -850,7 +917,9 @@ internal static class ModuleFieldHelp
             ],
             RecipeBlockType.Scoring =>
             [
-                new() { FieldName = "Scoring weights", Description = "Quality, audio, seeders, title match, and episode title contribute to total score.", OutputImpact = "The highest-scoring accepted candidate is chosen when Run Cart executes." }
+                new() { FieldName = "Scoring weights", Description = "Quality, audio, seeders, title match, and episode title contribute to total score.", OutputImpact = "The highest-scoring accepted candidate is chosen when Run Cart executes." },
+                new() { FieldName = "Pack extras/OVA/special priority", Description = "Pack recipes only. Adds bonus score when the torrent title contains OVA, special, extra, OAD, or similar keywords.", OutputImpact = "Complete bundles rank above season-only packs with similar quality and seeders." },
+                new() { FieldName = "Pack name-match bonus", Description = "Extra points applied when the pack priority keywords are found in the torrent display name.", OutputImpact = "Higher values make complete bundles win more often during pack candidate ranking." }
             ],
             _ =>
             [

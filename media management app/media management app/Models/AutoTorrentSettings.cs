@@ -1,5 +1,7 @@
 namespace media_management_app.Models;
 
+using media_management_app.Common;
+
 public sealed class AutoTorrentSettings
 {
     public string QbittorrentWebUiUrl { get; set; } = "http://localhost:8080";
@@ -12,7 +14,12 @@ public sealed class AutoTorrentSettings
 
     public List<string> DownloadFolders { get; set; } = [];
 
+    /// <summary>Legacy single category from older settings; migrated to <see cref="TvShowCategoryName"/> / <see cref="MovieCategoryName"/>.</summary>
     public string CategoryName { get; set; } = "AutoTorrent";
+
+    public string TvShowCategoryName { get; set; } = AppConstants.QbittorrentTvShowCategory;
+
+    public string MovieCategoryName { get; set; } = AppConstants.QbittorrentMovieCategory;
 
     public bool AutoLinkCompletedDownloads { get; set; }
 
@@ -37,4 +44,14 @@ public sealed class AutoTorrentSettings
     public int FuzzyDeduplicateSizeToleranceMb { get; set; } = 5;
 
     public bool EnableCandidateMetadataProbe { get; set; }
+
+    public string GetCategoryFor(MediaKind targetKind)
+    {
+        return targetKind == MediaKind.Movie
+            ? ResolveCategory(MovieCategoryName, AppConstants.QbittorrentMovieCategory)
+            : ResolveCategory(TvShowCategoryName, AppConstants.QbittorrentTvShowCategory);
+    }
+
+    private static string ResolveCategory(string? value, string fallback) =>
+        string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
 }

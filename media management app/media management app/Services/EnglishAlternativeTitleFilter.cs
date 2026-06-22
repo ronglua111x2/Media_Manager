@@ -56,8 +56,6 @@ public static class EnglishAlternativeTitleFilter
         " mini-series"
     ];
 
-    public const int MaxLibraryTitlesPerResolve = 16;
-
     public sealed record AltTitleEntry(string Title, string? CountryCode, string? Type);
 
     public static bool IsEnglishMarketCountry(string? countryCode) =>
@@ -281,8 +279,13 @@ public static class EnglishAlternativeTitleFilter
         return tokens;
     }
 
-    private static string NormalizeForDedup(string title)
+    public static string NormalizeForSearchKey(string title)
     {
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            return string.Empty;
+        }
+
         var builder = new StringBuilder(title.Length);
         foreach (var character in title.ToLowerInvariant())
         {
@@ -298,6 +301,209 @@ public static class EnglishAlternativeTitleFilter
 
         return builder.ToString().Trim();
     }
+
+    public static List<string> CollapseTitlesForSearch(IEnumerable<string> titles)
+    {
+        var seenKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var result = new List<string>();
+
+        foreach (var title in titles)
+        {
+            if (string.IsNullOrWhiteSpace(title))
+            {
+                if (seenKeys.Add(string.Empty))
+                {
+                    result.Add(string.Empty);
+                }
+
+                continue;
+            }
+
+            var trimmed = title.Trim();
+            var key = NormalizeForSearchKey(trimmed);
+            if (string.IsNullOrEmpty(key))
+            {
+                key = trimmed;
+            }
+
+            if (!seenKeys.Add(key))
+            {
+                continue;
+            }
+
+            result.Add(trimmed);
+        }
+
+        return result;
+    }
+
+    public static bool IsNearDuplicateTitleForSearch(string left, string right, string primaryTitle)
+    {
+        if (string.IsNullOrWhiteSpace(left) || string.IsNullOrWhiteSpace(right))
+        {
+            return false;
+        }
+
+        if (string.Equals(left.Trim(), right.Trim(), StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var leftKey = NormalizeForSearchKey(left);
+        var rightKey = NormalizeForSearchKey(right);
+        if (!string.IsNullOrEmpty(leftKey) &&
+            string.Equals(leftKey, rightKey, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var jaccard = ComputeTokenJaccard(left, right);
+        if (jaccard >= 0.85)
+        {
+            return true;
+        }
+
+        var sharedTokens = CountSharedSignificantTokens(left, right);
+        if (sharedTokens >= 2 && jaccard >= 0.4)
+        {
+            return true;
+        }
+
+        if (sharedTokens >= 1 &&
+            left.Trim().Length > 25 &&
+            right.Trim().Length > 25 &&
+            jaccard >= 0.35)
+        {
+            return true;
+        }
+
+        var primaryKey = NormalizeForSearchKey(primaryTitle);
+        if (!string.IsNullOrEmpty(primaryKey) &&
+            !string.IsNullOrEmpty(leftKey) &&
+            !string.IsNullOrEmpty(rightKey) &&
+            leftKey.Length >= primaryKey.Length &&
+            rightKey.Length >= primaryKey.Length &&
+            leftKey.StartsWith(primaryKey, StringComparison.Ordinal) &&
+            rightKey.StartsWith(primaryKey, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    public static int ScoreTitleForSearch(string title, string primaryTitle)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            return int.MinValue;
+        }
+
+        var trimmed = title.Trim();
+        if (string.Equals(NormalizeForSearchKey(trimmed), NormalizeForSearchKey(primaryTitle), StringComparison.OrdinalIgnoreCase))
+        {
+            return int.MinValue / 2;
+        }
+
+        var score = trimmed.Length switch
+        {
+            <= 10 => 60,
+            <= 18 => 45,
+            <= 28 => 25,
+            <= 40 => 10,
+            _ => -20
+        };
+
+        var jaccard = ComputeTokenJaccard(trimmed, primaryTitle);
+        if (jaccard < 0.25)
+        {
+            score += 70;
+        }
+        else if (jaccard < 0.55)
+        {
+            score += 35;
+        }
+        else if (jaccard >= 0.85)
+        {
+            score -= 60;
+        }
+        else
+        {
+            score -= 25;
+        }
+
+        return score;
+    }
+
+    public static List<string> SelectLibraryAlternativeTitlesForSearch(
+        IEnumerable<string> libraryAlternativeTitles,
+        string primaryTitle,
+        int maxCount)
+    {
+        if (maxCount <= 0)
+        {
+            return [];
+        }
+
+        var candidates = CollapseTitlesForSearch(
+            libraryAlternativeTitles
+                .Where(title => !string.IsNullOrWhiteSpace(title))
+                .Select(title => title.Trim()));
+
+        if (candidates.Count == 0)
+        {
+            return [];
+        }
+
+        var primaryKey = NormalizeForSearchKey(primaryTitle);
+        var scored = candidates
+            .Where(title => !string.Equals(NormalizeForSearchKey(title), primaryKey, StringComparison.OrdinalIgnoreCase))
+            .Select(title => (Title: title, Score: ScoreTitleForSearch(title, primaryTitle)))
+            .Where(entry => entry.Score > int.MinValue / 4)
+            .OrderByDescending(entry => entry.Score)
+            .ThenBy(entry => entry.Title.Length)
+            .ThenBy(entry => entry.Title, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var selected = new List<string>();
+        foreach (var candidate in scored)
+        {
+            if (selected.Any(existing => IsNearDuplicateTitleForSearch(existing, candidate.Title, primaryTitle)))
+            {
+                continue;
+            }
+
+            selected.Add(candidate.Title);
+            if (selected.Count >= maxCount)
+            {
+                break;
+            }
+        }
+
+        return selected;
+    }
+
+    private static double ComputeTokenJaccard(string left, string right)
+    {
+        var leftTokens = ExtractSignificantTokens(left);
+        var rightTokens = ExtractSignificantTokens(right);
+        if (leftTokens.Count == 0 && rightTokens.Count == 0)
+        {
+            return 1d;
+        }
+
+        if (leftTokens.Count == 0 || rightTokens.Count == 0)
+        {
+            return 0d;
+        }
+
+        var intersection = leftTokens.Intersect(rightTokens, StringComparer.OrdinalIgnoreCase).Count();
+        var union = leftTokens.Union(rightTokens, StringComparer.OrdinalIgnoreCase).Count();
+        return union == 0 ? 0d : (double)intersection / union;
+    }
+
+    private static int CountSharedSignificantTokens(string left, string right) =>
+        ExtractSignificantTokens(left).Intersect(ExtractSignificantTokens(right), StringComparer.OrdinalIgnoreCase).Count();
 
     private static bool IsSequelSuffix(string suffix)
     {
@@ -329,8 +535,8 @@ public static class EnglishAlternativeTitleFilter
                 || (remainder.Length > 0 && char.IsDigit(remainder[0]) && int.TryParse(remainder.Split(' ', ':', '.', '-')[0], out _));
         }
 
-        var normalizedCandidate = NormalizeForDedup(candidate);
-        var normalizedBase = NormalizeForDedup(baseTitle);
+        var normalizedCandidate = NormalizeForSearchKey(candidate);
+        var normalizedBase = NormalizeForSearchKey(baseTitle);
         if (!normalizedCandidate.StartsWith(normalizedBase + " ", StringComparison.Ordinal))
         {
             return false;
@@ -374,7 +580,7 @@ public static class EnglishAlternativeTitleFilter
                 continue;
             }
 
-            var key = NormalizeForDedup(title);
+            var key = NormalizeForSearchKey(title);
             if (!deduped.TryGetValue(key, out var existing) || title.Length < existing.Length)
             {
                 deduped[key] = title;

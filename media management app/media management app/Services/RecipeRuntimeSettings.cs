@@ -1,3 +1,4 @@
+using media_management_app.Common;
 using media_management_app.Models;
 
 namespace media_management_app.Services;
@@ -19,6 +20,13 @@ public static class RecipeRuntimeSettings
     public const string CustomQueryLegacyKey = "customQuery";
     public const string SkipDefaultTitleKey = "skipDefaultTitle";
     public const string UseLibraryEnglishTitlesKey = "useLibraryEnglishTitles";
+    public const string MaxLibraryAlternativeTitlesForSearchKey = "maxLibraryAlternativeTitlesForSearch";
+    public const int DefaultMaxLibraryAlternativeTitlesForSearch = 4;
+    public const int MinMaxLibraryAlternativeTitlesForSearch = 0;
+    public const int MaxMaxLibraryAlternativeTitlesForSearch = 16;
+    public const string PackExtrasPriorityScoreKey = "packExtrasPriorityScore";
+    public const string PackExtrasPriorityEnabledKey = "packExtrasPriorityEnabled";
+    public const int DefaultPackExtrasPriorityScore = 2500;
     public const string StandardTvEpisodeNumbering = "Standard TV";
     public const string AnimeAbsoluteEpisodeNumbering = "Anime absolute";
 
@@ -61,6 +69,30 @@ public static class RecipeRuntimeSettings
     public static bool UsesAnimeAbsoluteEpisodeNumbering(SearchRecipe recipe) =>
         string.Equals(GetEpisodeNumberingMode(recipe), AnimeAbsoluteEpisodeNumbering, StringComparison.OrdinalIgnoreCase);
 
+    public static int GetPackExtrasPriorityScoreBoost(SearchRecipe recipe, string torrentName)
+    {
+        if (recipe.TargetKind != MediaKind.TvSeasonPack ||
+            !PackExtrasPriorityScorer.ContainsExtrasKeywords(torrentName))
+        {
+            return 0;
+        }
+
+        var module = GetScoringModule(recipe);
+        if (module is null || !module.IsEnabled || !GetPackExtrasPriorityEnabled(module))
+        {
+            return 0;
+        }
+
+        return GetInt(module, PackExtrasPriorityScoreKey, DefaultPackExtrasPriorityScore, 0, 50000);
+    }
+
+    public static bool GetPackExtrasPriorityEnabled(RecipeModuleConfig? scoringModule) =>
+        GetBool(scoringModule, PackExtrasPriorityEnabledKey, true);
+
+    public static RecipeModuleConfig? GetScoringModule(SearchRecipe recipe) =>
+        recipe.Modules.FirstOrDefault(module =>
+            module.BlockType == RecipeBlockType.Scoring);
+
     public static string NormalizeEpisodeNumberingMode(string? value)
     {
         if (string.Equals(value, AnimeAbsoluteEpisodeNumbering, StringComparison.OrdinalIgnoreCase) ||
@@ -94,6 +126,14 @@ public static class RecipeRuntimeSettings
 
     public static bool GetUseLibraryEnglishTitles(RecipeModuleConfig? identityModule) =>
         GetBool(identityModule, UseLibraryEnglishTitlesKey, false);
+
+    public static int GetMaxLibraryAlternativeTitlesForSearch(RecipeModuleConfig? identityModule) =>
+        GetInt(
+            identityModule,
+            MaxLibraryAlternativeTitlesForSearchKey,
+            DefaultMaxLibraryAlternativeTitlesForSearch,
+            MinMaxLibraryAlternativeTitlesForSearch,
+            MaxMaxLibraryAlternativeTitlesForSearch);
 
     private static bool GetBool(RecipeModuleConfig? module, string key, bool fallback)
     {

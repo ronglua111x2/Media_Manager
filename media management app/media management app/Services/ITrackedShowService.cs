@@ -54,6 +54,8 @@ public interface ITrackedShowService
 
     void UpdateSeriesStatus(long showId, Common.ShowSeriesStatus seriesStatus);
 
+    void SetAlternativeTitleExcludedFromSearch(long showId, string title, bool excluded);
+
     IReadOnlyList<TrackedShow> GetAutoTrackedShows();
 
     void SetAutoTrackCheckpoint(long showId, int fromSeason, int fromEpisode, string? downloadFolder = null, bool autoReconcileAndLink = true);

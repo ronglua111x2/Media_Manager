@@ -131,6 +131,36 @@ public sealed class TrackedMovieService : ITrackedMovieService
         _logger.Info($"Updated recipe assignment for movie id={movieId}: {recipeId ?? "<default>"}", LogTarget.All);
     }
 
+    public void SetAlternativeTitleExcludedFromSearch(long movieId, string title, bool excluded)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            return;
+        }
+
+        var movie = _databaseService.GetTrackedMovie(movieId)
+            ?? throw new InvalidOperationException($"Tracked movie id={movieId} was not found.");
+        var excludedTitles = movie.ExcludedFromSearchAlternativeTitles.ToList();
+        var normalizedTitle = title.Trim();
+        if (excluded)
+        {
+            if (!excludedTitles.Any(existing => string.Equals(existing, normalizedTitle, StringComparison.OrdinalIgnoreCase)))
+            {
+                excludedTitles.Add(normalizedTitle);
+            }
+        }
+        else
+        {
+            excludedTitles.RemoveAll(existing => string.Equals(existing, normalizedTitle, StringComparison.OrdinalIgnoreCase));
+        }
+
+        var json = TrackedMovie.SerializeAlternativeTitles(excludedTitles);
+        _databaseService.UpdateTrackedMovieExcludedAlternativeTitles(movieId, json);
+        _logger.Info(
+            $"Alternative title '{normalizedTitle}' {(excluded ? "excluded from" : "included in")} recipe search for movie id={movieId}.",
+            LogTarget.All);
+    }
+
     private long ImportMovie(TmdbMovieDetails details, TrackedMovie? existing)
     {
         existing ??= _databaseService.GetTrackedMovieByTmdbId(details.TmdbId);
@@ -142,6 +172,7 @@ public sealed class TrackedMovieService : ITrackedMovieService
             Overview = details.Overview,
             PosterPath = details.PosterPath,
             AlternativeTitlesJson = TrackedMovie.SerializeAlternativeTitles(details.AlternativeTitles),
+            ExcludedAlternativeTitlesJson = existing?.ExcludedAlternativeTitlesJson,
             RecipeId = existing?.RecipeId,
             PreferredQuality = existing?.PreferredQuality ?? "1080p",
             PreferredAudioCodec = existing?.PreferredAudioCodec ?? string.Empty,

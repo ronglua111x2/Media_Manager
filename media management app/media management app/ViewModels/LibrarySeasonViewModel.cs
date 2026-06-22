@@ -20,10 +20,12 @@ public partial class LibrarySeasonViewModel : ObservableObject
         ShowId = showId;
         SeasonNumber = seasonNumber;
         Episodes = new ObservableCollection<LibraryEpisodeRowViewModel>(episodes);
-        isPackMode = seasonRecord?.ManagementMode == SeasonManagementMode.Pack;
+        isPackMode = seasonNumber != AppConstants.SpecialsSeasonNumber &&
+                     seasonRecord?.ManagementMode == SeasonManagementMode.Pack;
         selectedPackOwnerSeasonNumber = seasonRecord?.SelectedPackOwnerSeasonNumber;
         selectedPackName = seasonRecord?.SelectedPackCandidateName ?? string.Empty;
         selectedPackCoveredSeasons = seasonRecord?.SelectedPackCoveredSeasons ?? string.Empty;
+        PackContentWarning = BuildPackContentWarning(seasonRecord);
         packTorrentHash = seasonRecord?.PackTorrentHash ?? string.Empty;
         packTorrentProgress = seasonRecord?.PackTorrentProgress ?? 0;
         isHidden = seasonRecord?.IsHidden ?? false;
@@ -34,16 +36,20 @@ public partial class LibrarySeasonViewModel : ObservableObject
 
     public int SeasonNumber { get; }
 
-    public string Header => $"Season {SeasonNumber:00} | {SeasonStats}";
+    public string Header => SeasonNumber == AppConstants.SpecialsSeasonNumber
+        ? $"Extras/Specials/OVAs | {SeasonStats}"
+        : $"Season {SeasonNumber:00} | {SeasonStats}";
 
     public string SeasonStats =>
-        $"{AvailableEpisodes}/{TotalEpisodes} available | {MissingEpisodes} missing";
+        $"{AvailableEpisodes}/{TrackedEpisodeCount} available | {MissingEpisodes} missing";
 
-    public int TotalEpisodes => Episodes.Count;
+    public int TrackedEpisodeCount => Episodes.Count(episode => episode.IsTrackedEpisode);
 
-    public int AvailableEpisodes => Episodes.Count(episode => episode.IsAvailable);
+    public int TotalEpisodes => TrackedEpisodeCount;
 
-    public int MissingEpisodes => Episodes.Count(episode => !episode.IsAvailable);
+    public int AvailableEpisodes => Episodes.Count(episode => episode.IsTrackedEpisode && episode.IsAvailable);
+
+    public int MissingEpisodes => Episodes.Count(episode => episode.IsTrackedEpisode && !episode.IsAvailable);
 
     public ObservableCollection<LibraryEpisodeRowViewModel> Episodes { get; }
 
@@ -70,6 +76,8 @@ public partial class LibrarySeasonViewModel : ObservableObject
         : IsPackMode
             ? "Pack mode: add the whole season pack to cart."
             : "Episode mode: add individual episodes to cart.";
+
+    public bool HasPackContentWarning => !string.IsNullOrWhiteSpace(PackContentWarning);
 
     public string PackLinkStatus => IsCoveredByAnotherPack
         ? $"Covered by {PackOwnerDisplay}"
@@ -107,7 +115,7 @@ public partial class LibrarySeasonViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(PackLinkStatus))]
     private bool isPackLinked;
 
-    public bool CanTogglePackMode => !IsCoveredByAnotherPack;
+    public bool CanTogglePackMode => !IsCoveredByAnotherPack && SeasonNumber != AppConstants.SpecialsSeasonNumber;
 
     [ObservableProperty]
     private bool isExpanded;
@@ -150,6 +158,10 @@ public partial class LibrarySeasonViewModel : ObservableObject
     private string selectedPackCoveredSeasons = string.Empty;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasPackContentWarning))]
+    private string packContentWarning = string.Empty;
+
+    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanLinkPack))]
     [NotifyPropertyChangedFor(nameof(HasPackTorrent))]
     [NotifyPropertyChangedFor(nameof(IsPackTorrentComplete))]
@@ -184,5 +196,15 @@ public partial class LibrarySeasonViewModel : ObservableObject
         {
             episode.IsSeasonPackMode = IsPackMode;
         }
+    }
+
+    private static string BuildPackContentWarning(TrackedSeason? seasonRecord)
+    {
+        if (seasonRecord is null || string.IsNullOrWhiteSpace(seasonRecord.SelectedPackContentProfile))
+        {
+            return string.Empty;
+        }
+
+        return PackContentProfile.Deserialize(seasonRecord.SelectedPackContentProfile)?.BuildWarningText() ?? string.Empty;
     }
 }

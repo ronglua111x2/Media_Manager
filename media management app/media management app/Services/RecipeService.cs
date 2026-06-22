@@ -76,6 +76,8 @@ public sealed class RecipeService : IRecipeService
         return recipe;
     }
 
+    public void PrepareRecipe(SearchRecipe recipe) => NormalizeRecipe(recipe);
+
     public SearchRecipe DuplicateRecipe(string recipeId)
     {
         var source = GetRecipeOrDefault(recipeId, MediaKind.TvEpisode);
@@ -210,7 +212,9 @@ public sealed class RecipeService : IRecipeService
                     DisplayName = "Identity / Aliases",
                     ExtensionData = new Dictionary<string, string>
                     {
-                        [RecipeRuntimeSettings.UseLibraryEnglishTitlesKey] = bool.TrueString
+                        [RecipeRuntimeSettings.UseLibraryEnglishTitlesKey] = bool.TrueString,
+                        [RecipeRuntimeSettings.MaxLibraryAlternativeTitlesForSearchKey] =
+                            RecipeRuntimeSettings.DefaultMaxLibraryAlternativeTitlesForSearch.ToString()
                     }
                 },
                 new RecipeModuleConfig
@@ -285,10 +289,19 @@ public sealed class RecipeService : IRecipeService
                 {
                     BlockType = RecipeBlockType.Scoring,
                     Order = 50,
-                    DisplayName = "Scoring"
+                    DisplayName = "Scoring",
+                    ExtensionData = targetKind == MediaKind.TvSeasonPack
+                        ? new Dictionary<string, string>
+                        {
+                            [RecipeRuntimeSettings.PackExtrasPriorityEnabledKey] = bool.TrueString,
+                            [RecipeRuntimeSettings.PackExtrasPriorityScoreKey] =
+                                RecipeRuntimeSettings.DefaultPackExtrasPriorityScore.ToString()
+                        }
+                        : []
                 }
             ]
         };
+
         return recipe;
     }
 
@@ -311,6 +324,7 @@ public sealed class RecipeService : IRecipeService
         recipe.Modules ??= [];
         recipe.Modules.RemoveAll(module => module.BlockType is RecipeBlockType.AddTorrent or RecipeBlockType.LinkOutput);
         EnsureRequiredModules(recipe);
+        MigratePackExtrasPriorityIntoScoring(recipe);
         foreach (var module in recipe.Modules)
         {
             module.ModuleId = string.IsNullOrWhiteSpace(module.ModuleId) ? Guid.NewGuid().ToString("N") : module.ModuleId.Trim();
@@ -345,12 +359,44 @@ public sealed class RecipeService : IRecipeService
                             ? episodeNumberingMode
                             : RecipeRuntimeSettings.StandardTvEpisodeNumbering);
             }
+
+            if (module.BlockType == RecipeBlockType.Scoring &&
+                recipe.TargetKind == MediaKind.TvSeasonPack)
+            {
+                module.ExtensionData.TryAdd(
+                    RecipeRuntimeSettings.PackExtrasPriorityEnabledKey,
+                    bool.TrueString);
+                module.ExtensionData.TryAdd(
+                    RecipeRuntimeSettings.PackExtrasPriorityScoreKey,
+                    RecipeRuntimeSettings.DefaultPackExtrasPriorityScore.ToString());
+            }
         }
 
         recipe.Modules = recipe.Modules
             .OrderBy(module => module.Order)
             .ThenBy(module => module.BlockType)
             .ToList();
+    }
+
+    private static void MigratePackExtrasPriorityIntoScoring(SearchRecipe recipe)
+    {
+        var legacyModule = recipe.Modules.FirstOrDefault(module =>
+            module.BlockType == RecipeBlockType.PackExtrasPriority);
+        var scoringModule = recipe.Modules.FirstOrDefault(module =>
+            module.BlockType == RecipeBlockType.Scoring);
+        if (legacyModule is not null && scoringModule is not null)
+        {
+            foreach (var entry in legacyModule.ExtensionData)
+            {
+                scoringModule.ExtensionData[entry.Key] = entry.Value;
+            }
+
+            scoringModule.ExtensionData[RecipeRuntimeSettings.PackExtrasPriorityEnabledKey] =
+                legacyModule.IsEnabled.ToString();
+            recipe.Modules.Remove(legacyModule);
+        }
+
+        recipe.Modules.RemoveAll(module => module.BlockType == RecipeBlockType.PackExtrasPriority);
     }
 
     private static void EnsureRequiredModules(SearchRecipe recipe)

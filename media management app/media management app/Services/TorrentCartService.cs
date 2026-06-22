@@ -481,6 +481,7 @@ public sealed class TorrentCartService : ITorrentCartService
         order.SelectedCandidateQuality = string.Empty;
         order.SelectedCandidateAudioCodec = string.Empty;
         order.SelectedCandidateCoveredSeasons = string.Empty;
+        order.SelectedCandidateContentProfile = string.Empty;
         order.SelectedCandidateTotalScore = 0;
     }
 
@@ -503,6 +504,7 @@ public sealed class TorrentCartService : ITorrentCartService
         order.SelectedCandidateQuality = candidate.Quality;
         order.SelectedCandidateAudioCodec = candidate.AudioCodec;
         order.SelectedCandidateCoveredSeasons = candidate.CoveredSeasons;
+        order.SelectedCandidateContentProfile = candidate.ContentProfileJson;
         order.SelectedCandidateTotalScore = candidate.TotalScore;
     }
 }

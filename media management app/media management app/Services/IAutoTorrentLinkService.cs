@@ -10,6 +10,12 @@ public interface IAutoTorrentLinkService
 
     Task<AutoTorrentLinkResult> LinkSeasonPackAsync(long showId, int ownerSeasonNumber, CancellationToken cancellationToken = default);
 
+    Task<AutoTorrentLinkResult> LinkSeasonPackFromInventoryAsync(
+        long showId,
+        int ownerSeasonNumber,
+        PackTorrentInventory inventory,
+        CancellationToken cancellationToken = default);
+
     Task<AutoTorrentLinkResult> LinkMovieAsync(long movieId, CancellationToken cancellationToken = default);
 
     AutoTorrentLinkResult RemoveEpisodeLinks(long showId, int seasonNumber, int episodeNumber);
@@ -19,6 +25,8 @@ public interface IAutoTorrentLinkService
     AutoTorrentLinkResult RemoveShowLinks(long showId);
 
     AutoTorrentLinkResult RemoveMovieLinks(long movieId);
+
+    AutoTorrentLinkResult RemoveOrphanPackSpecialLink(long sourceItemId);
 
     AutoTorrentLinkResult RefreshLinkStatus(long? showId = null, long? movieId = null);
 }

@@ -71,7 +71,28 @@
                     CornerRadius="6"
                     Padding="10,8"
                     Margin="0,0,0,6">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsOrphanSeparator}" Value="True">
+                                <Setter Property="Background" Value="Transparent" />
+                                <Setter Property="BorderThickness" Value="0" />
+                                <Setter Property="Padding" Value="0,8,0,4" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <StackPanel>
                 <Grid>
+                    <Grid.Style>
+                        <Style TargetType="Grid">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsOrphanSeparator}" Value="True">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Grid.Style>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="72" />
                         <ColumnDefinition Width="*" />
@@ -147,6 +168,22 @@
                         </Button>
                     </StackPanel>
                 </Grid>
+                <TextBlock Text="{Binding Title}"
+                           Foreground="{StaticResource AppBrushWarning}"
+                           FontSize="12"
+                           TextWrapping="Wrap">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsOrphanSeparator}" Value="True">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+                </StackPanel>
             </Border>
         </DataTemplate>
 
@@ -198,6 +235,22 @@
                                            Style="{StaticResource MutedTextStyle}"
                                            Margin="0,4,0,0"
                                            TextWrapping="Wrap" />
+                                <TextBlock Text="{Binding PackContentWarning}"
+                                           Foreground="{StaticResource AppBrushWarning}"
+                                           FontSize="12"
+                                           Margin="0,6,0,0"
+                                           TextWrapping="Wrap">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding HasPackContentWarning}" Value="True">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
                             </StackPanel>
                             <Button Grid.Column="1"
                                     Style="{StaticResource CompactOutlinedIconButtonStyle}"
@@ -932,11 +985,11 @@
                                                Visibility="{Binding IsSelectedShow, Converter={StaticResource BooleanToVisibilityConverter}}" />
                                     <StackPanel Margin="0,8,0,0"
                                                 Visibility="{Binding IsSelectedShow, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                        <TextBlock Text="Alternative titles"
+                                        <TextBlock Text="Alternative titles (middle-click to exclude/include)"
                                                    Style="{StaticResource MutedTextStyle}"
                                                    Margin="0,0,0,4" />
-                                        <ItemsControl ItemsSource="{Binding SelectedShow.AlternativeTitles}"
-                                                      ItemTemplate="{StaticResource AlternativeTitleChipTemplate}"
+                                        <ItemsControl ItemsSource="{Binding SelectedShow.AlternativeTitleChips}"
+                                                      ItemTemplate="{StaticResource LibraryAlternativeTitleChipTemplate}"
                                                       Visibility="{Binding SelectedShow.HasAlternativeTitles, Converter={StaticResource BooleanToVisibilityConverter}}">
                                             <ItemsControl.ItemsPanel>
                                                 <ItemsPanelTemplate>
@@ -964,11 +1017,11 @@
                                                Visibility="{Binding IsSelectedMovie, Converter={StaticResource BooleanToVisibilityConverter}}" />
                                     <StackPanel Margin="0,8,0,0"
                                                 Visibility="{Binding IsSelectedMovie, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                        <TextBlock Text="Alternative titles"
+                                        <TextBlock Text="Alternative titles (middle-click to exclude/include)"
                                                    Style="{StaticResource MutedTextStyle}"
                                                    Margin="0,0,0,4" />
-                                        <ItemsControl ItemsSource="{Binding SelectedMovie.AlternativeTitles}"
-                                                      ItemTemplate="{StaticResource AlternativeTitleChipTemplate}"
+                                        <ItemsControl ItemsSource="{Binding SelectedMovie.AlternativeTitleChips}"
+                                                      ItemTemplate="{StaticResource LibraryAlternativeTitleChipTemplate}"
                                                       Visibility="{Binding SelectedMovie.HasAlternativeTitles, Converter={StaticResource BooleanToVisibilityConverter}}">
                                             <ItemsControl.ItemsPanel>
                                                 <ItemsPanelTemplate>

@@ -21,6 +21,7 @@ public sealed class TorrentOrderCandidateViewModel
         AudioCodec = candidate.AudioCodec;
         TotalScore = candidate.TotalScore;
         CoveredSeasons = candidate.CoveredSeasons;
+        ContentProfileWarning = PackContentProfile.Deserialize(candidate.ContentProfileJson)?.BuildWarningText() ?? string.Empty;
     }
 
     public long Id { get; }
@@ -69,6 +70,10 @@ public sealed class TorrentOrderCandidateViewModel
     public string MultiSeasonWarningText => IsMultiSeason
         ? $"Multi-season pack: covers {CoveredSeasonsDisplay}"
         : string.Empty;
+
+    public string ContentProfileWarning { get; }
+
+    public bool HasContentProfileWarning => !string.IsNullOrWhiteSpace(ContentProfileWarning);
 
     public string FileSizeDisplay => FormatSize(FileSize);
 

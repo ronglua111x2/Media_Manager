@@ -75,7 +75,10 @@ public partial class SettingsViewModel : ViewModelBase
     private string? selectedAutoTorrentDownloadFolder;
 
     [ObservableProperty]
-    private string autoTorrentCategoryName = "AutoTorrent";
+    private string autoTorrentTvShowCategoryName = AppConstants.QbittorrentTvShowCategory;
+
+    [ObservableProperty]
+    private string autoTorrentMovieCategoryName = AppConstants.QbittorrentMovieCategory;
 
     [ObservableProperty]
     private bool autoLinkCompletedDownloads;
@@ -593,7 +596,8 @@ public partial class SettingsViewModel : ViewModelBase
             QbittorrentUsername = _settingsService.Current.AutoTorrent.Username;
             QbittorrentPassword = _settingsService.Current.AutoTorrent.Password;
             AutoTorrentDownloadFolder = _settingsService.Current.AutoTorrent.DownloadFolder ?? string.Empty;
-            AutoTorrentCategoryName = _settingsService.Current.AutoTorrent.CategoryName;
+            AutoTorrentTvShowCategoryName = _settingsService.Current.AutoTorrent.TvShowCategoryName;
+            AutoTorrentMovieCategoryName = _settingsService.Current.AutoTorrent.MovieCategoryName;
             AutoLinkCompletedDownloads = _settingsService.Current.AutoTorrent.AutoLinkCompletedDownloads;
             LogMaxLinesPerFile = _settingsService.Current.Logs.MaxLinesPerFile;
             LogCleanupRetentionDays = _settingsService.Current.Logs.CleanupRetentionDays;
@@ -687,9 +691,12 @@ public partial class SettingsViewModel : ViewModelBase
         {
             _settingsService.Current.AutoTorrent.DownloadFolders.Insert(0, _settingsService.Current.AutoTorrent.DownloadFolder);
         }
-        _settingsService.Current.AutoTorrent.CategoryName = string.IsNullOrWhiteSpace(AutoTorrentCategoryName)
-            ? "AutoTorrent"
-            : AutoTorrentCategoryName.Trim();
+        _settingsService.Current.AutoTorrent.TvShowCategoryName = string.IsNullOrWhiteSpace(AutoTorrentTvShowCategoryName)
+            ? AppConstants.QbittorrentTvShowCategory
+            : AutoTorrentTvShowCategoryName.Trim();
+        _settingsService.Current.AutoTorrent.MovieCategoryName = string.IsNullOrWhiteSpace(AutoTorrentMovieCategoryName)
+            ? AppConstants.QbittorrentMovieCategory
+            : AutoTorrentMovieCategoryName.Trim();
         _settingsService.Current.AutoTorrent.AutoLinkCompletedDownloads = AutoLinkCompletedDownloads;
     }
 

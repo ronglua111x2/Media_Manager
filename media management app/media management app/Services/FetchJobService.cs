@@ -296,7 +296,7 @@ public sealed class FetchJobService : IFetchJobService
         var matcher = new SnapshotCandidateMatcher();
         var selectedQualities = ParseQualities(show.PreferredQuality);
         var titleVariants = _titleResolver.Resolve(
-            _titleResolver.CreateRequest(recipe, show.Title, show.AlternativeTitles));
+            _titleResolver.CreateRequest(recipe, show.Title, show.GetSearchableAlternativeTitles()));
         var workerCount = Math.Min(
             RecipeRuntimeSettings.GetLocalMatchWorkers(recipe, _settingsService.Current.AutoTorrent),
             Math.Max(targetEpisodes.Count, 1));
@@ -699,7 +699,7 @@ public sealed class FetchJobService : IFetchJobService
 
         return GetProbeMatchFiles(probe)
             .Select(file => TorrentCandidateParser.Parse($"{probe.TorrentName} {file.Path}").SeasonNumber)
-            .Where(season => season is > 0)
+            .Where(season => season is >= AppConstants.SpecialsSeasonNumber)
             .Select(season => season!.Value)
             .Distinct()
             .Order()
@@ -842,10 +842,12 @@ public sealed class FetchJobService : IFetchJobService
         {
             var parsed = TorrentCandidateParser.Parse(result.FileName);
             var rejectReason = GetPackRejectReason(show, selectedSeasons, result, parsed, selectedQualities);
-            var coveredSeasons = parsed.CoveredSeasons;
+            var coveredSeasons = parsed.CoveredSeasons.ToList();
+            TorrentMetadataProbeResult? probe = null;
+
             if (rejectReason is "no explicit season coverage" && ShouldProbePackCandidate(packRecipe, result, parsed))
             {
-                var probe = await _qbittorrentClient.ProbeTorrentMetadataAsync(result, cancellationToken);
+                probe = await _qbittorrentClient.ProbeTorrentMetadataAsync(result, cancellationToken);
                 var probeRejectReason = GetProbeYearRejectReason(show, probe);
                 if (probeRejectReason is not null)
                 {
@@ -866,7 +868,7 @@ public sealed class FetchJobService : IFetchJobService
             }
             else if (rejectReason is null && ShouldProbePackCandidate(packRecipe, result, parsed))
             {
-                var probe = await _qbittorrentClient.ProbeTorrentMetadataAsync(result, cancellationToken);
+                probe = await _qbittorrentClient.ProbeTorrentMetadataAsync(result, cancellationToken);
                 rejectReason = GetProbeYearRejectReason(show, probe);
                 var probedSeasons = InferCoveredSeasonsFromProbe(probe).ToList();
                 if (rejectReason is null && probedSeasons.Count > 0 && !probedSeasons.Any(selectedSeasons.Contains))
@@ -881,8 +883,23 @@ public sealed class FetchJobService : IFetchJobService
                 continue;
             }
 
+            if (probe is null &&
+                RecipeRuntimeSettings.GetEnableCandidateMetadataProbe(packRecipe, _settingsService.Current.AutoTorrent) &&
+                result.CanAdd &&
+                !result.FileUrl.StartsWith("magnet:?", StringComparison.OrdinalIgnoreCase))
+            {
+                probe = await _qbittorrentClient.ProbeTorrentMetadataAsync(result, cancellationToken);
+            }
+
+            var contentProfile = PackContentAnalyzer.Analyze(result.FileName, probe, coveredSeasons);
+            if (contentProfile.CoveredSeasons.Count > 0)
+            {
+                coveredSeasons = contentProfile.CoveredSeasons.ToList();
+            }
+
             var matchingSeasonCount = coveredSeasons.Count(selectedSeasons.Contains);
             var singleSeasonBoost = coveredSeasons.Count == 1 ? 5000 : 0;
+            var extrasPriorityBoost = RecipeRuntimeSettings.GetPackExtrasPriorityScoreBoost(packRecipe, result.FileName);
             var qualityScore = TorrentQuality.GetRank(parsed.Quality);
             var audioScore = !string.IsNullOrWhiteSpace(show.PreferredAudioCodec) &&
                              result.FileName.Contains(show.PreferredAudioCodec, StringComparison.OrdinalIgnoreCase)
@@ -902,13 +919,14 @@ public sealed class FetchJobService : IFetchJobService
                 QualityLabel = TorrentQuality.Detect(result.FileName),
                 AudioCodecLabel = DetectAudioCodec(result.FileName),
                 CoveredSeasons = coveredSeasons,
+                ContentProfile = contentProfile,
                 TotalScore = TorrentQuality.CalculateCandidateScore(
                     qualityScore,
                     audioScore,
                     result.Seeders,
                     matchingSeasonCount * 10,
-                    singleSeasonBoost),
-                Warning = coveredSeasons.Count > 1 ? "Multi-season pack" : string.Empty
+                    singleSeasonBoost + extrasPriorityBoost),
+                Warning = contentProfile.BuildWarningText()
             });
         }
 

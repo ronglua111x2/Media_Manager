@@ -734,7 +734,7 @@ public sealed class AutoTrackService : IAutoTrackService
                 Url = order.SelectedCandidateUrl,
                 PluginName = order.SelectedCandidatePlugin,
                 SavePath = savePath,
-                Category = FirstNonEmpty(_settingsService.Current.AutoTorrent.CategoryName, "AutoTorrent"),
+                Category = _settingsService.Current.AutoTorrent.GetCategoryFor(order.TargetKind),
                 Tags = "media-manager",
                 Paused = false
             },

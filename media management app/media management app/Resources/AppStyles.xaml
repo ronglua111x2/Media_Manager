@@ -348,6 +348,42 @@
         </Border>
     </DataTemplate>
 
+    <DataTemplate x:Key="LibraryAlternativeTitleChipTemplate">
+        <Border Margin="0,0,6,6"
+                Cursor="Hand"
+                ToolTip="{Binding ToolTipText}">
+            <Border.Style>
+                <Style TargetType="Border" BasedOn="{StaticResource CandidateChipStyle}">
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsExcludedFromRecipeSearch}" Value="True">
+                            <Setter Property="Opacity" Value="0.55" />
+                            <Setter Property="BorderBrush" Value="{StaticResource AppBrushMutedText}" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Border.Style>
+            <Border.InputBindings>
+                <MouseBinding MouseAction="LeftClick"
+                              Command="{Binding DataContext.CopyToClipboardCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                              CommandParameter="{Binding Title}" />
+                <MouseBinding MouseAction="MiddleClick"
+                              Command="{Binding DataContext.ToggleAlternativeTitleRecipeSearchExclusionCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                              CommandParameter="{Binding}" />
+            </Border.InputBindings>
+            <TextBlock Text="{Binding Title}">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock" BasedOn="{StaticResource CandidateChipTextStyle}">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsExcludedFromRecipeSearch}" Value="True">
+                                <Setter Property="TextDecorations" Value="Strikethrough" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
+        </Border>
+    </DataTemplate>
+
     <Style x:Key="CartCandidateListItemStyle" TargetType="ListBoxItem">
         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
         <Setter Property="Padding" Value="0" />

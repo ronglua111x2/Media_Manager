@@ -99,6 +99,10 @@ public interface IDatabaseService
 
     void UpdateTrackedSeasonPackTorrent(long showId, int ownerSeasonNumber, AddedTorrentResult torrent);
 
+    void UpdateTrackedSeasonLastPackLink(long showId, int ownerSeasonNumber, string torrentHash, DateTime linkedUtc);
+
+    void UpdateTrackedSeasonPackInspection(long showId, int ownerSeasonNumber, PackTorrentInventory inventory);
+
     void MarkTrackedSeasonPackTorrentRemoved(long showId, int ownerSeasonNumber, string torrentHash);
 
     void ClearSelectedEpisodeCandidates();
@@ -132,6 +136,8 @@ public interface IDatabaseService
 
     void UpdateTrackedShowSeriesStatus(long showId, ShowSeriesStatus seriesStatus);
 
+    void UpdateTrackedShowExcludedAlternativeTitles(long showId, string? excludedAlternativeTitlesJson);
+
     IReadOnlyList<TrackedMovie> GetTrackedMovies();
 
     TrackedMovie? GetTrackedMovie(long id);
@@ -154,6 +160,8 @@ public interface IDatabaseService
     void UpdateTrackedMoviePreferences(long movieId, string preferredQuality, string preferredAudioCodec, int minimumSeeders);
 
     void UpdateTrackedMovieRecipe(long movieId, string? recipeId);
+
+    void UpdateTrackedMovieExcludedAlternativeTitles(long movieId, string? excludedAlternativeTitlesJson);
 
     IReadOnlyList<TorrentCartOrder> GetTorrentCartOrders(MediaKind? mediaKind = null, long? mediaId = null);
 

@@ -45,6 +45,11 @@ public sealed class SymlinkSyncService : ISymlinkSyncService
         }
 
         var linkedGroup = GetItemsSharingLinkedPath(linkedPath);
+        if (linkedGroup.Count == 0)
+        {
+            linkedGroup = new List<SourceItem> { item };
+        }
+
         var canonicalItem = ApplyTrackedMetadata(SelectCanonicalItem(linkedGroup));
         if (!TryValidateItem(canonicalItem, out var validationError))
         {
@@ -116,9 +121,7 @@ public sealed class SymlinkSyncService : ISymlinkSyncService
         }
 
         linkedPath ??= item.LinkedPath;
-        var linkedGroup = string.IsNullOrWhiteSpace(linkedPath)
-            ? new List<SourceItem> { item }
-            : GetItemsSharingLinkedPath(linkedPath);
+        var linkedGroup = BuildRemovalGroup(item, linkedPath);
 
         var symlinkPaths = linkedGroup
             .Select(member => member.SymlinkPath)
@@ -210,6 +213,22 @@ public sealed class SymlinkSyncService : ISymlinkSyncService
             .ToList();
     }
 
+    private List<SourceItem> BuildRemovalGroup(SourceItem item, string? linkedPath)
+    {
+        if (string.IsNullOrWhiteSpace(linkedPath))
+        {
+            return new List<SourceItem> { item };
+        }
+
+        var group = GetItemsSharingLinkedPath(linkedPath);
+        if (!group.Any(member => member.Id == item.Id))
+        {
+            group.Add(item);
+        }
+
+        return group;
+    }
+
     private static SourceItem SelectCanonicalItem(IReadOnlyList<SourceItem> items)
     {
         if (items.Count == 0)
@@ -228,6 +247,11 @@ public sealed class SymlinkSyncService : ISymlinkSyncService
 
     private SourceItem ApplyTrackedMetadata(SourceItem item)
     {
+        if (item.IsOrphanPackSpecial)
+        {
+            return item;
+        }
+
         if (!int.TryParse(item.ProviderId, out var tmdbId))
         {
             return item;
@@ -274,6 +298,7 @@ public sealed class SymlinkSyncService : ISymlinkSyncService
         {
             MediaKind = mediaKind,
             FilePath = source.FilePath,
+            FileName = source.FileName,
             ShowTitle = mediaKind == MediaKind.TvEpisode ? title : source.ShowTitle,
             MovieTitle = mediaKind == MediaKind.Movie ? title : source.MovieTitle,
             MovieYear = mediaKind == MediaKind.Movie ? year : source.MovieYear,
@@ -288,7 +313,9 @@ public sealed class SymlinkSyncService : ISymlinkSyncService
             ParserPattern = source.ParserPattern,
             EpisodeTitle = source.EpisodeTitle,
             MatchAccepted = source.MatchAccepted,
-            RequiresManualReview = source.RequiresManualReview
+            RequiresManualReview = source.RequiresManualReview,
+            IsOrphanPackSpecial = source.IsOrphanPackSpecial,
+            AutoTorrentPackOwnerSeasonNumber = source.AutoTorrentPackOwnerSeasonNumber
         };
     }
 

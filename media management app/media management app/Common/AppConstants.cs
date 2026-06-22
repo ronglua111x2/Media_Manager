@@ -21,6 +21,19 @@ public static class AppConstants
 
     public const string WindowsNotificationAppUserModelId = "MediaManager.Desktop";
 
+    /// <summary>TMDB/Jellyfin specials season (Season 00 / S00Exx).</summary>
+    public const int SpecialsSeasonNumber = 0;
+
+    /// <summary>Jellyfin extras folder for unmatched pack orphans.</summary>
+    public const string OrphanExtrasFolderName = "Season Unknown";
+
+    #endregion
+
+    #region qBittorrent
+
+    public const string QbittorrentTvShowCategory = "TV Show";
+    public const string QbittorrentMovieCategory = "Movie";
+
     #endregion
 
     #region Logging

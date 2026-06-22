@@ -14,6 +14,8 @@ public sealed class SearchTitleResolveRequest
 
     public bool UseLibraryEnglishTitles { get; init; }
 
+    public int MaxLibraryAlternativeTitlesForSearch { get; init; }
+
     public bool IdentityEnabled { get; init; }
 }
 

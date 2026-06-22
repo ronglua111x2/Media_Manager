@@ -59,10 +59,38 @@
                                    FontWeight="SemiBold"
                                    FontSize="14"
                                    TextWrapping="Wrap" />
-                        <TextBlock Text="{Binding DetailText}"
+                        <TextBlock Text="{Binding InspectionCoversLine}"
                                    Style="{StaticResource MutedTextStyle}"
                                    Margin="0,4,0,0"
                                    TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding InspectionExtrasLine}"
+                                   Margin="0,2,0,0"
+                                   TextWrapping="Wrap">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource MutedTextStyle}">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding HasInspectionExtrasLine}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <TextBlock Text="{Binding InspectionMoviesLine}"
+                                   Margin="0,2,0,0"
+                                   TextWrapping="Wrap">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource MutedTextStyle}">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding HasInspectionMoviesLine}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
                     </StackPanel>
 
                     <TextBlock Grid.Column="1"
@@ -168,6 +196,35 @@
                                                        Width="15"
                                                        Height="15"
                                                        Foreground="{StaticResource AppBrushAccent}" />
+                        </Button>
+                        <Button Command="{Binding ReconcilePackCommand}"
+                                IsEnabled="{Binding CanReconcilePack}"
+                                Margin="0,0,2,0"
+                                ToolTip="Inspect downloaded pack files and update covered seasons, extras, specials, and movies">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource AppCompactIconButtonStyle}">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsSeasonPackOrder}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                            <iconPacks:PackIconLucide Kind="RefreshCw"
+                                                       Width="15"
+                                                       Height="15"
+                                                       Foreground="{StaticResource AppBrushAccent}">
+                                <iconPacks:PackIconLucide.Style>
+                                    <Style TargetType="iconPacks:PackIconLucide">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding CanReconcilePack}" Value="False">
+                                                <Setter Property="Opacity" Value="0.35" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </iconPacks:PackIconLucide.Style>
+                            </iconPacks:PackIconLucide>
                         </Button>
                         <Button Margin="0,0,2,0"
                                 ToolTip="More actions (re-search, retry add)">

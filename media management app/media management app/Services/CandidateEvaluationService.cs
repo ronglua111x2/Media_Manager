@@ -40,7 +40,7 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
         }
 
         var titleVariants = _titleResolver.Resolve(
-            _titleResolver.CreateRequest(recipe, show.Title, show.AlternativeTitles));
+            _titleResolver.CreateRequest(recipe, show.Title, show.GetSearchableAlternativeTitles()));
         var titleMatch = EvaluateTitleMatch(titleVariants, parsed.TitleTokens);
         if (!titleMatch.IsMatch)
         {
@@ -69,7 +69,7 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
         }
 
         var titleVariants = _titleResolver.Resolve(
-            _titleResolver.CreateRequest(recipe, movie.Title, movie.AlternativeTitles));
+            _titleResolver.CreateRequest(recipe, movie.Title, movie.GetSearchableAlternativeTitles()));
         var titleMatch = EvaluateTitleMatch(
             titleVariants,
             parsed.TitleTokens.Count > 0 ? parsed.TitleTokens : TorrentCandidateParser.Tokenize(result.FileName).ToList());

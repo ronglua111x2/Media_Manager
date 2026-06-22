@@ -25,6 +25,7 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
     private readonly IQbittorrentClient _qbittorrentClient;
     private readonly ISettingsService _settingsService;
     private readonly ITorrentReconciliationService _torrentReconciliationService;
+    private readonly IPackLinkCoordinatorService _packLinkCoordinatorService;
     private readonly ITorrentAddDiskAssignmentService _torrentAddDiskAssignmentService;
     private readonly IDownloadFolderCatalogService _downloadFolderCatalogService;
     private readonly IAppLogger _logger;
@@ -46,6 +47,7 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         IQbittorrentClient qbittorrentClient,
         ISettingsService settingsService,
         ITorrentReconciliationService torrentReconciliationService,
+        IPackLinkCoordinatorService packLinkCoordinatorService,
         ITorrentAddDiskAssignmentService torrentAddDiskAssignmentService,
         IDownloadFolderCatalogService downloadFolderCatalogService,
         IAppLogger logger,
@@ -63,11 +65,14 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         _qbittorrentClient = qbittorrentClient;
         _settingsService = settingsService;
         _torrentReconciliationService = torrentReconciliationService;
+        _packLinkCoordinatorService = packLinkCoordinatorService;
         _torrentAddDiskAssignmentService = torrentAddDiskAssignmentService;
         _downloadFolderCatalogService = downloadFolderCatalogService;
         _logger = logger;
 
         _torrentCartService.CartChanged += (_, _) => OnCartChanged();
+        _torrentReconciliationService.Reconciled += (_, _) => RefreshOrdersFromReconcile();
+        _packLinkCoordinatorService.PackReconciled += (_, _) => RefreshOrdersFromReconcile();
         _recipeService.RecipesChanged += (_, _) => LoadRecipeAssignment(SelectedMediaCard);
         lifecycleService.AppModeChanged += OnAppModeChanged;
         RefreshWorkspace();
@@ -600,6 +605,59 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         }
     }
 
+    private void RefreshOrdersFromReconcile()
+    {
+        System.Windows.Application.Current.Dispatcher.BeginInvoke(
+            DispatcherPriority.Background,
+            () =>
+            {
+                if (SelectedMediaCard is not null)
+                {
+                    _ = LoadSelectedCartAsync(SelectedMediaCard);
+                }
+            });
+    }
+
+    public async Task ReconcilePackOrderAsync(long orderId)
+    {
+        var order = _torrentCartService.GetOrder(orderId);
+        if (order is null || order.SeasonNumber is not int ownerSeason)
+        {
+            return;
+        }
+
+        var cancellationToken = BeginOperation();
+        try
+        {
+            StatusMessage = $"Inspecting pack for {order.Title}...";
+            var result = await _packLinkCoordinatorService.ReconcilePackAsync(
+                order.MediaId,
+                ownerSeason,
+                PackLinkTrigger.Manual,
+                cancellationToken);
+            if (SelectedMediaCard is not null)
+            {
+                await LoadSelectedCartAsync(SelectedMediaCard);
+            }
+
+            StatusMessage = result.Skipped
+                ? $"Pack inspect skipped: {result.SkipReason}"
+                : result.Summary;
+        }
+        catch (OperationCanceledException)
+        {
+            StatusMessage = "Pack reconcile stopped by user.";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Pack reconcile failed: {ex.Message}";
+        }
+        finally
+        {
+            EndOperation();
+        }
+    }
+
     [RelayCommand(CanExecute = nameof(CanAcceptAllCandidates))]
     private void AcceptAllCandidates()
     {
@@ -872,7 +930,10 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         var viewModel = new TorrentOrderViewModel
         {
             Id = order.Id,
+            MediaId = order.MediaId,
             TargetKind = order.TargetKind,
+            SeasonNumber = order.SeasonNumber,
+            EpisodeId = order.EpisodeId,
             Title = order.Title,
             Summary = order.Summary,
             Status = order.Status,
@@ -887,6 +948,7 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         viewModel.AcceptRequested = AcceptCandidate;
         viewModel.RetryAddRequested = orderId => _ = RetryAddOrderAsync(orderId);
         viewModel.RetrySearchRequested = orderId => _ = RetrySearchOrderAsync(orderId);
+        viewModel.ReconcilePackRequested = orderId => _ = ReconcilePackOrderAsync(orderId);
         viewModel.LoadCandidates(_torrentCartService.GetCandidates(order.Id)
             .Select(candidate => new TorrentOrderCandidateViewModel(candidate)));
         return viewModel;
@@ -1172,6 +1234,9 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
             Quality = candidate.QualityLabel,
             AudioCodec = candidate.AudioCodecLabel,
             CoveredSeasons = string.Join(",", candidate.CoveredSeasons),
+            ContentProfileJson = candidate.ContentProfile is null
+                ? string.Empty
+                : PackContentProfile.Serialize(candidate.ContentProfile),
             TotalScore = candidate.TotalScore
         }).ToList();
     }
@@ -1235,7 +1300,7 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
             Url = order.SelectedCandidateUrl,
             PluginName = order.SelectedCandidatePlugin,
             SavePath = savePath,
-            Category = FirstNonEmpty(_settingsService.Current.AutoTorrent.CategoryName, "AutoTorrent"),
+            Category = _settingsService.Current.AutoTorrent.GetCategoryFor(order.TargetKind),
             Tags = "media-manager",
             Paused = false
         };
@@ -1294,6 +1359,9 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         order.SelectedCandidateQuality = candidate.QualityLabel;
         order.SelectedCandidateAudioCodec = candidate.AudioCodecLabel;
         order.SelectedCandidateCoveredSeasons = string.Join(",", candidate.CoveredSeasons);
+        order.SelectedCandidateContentProfile = candidate.ContentProfile is null
+            ? string.Empty
+            : PackContentProfile.Serialize(candidate.ContentProfile);
         order.SelectedCandidateTotalScore = candidate.TotalScore;
         order.TorrentHash = string.Empty;
         order.TorrentName = string.Empty;
@@ -1335,6 +1403,7 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
             QualityLabel = order.SelectedCandidateQuality,
             AudioCodecLabel = order.SelectedCandidateAudioCodec,
             CoveredSeasons = ParseCoveredSeasons(order),
+            ContentProfile = PackContentProfile.Deserialize(order.SelectedCandidateContentProfile),
             TotalScore = order.SelectedCandidateTotalScore
         };
     }

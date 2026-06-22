@@ -36,10 +36,20 @@ public sealed class HardlinkService : IHardlinkService
 
         var showName = BuildSeriesFolderName(item);
         var seasonNumber = item.MappedSeasonNumber ?? item.SeasonNumber.GetValueOrDefault();
-        var episodeNumber = item.MappedEpisodeNumber ?? item.EpisodeNumber.GetValueOrDefault();
         var seasonFolder = $"Season {seasonNumber:00}";
+        if (item.IsOrphanPackSpecial)
+        {
+            var orphanFileName = SanitizeFileName(item.FileName);
+            return Path.Combine(outputRoot, showName, AppConstants.OrphanExtrasFolderName, orphanFileName);
+        }
+
+        var episodeNumber = item.MappedEpisodeNumber ?? item.EpisodeNumber.GetValueOrDefault();
         var fileTitle = Sanitize(item.MatchedTitle ?? item.ShowTitle ?? "Unknown Show");
-        var fileName = $"{fileTitle} - S{seasonNumber:00}E{episodeNumber:00}{Path.GetExtension(item.FilePath)}";
+        var episodeSuffix = seasonNumber == AppConstants.SpecialsSeasonNumber &&
+                            !string.IsNullOrWhiteSpace(item.EpisodeTitle)
+            ? $" - {Sanitize(item.EpisodeTitle)}"
+            : string.Empty;
+        var fileName = $"{fileTitle} - S{seasonNumber:00}E{episodeNumber:00}{episodeSuffix}{Path.GetExtension(item.FilePath)}";
         return Path.Combine(outputRoot, showName, seasonFolder, fileName);
     }
 
@@ -111,7 +121,6 @@ public sealed class HardlinkService : IHardlinkService
 
         createdPath = targetPath;
         _logger.Info($"Created hardlink: {targetPath}", LogTarget.All);
-        _eventHub.PublishHardlinkCreated(item, targetPath);
         return true;
     }
 
@@ -226,6 +235,13 @@ public sealed class HardlinkService : IHardlinkService
         }
 
         return string.Join(' ', value.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+    }
+
+    private static string SanitizeFileName(string fileName)
+    {
+        var extension = Path.GetExtension(fileName);
+        var baseName = Path.GetFileNameWithoutExtension(fileName);
+        return $"{Sanitize(baseName)}{extension}";
     }
 
     private static string BuildMovieFolderName(SourceItem item)

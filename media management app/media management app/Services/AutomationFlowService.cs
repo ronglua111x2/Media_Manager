@@ -56,7 +56,7 @@ public sealed class AutomationFlowService : IAutomationFlowService
         if (request.TargetKind == MediaKind.Movie)
         {
             var movie = GetMovie(request);
-            var added = await _qbittorrentClient.AddTorrentAsync(CreateAddTorrentRequest(result.Recipe, candidate.SearchResult, null), cancellationToken);
+            var added = await _qbittorrentClient.AddTorrentAsync(CreateAddTorrentRequest(MediaKind.Movie, candidate.SearchResult, null), cancellationToken);
             _trackedMovieService.UpdateSelectedCandidate(movie.Id, ToMovieCandidate(movie.Id, candidate));
             _trackedMovieService.UpdateTorrentState(movie.Id, added);
             _logger.Info($"Recipe run added movie torrent for {movie.DisplayTitle}: {added.Name}", LogTarget.All);
@@ -66,7 +66,7 @@ public sealed class AutomationFlowService : IAutomationFlowService
         var (show, episode) = GetEpisode(request);
         var season = _databaseService.GetTrackedSeasons(show.Id)
             .FirstOrDefault(item => item.SeasonNumber == episode.SeasonNumber);
-        var addedTorrent = await _qbittorrentClient.AddTorrentAsync(CreateAddTorrentRequest(result.Recipe, candidate.SearchResult, season?.DownloadFolder), cancellationToken);
+        var addedTorrent = await _qbittorrentClient.AddTorrentAsync(CreateAddTorrentRequest(MediaKind.TvEpisode, candidate.SearchResult, season?.DownloadFolder), cancellationToken);
         var selectedCandidate = ToEpisodeCandidate(episode.Id, candidate);
         _trackedShowService.UpdateSelectedCandidate(episode.Id, selectedCandidate);
         _trackedShowService.UpdateTorrentState(episode.Id, addedTorrent);
@@ -197,16 +197,15 @@ public sealed class AutomationFlowService : IAutomationFlowService
             ?? throw new InvalidOperationException("Tracked movie was not found.");
     }
 
-    private AddTorrentRequest CreateAddTorrentRequest(SearchRecipe recipe, TorrentSearchResult result, string? itemSavePath)
+    private AddTorrentRequest CreateAddTorrentRequest(MediaKind targetKind, TorrentSearchResult result, string? itemSavePath)
     {
         var savePath = FirstNonEmpty(itemSavePath, _settingsService.Current.AutoTorrent.DownloadFolder, _settingsService.Current.SourceFolders.FirstOrDefault());
-        var category = FirstNonEmpty(_settingsService.Current.AutoTorrent.CategoryName, "AutoTorrent");
         return new AddTorrentRequest
         {
             Url = result.FileUrl,
             PluginName = result.EngineName,
             SavePath = savePath,
-            Category = category,
+            Category = _settingsService.Current.AutoTorrent.GetCategoryFor(targetKind),
             Tags = "media-manager",
             Paused = false
         };

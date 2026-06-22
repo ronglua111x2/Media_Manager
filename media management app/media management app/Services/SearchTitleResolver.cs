@@ -42,7 +42,10 @@ public sealed class SearchTitleResolver : ISearchTitleResolver
 
         if (request.UseLibraryEnglishTitles)
         {
-            foreach (var alt in request.LibraryAlternativeTitles.Take(EnglishAlternativeTitleFilter.MaxLibraryTitlesPerResolve))
+            foreach (var alt in EnglishAlternativeTitleFilter.SelectLibraryAlternativeTitlesForSearch(
+                         request.LibraryAlternativeTitles,
+                         request.PrimaryTitle,
+                         request.MaxLibraryAlternativeTitlesForSearch))
             {
                 Add(alt);
             }
@@ -53,7 +56,7 @@ public sealed class SearchTitleResolver : ISearchTitleResolver
             titles.Add(string.Empty);
         }
 
-        return titles;
+        return EnglishAlternativeTitleFilter.CollapseTitlesForSearch(titles);
     }
 
     public SearchTitleResolveRequest CreateRequest(
@@ -72,6 +75,9 @@ public sealed class SearchTitleResolver : ISearchTitleResolver
             LibraryAlternativeTitles = libraryAlternativeTitles,
             SkipDefaultTitle = RecipeRuntimeSettings.GetSkipDefaultTitle(queryModule),
             UseLibraryEnglishTitles = identityEnabled && RecipeRuntimeSettings.GetUseLibraryEnglishTitles(identityModule),
+            MaxLibraryAlternativeTitlesForSearch = identityEnabled
+                ? RecipeRuntimeSettings.GetMaxLibraryAlternativeTitlesForSearch(identityModule)
+                : 0,
             IdentityEnabled = identityEnabled
         };
     }

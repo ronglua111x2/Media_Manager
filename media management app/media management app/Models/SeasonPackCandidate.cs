@@ -24,6 +24,8 @@ public sealed class SeasonPackCandidate
 
     public IReadOnlyList<int> CoveredSeasons { get; set; } = [];
 
+    public PackContentProfile? ContentProfile { get; set; }
+
     public int TotalScore { get; set; }
 
     public string Warning { get; set; } = string.Empty;
@@ -42,7 +44,8 @@ public sealed class SeasonPackCandidate
         {
             var title = FileName.Length <= 88 ? FileName : $"{FileName[..85]}...";
             var quality = string.IsNullOrWhiteSpace(QualityLabel) ? "unknown" : QualityLabel;
-            return $"{title} | {CoveredSeasonsDisplay} | {quality} | {FileSizeDisplay} | {Seeders} seeders";
+            var seasonTags = ContentProfile?.TagsDisplay ?? CoveredSeasonsDisplay;
+            return $"{title} | {seasonTags} | {quality} | {FileSizeDisplay} | {Seeders} seeders";
         }
     }
 

@@ -116,10 +116,8 @@ public sealed class SettingsService : ISettingsService
         {
             Current.AutoTorrent.QbittorrentWebUiUrl = "http://localhost:8080";
         }
-        if (string.IsNullOrWhiteSpace(Current.AutoTorrent.CategoryName))
-        {
-            Current.AutoTorrent.CategoryName = "AutoTorrent";
-        }
+
+        MigrateAutoTorrentCategories(Current.AutoTorrent);
         Current.AutoTorrent.DownloadFolders ??= [];
         Current.AutoTorrent.DownloadFolders = Current.AutoTorrent.DownloadFolders
             .Where(folder => !string.IsNullOrWhiteSpace(folder))
@@ -173,6 +171,29 @@ public sealed class SettingsService : ISettingsService
         autoTrack.Search ??= new AutoTrackSearchSettings();
         autoTrack.Search.MaxShowsPerHuntCycle = Math.Clamp(autoTrack.Search.MaxShowsPerHuntCycle, 1, 20);
         autoTrack.Search.MaxParallelWorkersPerShow = Math.Clamp(autoTrack.Search.MaxParallelWorkersPerShow, 1, 4);
+    }
+
+    private static void MigrateAutoTorrentCategories(AutoTorrentSettings settings)
+    {
+        var legacyCategory = string.IsNullOrWhiteSpace(settings.CategoryName)
+            ? null
+            : settings.CategoryName.Trim();
+        var hasLegacyCustomCategory = legacyCategory is not null &&
+                                      !string.Equals(legacyCategory, "AutoTorrent", StringComparison.OrdinalIgnoreCase);
+
+        if (string.IsNullOrWhiteSpace(settings.TvShowCategoryName))
+        {
+            settings.TvShowCategoryName = hasLegacyCustomCategory
+                ? legacyCategory!
+                : AppConstants.QbittorrentTvShowCategory;
+        }
+
+        if (string.IsNullOrWhiteSpace(settings.MovieCategoryName))
+        {
+            settings.MovieCategoryName = hasLegacyCustomCategory
+                ? legacyCategory!
+                : AppConstants.QbittorrentMovieCategory;
+        }
     }
 
     private static void WriteBootstrapLog(string stateFolder, string message)
