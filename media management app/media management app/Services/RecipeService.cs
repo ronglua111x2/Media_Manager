@@ -207,7 +207,11 @@ public sealed class RecipeService : IRecipeService
                 {
                     BlockType = RecipeBlockType.Identity,
                     Order = 0,
-                    DisplayName = "Identity / Aliases"
+                    DisplayName = "Identity / Aliases",
+                    ExtensionData = new Dictionary<string, string>
+                    {
+                        [RecipeRuntimeSettings.UseLibraryEnglishTitlesKey] = bool.TrueString
+                    }
                 },
                 new RecipeModuleConfig
                 {

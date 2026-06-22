@@ -19,6 +19,12 @@ public sealed partial class TmdbUnifiedSearchResult : ObservableObject
     private int? year;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasAlternativeTitles))]
+    private IReadOnlyList<string> alternativeTitles = [];
+
+    public bool HasAlternativeTitles => AlternativeTitles.Count > 0;
+
+    [ObservableProperty]
     private string? overview;
 
     [ObservableProperty]

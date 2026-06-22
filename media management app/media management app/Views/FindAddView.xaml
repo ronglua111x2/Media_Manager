@@ -773,6 +773,7 @@
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
                                 </Grid.RowDefinitions>
 
                                 <Grid Grid.Row="0">
@@ -829,10 +830,42 @@
                                     </Button>
                                 </Grid>
 
-                                <ScrollViewer Grid.Row="1"
+                                <StackPanel Grid.Row="1" Margin="0,12,0,0">
+                                    <TextBlock Text="Alternative titles"
+                                               Style="{StaticResource MutedTextStyle}"
+                                               Margin="0,0,0,4" />
+                                    <ItemsControl ItemsSource="{Binding SelectedResult.AlternativeTitles}"
+                                                  ItemTemplate="{StaticResource AlternativeTitleChipTemplate}"
+                                                  Visibility="{Binding SelectedResult.HasAlternativeTitles, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <WrapPanel />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                    </ItemsControl>
+                                    <TextBlock Text="None"
+                                               Margin="0,2,0,0">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock" BasedOn="{StaticResource MutedTextStyle}">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                <Style.Triggers>
+                                                    <MultiDataTrigger>
+                                                        <MultiDataTrigger.Conditions>
+                                                            <Condition Binding="{Binding SelectedResult.IsDetailsLoaded}" Value="True" />
+                                                            <Condition Binding="{Binding SelectedResult.HasAlternativeTitles}" Value="False" />
+                                                        </MultiDataTrigger.Conditions>
+                                                        <Setter Property="Visibility" Value="Visible" />
+                                                    </MultiDataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </StackPanel>
+
+                                <ScrollViewer Grid.Row="2"
                                               VerticalScrollBarVisibility="Auto"
                                               MaxHeight="150"
-                                              Margin="0,16,0,0">
+                                              Margin="0,12,0,0">
                                     <TextBlock Text="{Binding SelectedResult.Overview}"
                                                Foreground="{StaticResource AppBrushText}"
                                                FontSize="13"

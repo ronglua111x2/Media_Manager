@@ -11,7 +11,8 @@ public sealed class SnapshotCandidateMatcher
         TrackedShow show,
         TrackedEpisode episode,
         SnapshotCandidate candidate,
-        IReadOnlyList<string> selectedQualities)
+        IReadOnlyList<string> selectedQualities,
+        IReadOnlyList<string> titleVariants)
     {
         var result = candidate.Result;
         var parsed = candidate.Parsed;
@@ -63,10 +64,10 @@ public sealed class SnapshotCandidateMatcher
             };
         }
 
-        var titleMatch = EvaluateTitleMatch(show.Title, parsed.TitleTokens);
+        var titleMatch = EvaluateTitleMatch(titleVariants, parsed.TitleTokens);
         if (!titleMatch.IsMatch)
         {
-            return new SnapshotMatchResult { IsAccepted = false, RejectReason = "does not contain enough show title tokens" };
+            return new SnapshotMatchResult { IsAccepted = false, RejectReason = "does not contain enough show title or alias tokens" };
         }
 
         if (isAbsoluteEpisodeMatch)
@@ -153,25 +154,30 @@ public sealed class SnapshotCandidateMatcher
         return match.Success && int.TryParse(match.Groups["season"].Value, out var parsedSeason) && parsedSeason == seasonNumber;
     }
 
-    private static (bool IsMatch, int Score) EvaluateTitleMatch(string showTitle, IReadOnlyList<string> candidateTokens)
+    private static (bool IsMatch, int Score) EvaluateTitleMatch(
+        IReadOnlyList<string> titleVariants,
+        IReadOnlyList<string> candidateTokens)
     {
-        var showTokens = TorrentCandidateParser.Tokenize(showTitle)
-            .Where(token => token.Length > 2)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-        if (showTokens.Count == 0)
+        foreach (var showTitle in titleVariants.Where(title => !string.IsNullOrWhiteSpace(title)))
         {
-            return (true, 1);
+            var showTokens = TorrentCandidateParser.Tokenize(showTitle)
+                .Where(token => token.Length > 2)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            if (showTokens.Count == 0)
+            {
+                return (true, 1);
+            }
+
+            var matched = showTokens.Count(token => candidateTokens.Contains(token, StringComparer.OrdinalIgnoreCase));
+            var required = Math.Max(2, (int)Math.Ceiling(showTokens.Count * 0.6));
+            if (matched >= required)
+            {
+                return (true, matched);
+            }
         }
 
-        var matched = showTokens.Count(token => candidateTokens.Contains(token, StringComparer.OrdinalIgnoreCase));
-        var required = Math.Max(2, (int)Math.Ceiling(showTokens.Count * 0.6));
-        if (matched < required)
-        {
-            return (false, 0);
-        }
-
-        return (true, matched);
+        return (false, 0);
     }
 
     private static int EvaluateEpisodeTitleMatch(string? targetTitle, string? candidateTitle, out string? rejectReason)

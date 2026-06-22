@@ -1,3 +1,4 @@
+using System.Text.Json;
 using media_management_app.Common;
 
 namespace media_management_app.Models;
@@ -15,6 +16,8 @@ public sealed class TrackedMovie
     public string? Overview { get; set; }
 
     public string? PosterPath { get; set; }
+
+    public string? AlternativeTitlesJson { get; set; }
 
     public string? RecipeId { get; set; }
 
@@ -55,4 +58,9 @@ public sealed class TrackedMovie
     public DateTime UpdatedUtc { get; set; } = DateTime.UtcNow;
 
     public string DisplayTitle => ReleaseYear is null ? Title : $"{Title} ({ReleaseYear})";
+
+    public IReadOnlyList<string> AlternativeTitles => TrackedShow.ParseAlternativeTitles(AlternativeTitlesJson);
+
+    public static string? SerializeAlternativeTitles(IEnumerable<string> titles) =>
+        TrackedShow.SerializeAlternativeTitles(titles);
 }

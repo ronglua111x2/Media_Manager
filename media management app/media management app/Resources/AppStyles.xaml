@@ -333,6 +333,21 @@
         <Setter Property="TextWrapping" Value="NoWrap" />
     </Style>
 
+    <DataTemplate x:Key="AlternativeTitleChipTemplate">
+        <Border Style="{StaticResource CandidateChipStyle}"
+                Margin="0,0,6,6"
+                Cursor="Hand"
+                ToolTip="Click to copy">
+            <Border.InputBindings>
+                <MouseBinding MouseAction="LeftClick"
+                              Command="{Binding DataContext.CopyToClipboardCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                              CommandParameter="{Binding}" />
+            </Border.InputBindings>
+            <TextBlock Text="{Binding}"
+                       Style="{StaticResource CandidateChipTextStyle}" />
+        </Border>
+    </DataTemplate>
+
     <Style x:Key="CartCandidateListItemStyle" TargetType="ListBoxItem">
         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
         <Setter Property="Padding" Value="0" />

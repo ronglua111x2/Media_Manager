@@ -4,12 +4,18 @@ namespace media_management_app.Services;
 
 public sealed class CandidateEvaluationService : ICandidateEvaluationService
 {
+    private readonly ISearchTitleResolver _titleResolver;
+
+    public CandidateEvaluationService(ISearchTitleResolver titleResolver)
+    {
+        _titleResolver = titleResolver;
+    }
+
     public RecipeCandidateResult EvaluateEpisode(SearchRecipe recipe, TrackedShow show, TrackedEpisode episode, TorrentSearchResult result)
     {
         var usesAnimeAbsolute = RecipeRuntimeSettings.UsesAnimeAbsoluteEpisodeNumbering(recipe);
         var parsed = TorrentCandidateParser.Parse(result.FileName, usesAnimeAbsolute);
         var filter = GetModule(recipe, RecipeBlockType.CandidateFilter);
-        var identity = GetModule(recipe, RecipeBlockType.Identity);
         var reject = GetCommonRejectReason(recipe, result, parsed, filter);
         if (reject.Reason != CandidateRejectReason.None)
         {
@@ -33,7 +39,9 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
             return Rejected(result, CandidateRejectReason.YearMismatch, $"explicit year mismatch {parsed.ExplicitYear} != {show.FirstAirYear}");
         }
 
-        var titleMatch = EvaluateTitleMatch(show.Title, identity, parsed.TitleTokens);
+        var titleVariants = _titleResolver.Resolve(
+            _titleResolver.CreateRequest(recipe, show.Title, show.AlternativeTitles));
+        var titleMatch = EvaluateTitleMatch(titleVariants, parsed.TitleTokens);
         if (!titleMatch.IsMatch)
         {
             return Rejected(result, CandidateRejectReason.TitleMismatch, "does not contain enough show title or alias tokens");
@@ -49,7 +57,6 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
     {
         var parsed = TorrentCandidateParser.Parse(result.FileName);
         var filter = GetModule(recipe, RecipeBlockType.CandidateFilter);
-        var identity = GetModule(recipe, RecipeBlockType.Identity);
         var reject = GetCommonRejectReason(recipe, result, parsed, filter);
         if (reject.Reason != CandidateRejectReason.None)
         {
@@ -61,7 +68,11 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
             return Rejected(result, CandidateRejectReason.YearMismatch, $"does not contain release year {movie.ReleaseYear}");
         }
 
-        var titleMatch = EvaluateTitleMatch(movie.Title, identity, parsed.TitleTokens.Count > 0 ? parsed.TitleTokens : TorrentCandidateParser.Tokenize(result.FileName).ToList());
+        var titleVariants = _titleResolver.Resolve(
+            _titleResolver.CreateRequest(recipe, movie.Title, movie.AlternativeTitles));
+        var titleMatch = EvaluateTitleMatch(
+            titleVariants,
+            parsed.TitleTokens.Count > 0 ? parsed.TitleTokens : TorrentCandidateParser.Tokenize(result.FileName).ToList());
         if (!titleMatch.IsMatch)
         {
             return Rejected(result, CandidateRejectReason.TitleMismatch, "does not contain enough movie title or alias tokens");
@@ -179,17 +190,10 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
     }
 
     private static (bool IsMatch, int Score) EvaluateTitleMatch(
-        string title,
-        RecipeModuleConfig? identity,
+        IReadOnlyList<string> titles,
         IReadOnlyList<string> candidateTokens)
     {
-        var titles = new List<string> { title };
-        if (identity is not null)
-        {
-            titles.AddRange(identity.Aliases.Where(alias => !string.IsNullOrWhiteSpace(alias)));
-        }
-
-        foreach (var candidateTitle in titles)
+        foreach (var candidateTitle in titles.Where(title => !string.IsNullOrWhiteSpace(title)))
         {
             var titleTokens = TorrentCandidateParser.Tokenize(candidateTitle)
                 .Where(token => token.Length > 2)
@@ -226,13 +230,17 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
             .Where(token => token.Length > 2)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
+        if (targetTokens.Count == 0 || candidateTokens.Count == 0)
+        {
+            return 0;
+        }
+
         return targetTokens.Count(token => candidateTokens.Contains(token, StringComparer.OrdinalIgnoreCase));
     }
 
     private static int GetAudioScore(RecipeModuleConfig? filter, string fileName)
     {
-        return filter is not null &&
-               !string.IsNullOrWhiteSpace(filter.PreferredAudioCodec) &&
+        return !string.IsNullOrWhiteSpace(filter?.PreferredAudioCodec) &&
                fileName.Contains(filter.PreferredAudioCodec, StringComparison.OrdinalIgnoreCase)
             ? 1
             : 0;

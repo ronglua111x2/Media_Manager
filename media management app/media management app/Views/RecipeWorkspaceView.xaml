@@ -420,6 +420,13 @@
                                         </StackPanel.Style>
                                         <Border Style="{StaticResource RecipeModuleFieldsStyle}">
                                             <StackPanel>
+                                                <CheckBox Content="Use library alternative titles (English &amp; romaji)"
+                                                          IsChecked="{Binding UseLibraryEnglishTitles}"
+                                                          Margin="0,0,0,8" />
+                                                <TextBlock Text="Include TMDB English and Japanese romaji alternative titles from the tracked show or movie. Works with Skip default title."
+                                                           Style="{StaticResource MutedTextStyle}"
+                                                           TextWrapping="Wrap"
+                                                           Margin="0,0,0,12" />
                                                 <TextBlock Text="Title aliases" Style="{StaticResource RecipeLabelStyle}" />
                                                 <TextBox Text="{Binding AliasesText, UpdateSourceTrigger=LostFocus}"
                                                          Style="{StaticResource RecipeMultilineTextBoxStyle}"
@@ -470,7 +477,7 @@
                                                 <CheckBox Content="Skip default title"
                                                           IsChecked="{Binding SkipDefaultTitle}"
                                                           Margin="0,0,0,4" />
-                                                <TextBlock Text="When enabled, {title} uses Identity aliases only—not the library show or movie title."
+                                                <TextBlock Text="When enabled, {title} excludes the library primary title. Identity aliases and library alternative titles (when enabled) are still used."
                                                            Style="{StaticResource MutedTextStyle}"
                                                            TextWrapping="Wrap"
                                                            Margin="0,0,0,12" />

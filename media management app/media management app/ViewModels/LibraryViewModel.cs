@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.IO;
 using System.Windows.Media;
 using System.Windows.Threading;
@@ -145,6 +146,8 @@ public sealed partial class LibraryViewModel : ViewModelBase
     public bool IsSelectedShow => SelectedShow is not null;
 
     public bool IsSelectedMovie => SelectedMovie is not null;
+
+    public bool ShowStopAutoTrackButton => IsSelectedShow && SelectedShow?.IsAutoTracked == true;
 
     public bool IsDateSortSelected => MediaSortMode == MediaCardSortMode.DateAddedDesc;
 
@@ -582,10 +585,38 @@ public sealed partial class LibraryViewModel : ViewModelBase
         });
     }
 
-    [RelayCommand(CanExecute = nameof(IsSelectedShow))]
-    private async Task RefreshSelectedShowFromTmdb()
+    [RelayCommand(CanExecute = nameof(HasSelectedMedia))]
+    private void OpenSelectedTmdbPage()
     {
-        if (SelectedMediaCard?.IsShow != true)
+        if (SelectedMediaCard is null)
+        {
+            return;
+        }
+
+        var path = SelectedMediaCard.MediaKind == MediaKind.Movie ? "movie" : "tv";
+        var url = $"https://www.themoviedb.org/{path}/{SelectedMediaCard.TmdbId}";
+        Process.Start(new ProcessStartInfo(url)
+        {
+            UseShellExecute = true
+        });
+    }
+
+    [RelayCommand]
+    private void CopyToClipboard(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return;
+        }
+
+        System.Windows.Clipboard.SetText(text.Trim());
+        StatusMessage = $"Copied \"{text.Trim()}\" to clipboard.";
+    }
+
+    [RelayCommand(CanExecute = nameof(HasSelectedMedia))]
+    private async Task RefreshSelectedFromTmdb()
+    {
+        if (SelectedMediaCard is null)
         {
             return;
         }
@@ -593,12 +624,23 @@ public sealed partial class LibraryViewModel : ViewModelBase
         await RunImportActionAsync(async () =>
         {
             StatusMessage = $"Refreshing {SelectedMediaCard.Title} from TMDB...";
-            var result = await _mediaMetadataSyncService.RefreshShowAsync(SelectedMediaCard.Id);
+            if (SelectedMediaCard.IsShow)
+            {
+                var result = await _mediaMetadataSyncService.RefreshShowAsync(SelectedMediaCard.Id);
+                RefreshLibrary();
+                await ReloadSelectedDetailAsync();
+                StatusMessage = result.Success
+                    ? $"TMDB refresh complete for {result.Title}. {result.NewEpisodesAdded} new episode(s) added."
+                    : $"TMDB refresh failed for {result.Title}: {result.ErrorMessage}";
+                return;
+            }
+
+            var movieResult = await _mediaMetadataSyncService.RefreshMovieAsync(SelectedMediaCard.Id);
             RefreshLibrary();
             await ReloadSelectedDetailAsync();
-            StatusMessage = result.Success
-                ? $"TMDB refresh complete for {result.Title}. {result.NewEpisodesAdded} new episode(s) added."
-                : $"TMDB refresh failed for {result.Title}: {result.ErrorMessage}";
+            StatusMessage = movieResult.Success
+                ? $"TMDB refresh complete for {movieResult.Title}."
+                : $"TMDB refresh failed for {movieResult.Title}: {movieResult.ErrorMessage}";
         });
     }
 
@@ -677,6 +719,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
             dialog.SelectedDownloadFolder,
             dialog.AutoReconcileAndLink);
         RebuildSelectedShowDetail();
+        OnPropertyChanged(nameof(ShowStopAutoTrackButton));
         StatusMessage = $"Auto-track enabled for {show.DisplayTitle} from S{dialog.SelectedSeason:00}E{dialog.SelectedEpisode:00}.";
     }
 
@@ -690,6 +733,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
 
         _trackedShowService.StopAutoTrack(SelectedShow.Id);
         RebuildSelectedShowDetail();
+        OnPropertyChanged(nameof(ShowStopAutoTrackButton));
         StatusMessage = $"Stopped auto-tracking {SelectedShow.Title}.";
     }
 
@@ -763,6 +807,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
         OnPropertyChanged(nameof(HasSelectedMedia));
         OnPropertyChanged(nameof(IsSelectedShow));
         OnPropertyChanged(nameof(IsSelectedMovie));
+        OnPropertyChanged(nameof(ShowStopAutoTrackButton));
     }
 
     partial void OnMediaSortModeChanged(MediaCardSortMode value)
@@ -791,6 +836,12 @@ public sealed partial class LibraryViewModel : ViewModelBase
     partial void OnSelectedShowChanged(LibraryShowDetailViewModel? value)
     {
         OnPropertyChanged(nameof(ShowHiddenSeasonsButtonLabel));
+        OnPropertyChanged(nameof(ShowStopAutoTrackButton));
+    }
+
+    partial void OnSelectedMovieChanged(LibraryMovieDetailViewModel? value)
+    {
+        OnPropertyChanged(nameof(ShowStopAutoTrackButton));
     }
 
     [RelayCommand]
@@ -955,9 +1006,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
                 };
             });
 
-        var episodeRecipeName = _recipeService.GetRecipeOrDefault(show.RecipeId, MediaKind.TvEpisode).Name;
-        var packRecipeName = _recipeService.GetRecipeOrDefault(show.PackRecipeId, MediaKind.TvSeasonPack).Name;
-        return new LibraryShowDetailViewModel(show, seasons, episodeRecipeName, packRecipeName, hiddenSeasonNumbers.Count);
+        return new LibraryShowDetailViewModel(show, seasons, hiddenSeasonNumbers.Count);
     }
 
     private void RebuildSelectedShowDetail()
@@ -987,12 +1036,13 @@ public sealed partial class LibraryViewModel : ViewModelBase
         {
             ShowHiddenSeasons = false;
         }
+
+        OnPropertyChanged(nameof(ShowStopAutoTrackButton));
     }
 
     private LibraryMovieDetailViewModel BuildMovieDetail(TrackedMovie movie)
     {
-        var recipeName = _recipeService.GetRecipeOrDefault(movie.RecipeId, MediaKind.Movie).Name;
-        return new LibraryMovieDetailViewModel(movie, recipeName)
+        return new LibraryMovieDetailViewModel(movie)
         {
             LibraryLinkStatus = IsMovieLinked(movie.TmdbId) ? "Linked" : "Not linked",
             IsInCart = _torrentCartService.TryGetActiveMovieOrder(movie.Id, out _)

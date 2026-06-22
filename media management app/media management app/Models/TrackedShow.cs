@@ -1,3 +1,4 @@
+using System.Text.Json;
 using media_management_app.Common;
 
 namespace media_management_app.Models;
@@ -15,6 +16,8 @@ public sealed class TrackedShow
     public string? Overview { get; set; }
 
     public string? PosterPath { get; set; }
+
+    public string? AlternativeTitlesJson { get; set; }
 
     public string? RecipeId { get; set; }
 
@@ -76,4 +79,33 @@ public sealed class TrackedShow
     public string AutoTrackCheckpointLabel => IsAutoTracked
         ? $"S{AutoTrackFromSeason:00}E{AutoTrackFromEpisode:00}+"
         : string.Empty;
+
+    public IReadOnlyList<string> AlternativeTitles => ParseAlternativeTitles(AlternativeTitlesJson);
+
+    public static IReadOnlyList<string> ParseAlternativeTitles(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return [];
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<List<string>>(json) ?? [];
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
+    public static string? SerializeAlternativeTitles(IEnumerable<string> titles)
+    {
+        var normalized = titles
+            .Where(title => !string.IsNullOrWhiteSpace(title))
+            .Select(title => title.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        return normalized.Count == 0 ? null : JsonSerializer.Serialize(normalized);
+    }
 }

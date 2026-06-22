@@ -10,30 +10,30 @@ public sealed partial class LibraryShowDetailViewModel : ObservableObject
     public LibraryShowDetailViewModel(
         TrackedShow show,
         IEnumerable<LibrarySeasonViewModel> seasons,
-        string episodeRecipeName,
-        string packRecipeName,
         int hiddenSeasonCount)
     {
         Id = show.Id;
+        TmdbId = show.TmdbId;
         Title = show.DisplayTitle;
         Overview = show.Overview ?? string.Empty;
         PosterPath = show.PosterPath;
         HiddenSeasonCount = hiddenSeasonCount;
         SeriesStatus = show.SeriesStatus;
         SeriesStatusLabel = show.SeriesStatusLabel;
+        AlternativeTitles = show.AlternativeTitles;
         var seasonList = seasons.ToList();
         TotalEpisodes = seasonList.Sum(season => season.TotalEpisodes);
         AvailableEpisodes = seasonList.Sum(season => season.AvailableEpisodes);
         PreferencesSummary =
             $"Quality {show.PreferredQuality} | Audio {(string.IsNullOrWhiteSpace(show.PreferredAudioCodec) ? "Any" : show.PreferredAudioCodec)} | Min seeders {show.MinimumSeeders}";
-        EpisodeRecipeName = episodeRecipeName;
-        PackRecipeName = packRecipeName;
         IsAutoTracked = show.IsAutoTracked;
         AutoTrackCheckpointLabel = show.AutoTrackCheckpointLabel;
         Seasons = new ObservableCollection<LibrarySeasonViewModel>(seasonList);
     }
 
     public long Id { get; }
+
+    public int TmdbId { get; }
 
     public string Title { get; }
 
@@ -47,9 +47,9 @@ public sealed partial class LibraryShowDetailViewModel : ObservableObject
 
     public string PreferencesSummary { get; }
 
-    public string EpisodeRecipeName { get; }
+    public IReadOnlyList<string> AlternativeTitles { get; }
 
-    public string PackRecipeName { get; }
+    public bool HasAlternativeTitles => AlternativeTitles.Count > 0;
 
     public bool IsAutoTracked { get; }
 
@@ -63,9 +63,9 @@ public sealed partial class LibraryShowDetailViewModel : ObservableObject
 
     public bool HasHiddenSeasons => HiddenSeasonCount > 0;
 
-    public string RecipeSummary => $"Episode recipe: {EpisodeRecipeName} | Pack recipe: {PackRecipeName}";
-
     public string Stats => $"{AvailableEpisodes}/{TotalEpisodes} available | {Seasons.Count} season(s)";
+
+    public string TmdbPageUrl => $"https://www.themoviedb.org/tv/{TmdbId}";
 
     public string PosterUrl => string.IsNullOrWhiteSpace(PosterPath)
         ? string.Empty

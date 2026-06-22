@@ -15,6 +15,7 @@ public sealed class FetchJobService : IFetchJobService
     private readonly IRecipeService _recipeService;
     private readonly ISearchPlanBuilder _searchPlanBuilder;
     private readonly ICandidateEvaluationService _candidateEvaluationService;
+    private readonly ISearchTitleResolver _titleResolver;
     private readonly ShowSearchSnapshotService _snapshotService;
     private readonly IOperationProgressService _progressService;
     private readonly IAppLogger _logger;
@@ -30,6 +31,7 @@ public sealed class FetchJobService : IFetchJobService
         IRecipeService recipeService,
         ISearchPlanBuilder searchPlanBuilder,
         ICandidateEvaluationService candidateEvaluationService,
+        ISearchTitleResolver titleResolver,
         ShowSearchSnapshotService snapshotService,
         IOperationProgressService progressService,
         IAppLogger logger)
@@ -40,6 +42,7 @@ public sealed class FetchJobService : IFetchJobService
         _recipeService = recipeService;
         _searchPlanBuilder = searchPlanBuilder;
         _candidateEvaluationService = candidateEvaluationService;
+        _titleResolver = titleResolver;
         _snapshotService = snapshotService;
         _progressService = progressService;
         _logger = logger;
@@ -292,6 +295,8 @@ public sealed class FetchJobService : IFetchJobService
             .ToList();
         var matcher = new SnapshotCandidateMatcher();
         var selectedQualities = ParseQualities(show.PreferredQuality);
+        var titleVariants = _titleResolver.Resolve(
+            _titleResolver.CreateRequest(recipe, show.Title, show.AlternativeTitles));
         var workerCount = Math.Min(
             RecipeRuntimeSettings.GetLocalMatchWorkers(recipe, _settingsService.Current.AutoTorrent),
             Math.Max(targetEpisodes.Count, 1));
@@ -327,6 +332,7 @@ public sealed class FetchJobService : IFetchJobService
                     snapshotCandidates,
                     matcher,
                     selectedQualities,
+                    titleVariants,
                     cartJob,
                     cancellationToken,
                     recipe);
@@ -755,6 +761,7 @@ public sealed class FetchJobService : IFetchJobService
         IReadOnlyList<SnapshotCandidate> snapshotCandidates,
         SnapshotCandidateMatcher matcher,
         IReadOnlyList<string> selectedQualities,
+        IReadOnlyList<string> titleVariants,
         FetchJob job,
         CancellationToken cancellationToken,
         SearchRecipe? recipeOverride = null)
@@ -762,7 +769,7 @@ public sealed class FetchJobService : IFetchJobService
         var matchedCandidates = new List<(EpisodeFetchCandidate Candidate, SnapshotMatchResult Match)>();
         foreach (var candidate in snapshotCandidates)
         {
-            var match = matcher.Match(show, episode, candidate, selectedQualities);
+            var match = matcher.Match(show, episode, candidate, selectedQualities, titleVariants);
             if (!match.IsAccepted)
             {
                 if (match.RejectReason?.Contains("plugin error", StringComparison.OrdinalIgnoreCase) == true)

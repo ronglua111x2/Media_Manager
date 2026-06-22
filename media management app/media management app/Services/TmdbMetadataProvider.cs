@@ -265,15 +265,23 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
         using var detailsDocument = await JsonDocument.ParseAsync(detailsStream, cancellationToken: cancellationToken);
         var root = detailsDocument.RootElement;
         var firstAirDate = GetString(root, "first_air_date");
+        var primaryTitle = GetString(root, "name") ?? string.Empty;
+        var originalName = GetString(root, "original_name");
+        var alternativeTitles = await GetTvAlternativeTitlesAsync(
+            tmdbId,
+            primaryTitle,
+            originalName,
+            cancellationToken);
         return new TmdbShowDetails
         {
             TmdbId = tmdbId,
-            Title = GetString(root, "name") ?? string.Empty,
+            Title = primaryTitle,
             FirstAirYear = ParseYear(firstAirDate),
             Overview = GetString(root, "overview"),
             PosterPath = GetString(root, "poster_path"),
             SeasonCount = GetInt(root, "number_of_seasons") ?? 0,
-            EpisodeCount = GetInt(root, "number_of_episodes") ?? 0
+            EpisodeCount = GetInt(root, "number_of_episodes") ?? 0,
+            AlternativeTitles = alternativeTitles
         };
     }
 
@@ -292,16 +300,24 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
         using var detailsDocument = await JsonDocument.ParseAsync(detailsStream, cancellationToken: cancellationToken);
         var root = detailsDocument.RootElement;
         var firstAirDate = GetString(root, "first_air_date");
+        var primaryTitle = GetString(root, "name") ?? string.Empty;
+        var originalName = GetString(root, "original_name");
+        var alternativeTitles = await GetTvAlternativeTitlesAsync(
+            tmdbId,
+            primaryTitle,
+            originalName,
+            cancellationToken);
         var details = new TmdbShowDetails
         {
             TmdbId = tmdbId,
-            Title = GetString(root, "name") ?? string.Empty,
+            Title = primaryTitle,
             FirstAirYear = ParseYear(firstAirDate),
             Overview = GetString(root, "overview"),
             PosterPath = GetString(root, "poster_path"),
             SeasonCount = GetInt(root, "number_of_seasons") ?? 0,
             EpisodeCount = GetInt(root, "number_of_episodes") ?? 0,
-            SeriesStatus = MapTmdbSeriesStatus(GetString(root, "status"))
+            SeriesStatus = MapTmdbSeriesStatus(GetString(root, "status")),
+            AlternativeTitles = alternativeTitles
         };
 
         if (!root.TryGetProperty("seasons", out var seasonsElement) || seasonsElement.ValueKind != JsonValueKind.Array)
@@ -385,15 +401,88 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
         using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
         var root = document.RootElement;
         var releaseDate = GetString(root, "release_date");
+        var primaryTitle = GetString(root, "title") ?? string.Empty;
+        var originalTitle = GetString(root, "original_title");
+        var alternativeTitles = await GetMovieAlternativeTitlesAsync(
+            tmdbId,
+            primaryTitle,
+            originalTitle,
+            cancellationToken);
         return new TmdbMovieDetails
         {
             TmdbId = tmdbId,
-            Title = GetString(root, "title") ?? string.Empty,
+            Title = primaryTitle,
             ReleaseYear = ParseYear(releaseDate),
             Overview = GetString(root, "overview"),
             PosterPath = GetString(root, "poster_path"),
-            RuntimeMinutes = GetInt(root, "runtime")
+            RuntimeMinutes = GetInt(root, "runtime"),
+            AlternativeTitles = alternativeTitles
         };
+    }
+
+    private async Task<List<string>> GetTvAlternativeTitlesAsync(
+        int tmdbId,
+        string primaryTitle,
+        string? originalName,
+        CancellationToken cancellationToken)
+    {
+        var fromApi = await FetchAlternativeTitleEntriesAsync($"tv/{tmdbId}/alternative_titles", isMovie: false, cancellationToken);
+        return BuildAlternativeTitleList(primaryTitle, originalName, fromApi);
+    }
+
+    private async Task<List<string>> GetMovieAlternativeTitlesAsync(
+        int tmdbId,
+        string primaryTitle,
+        string? originalTitle,
+        CancellationToken cancellationToken)
+    {
+        var fromApi = await FetchAlternativeTitleEntriesAsync($"movie/{tmdbId}/alternative_titles", isMovie: true, cancellationToken);
+        return BuildAlternativeTitleList(primaryTitle, originalTitle, fromApi);
+    }
+
+    private async Task<IReadOnlyList<EnglishAlternativeTitleFilter.AltTitleEntry>> FetchAlternativeTitleEntriesAsync(
+        string path,
+        bool isMovie,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var response = await GetAsyncWithRetryAsync(path, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                return [];
+            }
+
+            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+            var root = document.RootElement;
+            var arrayProperty = isMovie ? "titles" : "results";
+            if (!root.TryGetProperty(arrayProperty, out var entries) || entries.ValueKind != JsonValueKind.Array)
+            {
+                return [];
+            }
+
+            return entries.EnumerateArray()
+                .Select(entry => new EnglishAlternativeTitleFilter.AltTitleEntry(
+                    GetString(entry, "title") ?? string.Empty,
+                    GetString(entry, "iso_3166_1"),
+                    GetString(entry, "type")))
+                .Where(entry => !string.IsNullOrWhiteSpace(entry.Title))
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning($"TMDb alternative titles request failed for {path}: {ex.Message}", LogTarget.File);
+            return [];
+        }
+    }
+
+    private static List<string> BuildAlternativeTitleList(
+        string primaryTitle,
+        string? originalTitle,
+        IEnumerable<EnglishAlternativeTitleFilter.AltTitleEntry> fromApi)
+    {
+        return EnglishAlternativeTitleFilter.BuildList(primaryTitle, originalTitle, fromApi);
     }
 
     private static TmdbMovieCandidate ScoreMovieCandidate(TmdbMovieSearchResult result, string normalizedQuery, int? yearHint)

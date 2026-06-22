@@ -337,6 +337,18 @@ public sealed partial class FindAddViewModel : ViewModelBase
     }
 
     [RelayCommand]
+    private void CopyToClipboard(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return;
+        }
+
+        System.Windows.Clipboard.SetText(text.Trim());
+        StatusMessage = $"Copied \"{text.Trim()}\" to clipboard.";
+    }
+
+    [RelayCommand]
     private void ToggleResultDetailsCompact()
     {
         IsResultDetailsCompact = !IsResultDetailsCompact;
@@ -481,6 +493,7 @@ public sealed partial class FindAddViewModel : ViewModelBase
                 result.PosterPath = details.PosterPath;
                 result.Year = details.ReleaseYear;
                 result.RuntimeMinutes = details.RuntimeMinutes;
+                result.AlternativeTitles = details.AlternativeTitles;
             }
             else
             {
@@ -490,6 +503,7 @@ public sealed partial class FindAddViewModel : ViewModelBase
                 result.Year = details.FirstAirYear;
                 result.SeasonCount = details.SeasonCount;
                 result.EpisodeCount = details.EpisodeCount;
+                result.AlternativeTitles = details.AlternativeTitles;
             }
 
             result.IsDetailsLoaded = true;

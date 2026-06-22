@@ -18,6 +18,7 @@ public static class RecipeRuntimeSettings
     public const string EpisodeNumberingModeKey = "episodeNumberingMode";
     public const string CustomQueryLegacyKey = "customQuery";
     public const string SkipDefaultTitleKey = "skipDefaultTitle";
+    public const string UseLibraryEnglishTitlesKey = "useLibraryEnglishTitles";
     public const string StandardTvEpisodeNumbering = "Standard TV";
     public const string AnimeAbsoluteEpisodeNumbering = "Anime absolute";
 
@@ -87,6 +88,12 @@ public static class RecipeRuntimeSettings
 
         return Math.Clamp(fallback, min, max);
     }
+
+    public static bool GetSkipDefaultTitle(RecipeModuleConfig? queryModule) =>
+        GetBool(queryModule, SkipDefaultTitleKey, false);
+
+    public static bool GetUseLibraryEnglishTitles(RecipeModuleConfig? identityModule) =>
+        GetBool(identityModule, UseLibraryEnglishTitlesKey, false);
 
     private static bool GetBool(RecipeModuleConfig? module, string key, bool fallback)
     {

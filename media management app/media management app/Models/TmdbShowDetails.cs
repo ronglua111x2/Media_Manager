@@ -19,4 +19,6 @@ public sealed class TmdbShowDetails
     public Common.ShowSeriesStatus SeriesStatus { get; set; } = Common.ShowSeriesStatus.Unknown;
 
     public List<TmdbSeasonDetails> Seasons { get; set; } = [];
+
+    public List<string> AlternativeTitles { get; set; } = [];
 }

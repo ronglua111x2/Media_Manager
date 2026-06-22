@@ -6,13 +6,14 @@ namespace media_management_app.ViewModels;
 
 public sealed partial class LibraryMovieDetailViewModel : ObservableObject
 {
-    public LibraryMovieDetailViewModel(TrackedMovie movie, string recipeName)
+    public LibraryMovieDetailViewModel(TrackedMovie movie)
     {
         Id = movie.Id;
+        TmdbId = movie.TmdbId;
         Title = movie.DisplayTitle;
-        RecipeName = recipeName;
         Overview = movie.Overview ?? string.Empty;
         PosterPath = movie.PosterPath;
+        AlternativeTitles = movie.AlternativeTitles;
         Availability = movie.Availability;
         TorrentHash = movie.TorrentHash ?? string.Empty;
         TorrentState = movie.TorrentState ?? string.Empty;
@@ -23,11 +24,17 @@ public sealed partial class LibraryMovieDetailViewModel : ObservableObject
 
     public long Id { get; }
 
+    public int TmdbId { get; }
+
     public string Title { get; }
 
     public string Overview { get; }
 
     public string? PosterPath { get; }
+
+    public IReadOnlyList<string> AlternativeTitles { get; }
+
+    public bool HasAlternativeTitles => AlternativeTitles.Count > 0;
 
     public EpisodeAvailability Availability { get; }
 
@@ -43,9 +50,7 @@ public sealed partial class LibraryMovieDetailViewModel : ObservableObject
 
     public string PreferencesSummary { get; }
 
-    public string RecipeName { get; }
-
-    public string RecipeSummary => $"Recipe: {RecipeName}";
+    public string TmdbPageUrl => $"https://www.themoviedb.org/movie/{TmdbId}";
 
     public bool IsAvailable => Availability == EpisodeAvailability.Available;
 

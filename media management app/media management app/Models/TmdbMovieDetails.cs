@@ -13,4 +13,6 @@ public sealed class TmdbMovieDetails
     public string? PosterPath { get; set; }
 
     public int? RuntimeMinutes { get; set; }
+
+    public List<string> AlternativeTitles { get; set; } = [];
 }

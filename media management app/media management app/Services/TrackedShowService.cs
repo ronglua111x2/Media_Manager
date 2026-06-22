@@ -201,6 +201,7 @@ public sealed class TrackedShowService : ITrackedShowService
             FirstAirYear = details.FirstAirYear,
             Overview = details.Overview,
             PosterPath = details.PosterPath,
+            AlternativeTitlesJson = TrackedShow.SerializeAlternativeTitles(details.AlternativeTitles),
             RecipeId = existing?.RecipeId,
             PackRecipeId = existing?.PackRecipeId,
             PreferredQuality = existing?.PreferredQuality ?? preferredQuality,

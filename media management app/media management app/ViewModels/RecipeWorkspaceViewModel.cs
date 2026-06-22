@@ -401,6 +401,12 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
         set => SetListValue(_module.Aliases, SplitTerms(value));
     }
 
+    public bool UseLibraryEnglishTitles
+    {
+        get => GetExtensionBool(RecipeRuntimeSettings.UseLibraryEnglishTitlesKey, false);
+        set => SetExtensionValue(RecipeRuntimeSettings.UseLibraryEnglishTitlesKey, value.ToString());
+    }
+
     public string QueryTemplatesText
     {
         get => ToLines(_module.QueryTemplates);
@@ -664,6 +670,7 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
         RecipeBlockType.Identity =>
         [
             $"Enabled: {(IsEnabled ? "Yes" : "No")}",
+            $"Use library alt titles: {(UseLibraryEnglishTitles ? "Yes" : "No")}",
             $"Aliases: {CountLines(AliasesText)}"
         ],
         RecipeBlockType.QueryBuilder =>
@@ -798,6 +805,7 @@ internal static class ModuleFieldHelp
             RecipeBlockType.Identity =>
             [
                 new() { FieldName = "Enabled", Description = "Turns identity matching on or off for this recipe.", OutputImpact = "When disabled, only the primary library title is used. Aliases are ignored during search and candidate filtering." },
+                new() { FieldName = "Use library alternative titles", Description = "Include TMDB English and Japanese romaji alternative titles stored on the tracked show or movie.", OutputImpact = "Adds those library alternative titles to {title} expansion and torrent title matching. Works with Skip default title." },
                 new() { FieldName = "Title aliases", Description = "Alternative names for the show or movie.", OutputImpact = "Each alias is used as an extra {title} variant in queries and helps accept torrents that use abbreviations or alternate spellings." }
             ],
             RecipeBlockType.QueryBuilder =>
@@ -806,7 +814,7 @@ internal static class ModuleFieldHelp
                 new() { FieldName = "Preferred audio", Description = "Audio codec or label to prefer, e.g. DDP5.1 or Atmos.", OutputImpact = "Inserted into query templates as {audio}. Candidates containing this token receive a higher score." },
                 new() { FieldName = "Query templates", Description = "Patterns sent to qBittorrent search.", OutputImpact = "Each template is expanded with title, year, season, episode, quality, and audio. More templates increase candidate discovery at the cost of more searches." },
                 new() { FieldName = "Custom queries", Description = "Extra templates appended after the generated list, one entry per line.", OutputImpact = "Useful for manual search phrases that do not fit the standard templates. Each entry is expanded like a normal template." },
-                new() { FieldName = "Skip default title", Description = "Exclude the library show or movie title from {title} expansion.", OutputImpact = "When enabled, only Identity aliases are used for {title}. Useful when the TMDB title differs from how releases are named." }
+                new() { FieldName = "Skip default title", Description = "Exclude the library show or movie title from {title} expansion.", OutputImpact = "When enabled, the primary library title is skipped. Identity aliases and library alternative titles (English and romaji, when enabled) are still used for {title}." }
             ],
             RecipeBlockType.SearchSource =>
             [

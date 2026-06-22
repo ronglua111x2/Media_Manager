@@ -141,6 +141,7 @@ public sealed class TrackedMovieService : ITrackedMovieService
             ReleaseYear = details.ReleaseYear,
             Overview = details.Overview,
             PosterPath = details.PosterPath,
+            AlternativeTitlesJson = TrackedMovie.SerializeAlternativeTitles(details.AlternativeTitles),
             RecipeId = existing?.RecipeId,
             PreferredQuality = existing?.PreferredQuality ?? "1080p",
             PreferredAudioCodec = existing?.PreferredAudioCodec ?? string.Empty,

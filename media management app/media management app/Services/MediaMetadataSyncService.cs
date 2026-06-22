@@ -7,6 +7,8 @@ public interface IMediaMetadataSyncService
 {
     Task<ShowMetadataSyncResult> RefreshShowAsync(long showId, CancellationToken cancellationToken = default);
 
+    Task<MovieMetadataSyncResult> RefreshMovieAsync(long movieId, CancellationToken cancellationToken = default);
+
     Task<OngoingShowsSyncResult> RefreshOngoingShowsAsync(CancellationToken cancellationToken = default);
 
     Task<LibraryMetadataSyncResult> RefreshAllLibraryFromTmdbAsync(CancellationToken cancellationToken = default);
@@ -75,6 +77,22 @@ public sealed class MediaMetadataSyncService : IMediaMetadataSyncService
         }
     }
 
+    public async Task<MovieMetadataSyncResult> RefreshMovieAsync(long movieId, CancellationToken cancellationToken = default)
+    {
+        var movie = _databaseService.GetTrackedMovie(movieId);
+        if (movie is null)
+        {
+            return new MovieMetadataSyncResult
+            {
+                MovieId = movieId,
+                Success = false,
+                ErrorMessage = "Movie was not found."
+            };
+        }
+
+        return await RefreshMovieCoreAsync(movie, cancellationToken);
+    }
+
     public async Task<OngoingShowsSyncResult> RefreshOngoingShowsAsync(CancellationToken cancellationToken = default)
     {
         var ongoingShows = _databaseService.GetTrackedShowsBySeriesStatus(ShowSeriesStatus.Ongoing);
@@ -102,13 +120,13 @@ public sealed class MediaMetadataSyncService : IMediaMetadataSyncService
         foreach (var movie in _trackedMovieService.GetMovies())
         {
             cancellationToken.ThrowIfCancellationRequested();
-            movieResults.Add(await RefreshMovieAsync(movie, cancellationToken));
+            movieResults.Add(await RefreshMovieCoreAsync(movie, cancellationToken));
         }
 
         return BuildLibraryMetadataSyncResult(showResults, movieResults);
     }
 
-    private async Task<MovieMetadataSyncResult> RefreshMovieAsync(TrackedMovie movie, CancellationToken cancellationToken)
+    private async Task<MovieMetadataSyncResult> RefreshMovieCoreAsync(TrackedMovie movie, CancellationToken cancellationToken)
     {
         try
         {

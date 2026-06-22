@@ -139,6 +139,7 @@ public partial class App : System.Windows.Application
         services.AddSingleton<IQbittorrentClient, QbittorrentClient>();
         services.AddSingleton<IWarpCliService, WarpCliService>();
         services.AddSingleton<IRecipeService, RecipeService>();
+        services.AddSingleton<ISearchTitleResolver, SearchTitleResolver>();
         services.AddSingleton<ISearchPlanBuilder, SearchPlanBuilder>();
         services.AddSingleton<ICandidateEvaluationService, CandidateEvaluationService>();
         services.AddSingleton<IAutomationFlowService, AutomationFlowService>();
