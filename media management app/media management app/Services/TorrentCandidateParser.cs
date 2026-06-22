@@ -51,6 +51,8 @@ public static class TorrentCandidateParser
             return new TorrentCandidateParseResult { RawTitle = string.Empty };
         }
 
+        // Season ranges use hyphens (e.g. "Seasons 1-2", "S01-S02"); extract before NormalizeText strips them.
+        var coveredSeasons = ExtractCoveredSeasons(fileName).ToList();
         var normalized = NormalizeText(fileName);
         var match = EpisodeRegex.Match(normalized);
         var showPart = normalized;
@@ -85,7 +87,6 @@ public static class TorrentCandidateParser
         var explicitYear = ExtractYear(showPart);
         var normalizedTitle = NormalizeTitle(showPart);
         var episodeTitle = CleanEpisodeTitle(rest);
-        var coveredSeasons = ExtractCoveredSeasons(normalized).ToList();
 
         return new TorrentCandidateParseResult
         {
