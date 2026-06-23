@@ -10,7 +10,7 @@ public sealed class ParserService : IParserService
     private static readonly Regex AnimeAbsoluteRegex = new(@"^\[(?<group>[^\]]+)\]\s*(?<show>.+?)\s*-\s*(?<episode>\d{1,4})(?:\s*(?<rest>.*))?$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex BracketedHashRegex = new(@"\[[0-9a-f]{6,10}\]", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex MovieYearRegex = new(@"^(?<title>.*?)(?:\s|\(|\[)(?<year>(?:19|20)\d{2})(?:\)|\])?(?:\s|$)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-    private static readonly Regex ReleaseTokenRegex = new(@"\b(?:1080p|720p|2160p|480p|bluray|brrip|webrip|web-dl|webdl|hdtv|x264|x265|h264|h265|hevc|aac|dts|hdr|dv|proper|repack|extended|remux|yify|rarbg)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex ReleaseTokenRegex = new(@"\b(?:2160p|1440p|1080p|720p|480p|bluray|brrip|webrip|web-dl|webdl|hdtv|x264|x265|h264|h265|hevc|aac|dts|hdr|dv|proper|repack|extended|remux|yify|rarbg)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex IgnoredReleaseFileRegex = new(@"\b(?:sample|proof)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private readonly IAppLogger _logger;

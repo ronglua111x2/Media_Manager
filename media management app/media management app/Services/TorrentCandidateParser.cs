@@ -56,7 +56,7 @@ public static class TorrentCandidateParser
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex SeasonSingleRegex = new(@"\bS(?<season>\d{1,3})\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex ReleaseTokenRegex = new(
-        @"\b(?:1080p|720p|2160p|480p|bluray|brrip|webrip|web-dl|webdl|hdtv|x264|x265|h264|h265|hevc|aac|dts|hdr|dv|proper|repack|extended|remux|yify|rarbg|truehd|atmos|ddp|dd\+|ac3|flac|opus)\b",
+        @"\b(?:2160p|1440p|1080p|720p|480p|bluray|brrip|webrip|web-dl|webdl|hdtv|x264|x265|h264|h265|hevc|aac|dts|hdr|dv|proper|repack|extended|remux|yify|rarbg|truehd|atmos|ddp|dd\+|ac3|flac|opus)\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex OvaBeforeEpisodeRegex = new(
         @"\bOVA\s+S(?<season>\d{1,2})E(?<episode>\d{1,4})\b",

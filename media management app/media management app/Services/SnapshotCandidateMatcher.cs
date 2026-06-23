@@ -12,7 +12,8 @@ public sealed class SnapshotCandidateMatcher
         TrackedEpisode episode,
         SnapshotCandidate candidate,
         IReadOnlyList<string> selectedQualities,
-        IReadOnlyList<string> titleVariants)
+        IReadOnlyList<string> titleVariants,
+        CandidateScoringWeights weights)
     {
         var result = candidate.Result;
         var parsed = candidate.Parsed;
@@ -107,7 +108,8 @@ public sealed class SnapshotCandidateMatcher
             audioScore,
             result.Seeders,
             identityScore,
-            episodeScore);
+            episodeScore,
+            weights);
 
         return new SnapshotMatchResult
         {

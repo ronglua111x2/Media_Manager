@@ -50,7 +50,8 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
         var episodeScore = EvaluateEpisodeTitleMatch(episode.Title, parsed.EpisodeTitle);
         var audioScore = GetAudioScore(filter, result.FileName);
         var qualityScore = TorrentQuality.GetRank(parsed.Quality);
-        return Accepted(result, qualityScore, titleMatch.Score, episodeScore, audioScore);
+        var weights = RecipeRuntimeSettings.GetCandidateScoringWeights(recipe);
+        return Accepted(result, qualityScore, titleMatch.Score, episodeScore, audioScore, weights);
     }
 
     public RecipeCandidateResult EvaluateMovie(SearchRecipe recipe, TrackedMovie movie, TorrentSearchResult result)
@@ -80,7 +81,8 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
 
         var audioScore = GetAudioScore(filter, result.FileName);
         var qualityScore = TorrentQuality.GetRank(TorrentQuality.Detect(result.FileName));
-        return Accepted(result, qualityScore, titleMatch.Score, episodeScore: 0, audioScore);
+        var weights = RecipeRuntimeSettings.GetCandidateScoringWeights(recipe);
+        return Accepted(result, qualityScore, titleMatch.Score, episodeScore: 0, audioScore, weights);
     }
 
     private static (CandidateRejectReason Reason, string Detail) GetCommonRejectReason(
@@ -157,7 +159,8 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
         int qualityScore,
         int identityScore,
         int episodeScore,
-        int audioScore)
+        int audioScore,
+        CandidateScoringWeights weights)
     {
         return new RecipeCandidateResult
         {
@@ -166,7 +169,13 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
             IdentityScore = identityScore,
             EpisodeScore = episodeScore,
             AudioScore = audioScore,
-            TotalScore = TorrentQuality.CalculateCandidateScore(qualityScore, audioScore, result.Seeders, identityScore, episodeScore)
+            TotalScore = TorrentQuality.CalculateCandidateScore(
+                qualityScore,
+                audioScore,
+                result.Seeders,
+                identityScore,
+                episodeScore,
+                weights)
         };
     }
 

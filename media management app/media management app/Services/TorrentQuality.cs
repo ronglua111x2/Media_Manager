@@ -2,7 +2,9 @@ namespace media_management_app.Services;
 
 public static class TorrentQuality
 {
-    private static readonly string[] RankedQualities = ["2160p", "1080p", "720p", "480p"];
+    private static readonly string[] RankedQualities = ["2160p", "1440p", "1080p", "720p", "480p"];
+
+    public static IReadOnlyList<string> AllQualities => RankedQualities;
 
     public static string Detect(string fileName)
     {
@@ -39,13 +41,15 @@ public static class TorrentQuality
         int audioScore,
         int seeders,
         int identityScore,
-        int episodeScore)
+        int episodeScore,
+        CandidateScoringWeights? weights = null)
     {
-        var cappedSeeders = Math.Clamp(seeders, 0, 99_999);
-        return qualityScore * 10_000_000 +
-               audioScore * 1_000_000 +
-               cappedSeeders * 100 +
-               identityScore * 10 +
-               episodeScore;
+        weights ??= CandidateScoringWeights.Default;
+        var cappedSeeders = Math.Clamp(seeders, 0, weights.SeedersCap);
+        return qualityScore * weights.QualityWeight +
+               audioScore * weights.AudioWeight +
+               cappedSeeders * weights.SeedersWeight +
+               identityScore * weights.IdentityWeight +
+               episodeScore * weights.EpisodeWeight;
     }
 }

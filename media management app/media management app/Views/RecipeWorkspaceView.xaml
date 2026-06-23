@@ -751,10 +751,82 @@
                                             </Style>
                                         </Border.Style>
                                         <StackPanel>
-                                            <TextBlock Text="Quality, audio, seeders, and title match weights are applied automatically when ranking candidates."
+                                            <Grid Margin="0,0,0,12">
+                                                <TextBlock Text="Ranking weights"
+                                                           FontWeight="SemiBold"
+                                                           VerticalAlignment="Center" />
+                                                <Button Content="Use defaults"
+                                                        Command="{Binding ResetScoringToDefaultsCommand}"
+                                                        Style="{StaticResource AppOutlinedButtonStyle}"
+                                                        HorizontalAlignment="Right"
+                                                        Padding="12,6"
+                                                        MinHeight="32" />
+                                            </Grid>
+                                            <TextBlock Text="Adjust how quality, audio, seeders, and title matches contribute to the total candidate score."
                                                        Style="{StaticResource MutedTextStyle}"
                                                        TextWrapping="Wrap"
                                                        Margin="0,0,0,12" />
+
+                                            <TextBlock Text="Quality weight" Style="{StaticResource RecipeLabelStyle}" />
+                                            <Slider Minimum="0" Maximum="50000000"
+                                                    Value="{Binding QualityWeight, UpdateSourceTrigger=PropertyChanged}"
+                                                    Margin="0,0,0,4" />
+                                            <Border Style="{StaticResource RecipeNumericChromeStyle}" Margin="0,0,0,12">
+                                                <materialDesign:NumericUpDown Style="{StaticResource RecipeNumericUpDownStyle}"
+                                                                              Value="{Binding QualityWeight, UpdateSourceTrigger=PropertyChanged}"
+                                                                              Minimum="0" Maximum="50000000" />
+                                            </Border>
+
+                                            <TextBlock Text="Audio weight" Style="{StaticResource RecipeLabelStyle}" />
+                                            <Slider Minimum="0" Maximum="10000000"
+                                                    Value="{Binding AudioWeight, UpdateSourceTrigger=PropertyChanged}"
+                                                    Margin="0,0,0,4" />
+                                            <Border Style="{StaticResource RecipeNumericChromeStyle}" Margin="0,0,0,12">
+                                                <materialDesign:NumericUpDown Style="{StaticResource RecipeNumericUpDownStyle}"
+                                                                              Value="{Binding AudioWeight, UpdateSourceTrigger=PropertyChanged}"
+                                                                              Minimum="0" Maximum="10000000" />
+                                            </Border>
+
+                                            <TextBlock Text="Seeders weight" Style="{StaticResource RecipeLabelStyle}" />
+                                            <Slider Minimum="0" Maximum="10000"
+                                                    Value="{Binding SeedersWeight, UpdateSourceTrigger=PropertyChanged}"
+                                                    Margin="0,0,0,4" />
+                                            <Border Style="{StaticResource RecipeNumericChromeStyle}" Margin="0,0,0,12">
+                                                <materialDesign:NumericUpDown Style="{StaticResource RecipeNumericUpDownStyle}"
+                                                                              Value="{Binding SeedersWeight, UpdateSourceTrigger=PropertyChanged}"
+                                                                              Minimum="0" Maximum="10000" />
+                                            </Border>
+
+                                            <TextBlock Text="Seeders cap" Style="{StaticResource RecipeLabelStyle}" />
+                                            <Slider Minimum="0" Maximum="500000"
+                                                    Value="{Binding SeedersCap, UpdateSourceTrigger=PropertyChanged}"
+                                                    Margin="0,0,0,4" />
+                                            <Border Style="{StaticResource RecipeNumericChromeStyle}" Margin="0,0,0,12">
+                                                <materialDesign:NumericUpDown Style="{StaticResource RecipeNumericUpDownStyle}"
+                                                                              Value="{Binding SeedersCap, UpdateSourceTrigger=PropertyChanged}"
+                                                                              Minimum="0" Maximum="500000" />
+                                            </Border>
+
+                                            <TextBlock Text="Identity / title-match weight" Style="{StaticResource RecipeLabelStyle}" />
+                                            <Slider Minimum="0" Maximum="10000"
+                                                    Value="{Binding IdentityWeight, UpdateSourceTrigger=PropertyChanged}"
+                                                    Margin="0,0,0,4" />
+                                            <Border Style="{StaticResource RecipeNumericChromeStyle}" Margin="0,0,0,12">
+                                                <materialDesign:NumericUpDown Style="{StaticResource RecipeNumericUpDownStyle}"
+                                                                              Value="{Binding IdentityWeight, UpdateSourceTrigger=PropertyChanged}"
+                                                                              Minimum="0" Maximum="10000" />
+                                            </Border>
+
+                                            <TextBlock Text="Episode-title weight" Style="{StaticResource RecipeLabelStyle}" />
+                                            <Slider Minimum="0" Maximum="100000"
+                                                    Value="{Binding EpisodeWeight, UpdateSourceTrigger=PropertyChanged}"
+                                                    Margin="0,0,0,4" />
+                                            <Border Style="{StaticResource RecipeNumericChromeStyle}" Margin="0,0,0,16">
+                                                <materialDesign:NumericUpDown Style="{StaticResource RecipeNumericUpDownStyle}"
+                                                                              Value="{Binding EpisodeWeight, UpdateSourceTrigger=PropertyChanged}"
+                                                                              Minimum="0" Maximum="100000" />
+                                            </Border>
+
                                             <StackPanel>
                                                 <StackPanel.Style>
                                                     <Style TargetType="StackPanel">
@@ -766,16 +838,46 @@
                                                         </Style.Triggers>
                                                     </Style>
                                                 </StackPanel.Style>
-                                                <TextBlock Text="Pack recipe only: prioritize torrents whose name mentions OVA, special, or extra content."
+                                                <TextBlock Text="Pack recipe only"
+                                                           FontWeight="SemiBold"
+                                                           Margin="0,0,0,8" />
+                                                <TextBlock Text="Prioritize torrents whose name mentions OVA, special, or extra content."
                                                            Style="{StaticResource MutedTextStyle}"
                                                            TextWrapping="Wrap"
                                                            Margin="0,0,0,12" />
+
+                                                <TextBlock Text="Season match score per season" Style="{StaticResource RecipeLabelStyle}" />
+                                                <Slider Minimum="0" Maximum="10000"
+                                                        Value="{Binding SeasonMatchScorePerSeason, UpdateSourceTrigger=PropertyChanged}"
+                                                        Margin="0,0,0,4" />
+                                                <Border Style="{StaticResource RecipeNumericChromeStyle}" Margin="0,0,0,12">
+                                                    <materialDesign:NumericUpDown Style="{StaticResource RecipeNumericUpDownStyle}"
+                                                                                  Value="{Binding SeasonMatchScorePerSeason, UpdateSourceTrigger=PropertyChanged}"
+                                                                                  Minimum="0" Maximum="10000" />
+                                                </Border>
+
+                                                <TextBlock Text="Single-season boost" Style="{StaticResource RecipeLabelStyle}" />
+                                                <Slider Minimum="0" Maximum="100000"
+                                                        Value="{Binding SingleSeasonBoost, UpdateSourceTrigger=PropertyChanged}"
+                                                        Margin="0,0,0,4" />
+                                                <Border Style="{StaticResource RecipeNumericChromeStyle}" Margin="0,0,0,12">
+                                                    <materialDesign:NumericUpDown Style="{StaticResource RecipeNumericUpDownStyle}"
+                                                                                  Value="{Binding SingleSeasonBoost, UpdateSourceTrigger=PropertyChanged}"
+                                                                                  Minimum="0" Maximum="100000" />
+                                                </Border>
+
                                                 <CheckBox Content="Prioritize OVA / special / extra in torrent name"
                                                           IsChecked="{Binding PackExtrasPriorityEnabled}"
                                                           Margin="0,0,0,12" />
                                                 <TextBlock Text="Name-match bonus score" Style="{StaticResource RecipeLabelStyle}" />
-                                                <TextBox Text="{Binding PackExtrasPriorityScore, UpdateSourceTrigger=LostFocus}"
-                                                         Margin="0,0,0,8" />
+                                                <Slider Minimum="0" Maximum="50000"
+                                                        Value="{Binding PackExtrasPriorityScore, UpdateSourceTrigger=PropertyChanged}"
+                                                        Margin="0,0,0,4" />
+                                                <Border Style="{StaticResource RecipeNumericChromeStyle}" Margin="0,0,0,8">
+                                                    <materialDesign:NumericUpDown Style="{StaticResource RecipeNumericUpDownStyle}"
+                                                                                  Value="{Binding PackExtrasPriorityScore, UpdateSourceTrigger=PropertyChanged}"
+                                                                                  Minimum="0" Maximum="50000" />
+                                                </Border>
                                                 <TextBlock Text="Higher values prefer complete bundles (season + OVAs + extras) over season-only packs."
                                                            Style="{StaticResource MutedTextStyle}"
                                                            TextWrapping="Wrap" />

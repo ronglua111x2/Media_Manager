@@ -318,7 +318,6 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
 {
     private const string ParallelSearchMode = "Parallel episode search";
     private const string SnapshotSearchMode = "Show snapshot search";
-    private static readonly string[] StandardQualities = ["2160p", "1080p", "720p", "480p"];
 
     private readonly RecipeModuleConfig _module;
     private readonly MediaKind _recipeTargetKind;
@@ -328,7 +327,7 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
         _module = module;
         _recipeTargetKind = recipeTargetKind;
         QualityOptions = new ObservableCollection<QualityOptionViewModel>(
-            StandardQualities.Select(label => new QualityOptionViewModel(
+            TorrentQuality.AllQualities.Select(label => new QualityOptionViewModel(
                 label,
                 _module.QualityAllowList.Any(quality => string.Equals(quality, label, StringComparison.OrdinalIgnoreCase)),
                 SyncQualitiesFromOptions)));
@@ -376,8 +375,8 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
         RecipeBlockType.CandidateParser => "Candidate filename parsing is currently automatic.",
         RecipeBlockType.CandidateFilter => "Quality, seeders, size, include/exclude terms, and release groups.",
         RecipeBlockType.Scoring => _recipeTargetKind == MediaKind.TvSeasonPack
-            ? "Ranking weights plus pack-only bonus for torrent names that mention OVA, special, or extra content."
-            : "Ranking weights are currently fixed by the candidate scoring service.",
+            ? "Tune ranking weights and pack-only OVA, special, and extra bonuses."
+            : "Tune ranking weights for quality, audio, seeders, and title matching.",
         _ => "Recipe module settings."
     };
 
@@ -640,6 +639,60 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
     public bool ShowPackExtrasPrioritySettings =>
         _recipeTargetKind == MediaKind.TvSeasonPack && _module.BlockType == RecipeBlockType.Scoring;
 
+    public bool ShowScoringWeightSettings => _module.BlockType == RecipeBlockType.Scoring;
+
+    public int QualityWeight
+    {
+        get => GetScoringInt(RecipeRuntimeSettings.QualityWeightKey, CandidateScoringWeights.Default.QualityWeight, 0, 50_000_000);
+        set => SetScoringInt(RecipeRuntimeSettings.QualityWeightKey, value, 0, 50_000_000);
+    }
+
+    public int AudioWeight
+    {
+        get => GetScoringInt(RecipeRuntimeSettings.AudioWeightKey, CandidateScoringWeights.Default.AudioWeight, 0, 10_000_000);
+        set => SetScoringInt(RecipeRuntimeSettings.AudioWeightKey, value, 0, 10_000_000);
+    }
+
+    public int SeedersWeight
+    {
+        get => GetScoringInt(RecipeRuntimeSettings.SeedersWeightKey, CandidateScoringWeights.Default.SeedersWeight, 0, 10_000);
+        set => SetScoringInt(RecipeRuntimeSettings.SeedersWeightKey, value, 0, 10_000);
+    }
+
+    public int SeedersCap
+    {
+        get => GetScoringInt(RecipeRuntimeSettings.SeedersCapKey, CandidateScoringWeights.Default.SeedersCap, 0, 500_000);
+        set => SetScoringInt(RecipeRuntimeSettings.SeedersCapKey, value, 0, 500_000);
+    }
+
+    public int IdentityWeight
+    {
+        get => GetScoringInt(RecipeRuntimeSettings.IdentityWeightKey, CandidateScoringWeights.Default.IdentityWeight, 0, 10_000);
+        set => SetScoringInt(RecipeRuntimeSettings.IdentityWeightKey, value, 0, 10_000);
+    }
+
+    public int EpisodeWeight
+    {
+        get => GetScoringInt(RecipeRuntimeSettings.EpisodeWeightKey, CandidateScoringWeights.Default.EpisodeWeight, 0, 100_000);
+        set => SetScoringInt(RecipeRuntimeSettings.EpisodeWeightKey, value, 0, 100_000);
+    }
+
+    public int SeasonMatchScorePerSeason
+    {
+        get => GetScoringInt(
+            RecipeRuntimeSettings.SeasonMatchScorePerSeasonKey,
+            CandidateScoringWeights.Default.SeasonMatchScorePerSeason,
+            0,
+            10_000);
+        set => SetScoringInt(RecipeRuntimeSettings.SeasonMatchScorePerSeasonKey, value, 0, 10_000);
+    }
+
+    public int SingleSeasonBoost
+    {
+        get => GetScoringInt(RecipeRuntimeSettings.SingleSeasonBoostKey, CandidateScoringWeights.Default.SingleSeasonBoost, 0, 100_000);
+        set => SetScoringInt(RecipeRuntimeSettings.SingleSeasonBoostKey, value, 0, 100_000);
+    }
+
     public bool PackExtrasPriorityEnabled
     {
         get => GetExtensionBool(RecipeRuntimeSettings.PackExtrasPriorityEnabledKey, true);
@@ -656,6 +709,13 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
         set => SetExtensionValue(
             RecipeRuntimeSettings.PackExtrasPriorityScoreKey,
             Math.Clamp(value, 0, 50000).ToString());
+    }
+
+    [RelayCommand(CanExecute = nameof(ShowScoringWeightSettings))]
+    private void ResetScoringToDefaults()
+    {
+        RecipeRuntimeSettings.ApplyScoringDefaults(_module);
+        NotifyStateChanged();
     }
 
     public string SavePath
@@ -780,16 +840,29 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
         var lines = new List<string>
         {
             $"Enabled: {(IsEnabled ? "Yes" : "No")}",
-            "Scoring uses quality, audio, seeders, and title match weights."
+            $"Quality weight: {QualityWeight:N0}",
+            $"Audio weight: {AudioWeight:N0}",
+            $"Seeders weight: {SeedersWeight}",
+            $"Seeders cap: {SeedersCap:N0}",
+            $"Identity weight: {IdentityWeight}",
+            $"Episode-title weight: {EpisodeWeight}"
         };
         if (ShowPackExtrasPrioritySettings)
         {
+            lines.Add($"Season match per season: {SeasonMatchScorePerSeason}");
+            lines.Add($"Single-season boost: {SingleSeasonBoost:N0}");
             lines.Add($"Pack extras/OVA/special priority: {(PackExtrasPriorityEnabled ? "On" : "Off")}");
-            lines.Add($"Pack name-match bonus: {PackExtrasPriorityScore}");
+            lines.Add($"Pack name-match bonus: {PackExtrasPriorityScore:N0}");
         }
 
         return lines;
     }
+
+    private int GetScoringInt(string key, int defaultValue, int min, int max) =>
+        GetExtensionInt(key, defaultValue, min, max);
+
+    private void SetScoringInt(string key, int value, int min, int max) =>
+        SetExtensionValue(key, Math.Clamp(value, min, max).ToString());
 
     private static string DisplayOrEmpty(string? value) =>
         string.IsNullOrWhiteSpace(value) ? "(empty)" : value.Trim();
@@ -877,7 +950,7 @@ internal static class ModuleFieldHelp
             ],
             RecipeBlockType.QueryBuilder =>
             [
-                new() { FieldName = "Quality allow list", Description = "Accepted quality labels such as 1080p or 2160p.", OutputImpact = "Generates one search query per quality token. More qualities mean more queries and broader search coverage." },
+                new() { FieldName = "Quality allow list", Description = "Accepted quality labels such as 1080p, 1440p, or 2160p.", OutputImpact = "Generates one search query per quality token. More qualities mean more queries and broader search coverage." },
                 new() { FieldName = "Preferred audio", Description = "Audio codec or label to prefer, e.g. DDP5.1 or Atmos.", OutputImpact = "Inserted into query templates as {audio}. Candidates containing this token receive a higher score." },
                 new() { FieldName = "Query templates", Description = "Patterns sent to qBittorrent search.", OutputImpact = "Each template is expanded with title, year, season, episode, quality, and audio. More templates increase candidate discovery at the cost of more searches." },
                 new() { FieldName = "Custom queries", Description = "Extra templates appended after the generated list, one entry per line.", OutputImpact = "Useful for manual search phrases that do not fit the standard templates. Each entry is expanded like a normal template." },
@@ -901,7 +974,7 @@ internal static class ModuleFieldHelp
             ],
             RecipeBlockType.CandidateFilter =>
             [
-                new() { FieldName = "Quality", Description = "Allowed quality labels for accepted candidates.", OutputImpact = "Torrents that do not match any listed quality are rejected before scoring." },
+                new() { FieldName = "Quality", Description = "Allowed quality labels for accepted candidates, including 1440p when selected.", OutputImpact = "Torrents that do not match any listed quality are rejected before scoring." },
                 new() { FieldName = "Minimum seeders", Description = "Lowest seeder count still accepted.", OutputImpact = "Higher values reduce dead or slow torrents but may eliminate rare releases." },
                 new() { FieldName = "Max size GB", Description = "Optional upper size limit in gigabytes.", OutputImpact = "Oversized packs or remuxes are rejected when set." },
                 new() { FieldName = "Preferred audio", Description = "Audio label used for scoring bonus.", OutputImpact = "Does not reject candidates, but boosts ranking when the filename contains this codec." },
@@ -917,9 +990,17 @@ internal static class ModuleFieldHelp
             ],
             RecipeBlockType.Scoring =>
             [
-                new() { FieldName = "Scoring weights", Description = "Quality, audio, seeders, title match, and episode title contribute to total score.", OutputImpact = "The highest-scoring accepted candidate is chosen when Run Cart executes." },
-                new() { FieldName = "Pack extras/OVA/special priority", Description = "Pack recipes only. Adds bonus score when the torrent title contains OVA, special, extra, OAD, or similar keywords.", OutputImpact = "Complete bundles rank above season-only packs with similar quality and seeders." },
-                new() { FieldName = "Pack name-match bonus", Description = "Extra points applied when the pack priority keywords are found in the torrent display name.", OutputImpact = "Higher values make complete bundles win more often during pack candidate ranking." }
+                new() { FieldName = "Quality weight", Description = "Multiplier applied to the detected quality rank (2160p down to 480p).", OutputImpact = "Higher values make resolution differences dominate the final score." },
+                new() { FieldName = "Audio weight", Description = "Multiplier when the torrent name contains the preferred audio codec from the Quality module.", OutputImpact = "Raises releases that match your preferred audio without rejecting others." },
+                new() { FieldName = "Seeders weight", Description = "Points added per seeder, up to the cap below.", OutputImpact = "Higher values favor well-seeded torrents over marginal quality or title matches." },
+                new() { FieldName = "Seeders cap", Description = "Maximum seeder count counted toward score.", OutputImpact = "Prevents extremely large swarms from overwhelming other factors." },
+                new() { FieldName = "Identity / title-match weight", Description = "Multiplier for matched show or movie title and alias tokens.", OutputImpact = "Helps torrents with stronger title matches beat vague or abbreviated names." },
+                new() { FieldName = "Episode-title weight", Description = "Multiplier for matched episode title tokens in the filename.", OutputImpact = "Useful when multiple candidates share the same episode number but differ in embedded episode title." },
+                new() { FieldName = "Season match score per season", Description = "Pack only. Points per selected season covered by the torrent.", OutputImpact = "Rewards packs that cover more of the seasons you selected." },
+                new() { FieldName = "Single-season boost", Description = "Pack only. Flat bonus when the torrent covers exactly one season.", OutputImpact = "Slightly prefers focused single-season packs over multi-season bundles when other factors are close." },
+                new() { FieldName = "Pack extras / OVA / special priority", Description = "Pack only. Enables bonus scoring when the torrent name mentions OVA, special, extra, OAD, or similar.", OutputImpact = "Complete bundles (season + extras) rank above season-only packs." },
+                new() { FieldName = "Pack name-match bonus", Description = "Pack only. Extra points when extras/OVA/special keywords are found in the torrent display name.", OutputImpact = "Higher values make complete bundles win more often." },
+                new() { FieldName = "Use defaults", Description = "Resets all Scoring weights to built-in system values.", OutputImpact = "Clears custom tuning so the recipe behaves like a fresh default install." }
             ],
             _ =>
             [

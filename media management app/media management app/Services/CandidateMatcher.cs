@@ -25,7 +25,8 @@ public static class CandidateMatcher
         TrackedShow show,
         TrackedEpisode episode,
         TorrentSearchResult result,
-        IReadOnlyList<string> selectedQualities)
+        IReadOnlyList<string> selectedQualities,
+        CandidateScoringWeights weights)
     {
         if (!result.CanAdd)
         {
@@ -97,7 +98,8 @@ public static class CandidateMatcher
             audioScore,
             result.Seeders,
             identityScore,
-            episodeScore);
+            episodeScore,
+            weights);
 
         return new CandidateMatchResult
         {

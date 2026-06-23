@@ -767,9 +767,11 @@ public sealed class FetchJobService : IFetchJobService
         SearchRecipe? recipeOverride = null)
     {
         var matchedCandidates = new List<(EpisodeFetchCandidate Candidate, SnapshotMatchResult Match)>();
+        var recipe = recipeOverride ?? _recipeService.GetRecipeOrDefault(show.RecipeId, MediaKind.TvEpisode);
+        var scoringWeights = RecipeRuntimeSettings.GetCandidateScoringWeights(recipe);
         foreach (var candidate in snapshotCandidates)
         {
-            var match = matcher.Match(show, episode, candidate, selectedQualities, titleVariants);
+            var match = matcher.Match(show, episode, candidate, selectedQualities, titleVariants, scoringWeights);
             if (!match.IsAccepted)
             {
                 if (match.RejectReason?.Contains("plugin error", StringComparison.OrdinalIgnoreCase) == true)
@@ -798,7 +800,6 @@ public sealed class FetchJobService : IFetchJobService
             matchedCandidates.Add((episodeCandidate, match));
         }
 
-        var recipe = recipeOverride ?? _recipeService.GetRecipeOrDefault(show.RecipeId, MediaKind.TvEpisode);
         var maxCandidates = RecipeRuntimeSettings.GetMaxCandidatesPerFetch(recipe, _settingsService.Current.AutoTorrent);
         if (RecipeRuntimeSettings.GetDeduplicateCandidates(recipe, _settingsService.Current.AutoTorrent))
         {
@@ -898,7 +899,8 @@ public sealed class FetchJobService : IFetchJobService
             }
 
             var matchingSeasonCount = coveredSeasons.Count(selectedSeasons.Contains);
-            var singleSeasonBoost = coveredSeasons.Count == 1 ? 5000 : 0;
+            var scoringWeights = RecipeRuntimeSettings.GetCandidateScoringWeights(packRecipe);
+            var singleSeasonBoost = coveredSeasons.Count == 1 ? scoringWeights.SingleSeasonBoost : 0;
             var extrasPriorityBoost = RecipeRuntimeSettings.GetPackExtrasPriorityScoreBoost(packRecipe, result.FileName);
             var qualityScore = TorrentQuality.GetRank(parsed.Quality);
             var audioScore = !string.IsNullOrWhiteSpace(show.PreferredAudioCodec) &&
@@ -924,8 +926,9 @@ public sealed class FetchJobService : IFetchJobService
                     qualityScore,
                     audioScore,
                     result.Seeders,
-                    matchingSeasonCount * 10,
-                    singleSeasonBoost + extrasPriorityBoost),
+                    matchingSeasonCount * scoringWeights.SeasonMatchScorePerSeason,
+                    singleSeasonBoost + extrasPriorityBoost,
+                    scoringWeights),
                 Warning = contentProfile.BuildWarningText()
             });
         }
@@ -1003,12 +1006,16 @@ public sealed class FetchJobService : IFetchJobService
         TrackedShow show,
         string query,
         IReadOnlyList<TorrentSearchResult> searchResults,
-        IReadOnlyList<string> selectedQualities)
+        IReadOnlyList<string> selectedQualities,
+        SearchRecipe? recipe = null)
     {
+        var scoringWeights = recipe is not null
+            ? RecipeRuntimeSettings.GetCandidateScoringWeights(recipe)
+            : CandidateScoringWeights.Default;
         var matchedCandidates = new List<(EpisodeFetchCandidate Candidate, CandidateMatchResult Match)>();
         foreach (var result in searchResults)
         {
-            var match = CandidateMatcher.MatchEpisodeCandidate(show, episode, result, selectedQualities);
+            var match = CandidateMatcher.MatchEpisodeCandidate(show, episode, result, selectedQualities, scoringWeights);
             if (!match.IsAccepted)
             {
                 var message =

@@ -27,6 +27,14 @@ public static class RecipeRuntimeSettings
     public const string PackExtrasPriorityScoreKey = "packExtrasPriorityScore";
     public const string PackExtrasPriorityEnabledKey = "packExtrasPriorityEnabled";
     public const int DefaultPackExtrasPriorityScore = 2500;
+    public const string QualityWeightKey = "qualityWeight";
+    public const string AudioWeightKey = "audioWeight";
+    public const string SeedersWeightKey = "seedersWeight";
+    public const string SeedersCapKey = "seedersCap";
+    public const string IdentityWeightKey = "identityWeight";
+    public const string EpisodeWeightKey = "episodeWeight";
+    public const string SeasonMatchScorePerSeasonKey = "seasonMatchScorePerSeason";
+    public const string SingleSeasonBoostKey = "singleSeasonBoost";
     public const string StandardTvEpisodeNumbering = "Standard TV";
     public const string AnimeAbsoluteEpisodeNumbering = "Anime absolute";
 
@@ -77,14 +85,70 @@ public static class RecipeRuntimeSettings
             return 0;
         }
 
-        var module = GetScoringModule(recipe);
-        if (module is null || !module.IsEnabled || !GetPackExtrasPriorityEnabled(module))
+        var weights = GetCandidateScoringWeights(recipe);
+        if (!weights.PackExtrasPriorityEnabled)
         {
             return 0;
         }
 
-        return GetInt(module, PackExtrasPriorityScoreKey, DefaultPackExtrasPriorityScore, 0, 50000);
+        return weights.PackExtrasPriorityScore;
     }
+
+    public static CandidateScoringWeights GetCandidateScoringWeights(SearchRecipe recipe)
+    {
+        var module = GetScoringModule(recipe);
+        if (module is null || !module.IsEnabled)
+        {
+            return CandidateScoringWeights.Default;
+        }
+
+        return GetCandidateScoringWeights(module);
+    }
+
+    public static CandidateScoringWeights GetCandidateScoringWeights(RecipeModuleConfig? scoringModule)
+    {
+        var defaults = CandidateScoringWeights.Default;
+        if (scoringModule is null)
+        {
+            return defaults;
+        }
+
+        return new CandidateScoringWeights(
+            QualityWeight: GetInt(scoringModule, QualityWeightKey, defaults.QualityWeight, 0, 50_000_000),
+            AudioWeight: GetInt(scoringModule, AudioWeightKey, defaults.AudioWeight, 0, 10_000_000),
+            SeedersWeight: GetInt(scoringModule, SeedersWeightKey, defaults.SeedersWeight, 0, 10_000),
+            SeedersCap: GetInt(scoringModule, SeedersCapKey, defaults.SeedersCap, 0, 500_000),
+            IdentityWeight: GetInt(scoringModule, IdentityWeightKey, defaults.IdentityWeight, 0, 10_000),
+            EpisodeWeight: GetInt(scoringModule, EpisodeWeightKey, defaults.EpisodeWeight, 0, 100_000),
+            SeasonMatchScorePerSeason: GetInt(scoringModule, SeasonMatchScorePerSeasonKey, defaults.SeasonMatchScorePerSeason, 0, 10_000),
+            SingleSeasonBoost: GetInt(scoringModule, SingleSeasonBoostKey, defaults.SingleSeasonBoost, 0, 100_000),
+            PackExtrasPriorityEnabled: GetPackExtrasPriorityEnabled(scoringModule),
+            PackExtrasPriorityScore: GetInt(scoringModule, PackExtrasPriorityScoreKey, defaults.PackExtrasPriorityScore, 0, 50_000));
+    }
+
+    public static CandidateScoringWeights GetDefaultCandidateScoringWeights() => CandidateScoringWeights.Default;
+
+    public static void ApplyScoringDefaults(RecipeModuleConfig scoringModule)
+    {
+        foreach (var key in ScoringExtensionKeys)
+        {
+            scoringModule.ExtensionData.Remove(key);
+        }
+    }
+
+    public static IReadOnlyList<string> ScoringExtensionKeys { get; } =
+    [
+        QualityWeightKey,
+        AudioWeightKey,
+        SeedersWeightKey,
+        SeedersCapKey,
+        IdentityWeightKey,
+        EpisodeWeightKey,
+        SeasonMatchScorePerSeasonKey,
+        SingleSeasonBoostKey,
+        PackExtrasPriorityEnabledKey,
+        PackExtrasPriorityScoreKey
+    ];
 
     public static bool GetPackExtrasPriorityEnabled(RecipeModuleConfig? scoringModule) =>
         GetBool(scoringModule, PackExtrasPriorityEnabledKey, true);
