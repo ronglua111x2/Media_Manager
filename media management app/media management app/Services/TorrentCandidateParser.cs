@@ -248,6 +248,12 @@ public static class TorrentCandidateParser
             return shortSeason;
         }
 
+        var suffixMatch = Regex.Match(segment, @"(?:^|[\s\-])S(?<season>\d{1,2})\s*$", RegexOptions.IgnoreCase);
+        if (suffixMatch.Success && int.TryParse(suffixMatch.Groups["season"].Value, out var suffixSeason))
+        {
+            return suffixSeason;
+        }
+
         return null;
     }
 

@@ -8,7 +8,24 @@ public interface IAutoTorrentLinkService
 
     Task<AutoTorrentLinkResult> LinkShowAsync(long showId, CancellationToken cancellationToken = default);
 
-    Task<AutoTorrentLinkResult> LinkSeasonPackAsync(long showId, int ownerSeasonNumber, CancellationToken cancellationToken = default);
+    Task<SeasonPackLinkPreview> PrepareSeasonPackLinkAsync(
+        long showId,
+        int ownerSeasonNumber,
+        IProgress<PackLinkProgressUpdate>? progress = null,
+        bool useGeminiForSpecials = true,
+        bool bypassCache = false,
+        CancellationToken cancellationToken = default);
+
+    Task<AutoTorrentLinkResult> ApplySeasonPackLinkAsync(
+        SeasonPackLinkPreview preview,
+        IProgress<PackLinkProgressUpdate>? progress = null,
+        CancellationToken cancellationToken = default);
+
+    Task<AutoTorrentLinkResult> LinkSeasonPackAsync(
+        long showId,
+        int ownerSeasonNumber,
+        IProgress<PackLinkProgressUpdate>? progress = null,
+        CancellationToken cancellationToken = default);
 
     Task<AutoTorrentLinkResult> LinkSeasonPackFromInventoryAsync(
         long showId,

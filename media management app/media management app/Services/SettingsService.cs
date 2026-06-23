@@ -147,6 +147,14 @@ public sealed class SettingsService : ISettingsService
         {
             Current.Symlink.UnifiedRoot = AppConstants.DefaultSymlinkUnifiedRoot;
         }
+
+        Current.Gemini ??= new GeminiSettings();
+        Current.Gemini.TimeoutSeconds = Math.Clamp(Current.Gemini.TimeoutSeconds, 10, 120);
+        Current.Gemini.FallbackModels = (Current.Gemini.FallbackModels ?? [])
+            .Where(model => !string.IsNullOrWhiteSpace(model))
+            .Select(model => model.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 
     private static void MigrateAutoTrackSettings(AutoTrackSettings autoTrack)

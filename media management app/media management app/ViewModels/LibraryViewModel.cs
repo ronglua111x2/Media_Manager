@@ -8,6 +8,7 @@ using CommunityToolkit.Mvvm.Input;
 using media_management_app.Common;
 using media_management_app.Models;
 using media_management_app.Services;
+using media_management_app.Services.Gemini;
 using media_management_app.Views;
 using WinForms = System.Windows.Forms;
 
@@ -29,6 +30,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
     private readonly IMediaMetadataSyncService _mediaMetadataSyncService;
     private readonly ISettingsService _settingsService;
     private readonly IDownloadFolderCatalogService _downloadFolderCatalogService;
+    private readonly IGeminiLinkConfirmationService _geminiLinkConfirmationService;
 
     private IReadOnlyList<LibraryMediaCardViewModel> _allMediaCards = [];
     private long? _loadedDetailMediaId;
@@ -51,6 +53,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
         IMediaMetadataSyncService mediaMetadataSyncService,
         ISettingsService settingsService,
         IDownloadFolderCatalogService downloadFolderCatalogService,
+        IGeminiLinkConfirmationService geminiLinkConfirmationService,
         IAppLifecycleService lifecycleService)
     {
         _trackedShowService = trackedShowService;
@@ -67,6 +70,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
         _mediaMetadataSyncService = mediaMetadataSyncService;
         _settingsService = settingsService;
         _downloadFolderCatalogService = downloadFolderCatalogService;
+        _geminiLinkConfirmationService = geminiLinkConfirmationService;
 
         _torrentCartService.CartChanged += (_, _) =>
         {
@@ -492,8 +496,16 @@ public sealed partial class LibraryViewModel : ViewModelBase
         }
     }
 
-    [RelayCommand(CanExecute = nameof(CanLinkSeasonPack))]
-    private async Task LinkSeasonPack(LibrarySeasonViewModel? season)
+    [RelayCommand(CanExecute = nameof(CanRuleLinkSeasonPack))]
+    private Task RuleLinkSeasonPack(LibrarySeasonViewModel? season) =>
+        RunPackLinkAsync(season, useGeminiForSpecials: false);
+
+    [RelayCommand(CanExecute = nameof(CanAiLinkSeasonPack))]
+    private Task AiLinkSeasonPack(LibrarySeasonViewModel? season) =>
+        RunPackLinkAsync(season, useGeminiForSpecials: true);
+
+    [RelayCommand(CanExecute = nameof(CanUnlinkSeasonPack))]
+    private async Task UnlinkSeasonPack(LibrarySeasonViewModel? season)
     {
         if (season is null)
         {
@@ -502,21 +514,182 @@ public sealed partial class LibraryViewModel : ViewModelBase
 
         try
         {
-            if (season.IsPackLinked)
+            StatusMessage = $"Removing library links for season {season.SeasonNumber:00} pack...";
+            var unlinkResult = _autoTorrentLinkService.RemoveSeasonPackLinks(season.ShowId, season.SeasonNumber);
+            _trackedShowService.RefreshAvailability(season.ShowId);
+            await ReloadSelectedDetailAsync();
+            StatusMessage = $"Removed pack library links for S{season.SeasonNumber:00}: {unlinkResult.Summary}.";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Pack unlink failed for S{season.SeasonNumber:00}: {ex.Message}";
+        }
+    }
+
+    private async Task RunPackLinkAsync(LibrarySeasonViewModel? season, bool useGeminiForSpecials)
+    {
+        if (season is null)
+        {
+            return;
+        }
+
+        try
+        {
+            StatusMessage = useGeminiForSpecials
+                ? $"Creating AI-assisted library links for season {season.SeasonNumber:00} pack..."
+                : $"Creating library links for season {season.SeasonNumber:00} pack (rules only)...";
+
+            if (useGeminiForSpecials && !_geminiLinkConfirmationService.TryConfirmPackLink())
             {
-                StatusMessage = $"Removing library links for season {season.SeasonNumber:00} pack...";
-                var unlinkResult = _autoTorrentLinkService.RemoveSeasonPackLinks(season.ShowId, season.SeasonNumber);
-                _trackedShowService.RefreshAvailability(season.ShowId);
-                await ReloadSelectedDetailAsync();
-                StatusMessage = $"Removed pack library links for S{season.SeasonNumber:00}: {unlinkResult.Summary}.";
+                StatusMessage = "Pack linking cancelled.";
                 return;
             }
 
-            StatusMessage = $"Creating library links for season {season.SeasonNumber:00} pack...";
-            var result = await _autoTorrentLinkService.LinkSeasonPackAsync(season.ShowId, season.SeasonNumber);
-            _trackedShowService.RefreshAvailability(season.ShowId);
-            await ReloadSelectedDetailAsync();
-            StatusMessage = $"Pack library links for S{season.SeasonNumber:00}: {result.Summary}.";
+            var bypassCache = false;
+            var isRetry = false;
+            SeasonPackLinkPreview? preview = null;
+            AutoTorrentLinkResult? result = null;
+
+            PackLinkProgressWindow? progressWindow = null;
+            PackLinkProgressViewModel? progressViewModel = null;
+            IProgress<PackLinkProgressUpdate>? progress = null;
+
+            if (useGeminiForSpecials)
+            {
+                var show = _databaseService.GetTrackedShow(season.ShowId);
+                var showTitle = show?.DisplayTitle ?? "Show";
+                progressViewModel = new PackLinkProgressViewModel(showTitle, season.SeasonNumber);
+                progressWindow = new PackLinkProgressWindow(progressViewModel)
+                {
+                    Owner = System.Windows.Application.Current.MainWindow
+                };
+                progress = new Progress<PackLinkProgressUpdate>(progressViewModel.Report);
+                progressWindow.Show();
+            }
+
+            try
+            {
+                while (true)
+                {
+                    progressViewModel?.ResetForRetry(isRetry);
+                    if (progressWindow is not null)
+                    {
+                        progressWindow.Show();
+                        progressWindow.Activate();
+                    }
+
+                    try
+                    {
+                        preview = await _autoTorrentLinkService.PrepareSeasonPackLinkAsync(
+                            season.ShowId,
+                            season.SeasonNumber,
+                            progress,
+                            useGeminiForSpecials,
+                            bypassCache);
+
+                        if (preview.RequiresReview)
+                        {
+                            progressViewModel?.PrepareForReview("AI mapping complete. Opening review...");
+                        }
+                        else if (progressViewModel is not null)
+                        {
+                            progressViewModel.MarkComplete("Pack analysis complete.");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        progressViewModel?.MarkFailed(ex.Message, ex.ToString());
+                        StatusMessage = $"Pack link failed for S{season.SeasonNumber:00}: {ex.Message}";
+                        return;
+                    }
+
+                    if (!preview.RequiresReview)
+                    {
+                        result = await _autoTorrentLinkService.ApplySeasonPackLinkAsync(preview);
+                        break;
+                    }
+
+                    progressWindow?.Hide();
+
+                    var reviewViewModel = new PackLinkReviewViewModel();
+                    reviewViewModel.LoadPreview(preview);
+                    var reviewWindow = new PackLinkReviewWindow(reviewViewModel)
+                    {
+                        Owner = System.Windows.Application.Current.MainWindow
+                    };
+
+                    bool? reviewAccepted;
+                    try
+                    {
+                        reviewAccepted = reviewWindow.ShowDialog();
+                    }
+                    catch (Exception ex)
+                    {
+                        StatusMessage = $"Pack review window failed for S{season.SeasonNumber:00}: {ex.Message}";
+                        if (progressViewModel is not null && useGeminiForSpecials)
+                        {
+                            progressViewModel.MarkFailed(ex.Message, ex.ToString());
+                            progressWindow = new PackLinkProgressWindow(progressViewModel)
+                            {
+                                Owner = System.Windows.Application.Current.MainWindow
+                            };
+                            progressWindow.Show();
+                        }
+
+                        return;
+                    }
+
+                    if (reviewAccepted != true)
+                    {
+                        StatusMessage = "Pack linking cancelled.";
+                        progressViewModel?.MarkCancelled("Pack linking cancelled.");
+                        progressWindow?.Show();
+                        progressWindow?.Activate();
+                        return;
+                    }
+
+                    switch (reviewViewModel.Decision)
+                    {
+                        case PackLinkReviewDecision.Retry:
+                            bypassCache = true;
+                            isRetry = true;
+                            continue;
+                        case PackLinkReviewDecision.Accept:
+                            result = await _autoTorrentLinkService.ApplySeasonPackLinkAsync(preview);
+                            break;
+                        default:
+                            StatusMessage = "Pack linking cancelled.";
+                            progressViewModel?.MarkCancelled("Pack linking cancelled.");
+                            progressWindow?.Show();
+                            progressWindow?.Activate();
+                            return;
+                    }
+
+                    break;
+                }
+
+                if (result is not null)
+                {
+                    _trackedShowService.RefreshAvailability(season.ShowId);
+                    await ReloadSelectedDetailAsync();
+                    StatusMessage = $"Pack library links for S{season.SeasonNumber:00}: {result.Summary}.";
+                }
+            }
+            finally
+            {
+                if (progressWindow is not null)
+                {
+                    if (progressViewModel?.IsFailed == true)
+                    {
+                        progressViewModel.AllowClose();
+                    }
+                    else if (result is not null && progressViewModel?.IsCancelled != true)
+                    {
+                        progressViewModel?.AllowClose();
+                        progressWindow.Close();
+                    }
+                }
+            }
         }
         catch (Exception ex)
         {
@@ -925,6 +1098,8 @@ public sealed partial class LibraryViewModel : ViewModelBase
             return;
         }
 
+        var sourceItems = _databaseService.GetSourceItems();
+
         if (card.IsShow)
         {
             var show = _trackedShowService.GetShows().FirstOrDefault(item => item.Id == card.Id);
@@ -934,7 +1109,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
                 return;
             }
 
-            SelectedShow = BuildShowDetail(show, expandedSeasons);
+            SelectedShow = BuildShowDetail(show, expandedSeasons, sourceItems);
             _suppressSeriesStatusUpdate = true;
             SelectedShowSeriesStatus = show.SeriesStatus;
             _suppressSeriesStatusUpdate = false;
@@ -953,7 +1128,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
             return;
         }
 
-        SelectedMovie = BuildMovieDetail(movie);
+        SelectedMovie = BuildMovieDetail(movie, sourceItems);
         SelectedPosterImage = await _posterImageService.LoadAsync(
             card.PosterPath,
             card.MediaKind,
@@ -988,7 +1163,9 @@ public sealed partial class LibraryViewModel : ViewModelBase
         AddSeasonPackToCartCommand.NotifyCanExecuteChanged();
         LinkMovieCommand.NotifyCanExecuteChanged();
         LinkEpisodeCommand.NotifyCanExecuteChanged();
-        LinkSeasonPackCommand.NotifyCanExecuteChanged();
+        RuleLinkSeasonPackCommand.NotifyCanExecuteChanged();
+        AiLinkSeasonPackCommand.NotifyCanExecuteChanged();
+        UnlinkSeasonPackCommand.NotifyCanExecuteChanged();
     }
 
     private async Task ReloadSelectedDetailAsync()
@@ -999,13 +1176,18 @@ public sealed partial class LibraryViewModel : ViewModelBase
         AddSeasonPackToCartCommand.NotifyCanExecuteChanged();
         LinkMovieCommand.NotifyCanExecuteChanged();
         LinkEpisodeCommand.NotifyCanExecuteChanged();
-        LinkSeasonPackCommand.NotifyCanExecuteChanged();
+        RuleLinkSeasonPackCommand.NotifyCanExecuteChanged();
+        AiLinkSeasonPackCommand.NotifyCanExecuteChanged();
+        UnlinkSeasonPackCommand.NotifyCanExecuteChanged();
     }
 
-    private LibraryShowDetailViewModel BuildShowDetail(TrackedShow show, IReadOnlySet<int>? expandedSeasons = null)
+    private LibraryShowDetailViewModel BuildShowDetail(
+        TrackedShow show,
+        IReadOnlySet<int>? expandedSeasons,
+        IReadOnlyList<SourceItem> sourceItems)
     {
-        var linkedEpisodeStatuses = GetLinkedEpisodeStatuses(show.TmdbId);
-        var linkedPackOwnerSeasons = GetLinkedPackOwnerSeasons(show.TmdbId);
+        var linkedEpisodeStatuses = GetLinkedEpisodeStatuses(show.TmdbId, sourceItems);
+        var linkedPackOwnerSeasons = GetLinkedPackOwnerSeasons(show.TmdbId, sourceItems);
         var episodes = _trackedShowService.GetEpisodes(show.Id)
             .Select(episode => new LibraryEpisodeRowViewModel(episode)
             {
@@ -1026,6 +1208,9 @@ public sealed partial class LibraryViewModel : ViewModelBase
             .Select(season => season.SeasonNumber)
             .ToHashSet();
 
+        var geminiLinkAvailable = _settingsService.Current.Gemini?.Enabled == true
+            && !string.IsNullOrWhiteSpace(_settingsService.Current.Gemini?.ApiKey);
+
         var seasons = episodes
             .GroupBy(episode => episode.SeasonNumber)
             .Where(group => ShowHiddenSeasons || !hiddenSeasonNumbers.Contains(group.Key))
@@ -1036,7 +1221,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
                 var seasonRows = group.ToList();
                 if (group.Key == AppConstants.SpecialsSeasonNumber)
                 {
-                    seasonRows = AppendOrphanPackRows(show.Id, show.TmdbId, seasonRows);
+                    seasonRows = AppendOrphanPackRows(show.Id, show.TmdbId, seasonRows, sourceItems);
                 }
 
                 return new LibrarySeasonViewModel(
@@ -1048,7 +1233,8 @@ public sealed partial class LibraryViewModel : ViewModelBase
                 {
                     IsExpanded = expandedSeasons?.Contains(group.Key) == true,
                     IsPackInCart = _torrentCartService.TryGetActiveSeasonPackOrder(show.Id, group.Key, out _),
-                    IsPackLinked = linkedPackOwnerSeasons.Contains(group.Key)
+                    IsPackLinked = linkedPackOwnerSeasons.Contains(group.Key),
+                    IsGeminiLinkAvailable = geminiLinkAvailable
                 };
             });
 
@@ -1073,7 +1259,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
             .Select(season => season.SeasonNumber)
             .ToHashSet() ?? [];
 
-        SelectedShow = BuildShowDetail(show, expandedSeasons);
+        SelectedShow = BuildShowDetail(show, expandedSeasons, _databaseService.GetSourceItems());
         _suppressSeriesStatusUpdate = true;
         SelectedShowSeriesStatus = show.SeriesStatus;
         _suppressSeriesStatusUpdate = false;
@@ -1086,11 +1272,11 @@ public sealed partial class LibraryViewModel : ViewModelBase
         OnPropertyChanged(nameof(ShowStopAutoTrackButton));
     }
 
-    private LibraryMovieDetailViewModel BuildMovieDetail(TrackedMovie movie)
+    private LibraryMovieDetailViewModel BuildMovieDetail(TrackedMovie movie, IReadOnlyList<SourceItem> sourceItems)
     {
         return new LibraryMovieDetailViewModel(movie)
         {
-            LibraryLinkStatus = IsMovieLinked(movie.TmdbId) ? "Linked" : "Not linked",
+            LibraryLinkStatus = IsMovieLinked(movie.TmdbId, sourceItems) ? "Linked" : "Not linked",
             IsInCart = _torrentCartService.TryGetActiveMovieOrder(movie.Id, out _)
         };
     }
@@ -1212,17 +1398,20 @@ public sealed partial class LibraryViewModel : ViewModelBase
         AddEpisodeToCartCommand.NotifyCanExecuteChanged();
         AddSeasonPackToCartCommand.NotifyCanExecuteChanged();
         LinkEpisodeCommand.NotifyCanExecuteChanged();
-        LinkSeasonPackCommand.NotifyCanExecuteChanged();
+        RuleLinkSeasonPackCommand.NotifyCanExecuteChanged();
+        AiLinkSeasonPackCommand.NotifyCanExecuteChanged();
+        UnlinkSeasonPackCommand.NotifyCanExecuteChanged();
         StatusMessage = $"Season {seasonNumber:00} set to {mode} mode.";
     }
 
     private List<LibraryEpisodeRowViewModel> AppendOrphanPackRows(
         long showId,
         int tmdbId,
-        List<LibraryEpisodeRowViewModel> trackedRows)
+        List<LibraryEpisodeRowViewModel> trackedRows,
+        IReadOnlyList<SourceItem> sourceItems)
     {
         var providerId = tmdbId.ToString();
-        var orphanItems = _databaseService.GetSourceItems()
+        var orphanItems = sourceItems
             .Where(item =>
                 item.IsOrphanPackSpecial &&
                 item.MatchAccepted &&
@@ -1244,11 +1433,13 @@ public sealed partial class LibraryViewModel : ViewModelBase
         return rows;
     }
 
-    private Dictionary<(int SeasonNumber, int EpisodeNumber), string> GetLinkedEpisodeStatuses(int tmdbId)
+    private Dictionary<(int SeasonNumber, int EpisodeNumber), string> GetLinkedEpisodeStatuses(
+        int tmdbId,
+        IReadOnlyList<SourceItem> sourceItems)
     {
         var providerId = tmdbId.ToString();
         var statuses = new Dictionary<(int SeasonNumber, int EpisodeNumber), string>();
-        foreach (var item in _databaseService.GetSourceItems()
+        foreach (var item in sourceItems
                      .Where(item =>
                          item.MediaKind == MediaKind.TvEpisode &&
                          !item.IsOrphanPackSpecial &&
@@ -1285,10 +1476,10 @@ public sealed partial class LibraryViewModel : ViewModelBase
         return statuses;
     }
 
-    private HashSet<int> GetLinkedPackOwnerSeasons(int tmdbId)
+    private HashSet<int> GetLinkedPackOwnerSeasons(int tmdbId, IReadOnlyList<SourceItem> sourceItems)
     {
         var providerId = tmdbId.ToString();
-        return _databaseService.GetSourceItems()
+        return sourceItems
             .Where(item =>
                 item.MediaKind == MediaKind.TvEpisode &&
                 item.MatchAccepted &&
@@ -1313,10 +1504,10 @@ public sealed partial class LibraryViewModel : ViewModelBase
         return string.Equals(status, "Linked by episode torrent", StringComparison.OrdinalIgnoreCase) ? 2 : 1;
     }
 
-    private bool IsMovieLinked(int tmdbId)
+    private static bool IsMovieLinked(int tmdbId, IReadOnlyList<SourceItem> sourceItems)
     {
         var providerId = tmdbId.ToString();
-        return _databaseService.GetSourceItems().Any(item =>
+        return sourceItems.Any(item =>
             item.MediaKind == MediaKind.Movie &&
             item.MatchAccepted &&
             item.State == ItemState.Linked &&
@@ -1336,7 +1527,11 @@ public sealed partial class LibraryViewModel : ViewModelBase
 
     private bool CanLinkEpisode(LibraryEpisodeRowViewModel? episode) => episode?.CanLink == true;
 
-    private bool CanLinkSeasonPack(LibrarySeasonViewModel? season) => season?.CanLinkPack == true;
+    private bool CanRuleLinkSeasonPack(LibrarySeasonViewModel? season) => season?.CanRuleLinkPack == true;
+
+    private bool CanAiLinkSeasonPack(LibrarySeasonViewModel? season) => season?.CanAiLinkPack == true;
+
+    private bool CanUnlinkSeasonPack(LibrarySeasonViewModel? season) => season?.CanUnlinkPack == true;
 
     private void OnAppModeChanged(object? sender, AppMode mode)
     {

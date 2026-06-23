@@ -13,4 +13,8 @@ public sealed class PackFileEntry
     public int? MatchedEpisodeNumber { get; init; }
 
     public string MatchReason { get; init; } = string.Empty;
+
+    public SpecialMappingSource? MappingSource { get; init; }
+
+    public SpecialMappingProposalReason? ProposalReason { get; init; }
 }

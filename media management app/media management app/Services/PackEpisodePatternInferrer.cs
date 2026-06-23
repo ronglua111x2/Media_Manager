@@ -5,6 +5,10 @@ namespace media_management_app.Services;
 
 public static class PackEpisodePatternInferrer
 {
+    private static readonly Regex ReleaseRevisionStripRegex = new(
+        @"(?:\s*(?:v\d+|proper|repack))(?=\s|$|\.|\[)",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     private static readonly Regex StandardEpisodeRegex = new(
         @"\bS(?<season>\d{1,3})E(?<episode>\d{1,4})\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -12,6 +16,57 @@ public static class PackEpisodePatternInferrer
     private static readonly Regex CompactSeasonEpisodeSuffixRegex = new(
         @"S(?<season>\d{1,2})(?<episode>\d{1,4})\s*$",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    public static string NormalizeStem(string stem)
+    {
+        if (string.IsNullOrWhiteSpace(stem))
+        {
+            return string.Empty;
+        }
+
+        return ReleaseRevisionStripRegex.Replace(stem, string.Empty).Trim();
+    }
+
+    public static int? TryInferEpisode(
+        string stem,
+        int seasonNumber,
+        IReadOnlySet<int> validEpisodeNumbers,
+        InferredEpisodePattern? seasonPattern = null)
+    {
+        if (string.IsNullOrWhiteSpace(stem) || validEpisodeNumbers.Count == 0)
+        {
+            return null;
+        }
+
+        var normalized = NormalizeStem(stem);
+
+        var compact = TryExtractSeasonEpisodeSuffix(normalized, seasonNumber);
+        if (compact is not null && validEpisodeNumbers.Contains(compact.Value))
+        {
+            return compact;
+        }
+
+        if (seasonPattern?.IsValid == true)
+        {
+            var inferred = TryExtract(normalized, seasonPattern, seasonNumber);
+            if (inferred is not null && validEpisodeNumbers.Contains(inferred.Value))
+            {
+                return inferred;
+            }
+        }
+
+        var match = StandardEpisodeRegex.Match(normalized);
+        if (match.Success &&
+            int.TryParse(match.Groups["season"].Value, out var parsedSeason) &&
+            int.TryParse(match.Groups["episode"].Value, out var parsedEpisode) &&
+            parsedSeason == seasonNumber &&
+            validEpisodeNumbers.Contains(parsedEpisode))
+        {
+            return parsedEpisode;
+        }
+
+        return null;
+    }
 
     public static InferredEpisodePattern Infer(
         IReadOnlyList<string> stems,

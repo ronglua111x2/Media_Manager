@@ -16,7 +16,11 @@ public interface ITrackedMovieService
 
     void RefreshAvailability();
 
+    void RefreshAvailability(IReadOnlyList<SourceItem> sourceItems);
+
     void RefreshAvailability(long movieId);
+
+    void RefreshAvailability(long movieId, IReadOnlyList<SourceItem> sourceItems);
 
     void UpdateTorrentState(long movieId, AddedTorrentResult torrent);
 

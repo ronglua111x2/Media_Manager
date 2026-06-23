@@ -764,11 +764,71 @@
                                         <TextBlock Text="TMDB" Style="{StaticResource SettingsSectionTitleStyle}" Margin="0" />
                                     </StackPanel>
                                     <TextBlock Text="API read access token" Style="{StaticResource SettingsLabelStyle}" />
-                                    <TextBox Text="{Binding TmdbReadAccessToken, UpdateSourceTrigger=PropertyChanged}"
-                                             Style="{StaticResource SettingsTextBoxStyle}"
-                                             MaxHeight="90"
-                                             TextWrapping="Wrap"
-                                             VerticalScrollBarVisibility="Auto" />
+                                    <Grid Margin="0,0,0,10">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <Grid Grid.Column="0">
+                                            <TextBox Text="{Binding TmdbReadAccessToken, UpdateSourceTrigger=PropertyChanged}"
+                                                     Margin="0"
+                                                     MaxHeight="90"
+                                                     TextWrapping="Wrap"
+                                                     VerticalScrollBarVisibility="Auto">
+                                                <TextBox.Style>
+                                                    <Style TargetType="TextBox" BasedOn="{StaticResource SettingsTextBoxStyle}">
+                                                        <Setter Property="Margin" Value="0" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsTmdbTokenVisible}" Value="False">
+                                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBox.Style>
+                                            </TextBox>
+                                            <TextBox Text="{Binding TmdbReadAccessTokenMasked}"
+                                                     IsReadOnly="True"
+                                                     Margin="0"
+                                                     MaxHeight="90"
+                                                     TextWrapping="Wrap"
+                                                     VerticalScrollBarVisibility="Auto">
+                                                <TextBox.Style>
+                                                    <Style TargetType="TextBox" BasedOn="{StaticResource SettingsTextBoxStyle}">
+                                                        <Setter Property="Margin" Value="0" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsTmdbTokenVisible}" Value="True">
+                                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBox.Style>
+                                            </TextBox>
+                                        </Grid>
+                                        <Button Grid.Column="1"
+                                                Command="{Binding ToggleTmdbTokenVisibilityCommand}"
+                                                Margin="8,0,0,0"
+                                                Padding="10,7"
+                                                VerticalAlignment="Top">
+                                            <Button.Style>
+                                                <Style TargetType="Button" BasedOn="{StaticResource SettingsIconTextButtonStyle}">
+                                                    <Setter Property="Content">
+                                                        <Setter.Value>
+                                                            <iconPacks:PackIconLucide Kind="Eye" Width="16" Height="16" />
+                                                        </Setter.Value>
+                                                    </Setter>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsTmdbTokenVisible}" Value="True">
+                                                            <Setter Property="Content">
+                                                                <Setter.Value>
+                                                                    <iconPacks:PackIconLucide Kind="EyeOff" Width="16" Height="16" />
+                                                                </Setter.Value>
+                                                            </Setter>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Button.Style>
+                                        </Button>
+                                    </Grid>
                                     <Button Command="{Binding TestTmdbTokenCommand}"
                                             Style="{StaticResource SettingsIconTextButtonStyle}"
                                             HorizontalAlignment="Left">
@@ -777,6 +837,169 @@
                                             <TextBlock Text="Test Token" />
                                         </StackPanel>
                                     </Button>
+                                </StackPanel>
+                            </materialDesign:Card>
+
+                            <materialDesign:Card Style="{StaticResource SettingsCardStyle}">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <Border Width="8"
+                                                Height="24"
+                                                CornerRadius="4"
+                                                Background="{StaticResource AppBrushAccent}"
+                                                Margin="0,0,8,0" />
+                                        <TextBlock Text="Gemini AI" Style="{StaticResource SettingsSectionTitleStyle}" Margin="0" />
+                                    </StackPanel>
+                                    <CheckBox Content="Enable Gemini for pack special/OVA mapping"
+                                              IsChecked="{Binding GeminiEnabled}"
+                                              Margin="0,0,0,8" />
+                                    <TextBlock Text="API key" Style="{StaticResource SettingsLabelStyle}" />
+                                    <Grid Margin="0,0,0,10">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <Grid Grid.Column="0">
+                                            <TextBox Text="{Binding GeminiApiKey, UpdateSourceTrigger=PropertyChanged}"
+                                                     Margin="0">
+                                                <TextBox.Style>
+                                                    <Style TargetType="TextBox" BasedOn="{StaticResource SettingsTextBoxStyle}">
+                                                        <Setter Property="Margin" Value="0" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsGeminiApiKeyVisible}" Value="False">
+                                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBox.Style>
+                                            </TextBox>
+                                            <TextBox Text="{Binding GeminiApiKeyMasked}"
+                                                     IsReadOnly="True"
+                                                     Margin="0">
+                                                <TextBox.Style>
+                                                    <Style TargetType="TextBox" BasedOn="{StaticResource SettingsTextBoxStyle}">
+                                                        <Setter Property="Margin" Value="0" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsGeminiApiKeyVisible}" Value="True">
+                                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBox.Style>
+                                            </TextBox>
+                                        </Grid>
+                                        <Button Grid.Column="1"
+                                                Command="{Binding ToggleGeminiApiKeyVisibilityCommand}"
+                                                Margin="8,0,0,0"
+                                                Padding="10,7"
+                                                VerticalAlignment="Top">
+                                            <Button.Style>
+                                                <Style TargetType="Button" BasedOn="{StaticResource SettingsIconTextButtonStyle}">
+                                                    <Setter Property="Content">
+                                                        <Setter.Value>
+                                                            <iconPacks:PackIconLucide Kind="Eye" Width="16" Height="16" />
+                                                        </Setter.Value>
+                                                    </Setter>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsGeminiApiKeyVisible}" Value="True">
+                                                            <Setter Property="Content">
+                                                                <Setter.Value>
+                                                                    <iconPacks:PackIconLucide Kind="EyeOff" Width="16" Height="16" />
+                                                                </Setter.Value>
+                                                            </Setter>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Button.Style>
+                                        </Button>
+                                    </Grid>
+                                    <TextBlock Text="Model" Style="{StaticResource SettingsLabelStyle}" />
+                                    <ComboBox ItemsSource="{Binding GeminiModelOptions}"
+                                              SelectedItem="{Binding SelectedGeminiModel, Mode=TwoWay}"
+                                              DisplayMemberPath="DisplayLabel"
+                                              Margin="0,0,0,10"
+                                              MinWidth="260"
+                                              HorizontalAlignment="Left" />
+                                    <TextBlock Text="Fallback models (try-order)"
+                                               Style="{StaticResource SettingsLabelStyle}" />
+                                    <TextBlock Text="{Binding GeminiModelChainSummary}"
+                                               Style="{StaticResource SettingsHintStyle}"
+                                               Margin="0,0,0,6" />
+                                    <Grid Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <ListBox Grid.Column="0"
+                                                 ItemsSource="{Binding GeminiFallbackModels}"
+                                                 SelectedItem="{Binding SelectedGeminiFallback, Mode=TwoWay}"
+                                                 DisplayMemberPath="DisplayLabel"
+                                                 MinHeight="72"
+                                                 MaxHeight="120"
+                                                 Margin="0,0,8,0" />
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                            <Button Command="{Binding MoveGeminiFallbackUpCommand}"
+                                                    Style="{StaticResource SettingsIconTextButtonStyle}"
+                                                    Margin="0,0,0,4"
+                                                    ToolTip="Move up">
+                                                <iconPacks:PackIconLucide Kind="ChevronUp" Width="16" Height="16" />
+                                            </Button>
+                                            <Button Command="{Binding MoveGeminiFallbackDownCommand}"
+                                                    Style="{StaticResource SettingsIconTextButtonStyle}"
+                                                    Margin="0,0,0,4"
+                                                    ToolTip="Move down">
+                                                <iconPacks:PackIconLucide Kind="ChevronDown" Width="16" Height="16" />
+                                            </Button>
+                                            <Button Command="{Binding RemoveGeminiFallbackCommand}"
+                                                    Style="{StaticResource SettingsIconTextButtonStyle}"
+                                                    ToolTip="Remove">
+                                                <iconPacks:PackIconLucide Kind="Trash2" Width="16" Height="16" />
+                                            </Button>
+                                        </StackPanel>
+                                    </Grid>
+                                    <WrapPanel Margin="0,0,0,10">
+                                        <ComboBox ItemsSource="{Binding GeminiFallbackPickerOptions}"
+                                                  SelectedItem="{Binding SelectedGeminiFallbackToAdd, Mode=TwoWay}"
+                                                  DisplayMemberPath="DisplayLabel"
+                                                  MinWidth="220"
+                                                  Margin="0,0,8,0" />
+                                        <Button Command="{Binding AddGeminiFallbackCommand}"
+                                                Style="{StaticResource SettingsIconTextButtonStyle}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconLucide Kind="Plus" Width="16" Height="16" Margin="0,0,7,0" />
+                                                <TextBlock Text="Add fallback" />
+                                            </StackPanel>
+                                        </Button>
+                                    </WrapPanel>
+                                    <TextBlock Style="{StaticResource SettingsHintStyle}"
+                                               Text="Up to 3 fallbacks. On 429/503 the app retries the current model, then tries fallbacks in order."
+                                               Margin="0,0,0,8" />
+                                    <TextBlock Style="{StaticResource SettingsHintStyle}"
+                                               Margin="0,0,0,8">
+                                        <Hyperlink Command="{Binding OpenGeminiModelsFileCommand}">
+                                            <Run Text="Models file: " />
+                                            <Run Text="{Binding GeminiModelsFilePath, Mode=OneWay}" />
+                                        </Hyperlink>
+                                    </TextBlock>
+                                    <TextBlock Text="{Binding GeminiDailyUsageLabel}"
+                                               Style="{StaticResource SettingsLabelStyle}"
+                                               Margin="0,0,0,8" />
+                                    <WrapPanel Margin="0,0,0,8">
+                                        <Button Command="{Binding RefreshGeminiModelsCommand}"
+                                                Style="{StaticResource SettingsIconTextButtonStyle}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconLucide Kind="RefreshCw" Width="16" Height="16" Margin="0,0,7,0" />
+                                                <TextBlock Text="Refresh models" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Command="{Binding TestGeminiCommand}"
+                                                Style="{StaticResource SettingsIconTextButtonStyle}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconLucide Kind="Sparkles" Width="16" Height="16" Margin="0,0,7,0" />
+                                                <TextBlock Text="Test Gemini" />
+                                            </StackPanel>
+                                        </Button>
+                                    </WrapPanel>
                                 </StackPanel>
                             </materialDesign:Card>
 

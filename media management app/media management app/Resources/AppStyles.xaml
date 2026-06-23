@@ -469,10 +469,43 @@
         <Setter Property="Background" Value="{StaticResource AppBrushDataGridBackground}" />
         <Setter Property="BorderBrush" Value="{StaticResource AppBrushDataGridBorder}" />
         <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Foreground" Value="{StaticResource AppBrushText}" />
         <Setter Property="GridLinesVisibility" Value="None" />
         <Setter Property="HeadersVisibility" Value="Column" />
         <Setter Property="RowHeight" Value="28" />
         <Setter Property="AlternatingRowBackground" Value="{StaticResource AppBrushDataGridAltRow}" />
+        <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
+        <Setter Property="TextOptions.TextRenderingMode" Value="ClearType" />
+    </Style>
+    <Style TargetType="DataGridRow">
+        <Setter Property="Foreground" Value="{StaticResource AppBrushText}" />
+        <Setter Property="MinHeight" Value="32" />
+        <Style.Triggers>
+            <Trigger Property="AlternationIndex" Value="0">
+                <Setter Property="Background" Value="{StaticResource AppBrushDataGridBackground}" />
+                <Setter Property="Foreground" Value="{StaticResource AppBrushText}" />
+            </Trigger>
+            <Trigger Property="AlternationIndex" Value="1">
+                <Setter Property="Background" Value="{StaticResource AppBrushDataGridAltRow}" />
+                <Setter Property="Foreground" Value="{StaticResource AppBrushText}" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+    <Style TargetType="DataGridCell">
+        <Setter Property="Foreground" Value="{StaticResource AppBrushText}" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Padding" Value="8,6" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
+        <Setter Property="TextOptions.TextRenderingMode" Value="ClearType" />
+    </Style>
+    <Style x:Key="AppDataGridTextCellStyle" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{StaticResource AppBrushText}" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
+        <Setter Property="TextOptions.TextRenderingMode" Value="ClearType" />
     </Style>
     <Style TargetType="DataGridColumnHeader">
         <Setter Property="Background" Value="{StaticResource AppBrushDataGridHeader}" />

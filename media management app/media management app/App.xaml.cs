@@ -5,8 +5,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Toolkit.Uwp.Notifications;
 using media_management_app.Common;
+using media_management_app.Models;
 using media_management_app.Services;
 using media_management_app.Services.Events;
+using media_management_app.Services.Gemini;
 using media_management_app.Services.Symlink;
 using media_management_app.ViewModels;
 
@@ -42,6 +44,10 @@ public partial class App : System.Windows.Application
 
         var settings = _serviceProvider.GetRequiredService<ISettingsService>();
         settings.Load();
+
+        var geminiModelCatalog = _serviceProvider.GetRequiredService<IGeminiModelCatalogService>();
+        geminiModelCatalog.ReloadFromDisk();
+        NormalizeGeminiSettings(settings, geminiModelCatalog);
 
         _serviceProvider.GetRequiredService<IThemeService>().Apply(settings.Current.Ui?.Theme ?? AppTheme.Light);
 
@@ -153,6 +159,13 @@ public partial class App : System.Windows.Application
         services.AddSingleton<IMetadataProvider>(provider => provider.GetRequiredService<TmdbMetadataProvider>());
         services.AddSingleton<ITmdbShowCatalogService>(provider => provider.GetRequiredService<TmdbMetadataProvider>());
         services.AddSingleton<ITmdbMovieCatalogService>(provider => provider.GetRequiredService<TmdbMetadataProvider>());
+        services.AddSingleton<GeminiQuotaTracker>();
+        services.AddSingleton<IGeminiModelCatalogService, GeminiModelCatalogService>();
+        services.AddSingleton<IGeminiApiClient, GeminiApiClient>();
+        services.AddSingleton<GeminiSpecialMappingProvider>();
+        services.AddSingleton<SpecialMappingCache>();
+        services.AddSingleton<ISpecialMappingOrchestrator, SpecialMappingOrchestrator>();
+        services.AddSingleton<IGeminiLinkConfirmationService, GeminiLinkConfirmationService>();
         services.AddSingleton<ITrackedShowService, TrackedShowService>();
         services.AddSingleton<ITrackedMovieService, TrackedMovieService>();
         services.AddSingleton<IMediaMetadataSyncService, MediaMetadataSyncService>();
@@ -214,5 +227,17 @@ public partial class App : System.Windows.Application
             {
             }
         });
+    }
+
+    private static void NormalizeGeminiSettings(ISettingsService settings, IGeminiModelCatalogService modelCatalog)
+    {
+        settings.Current.Gemini ??= new GeminiSettings();
+        settings.Current.Gemini.Model = modelCatalog.Normalize(settings.Current.Gemini.Model);
+        if (settings.Current.Gemini.FallbackModels.Length == 0)
+        {
+            settings.Current.Gemini.FallbackModels = modelCatalog.FallbackModels
+                .Where(model => !string.Equals(model, settings.Current.Gemini.Model, StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+        }
     }
 }

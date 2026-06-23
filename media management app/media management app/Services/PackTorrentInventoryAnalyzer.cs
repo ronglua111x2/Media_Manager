@@ -10,7 +10,8 @@ public static class PackTorrentInventoryAnalyzer
         IReadOnlyList<TrackedEpisode> episodes,
         IReadOnlyList<TrackedSeason>? seasons = null,
         IReadOnlySet<int>? coveredSeasons = null,
-        PackAnalyzeMode mode = PackAnalyzeMode.Inspect)
+        PackAnalyzeMode mode = PackAnalyzeMode.Inspect,
+        SpecialMappingResult? resolvedSpecialMappings = null)
     {
         var inventory = new PackTorrentInventory();
         var episodesByKey = episodes.ToDictionary(episode => (episode.SeasonNumber, episode.EpisodeNumber));
@@ -34,8 +35,15 @@ public static class PackTorrentInventoryAnalyzer
 
         var tree = PackFolderTreeAnalyzer.Analyze(files.Select(file => file.RelativePath).ToList());
         var seasonGroups = PackSeasonFileGrouper.Group(files, tree);
-        var inferredPatterns = InferPatternsBySeason(seasonGroups, seasonCountsFromDb);
-        var specialMappings = BuildSpecialMappings(files, tree, specialsEpisodes);
+        var validEpisodesBySeason = episodes
+            .Where(episode => episode.SeasonNumber > 0)
+            .GroupBy(episode => episode.SeasonNumber)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Select(episode => episode.EpisodeNumber).ToHashSet() as IReadOnlySet<int>);
+        var fallbackPatterns = BuildFallbackPatternsBySeason(seasonGroups, seasonCountsFromDb);
+        var resolutionsByPath = ResolveRegularEpisodesBySeason(seasonGroups, validEpisodesBySeason, fallbackPatterns);
+        var specialMappings = BuildSpecialMappings(files, tree, specialsEpisodes, resolvedSpecialMappings);
 
         foreach (var (relativePath, fileName) in files)
         {
@@ -49,7 +57,7 @@ public static class PackTorrentInventoryAnalyzer
                 parsed,
                 pathSeasonHint,
                 seasonGroups,
-                inferredPatterns,
+                resolutionsByPath,
                 episodesByKey,
                 specialMappings,
                 coveredSeasonSet,
@@ -110,7 +118,33 @@ public static class PackTorrentInventoryAnalyzer
             .ToHashSet();
     }
 
-    private static Dictionary<int, InferredEpisodePattern> InferPatternsBySeason(
+    private static Dictionary<string, PackEpisodeResolution> ResolveRegularEpisodesBySeason(
+        IReadOnlyList<PackSeasonFileGrouper.SeasonFileGroup> seasonGroups,
+        IReadOnlyDictionary<int, IReadOnlySet<int>> validEpisodesBySeason,
+        IReadOnlyDictionary<int, InferredEpisodePattern> fallbackPatterns)
+    {
+        var resolutions = new Dictionary<string, PackEpisodeResolution>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var group in seasonGroups.Where(item => item.SeasonNumber > 0))
+        {
+            var validEpisodes = validEpisodesBySeason.GetValueOrDefault(group.SeasonNumber) ?? new HashSet<int>();
+            fallbackPatterns.TryGetValue(group.SeasonNumber, out var fallbackPattern);
+            var seasonResolutions = PackEpisodeResolver.ResolveSeason(
+                group.Files,
+                group.SeasonNumber,
+                validEpisodes,
+                fallbackPattern?.IsValid == true ? fallbackPattern : null);
+
+            foreach (var (path, resolution) in seasonResolutions)
+            {
+                resolutions[path] = resolution;
+            }
+        }
+
+        return resolutions;
+    }
+
+    private static Dictionary<int, InferredEpisodePattern> BuildFallbackPatternsBySeason(
         IReadOnlyList<PackSeasonFileGrouper.SeasonFileGroup> seasonGroups,
         IReadOnlyDictionary<int, int> seasonCountsFromDb)
     {
@@ -120,7 +154,7 @@ public static class PackTorrentInventoryAnalyzer
         foreach (var group in seasonGroups.Where(item => item.SeasonNumber > 0).OrderByDescending(item => item.Files.Count))
         {
             var stems = group.Files
-                .Select(file => Path.GetFileNameWithoutExtension(file.FileName))
+                .Select(file => PackEpisodePatternInferrer.NormalizeStem(Path.GetFileNameWithoutExtension(file.FileName)))
                 .Where(stem => !string.IsNullOrWhiteSpace(stem))
                 .ToList();
             var expectedCount = seasonCountsFromDb.GetValueOrDefault(group.SeasonNumber);
@@ -137,21 +171,40 @@ public static class PackTorrentInventoryAnalyzer
             }
         }
 
-        foreach (var group in seasonGroups.Where(item => item.SeasonNumber == PackSeasonFileGrouper.FlatSeasonKey))
-        {
-            var stems = group.Files
-                .Select(file => Path.GetFileNameWithoutExtension(file.FileName))
-                .Where(stem => !string.IsNullOrWhiteSpace(stem))
-                .ToList();
-            patterns[PackSeasonFileGrouper.FlatSeasonKey] = PackEpisodePatternInferrer.Infer(
-                stems,
-                borrowCandidates: borrowCandidates);
-        }
-
         return patterns;
     }
 
     private static IReadOnlyDictionary<string, SpecialFileMapping> BuildSpecialMappings(
+        IReadOnlyList<(string RelativePath, string FileName)> files,
+        PackFolderTreeAnalysis tree,
+        IReadOnlyList<TrackedEpisode> specialsEpisodes,
+        SpecialMappingResult? resolvedSpecialMappings)
+    {
+        if (resolvedSpecialMappings is not null)
+        {
+            return BuildSpecialMappingsFromResult(resolvedSpecialMappings);
+        }
+
+        return BuildLegacySpecialMappings(files, tree, specialsEpisodes);
+    }
+
+    private static IReadOnlyDictionary<string, SpecialFileMapping> BuildSpecialMappingsFromResult(
+        SpecialMappingResult resolvedSpecialMappings)
+    {
+        var mappings = new Dictionary<string, SpecialFileMapping>(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in resolvedSpecialMappings.Items)
+        {
+            mappings[item.RelativePath] = new SpecialFileMapping(
+                item.Episode,
+                item.Reason,
+                item.Source,
+                item.ProposalReason);
+        }
+
+        return mappings;
+    }
+
+    private static IReadOnlyDictionary<string, SpecialFileMapping> BuildLegacySpecialMappings(
         IReadOnlyList<(string RelativePath, string FileName)> files,
         PackFolderTreeAnalysis tree,
         IReadOnlyList<TrackedEpisode> specialsEpisodes)
@@ -189,7 +242,11 @@ public static class PackTorrentInventoryAnalyzer
         return mappings;
     }
 
-    private sealed record SpecialFileMapping(TrackedEpisode? Episode, string Reason);
+    private sealed record SpecialFileMapping(
+        TrackedEpisode? Episode,
+        string Reason,
+        SpecialMappingSource? Source = null,
+        SpecialMappingProposalReason? ProposalReason = null);
 
     private static PackFileEntry ClassifyFile(
         string relativePath,
@@ -197,7 +254,7 @@ public static class PackTorrentInventoryAnalyzer
         TorrentCandidateParseResult parsed,
         int? pathSeasonHint,
         IReadOnlyList<PackSeasonFileGrouper.SeasonFileGroup> seasonGroups,
-        IReadOnlyDictionary<int, InferredEpisodePattern> inferredPatterns,
+        IReadOnlyDictionary<string, PackEpisodeResolution> resolutionsByPath,
         IReadOnlyDictionary<(int SeasonNumber, int EpisodeNumber), TrackedEpisode> episodesByKey,
         IReadOnlyDictionary<string, SpecialFileMapping> specialMappings,
         IReadOnlySet<int> coveredSeasons,
@@ -238,7 +295,9 @@ public static class PackTorrentInventoryAnalyzer
                     Classification = PackFileClassification.MatchedSpecial,
                     MatchedSeasonNumber = specialMapping.Episode.SeasonNumber,
                     MatchedEpisodeNumber = specialMapping.Episode.EpisodeNumber,
-                    MatchReason = specialMapping.Reason
+                    MatchReason = specialMapping.Reason,
+                    MappingSource = specialMapping.Source,
+                    ProposalReason = specialMapping.ProposalReason
                 };
             }
 
@@ -268,7 +327,36 @@ public static class PackTorrentInventoryAnalyzer
         }
 
         var stem = Path.GetFileNameWithoutExtension(fileName);
-        var episodeNumber = TryInferEpisodeNumber(seasonNumber.Value, stem, parsed, inferredPatterns);
+        int? episodeNumber = null;
+        string? resolutionReason = null;
+
+        if (resolutionsByPath.TryGetValue(relativePath, out var resolution))
+        {
+            if (resolution.Status == PackEpisodeResolutionStatus.Skipped)
+            {
+                if (mode == PackAnalyzeMode.Link)
+                {
+                    return Skipped(relativePath, fileName, resolution.SkipReason ?? "No tracked episode match.");
+                }
+
+                resolutionReason = resolution.SkipReason;
+            }
+            else
+            {
+                episodeNumber = resolution.EpisodeNumber;
+            }
+        }
+
+        if (episodeNumber is null && resolutionReason is null)
+        {
+            episodeNumber = PackEpisodePatternInferrer.TryInferEpisode(
+                stem,
+                seasonNumber.Value,
+                episodesByKey.Values
+                    .Where(episode => episode.SeasonNumber == seasonNumber.Value)
+                    .Select(episode => episode.EpisodeNumber)
+                    .ToHashSet());
+        }
 
         if (mode == PackAnalyzeMode.Link)
         {
@@ -285,12 +373,24 @@ public static class PackTorrentInventoryAnalyzer
                 Classification = PackFileClassification.RegularEpisode,
                 MatchedSeasonNumber = seasonNumber,
                 MatchedEpisodeNumber = episodeNumber,
-                MatchReason = $"Inferred S{seasonNumber:00}E{episodeNumber:00}, matched TMDB."
+                MatchReason = $"Resolved S{seasonNumber:00}E{episodeNumber:00}, matched TMDB."
             };
         }
 
         if (episodeNumber is null)
         {
+            if (resolutionReason is not null)
+            {
+                return new PackFileEntry
+                {
+                    RelativePath = relativePath,
+                    FileName = fileName,
+                    Classification = PackFileClassification.Skipped,
+                    MatchedSeasonNumber = seasonNumber,
+                    MatchReason = resolutionReason
+                };
+            }
+
             return new PackFileEntry
             {
                 RelativePath = relativePath,
@@ -310,8 +410,8 @@ public static class PackTorrentInventoryAnalyzer
             MatchedSeasonNumber = seasonNumber,
             MatchedEpisodeNumber = episodeNumber,
             MatchReason = hasDbMatch
-                ? $"Inferred S{seasonNumber:00}E{episodeNumber:00}, matched TMDB."
-                : $"Inferred S{seasonNumber:00}E{episodeNumber:00}."
+                ? $"Resolved S{seasonNumber:00}E{episodeNumber:00}, matched TMDB."
+                : $"Resolved S{seasonNumber:00}E{episodeNumber:00}."
         };
     }
 
@@ -343,36 +443,6 @@ public static class PackTorrentInventoryAnalyzer
         }
 
         return parsed.SeasonNumber;
-    }
-
-    private static int? TryInferEpisodeNumber(
-        int seasonNumber,
-        string stem,
-        TorrentCandidateParseResult parsed,
-        IReadOnlyDictionary<int, InferredEpisodePattern> inferredPatterns)
-    {
-        if (parsed.SeasonNumber == seasonNumber && parsed.EpisodeNumber is not null)
-        {
-            return parsed.EpisodeNumber;
-        }
-
-        var compact = PackEpisodePatternInferrer.TryExtractSeasonEpisodeSuffix(stem, seasonNumber);
-        if (compact is not null)
-        {
-            return compact;
-        }
-
-        if (inferredPatterns.TryGetValue(seasonNumber, out var seasonPattern) && seasonPattern.IsValid)
-        {
-            return PackEpisodePatternInferrer.TryExtract(stem, seasonPattern, seasonNumber);
-        }
-
-        if (inferredPatterns.TryGetValue(PackSeasonFileGrouper.FlatSeasonKey, out var flatPattern) && flatPattern.IsValid)
-        {
-            return PackEpisodePatternInferrer.TryExtract(stem, flatPattern, seasonNumber);
-        }
-
-        return null;
     }
 
     private static bool IsMoviePackFile(string relativePath, string fileName)

@@ -31,4 +31,6 @@ public sealed class AppSettings
     public string? OutputLibraryFolder { get; set; }
 
     public string? TmdbReadAccessToken { get; set; }
+
+    public GeminiSettings Gemini { get; set; } = new();
 }

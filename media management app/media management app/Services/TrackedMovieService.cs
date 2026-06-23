@@ -67,9 +67,15 @@ public sealed class TrackedMovieService : ITrackedMovieService
 
     public void RefreshAvailability()
     {
+        var sourceItems = _databaseService.GetSourceItems();
+        RefreshAvailability(sourceItems);
+    }
+
+    public void RefreshAvailability(IReadOnlyList<SourceItem> sourceItems)
+    {
         foreach (var movie in _databaseService.GetTrackedMovies())
         {
-            RefreshAvailability(movie.Id);
+            RefreshAvailabilityCore(movie, sourceItems);
         }
     }
 
@@ -81,8 +87,24 @@ public sealed class TrackedMovieService : ITrackedMovieService
             return;
         }
 
+        RefreshAvailabilityCore(movie, _databaseService.GetSourceItems());
+    }
+
+    public void RefreshAvailability(long movieId, IReadOnlyList<SourceItem> sourceItems)
+    {
+        var movie = _databaseService.GetTrackedMovie(movieId);
+        if (movie is null)
+        {
+            return;
+        }
+
+        RefreshAvailabilityCore(movie, sourceItems);
+    }
+
+    private void RefreshAvailabilityCore(TrackedMovie movie, IReadOnlyList<SourceItem> sourceItems)
+    {
         var providerId = movie.TmdbId.ToString();
-        var isAvailable = _databaseService.GetSourceItems().Any(item =>
+        var isAvailable = sourceItems.Any(item =>
             item.MediaKind == MediaKind.Movie &&
             item.MatchAccepted &&
             item.State is not ItemState.Deleted and not ItemState.Ignored &&

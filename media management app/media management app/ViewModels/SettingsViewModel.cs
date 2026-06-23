@@ -7,6 +7,7 @@ using CommunityToolkit.Mvvm.Input;
 using media_management_app.Common;
 using media_management_app.Models;
 using media_management_app.Services;
+using media_management_app.Services.Gemini;
 using media_management_app.Services.Symlink;
 using WinForms = System.Windows.Forms;
 
@@ -26,6 +27,9 @@ public partial class SettingsViewModel : ViewModelBase
     private readonly ISymlinkCoordinatorService _symlinkCoordinatorService;
     private readonly ISymlinkService _symlinkService;
     private readonly HttpClient _httpClient;
+    private readonly IGeminiApiClient _geminiApiClient;
+    private readonly IGeminiModelCatalogService _geminiModelCatalog;
+    private readonly GeminiQuotaTracker _geminiQuotaTracker;
     private readonly IAppLogger _logger;
     private bool _isLoadingSettings;
 
@@ -58,6 +62,51 @@ public partial class SettingsViewModel : ViewModelBase
 
     [ObservableProperty]
     private string? tmdbReadAccessToken;
+
+    [ObservableProperty]
+    private bool isTmdbTokenVisible;
+
+    [ObservableProperty]
+    private string tmdbReadAccessTokenMasked = string.Empty;
+
+    [ObservableProperty]
+    private bool geminiEnabled;
+
+    [ObservableProperty]
+    private string? geminiApiKey;
+
+    [ObservableProperty]
+    private bool isGeminiApiKeyVisible;
+
+    [ObservableProperty]
+    private string geminiApiKeyMasked = string.Empty;
+
+    public ObservableCollection<GeminiModelOptionViewModel> GeminiModelOptions { get; } = [];
+
+    [ObservableProperty]
+    private GeminiModelOptionViewModel? selectedGeminiModel;
+
+    [ObservableProperty]
+    private string geminiModel = AppConstants.DefaultGeminiModel;
+
+    public ObservableCollection<GeminiModelOptionViewModel> GeminiFallbackModels { get; } = [];
+
+    public ObservableCollection<GeminiModelOptionViewModel> GeminiFallbackPickerOptions { get; } = [];
+
+    [ObservableProperty]
+    private GeminiModelOptionViewModel? selectedGeminiFallback;
+
+    [ObservableProperty]
+    private GeminiModelOptionViewModel? selectedGeminiFallbackToAdd;
+
+    [ObservableProperty]
+    private string geminiModelChainSummary = string.Empty;
+
+    [ObservableProperty]
+    private string geminiModelsFilePath = string.Empty;
+
+    [ObservableProperty]
+    private string geminiDailyUsageLabel = "0/1500 today";
 
     [ObservableProperty]
     private string qbittorrentWebUiUrl = "http://localhost:8080";
@@ -199,6 +248,9 @@ public partial class SettingsViewModel : ViewModelBase
         ISymlinkCoordinatorService symlinkCoordinatorService,
         ISymlinkService symlinkService,
         HttpClient httpClient,
+        IGeminiApiClient geminiApiClient,
+        IGeminiModelCatalogService geminiModelCatalog,
+        GeminiQuotaTracker geminiQuotaTracker,
         IAppLogger logger)
     {
         _settingsService = settingsService;
@@ -213,6 +265,9 @@ public partial class SettingsViewModel : ViewModelBase
         _symlinkCoordinatorService = symlinkCoordinatorService;
         _symlinkService = symlinkService;
         _httpClient = httpClient;
+        _geminiApiClient = geminiApiClient;
+        _geminiModelCatalog = geminiModelCatalog;
+        _geminiQuotaTracker = geminiQuotaTracker;
         _logger = logger;
         SourceFolders = [];
         AutoTorrentDownloadFolders = [];
@@ -307,6 +362,7 @@ public partial class SettingsViewModel : ViewModelBase
             ? AppConstants.DefaultLibraryFolderName
             : DefaultLibraryFolderName.Trim();
         _settingsService.Current.TmdbReadAccessToken = string.IsNullOrWhiteSpace(TmdbReadAccessToken) ? null : TmdbReadAccessToken;
+        ApplyGeminiSettings();
         ApplyAutoTorrentSettings();
         ApplyWarpSettings();
         ApplyLogSettings();
@@ -389,6 +445,89 @@ public partial class SettingsViewModel : ViewModelBase
         {
             StatusMessage = ex.Message;
             _logger.Error($"qBittorrent connection test failed: {ex.Message}", ex, LogTarget.All);
+        }
+    }
+
+    [RelayCommand]
+    private async Task RefreshGeminiModels()
+    {
+        ApplyGeminiSettings();
+        if (string.IsNullOrWhiteSpace(GeminiApiKey))
+        {
+            StatusMessage = "Gemini API key is required to refresh models from API.";
+            return;
+        }
+
+        try
+        {
+            StatusMessage = "Refreshing Gemini model catalog from API...";
+            var result = await _geminiModelCatalog.RefreshFromApiAsync();
+            ReloadGeminiModelOptions();
+            ReloadGeminiFallbackModels();
+            GeminiModel = NormalizeGeminiModel(GeminiModel);
+            StatusMessage = $"Model catalog refreshed: {result.Summary}";
+            _logger.Info($"Gemini model catalog refreshed: {result.Summary}", LogTarget.All);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Model catalog refresh failed: {ex.Message}";
+            _logger.Error($"Gemini model catalog refresh failed: {ex.Message}", ex, LogTarget.All);
+        }
+    }
+
+    [RelayCommand]
+    private void OpenGeminiModelsFile()
+    {
+        _geminiModelCatalog.ReloadFromDisk();
+        var path = _geminiModelCatalog.CatalogFilePath;
+        if (!File.Exists(path))
+        {
+            StatusMessage = $"Model catalog file not found: {path}";
+            return;
+        }
+
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = path,
+                UseShellExecute = true
+            });
+            StatusMessage = $"Opened {path}";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Could not open model catalog file: {ex.Message}";
+        }
+    }
+
+    [RelayCommand]
+    private async Task TestGemini()
+    {
+        ApplyGeminiSettings();
+        if (string.IsNullOrWhiteSpace(GeminiApiKey))
+        {
+            StatusMessage = "Gemini API key is empty.";
+            return;
+        }
+
+        try
+        {
+            StatusMessage = "Testing Gemini connection...";
+            var modelUsed = await _geminiApiClient.TestConnectionAsync();
+            RefreshGeminiUsageLabel();
+            StatusMessage = $"Gemini connection succeeded (model: {modelUsed}).";
+            _logger.Info($"Gemini connection test succeeded (model: {modelUsed}).", LogTarget.All);
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.TooManyRequests)
+        {
+            StatusMessage = "Gemini rate limited (HTTP 429). Wait a minute, then retry or pick another model.";
+            _logger.Error($"Gemini connection test failed: {ex.Message}", ex, LogTarget.All);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = FormatGeminiTestError(ex);
+            _logger.Error($"Gemini connection test failed: {ex.Message}", ex, LogTarget.All);
         }
     }
 
@@ -577,6 +716,135 @@ public partial class SettingsViewModel : ViewModelBase
         RefreshWarpCliStatus();
     }
 
+    partial void OnSelectedSettingsSectionChanged(SettingsSection value)
+    {
+        if (value == SettingsSection.Integrations)
+        {
+            _geminiModelCatalog.ReloadFromDisk();
+            ReloadGeminiModelOptions();
+            ReloadGeminiFallbackModels();
+            GeminiModelsFilePath = _geminiModelCatalog.CatalogFilePath;
+        }
+    }
+
+    partial void OnSelectedGeminiModelChanged(GeminiModelOptionViewModel? value)
+    {
+        if (_isLoadingSettings || value is null)
+        {
+            return;
+        }
+
+        GeminiModel = value.Id;
+        ReloadGeminiFallbackPickerOptions();
+        UpdateGeminiModelChainSummary();
+    }
+
+    partial void OnSelectedGeminiFallbackToAddChanged(GeminiModelOptionViewModel? value) =>
+        AddGeminiFallbackCommand.NotifyCanExecuteChanged();
+
+    [RelayCommand(CanExecute = nameof(CanAddGeminiFallback))]
+    private void AddGeminiFallback()
+    {
+        if (SelectedGeminiFallbackToAdd is null
+            || GeminiFallbackModels.Count >= AppConstants.GeminiMaxFallbackModels)
+        {
+            return;
+        }
+
+        GeminiFallbackModels.Add(new GeminiModelOptionViewModel
+        {
+            Id = SelectedGeminiFallbackToAdd.Id,
+            DisplayLabel = SelectedGeminiFallbackToAdd.DisplayLabel
+        });
+        SelectedGeminiFallbackToAdd = null;
+        ReloadGeminiFallbackPickerOptions();
+        UpdateGeminiModelChainSummary();
+    }
+
+    private bool CanAddGeminiFallback() =>
+        SelectedGeminiFallbackToAdd is not null
+        && GeminiFallbackModels.Count < AppConstants.GeminiMaxFallbackModels;
+
+    [RelayCommand(CanExecute = nameof(CanModifySelectedGeminiFallback))]
+    private void RemoveGeminiFallback()
+    {
+        if (SelectedGeminiFallback is null)
+        {
+            return;
+        }
+
+        GeminiFallbackModels.Remove(SelectedGeminiFallback);
+        SelectedGeminiFallback = null;
+        ReloadGeminiFallbackPickerOptions();
+        UpdateGeminiModelChainSummary();
+    }
+
+    [RelayCommand(CanExecute = nameof(CanMoveGeminiFallbackUp))]
+    private void MoveGeminiFallbackUp()
+    {
+        if (SelectedGeminiFallback is null)
+        {
+            return;
+        }
+
+        var index = GeminiFallbackModels.IndexOf(SelectedGeminiFallback);
+        if (index <= 0)
+        {
+            return;
+        }
+
+        GeminiFallbackModels.Move(index, index - 1);
+        UpdateGeminiModelChainSummary();
+    }
+
+    [RelayCommand(CanExecute = nameof(CanMoveGeminiFallbackDown))]
+    private void MoveGeminiFallbackDown()
+    {
+        if (SelectedGeminiFallback is null)
+        {
+            return;
+        }
+
+        var index = GeminiFallbackModels.IndexOf(SelectedGeminiFallback);
+        if (index < 0 || index >= GeminiFallbackModels.Count - 1)
+        {
+            return;
+        }
+
+        GeminiFallbackModels.Move(index, index + 1);
+        UpdateGeminiModelChainSummary();
+    }
+
+    private bool CanModifySelectedGeminiFallback() => SelectedGeminiFallback is not null;
+
+    private bool CanMoveGeminiFallbackUp()
+    {
+        if (SelectedGeminiFallback is null)
+        {
+            return false;
+        }
+
+        return GeminiFallbackModels.IndexOf(SelectedGeminiFallback) > 0;
+    }
+
+    private bool CanMoveGeminiFallbackDown()
+    {
+        if (SelectedGeminiFallback is null)
+        {
+            return false;
+        }
+
+        var index = GeminiFallbackModels.IndexOf(SelectedGeminiFallback);
+        return index >= 0 && index < GeminiFallbackModels.Count - 1;
+    }
+
+    partial void OnSelectedGeminiFallbackChanged(GeminiModelOptionViewModel? value)
+    {
+        RemoveGeminiFallbackCommand.NotifyCanExecuteChanged();
+        MoveGeminiFallbackUpCommand.NotifyCanExecuteChanged();
+        MoveGeminiFallbackDownCommand.NotifyCanExecuteChanged();
+    }
+
     private void LoadFromSettings()
     {
         _logger.Info(
@@ -592,6 +860,13 @@ public partial class SettingsViewModel : ViewModelBase
             SymlinkUnifiedRoot = _settingsService.Current.Symlink?.UnifiedRoot ?? AppConstants.DefaultSymlinkUnifiedRoot;
             SymlinkSyncOnStartup = _settingsService.Current.Symlink?.SyncOnStartup ?? true;
             TmdbReadAccessToken = _settingsService.Current.TmdbReadAccessToken;
+            GeminiEnabled = _settingsService.Current.Gemini?.Enabled ?? false;
+            GeminiApiKey = _settingsService.Current.Gemini?.ApiKey;
+            GeminiModel = NormalizeGeminiModel(_settingsService.Current.Gemini?.Model);
+            ReloadGeminiModelOptions();
+            ReloadGeminiFallbackModels();
+            GeminiModelsFilePath = _geminiModelCatalog.CatalogFilePath;
+            RefreshGeminiUsageLabel();
             QbittorrentWebUiUrl = _settingsService.Current.AutoTorrent.QbittorrentWebUiUrl;
             QbittorrentUsername = _settingsService.Current.AutoTorrent.Username;
             QbittorrentPassword = _settingsService.Current.AutoTorrent.Password;
@@ -669,6 +944,116 @@ public partial class SettingsViewModel : ViewModelBase
         WarpCliResolvedPath = _warpCliService.ResolvedExecutablePath;
         WarpCliAvailable = _warpCliService.IsAvailable;
         WarpCliAvailabilityLabel = WarpCliAvailable ? "Found" : "Not found";
+    }
+
+    private void ApplyGeminiSettings()
+    {
+        _settingsService.Current.Gemini ??= new GeminiSettings();
+        _settingsService.Current.Gemini.Enabled = GeminiEnabled;
+        _settingsService.Current.Gemini.ApiKey = string.IsNullOrWhiteSpace(GeminiApiKey) ? null : GeminiApiKey.Trim();
+        _settingsService.Current.Gemini.Model = NormalizeGeminiModel(GeminiModel);
+        var primaryModel = _settingsService.Current.Gemini.Model;
+        _settingsService.Current.Gemini.FallbackModels = GeminiFallbackModels
+            .Select(option => option.Id)
+            .Where(model => !string.Equals(model, primaryModel, StringComparison.OrdinalIgnoreCase))
+            .Take(AppConstants.GeminiMaxFallbackModels)
+            .ToArray();
+    }
+
+    private void ReloadGeminiFallbackModels()
+    {
+        var primary = NormalizeGeminiModel(GeminiModel);
+        var fallbacks = _settingsService.Current.Gemini?.FallbackModels ?? [];
+        if (fallbacks.Length == 0)
+        {
+            fallbacks = _geminiModelCatalog.FallbackModels.ToArray();
+        }
+
+        GeminiFallbackModels.Clear();
+        foreach (var fallbackId in fallbacks.Take(AppConstants.GeminiMaxFallbackModels))
+        {
+            var normalized = NormalizeGeminiModel(fallbackId);
+            if (string.Equals(normalized, primary, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var entry = _geminiModelCatalog.GetModelsForUi()
+                .FirstOrDefault(candidate =>
+                    string.Equals(candidate.Id, normalized, StringComparison.OrdinalIgnoreCase));
+            GeminiFallbackModels.Add(new GeminiModelOptionViewModel
+            {
+                Id = normalized,
+                DisplayLabel = entry?.GetDisplayLabel() ?? normalized
+            });
+        }
+
+        ReloadGeminiFallbackPickerOptions();
+        UpdateGeminiModelChainSummary();
+        AddGeminiFallbackCommand.NotifyCanExecuteChanged();
+    }
+
+    private void ReloadGeminiFallbackPickerOptions()
+    {
+        var primary = NormalizeGeminiModel(GeminiModel);
+        var usedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { primary };
+        foreach (var fallback in GeminiFallbackModels)
+        {
+            usedIds.Add(fallback.Id);
+        }
+
+        GeminiFallbackPickerOptions.Clear();
+        foreach (var entry in _geminiModelCatalog.GetTextMappingModelsForUi())
+        {
+            if (usedIds.Contains(entry.Id))
+            {
+                continue;
+            }
+
+            GeminiFallbackPickerOptions.Add(new GeminiModelOptionViewModel
+            {
+                Id = entry.Id,
+                DisplayLabel = entry.GetDisplayLabel()
+            });
+        }
+    }
+
+    private void UpdateGeminiModelChainSummary()
+    {
+        var parts = new List<string> { NormalizeGeminiModel(GeminiModel) };
+        parts.AddRange(GeminiFallbackModels.Select(option => option.Id));
+        GeminiModelChainSummary = string.Join(" → ", parts);
+    }
+
+    private void ReloadGeminiModelOptions()
+    {
+        var selectedId = NormalizeGeminiModel(GeminiModel);
+        GeminiModelOptions.Clear();
+        foreach (var entry in _geminiModelCatalog.GetModelsForUi())
+        {
+            GeminiModelOptions.Add(new GeminiModelOptionViewModel
+            {
+                Id = entry.Id,
+                DisplayLabel = entry.GetDisplayLabel()
+            });
+        }
+
+        SelectedGeminiModel = GeminiModelOptions.FirstOrDefault(option =>
+            string.Equals(option.Id, selectedId, StringComparison.OrdinalIgnoreCase))
+            ?? GeminiModelOptions.FirstOrDefault(option =>
+                !option.DisplayLabel.Contains("(deprecated)", StringComparison.OrdinalIgnoreCase))
+            ?? GeminiModelOptions.FirstOrDefault();
+
+        if (SelectedGeminiModel is not null &&
+            !string.Equals(GeminiModel, SelectedGeminiModel.Id, StringComparison.OrdinalIgnoreCase))
+        {
+            GeminiModel = SelectedGeminiModel.Id;
+        }
+    }
+
+    private void RefreshGeminiUsageLabel()
+    {
+        GeminiDailyUsageLabel = $"{_geminiQuotaTracker.RequestsToday}/{_geminiQuotaTracker.DailyLimit} today";
     }
 
     private void ApplyAutoTorrentSettings()
@@ -824,6 +1209,24 @@ public partial class SettingsViewModel : ViewModelBase
         AdministratorStatusLabel = IsRunningAsAdministrator ? "Running as Administrator" : "Not elevated";
     }
 
+    private string NormalizeGeminiModel(string? model) => _geminiModelCatalog.Normalize(model);
+
+    private static string FormatGeminiTestError(Exception ex)
+    {
+        if (ex.Message.Contains("404", StringComparison.OrdinalIgnoreCase) ||
+            ex.Message.Contains("not found", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Selected Gemini model is not available. Save settings after choosing a supported model.";
+        }
+
+        if (ex.Message.Contains("429", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Gemini rate limited (HTTP 429). Wait a minute, then retry or pick another model.";
+        }
+
+        return $"Gemini connection failed: {ex.Message}";
+    }
+
     private static string? BrowseFolder(string? initialFolder, string description)
     {
         using var dialog = new WinForms.FolderBrowserDialog
@@ -835,5 +1238,50 @@ public partial class SettingsViewModel : ViewModelBase
         };
 
         return dialog.ShowDialog() == WinForms.DialogResult.OK ? dialog.SelectedPath : null;
+    }
+
+    [RelayCommand]
+    private void ToggleTmdbTokenVisibility()
+    {
+        IsTmdbTokenVisible = !IsTmdbTokenVisible;
+        RefreshTokenMasks();
+    }
+
+    [RelayCommand]
+    private void ToggleGeminiApiKeyVisibility()
+    {
+        IsGeminiApiKeyVisible = !IsGeminiApiKeyVisible;
+        RefreshTokenMasks();
+    }
+
+    partial void OnTmdbReadAccessTokenChanged(string? value)
+    {
+        RefreshTokenMasks();
+    }
+
+    partial void OnGeminiApiKeyChanged(string? value)
+    {
+        RefreshTokenMasks();
+    }
+
+    private void RefreshTokenMasks()
+    {
+        TmdbReadAccessTokenMasked = MaskSecret(TmdbReadAccessToken);
+        GeminiApiKeyMasked = MaskSecret(GeminiApiKey);
+    }
+
+    private static string MaskSecret(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        if (value.Length <= 8)
+        {
+            return new string('•', value.Length);
+        }
+
+        return value[..4] + new string('•', value.Length - 8) + value[^4..];
     }
 }

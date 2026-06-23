@@ -4,9 +4,9 @@ namespace media_management_app.Services.Symlink;
 
 public interface ISymlinkSyncService
 {
-    SymlinkSyncResult SyncItem(SourceItem item, string? linkedPath = null);
+    SymlinkSyncResult SyncItem(SourceItem item, string? linkedPath = null, IReadOnlyList<SourceItem>? linkedGroup = null);
 
-    SymlinkSyncResult RemoveItem(SourceItem item, string? linkedPath = null);
+    SymlinkSyncResult RemoveItem(SourceItem item, string? linkedPath = null, IReadOnlyList<SourceItem>? linkedGroup = null);
 
     SymlinkSyncResult ReconcileAll();
 }

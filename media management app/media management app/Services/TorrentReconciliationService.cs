@@ -10,7 +10,8 @@ public interface ITorrentReconciliationService
 
     Task<TorrentReconciliationResult> ReconcileAsync(
         TorrentReconciliationScope scope,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        IReadOnlyList<SourceItem>? sourceItems = null);
 }
 
 public sealed class TorrentReconciliationService : ITorrentReconciliationService
@@ -48,7 +49,8 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
 
     public async Task<TorrentReconciliationResult> ReconcileAsync(
         TorrentReconciliationScope scope,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IReadOnlyList<SourceItem>? sourceItems = null)
     {
         var result = new TorrentReconciliationResult();
         var torrents = await _qbittorrentClient.GetTorrentsAsync(cancellationToken);
@@ -84,11 +86,32 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
             .ToList();
         SyncOrdersFromTrackedItems(allOrders, episodesById, seasons, movies, torrentsByHash, result);
 
-        _trackedShowService.RefreshAvailability();
-        _trackedMovieService.RefreshAvailability();
+        sourceItems ??= _databaseService.GetSourceItems();
+        RefreshAvailabilityForScope(scope, sourceItems);
         _logger.Info($"Torrent reconciliation complete. {result.Summary}", LogTarget.All);
         Reconciled?.Invoke(this, EventArgs.Empty);
         return result;
+    }
+
+    private void RefreshAvailabilityForScope(TorrentReconciliationScope scope, IReadOnlyList<SourceItem> sourceItems)
+    {
+        if (scope.MediaKind is null)
+        {
+            _trackedShowService.RefreshAvailability(sourceItems);
+            _trackedMovieService.RefreshAvailability(sourceItems);
+            return;
+        }
+
+        if (scope.MediaKind == MediaKind.TvEpisode && scope.MediaId is not null)
+        {
+            _trackedShowService.RefreshAvailability(scope.MediaId.Value, sourceItems);
+            return;
+        }
+
+        if (scope.MediaKind == MediaKind.Movie && scope.MediaId is not null)
+        {
+            _trackedMovieService.RefreshAvailability(scope.MediaId.Value, sourceItems);
+        }
     }
 
     private Dictionary<long, (TrackedShow Show, TrackedEpisode Episode)> LoadEpisodesById(IEnumerable<TrackedShow> shows)

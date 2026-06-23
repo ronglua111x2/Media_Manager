@@ -10,6 +10,7 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
     private readonly IQbittorrentClient _qbittorrentClient;
     private readonly IHardlinkService _hardlinkService;
     private readonly ILibraryLinkEventHub _eventHub;
+    private readonly ISpecialMappingOrchestrator _specialMappingOrchestrator;
     private readonly IAppLogger _logger;
 
     public AutoTorrentLinkService(
@@ -17,12 +18,14 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
         IQbittorrentClient qbittorrentClient,
         IHardlinkService hardlinkService,
         ILibraryLinkEventHub eventHub,
+        ISpecialMappingOrchestrator specialMappingOrchestrator,
         IAppLogger logger)
     {
         _databaseService = databaseService;
         _qbittorrentClient = qbittorrentClient;
         _hardlinkService = hardlinkService;
         _eventHub = eventHub;
+        _specialMappingOrchestrator = specialMappingOrchestrator;
         _logger = logger;
     }
 
@@ -57,7 +60,7 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
                      .Where(season => season.SelectedPackOwnerSeasonNumber == season.SeasonNumber &&
                                       !string.IsNullOrWhiteSpace(season.PackTorrentHash)))
         {
-            Merge(result, await LinkSeasonPackCoreAsync(show, season, episodes, cancellationToken));
+            Merge(result, await LinkSeasonPackCoreAsync(show, season, episodes, progress: null, cancellationToken));
         }
 
         var packManagedSeasons = _databaseService.GetTrackedSeasons(showId)
@@ -75,21 +78,53 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
         return result;
     }
 
-    public async Task<AutoTorrentLinkResult> LinkSeasonPackAsync(long showId, int ownerSeasonNumber, CancellationToken cancellationToken = default)
+    public async Task<SeasonPackLinkPreview> PrepareSeasonPackLinkAsync(
+        long showId,
+        int ownerSeasonNumber,
+        IProgress<PackLinkProgressUpdate>? progress = null,
+        bool useGeminiForSpecials = true,
+        bool bypassCache = false,
+        CancellationToken cancellationToken = default)
     {
         var show = _databaseService.GetTrackedShow(showId);
         var season = _databaseService.GetTrackedSeasons(showId)
             .FirstOrDefault(item => item.SeasonNumber == ownerSeasonNumber);
         if (show is null || season is null)
         {
-            return new AutoTorrentLinkResult
-            {
-                SkippedCount = 1,
-                Messages = { $"Tracked pack owner season S{ownerSeasonNumber:00} was not found." }
-            };
+            throw new InvalidOperationException($"Tracked pack owner season S{ownerSeasonNumber:00} was not found.");
         }
 
-        return await LinkSeasonPackCoreAsync(show, season, _databaseService.GetTrackedEpisodes(showId), cancellationToken);
+        return await PrepareSeasonPackLinkCoreAsync(
+            show,
+            season,
+            _databaseService.GetTrackedEpisodes(showId),
+            progress,
+            useGeminiForSpecials,
+            bypassCache,
+            cancellationToken);
+    }
+
+    public Task<AutoTorrentLinkResult> ApplySeasonPackLinkAsync(
+        SeasonPackLinkPreview preview,
+        IProgress<PackLinkProgressUpdate>? progress = null,
+        CancellationToken cancellationToken = default) =>
+        LinkSeasonPackFromInventoryCoreAsync(
+            preview.Show,
+            preview.OwnerSeason,
+            _databaseService.GetTrackedEpisodes(preview.Show.Id),
+            preview.Inventory,
+            preview.SpecialMappings,
+            progress,
+            cancellationToken);
+
+    public async Task<AutoTorrentLinkResult> LinkSeasonPackAsync(
+        long showId,
+        int ownerSeasonNumber,
+        IProgress<PackLinkProgressUpdate>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        var preview = await PrepareSeasonPackLinkAsync(showId, ownerSeasonNumber, progress, cancellationToken: cancellationToken);
+        return await ApplySeasonPackLinkAsync(preview, progress, cancellationToken);
     }
 
     public async Task<AutoTorrentLinkResult> LinkSeasonPackFromInventoryAsync(
@@ -115,6 +150,8 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             season,
             _databaseService.GetTrackedEpisodes(showId),
             inventory,
+            resolvedSpecialMappings: null,
+            progress: null,
             cancellationToken);
     }
 
@@ -295,24 +332,24 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             result);
     }
 
-    private async Task<AutoTorrentLinkResult> LinkSeasonPackCoreAsync(
+    private async Task<SeasonPackLinkPreview> PrepareSeasonPackLinkCoreAsync(
         TrackedShow show,
         TrackedSeason ownerSeason,
         IReadOnlyList<TrackedEpisode> episodes,
+        IProgress<PackLinkProgressUpdate>? progress,
+        bool useGeminiForSpecials,
+        bool bypassCache,
         CancellationToken cancellationToken)
     {
-        var result = new AutoTorrentLinkResult();
         if (string.IsNullOrWhiteSpace(ownerSeason.PackTorrentHash))
         {
-            AddSkip(result, $"{show.DisplayTitle} S{ownerSeason.SeasonNumber:00}: no mapped pack torrent hash.");
-            return result;
+            throw new InvalidOperationException($"{show.DisplayTitle} S{ownerSeason.SeasonNumber:00}: no mapped pack torrent hash.");
         }
 
         var torrent = await GetTorrentAsync(ownerSeason.PackTorrentHash, cancellationToken);
         if (torrent is null)
         {
-            AddSkip(result, $"{show.DisplayTitle} S{ownerSeason.SeasonNumber:00}: pack torrent is not present in qBittorrent.");
-            return result;
+            throw new InvalidOperationException($"{show.DisplayTitle} S{ownerSeason.SeasonNumber:00}: pack torrent is not present in qBittorrent.");
         }
 
         var coveredSeasons = ParseCoveredSeasons(ownerSeason.SelectedPackCoveredSeasons).ToHashSet();
@@ -323,19 +360,94 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
 
         var seasons = _databaseService.GetTrackedSeasons(show.Id);
         var files = await GetCompletedVideoFilesAsync(torrent, cancellationToken);
+        var fileTuples = files.Select(file => (file.Name, Path.GetFileName(file.Name))).ToList();
+        var tree = PackFolderTreeAnalyzer.Analyze(fileTuples.Select(file => file.Name).ToList());
+        var specialsEpisodes = episodes
+            .Where(episode => episode.SeasonNumber == AppConstants.SpecialsSeasonNumber)
+            .ToList();
+
+        IReadOnlyDictionary<int, SeasonRegularEpisodeStats> regularEpisodesBySeason =
+            new Dictionary<int, SeasonRegularEpisodeStats>();
+
+        if (useGeminiForSpecials)
+        {
+            PackLinkProgressReporter.Report(
+                progress,
+                PackLinkProgressStep.MapRegularEpisodes,
+                PackLinkProgressStatus.Active,
+                "Mapping regular episodes (rules)...");
+
+            var regularOnlyMappings = new SpecialMappingResult();
+            var regularInventory = PackTorrentInventoryAnalyzer.Analyze(
+                fileTuples,
+                episodes,
+                seasons,
+                coveredSeasons,
+                PackAnalyzeMode.Link,
+                regularOnlyMappings);
+
+            regularEpisodesBySeason = PackLinkRegularEpisodeSummary.Build(
+                regularInventory,
+                episodes,
+                coveredSeasons);
+
+            PackLinkProgressReporter.Report(
+                progress,
+                PackLinkProgressStep.MapRegularEpisodes,
+                PackLinkProgressStatus.Done,
+                PackLinkRegularEpisodeSummary.FormatSummary(regularEpisodesBySeason));
+        }
+
+        var resolvedSpecialMappings = await _specialMappingOrchestrator.ResolveAsync(
+            fileTuples,
+            tree,
+            specialsEpisodes,
+            show.DisplayTitle,
+            show.TmdbId,
+            ownerSeason.PackTorrentHash!,
+            progress,
+            useGeminiForSpecials,
+            bypassCache,
+            cancellationToken);
+
         var inventory = PackTorrentInventoryAnalyzer.Analyze(
-            files.Select(file => (file.Name, Path.GetFileName(file.Name))).ToList(),
+            fileTuples,
             episodes,
             seasons,
             coveredSeasons,
-            PackAnalyzeMode.Link);
+            PackAnalyzeMode.Link,
+            resolvedSpecialMappings);
 
-        return await LinkSeasonPackFromInventoryCoreAsync(
+        return new SeasonPackLinkPreview
+        {
+            Show = show,
+            OwnerSeason = ownerSeason,
+            Inventory = inventory,
+            SpecialMappings = resolvedSpecialMappings,
+            RequiresReview = useGeminiForSpecials && resolvedSpecialMappings.UsedGemini,
+            RegularEpisodeCount = inventory.Files.Count(file => file.Classification == PackFileClassification.RegularEpisode),
+            MatchedSpecialCount = inventory.Files.Count(file => file.Classification == PackFileClassification.MatchedSpecial),
+            OrphanExtraCount = inventory.Files.Count(file => file.Classification == PackFileClassification.UnmatchedExtra),
+            RegularEpisodesBySeason = regularEpisodesBySeason
+        };
+    }
+
+    private async Task<AutoTorrentLinkResult> LinkSeasonPackCoreAsync(
+        TrackedShow show,
+        TrackedSeason ownerSeason,
+        IReadOnlyList<TrackedEpisode> episodes,
+        IProgress<PackLinkProgressUpdate>? progress,
+        CancellationToken cancellationToken)
+    {
+        var preview = await PrepareSeasonPackLinkCoreAsync(
             show,
             ownerSeason,
             episodes,
-            inventory,
+            progress,
+            useGeminiForSpecials: true,
+            bypassCache: false,
             cancellationToken);
+        return await ApplySeasonPackLinkAsync(preview, progress, cancellationToken);
     }
 
     private async Task<AutoTorrentLinkResult> LinkSeasonPackFromInventoryCoreAsync(
@@ -343,6 +455,8 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
         TrackedSeason ownerSeason,
         IReadOnlyList<TrackedEpisode> episodes,
         PackTorrentInventory inventory,
+        SpecialMappingResult? resolvedSpecialMappings,
+        IProgress<PackLinkProgressUpdate>? progress,
         CancellationToken cancellationToken)
     {
         var result = new AutoTorrentLinkResult();
@@ -369,6 +483,12 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
         var regularLinked = 0;
         var specialsMatched = 0;
         var orphansLinked = 0;
+
+        PackLinkProgressReporter.Report(
+            progress,
+            PackLinkProgressStep.ApplyingLinks,
+            PackLinkProgressStatus.Active,
+            "Creating library links...");
 
         foreach (var entry in inventory.Files.Where(file => file.Classification == PackFileClassification.Movie))
         {
@@ -446,8 +566,17 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
         }
 
         _logger.Info(
-            $"Pack inventory link for '{show.DisplayTitle}' S{ownerSeason.SeasonNumber:00}: {regularLinked} episodes, {specialsMatched} specials, {orphansLinked} unmatched extras.",
+            $"Pack inventory link for '{show.DisplayTitle}' S{ownerSeason.SeasonNumber:00}: {regularLinked} episodes, {specialsMatched} specials, {orphansLinked} unmatched extras. UsedGemini={resolvedSpecialMappings?.UsedGemini == true}.",
             LogTarget.All);
+
+        var linkSummary =
+            $"{regularLinked} episodes, {specialsMatched} specials, {orphansLinked} orphan extras.";
+        PackLinkProgressReporter.Report(
+            progress,
+            PackLinkProgressStep.ApplyingLinks,
+            PackLinkProgressStatus.Done,
+            linkSummary);
+
         return result;
     }
 

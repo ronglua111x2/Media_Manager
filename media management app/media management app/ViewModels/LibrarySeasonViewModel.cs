@@ -91,17 +91,30 @@ public partial class LibrarySeasonViewModel : ObservableObject
 
     public bool CanAddPackToCart => IsPackMode && !IsCoveredByAnotherPack && !IsPackInCart && !HasPackTorrent;
 
-    public bool CanLinkPack => IsPackMode && !IsCoveredByAnotherPack && (HasPackTorrent || IsPackLinked);
-
     public bool HasPackTorrent => !string.IsNullOrWhiteSpace(PackTorrentHash);
 
     public bool IsPackTorrentComplete => HasPackTorrent && PackTorrentProgress >= 0.999;
 
-    public string PackLinkActionLabel => IsPackLinked ? "Unlink Pack" : "Link Pack";
+    public bool IsGeminiLinkAvailable { get; set; }
 
-    public string PackLinkActionToolTip => IsPackLinked
-        ? "Remove generated library hardlinks for this season pack"
-        : "Create library hardlinks for this season pack";
+    public bool CanRuleLinkPack =>
+        IsPackMode && !IsCoveredByAnotherPack && HasPackTorrent && !IsPackLinked && IsPackTorrentComplete;
+
+    public bool CanAiLinkPack => CanRuleLinkPack && IsGeminiLinkAvailable;
+
+    public bool CanUnlinkPack => IsPackMode && !IsCoveredByAnotherPack && IsPackLinked;
+
+    public bool ShowPackLinkButtons => CanRuleLinkPack;
+
+    public bool ShowAiLinkButton => CanAiLinkPack;
+
+    public bool ShowPackUnlinkButton => CanUnlinkPack;
+
+    public string RuleLinkPackToolTip => "Link pack using rules only (no AI API call)";
+
+    public string AiLinkPackToolTip => "Link pack with Gemini special/OVA mapping and review";
+
+    public string UnlinkPackToolTip => "Remove generated library hardlinks for this season pack";
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanAddPackToCart))]
@@ -109,9 +122,11 @@ public partial class LibrarySeasonViewModel : ObservableObject
     private bool isPackInCart;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CanLinkPack))]
-    [NotifyPropertyChangedFor(nameof(PackLinkActionLabel))]
-    [NotifyPropertyChangedFor(nameof(PackLinkActionToolTip))]
+    [NotifyPropertyChangedFor(nameof(CanRuleLinkPack))]
+    [NotifyPropertyChangedFor(nameof(CanAiLinkPack))]
+    [NotifyPropertyChangedFor(nameof(CanUnlinkPack))]
+    [NotifyPropertyChangedFor(nameof(ShowPackLinkButtons))]
+    [NotifyPropertyChangedFor(nameof(ShowPackUnlinkButton))]
     [NotifyPropertyChangedFor(nameof(PackLinkStatus))]
     private bool isPackLinked;
 
@@ -129,7 +144,11 @@ public partial class LibrarySeasonViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(PackModeBannerTitle))]
     [NotifyPropertyChangedFor(nameof(PackLinkStatus))]
     [NotifyPropertyChangedFor(nameof(CanAddPackToCart))]
-    [NotifyPropertyChangedFor(nameof(CanLinkPack))]
+    [NotifyPropertyChangedFor(nameof(CanRuleLinkPack))]
+    [NotifyPropertyChangedFor(nameof(CanAiLinkPack))]
+    [NotifyPropertyChangedFor(nameof(CanUnlinkPack))]
+    [NotifyPropertyChangedFor(nameof(ShowPackLinkButtons))]
+    [NotifyPropertyChangedFor(nameof(ShowPackUnlinkButton))]
     [NotifyPropertyChangedFor(nameof(CanTogglePackMode))]
     private bool isPackMode;
 
@@ -140,7 +159,11 @@ public partial class LibrarySeasonViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(PackModeBannerTitle))]
     [NotifyPropertyChangedFor(nameof(PackLinkStatus))]
     [NotifyPropertyChangedFor(nameof(CanAddPackToCart))]
-    [NotifyPropertyChangedFor(nameof(CanLinkPack))]
+    [NotifyPropertyChangedFor(nameof(CanRuleLinkPack))]
+    [NotifyPropertyChangedFor(nameof(CanAiLinkPack))]
+    [NotifyPropertyChangedFor(nameof(CanUnlinkPack))]
+    [NotifyPropertyChangedFor(nameof(ShowPackLinkButtons))]
+    [NotifyPropertyChangedFor(nameof(ShowPackUnlinkButton))]
     [NotifyPropertyChangedFor(nameof(CanTogglePackMode))]
     private int? selectedPackOwnerSeasonNumber;
 
@@ -150,7 +173,10 @@ public partial class LibrarySeasonViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(IsCoveredByAnotherPack))]
     [NotifyPropertyChangedFor(nameof(PackModeBannerTitle))]
     [NotifyPropertyChangedFor(nameof(CanAddPackToCart))]
-    [NotifyPropertyChangedFor(nameof(CanLinkPack))]
+    [NotifyPropertyChangedFor(nameof(CanRuleLinkPack))]
+    [NotifyPropertyChangedFor(nameof(CanAiLinkPack))]
+    [NotifyPropertyChangedFor(nameof(CanUnlinkPack))]
+    [NotifyPropertyChangedFor(nameof(ShowPackUnlinkButton))]
     [NotifyPropertyChangedFor(nameof(CanTogglePackMode))]
     private string selectedPackName = string.Empty;
 
@@ -162,7 +188,11 @@ public partial class LibrarySeasonViewModel : ObservableObject
     private string packContentWarning = string.Empty;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CanLinkPack))]
+    [NotifyPropertyChangedFor(nameof(CanRuleLinkPack))]
+    [NotifyPropertyChangedFor(nameof(CanAiLinkPack))]
+    [NotifyPropertyChangedFor(nameof(CanUnlinkPack))]
+    [NotifyPropertyChangedFor(nameof(ShowPackLinkButtons))]
+    [NotifyPropertyChangedFor(nameof(ShowPackUnlinkButton))]
     [NotifyPropertyChangedFor(nameof(HasPackTorrent))]
     [NotifyPropertyChangedFor(nameof(IsPackTorrentComplete))]
     [NotifyPropertyChangedFor(nameof(CanAddPackToCart))]
@@ -171,7 +201,9 @@ public partial class LibrarySeasonViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsPackTorrentComplete))]
-    [NotifyPropertyChangedFor(nameof(CanLinkPack))]
+    [NotifyPropertyChangedFor(nameof(CanRuleLinkPack))]
+    [NotifyPropertyChangedFor(nameof(CanAiLinkPack))]
+    [NotifyPropertyChangedFor(nameof(ShowPackLinkButtons))]
     [NotifyPropertyChangedFor(nameof(PackLinkStatus))]
     private double packTorrentProgress;
 

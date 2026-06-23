@@ -75,7 +75,7 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         _packLinkCoordinatorService.PackReconciled += (_, _) => RefreshOrdersFromReconcile();
         _recipeService.RecipesChanged += (_, _) => LoadRecipeAssignment(SelectedMediaCard);
         lifecycleService.AppModeChanged += OnAppModeChanged;
-        RefreshWorkspace();
+        LoadWorkspaceCards();
         StatusMessage = "Select a media card to view its cart.";
     }
 
@@ -150,7 +150,11 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
     {
         _trackedShowService.RefreshAvailability();
         _trackedMovieService.RefreshAvailability();
+        LoadWorkspaceCards();
+    }
 
+    private void LoadWorkspaceCards()
+    {
         var selectedId = SelectedMediaCard?.Id;
         var selectedKind = SelectedMediaCard?.MediaKind;
 

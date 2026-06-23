@@ -20,7 +20,11 @@ public interface ITrackedShowService
 
     void RefreshAvailability();
 
+    void RefreshAvailability(IReadOnlyList<SourceItem> sourceItems);
+
     void RefreshAvailability(long showId);
+
+    void RefreshAvailability(long showId, IReadOnlyList<SourceItem> sourceItems);
 
     void UpdateSeasonDownloadFolder(long showId, int seasonNumber, string? downloadFolder);
 

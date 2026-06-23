@@ -383,7 +383,8 @@ public sealed class AutoTrackService : IAutoTrackService
                     cancellationToken);
                 await LinkReadyAutoTrackEpisodesAsync(show, cancellationToken);
 
-                _trackedShowService.RefreshAvailability(show.Id);
+                var sourceItems = _databaseService.GetSourceItems();
+                _trackedShowService.RefreshAvailability(show.Id, sourceItems);
                 var newlyLinked = GetNewlyAvailableCheckpointEpisodes(
                     show,
                     _trackedShowService.GetEpisodes(show.Id),
@@ -403,7 +404,6 @@ public sealed class AutoTrackService : IAutoTrackService
             }
         }
 
-        _trackedShowService.RefreshAvailability();
         result.Summary = $"Reconcile: shows={result.ShowsProcessed}, linked={result.LinkedCount}.";
         return result;
     }

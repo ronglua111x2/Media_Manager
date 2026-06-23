@@ -143,7 +143,8 @@ public static class PackSpecialBucketDetector
         out int parentSeason)
     {
         parentSeason = 0;
-        var seasonHint = TorrentCandidateParser.TryGetSeasonHintFromPath(relativePath);
+        var seasonHint = TorrentCandidateParser.TryGetSeasonHintFromPath(relativePath)
+            ?? (parsed.ReleaseSeasonHint is > 0 ? parsed.ReleaseSeasonHint : null);
         if (seasonHint is null or <= 0)
         {
             return false;

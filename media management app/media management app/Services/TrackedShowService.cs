@@ -32,7 +32,7 @@ public sealed class TrackedShowService : ITrackedShowService
         var details = await _catalogService.GetTvShowDetailsAsync(result.TmdbId, cancellationToken);
         var showId = ImportShow(details, "1080p");
         await CachePosterAsync(details.TmdbId, details.PosterPath, cancellationToken);
-        RefreshAvailabilityCore(showId);
+        RefreshAvailability(showId);
         var show = _databaseService.GetTrackedShow(showId) ?? throw new InvalidOperationException("Tracked show was not saved.");
         _logger.Info($"Tracked show added: {show.DisplayTitle}, Episodes={show.TotalEpisodes}", LogTarget.All);
         return show;
@@ -43,7 +43,7 @@ public sealed class TrackedShowService : ITrackedShowService
         var details = await _catalogService.GetTvShowDetailsAsync(tmdbId, cancellationToken);
         var showId = ImportShow(details, "1080p");
         await CachePosterAsync(details.TmdbId, details.PosterPath, cancellationToken);
-        RefreshAvailabilityCore(showId);
+        RefreshAvailability(showId);
         var show = _databaseService.GetTrackedShow(showId) ?? throw new InvalidOperationException("Tracked show was not imported.");
         _logger.Info($"Tracked show imported from existing media: {show.DisplayTitle}, Episodes={show.TotalEpisodes}", LogTarget.All);
         return show;
@@ -54,7 +54,7 @@ public sealed class TrackedShowService : ITrackedShowService
         var details = await _catalogService.GetTvShowDetailsAsync(show.TmdbId, cancellationToken);
         var showId = ImportShow(details, show.PreferredQuality);
         await CachePosterAsync(details.TmdbId, details.PosterPath, cancellationToken);
-        RefreshAvailabilityCore(showId);
+        RefreshAvailability(showId);
         var refreshed = _databaseService.GetTrackedShow(showId) ?? throw new InvalidOperationException("Tracked show was not refreshed.");
         _logger.Info($"Tracked show refreshed: {refreshed.DisplayTitle}, Episodes={refreshed.TotalEpisodes}", LogTarget.All);
         return refreshed;
@@ -77,15 +77,26 @@ public sealed class TrackedShowService : ITrackedShowService
 
     public void RefreshAvailability()
     {
+        var sourceItems = _databaseService.GetSourceItems();
+        RefreshAvailability(sourceItems);
+    }
+
+    public void RefreshAvailability(IReadOnlyList<SourceItem> sourceItems)
+    {
         foreach (var show in _databaseService.GetTrackedShows())
         {
-            RefreshAvailabilityCore(show.Id);
+            RefreshAvailabilityCore(show.Id, sourceItems);
         }
     }
 
     public void RefreshAvailability(long showId)
     {
-        RefreshAvailabilityCore(showId);
+        RefreshAvailabilityCore(showId, _databaseService.GetSourceItems());
+    }
+
+    public void RefreshAvailability(long showId, IReadOnlyList<SourceItem> sourceItems)
+    {
+        RefreshAvailabilityCore(showId, sourceItems);
     }
 
     public void UpdateSeasonDownloadFolder(long showId, int seasonNumber, string? downloadFolder)
@@ -275,7 +286,7 @@ public sealed class TrackedShowService : ITrackedShowService
         return showId;
     }
 
-    private void RefreshAvailabilityCore(long showId)
+    private void RefreshAvailabilityCore(long showId, IReadOnlyList<SourceItem> sourceItems)
     {
         var show = _databaseService.GetTrackedShow(showId);
         if (show is null)
@@ -283,7 +294,7 @@ public sealed class TrackedShowService : ITrackedShowService
             return;
         }
 
-        var availableEpisodes = GetAvailableEpisodeKeys(show.TmdbId);
+        var availableEpisodes = GetAvailableEpisodeKeys(show.TmdbId, sourceItems);
         foreach (var episode in _databaseService.GetTrackedEpisodes(showId))
         {
             var availability = availableEpisodes.Contains((episode.SeasonNumber, episode.EpisodeNumber))
@@ -296,10 +307,12 @@ public sealed class TrackedShowService : ITrackedShowService
         }
     }
 
-    private HashSet<(int SeasonNumber, int EpisodeNumber)> GetAvailableEpisodeKeys(int tmdbId)
+    private static HashSet<(int SeasonNumber, int EpisodeNumber)> GetAvailableEpisodeKeys(
+        int tmdbId,
+        IReadOnlyList<SourceItem> sourceItems)
     {
         var providerId = tmdbId.ToString();
-        return _databaseService.GetSourceItems()
+        return sourceItems
             .Where(item =>
                 item.MediaKind == MediaKind.TvEpisode &&
                 item.MatchAccepted &&

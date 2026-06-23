@@ -302,19 +302,52 @@
                                 </StackPanel>
                             </Button>
                             <Button Style="{StaticResource AppOutlinedButtonStyle}"
-                                    Command="{Binding DataContext.LinkSeasonPackCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                    Command="{Binding DataContext.RuleLinkSeasonPackCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                     CommandParameter="{Binding}"
-                                    IsEnabled="{Binding CanLinkPack}"
-                                    Visibility="{Binding IsPackMode, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                    IsEnabled="{Binding CanRuleLinkPack}"
+                                    Visibility="{Binding ShowPackLinkButtons, Converter={StaticResource BooleanToVisibilityConverter}}"
                                     Margin="8,0,0,0"
-                                    ToolTip="{Binding PackLinkActionToolTip}">
+                                    ToolTip="{Binding RuleLinkPackToolTip}">
                                 <StackPanel Orientation="Horizontal">
                                     <iconPacks:PackIconLucide Kind="Link"
                                                                Width="14"
                                                                Height="14"
                                                                Margin="0,0,6,0"
                                                                VerticalAlignment="Center" />
-                                    <TextBlock Text="{Binding PackLinkActionLabel}" VerticalAlignment="Center" />
+                                    <TextBlock Text="Normal Link" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+                            <Button Style="{StaticResource AppPrimaryButtonStyle}"
+                                    Command="{Binding DataContext.AiLinkSeasonPackCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                    CommandParameter="{Binding}"
+                                    IsEnabled="{Binding CanAiLinkPack}"
+                                    Visibility="{Binding ShowAiLinkButton, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                    Margin="8,0,0,0"
+                                    ToolTip="{Binding AiLinkPackToolTip}">
+                                <StackPanel Orientation="Horizontal">
+                                    <iconPacks:PackIconLucide Kind="Sparkles"
+                                                               Width="14"
+                                                               Height="14"
+                                                               Margin="0,0,6,0"
+                                                               Foreground="{StaticResource AppBrushOnAccent}"
+                                                               VerticalAlignment="Center" />
+                                    <TextBlock Text="AI Link" VerticalAlignment="Center" Foreground="{StaticResource AppBrushOnAccent}" />
+                                </StackPanel>
+                            </Button>
+                            <Button Style="{StaticResource AppOutlinedButtonStyle}"
+                                    Command="{Binding DataContext.UnlinkSeasonPackCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                    CommandParameter="{Binding}"
+                                    IsEnabled="{Binding CanUnlinkPack}"
+                                    Visibility="{Binding ShowPackUnlinkButton, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                    Margin="8,0,0,0"
+                                    ToolTip="{Binding UnlinkPackToolTip}">
+                                <StackPanel Orientation="Horizontal">
+                                    <iconPacks:PackIconLucide Kind="Unlink"
+                                                               Width="14"
+                                                               Height="14"
+                                                               Margin="0,0,6,0"
+                                                               VerticalAlignment="Center" />
+                                    <TextBlock Text="Unlink Pack" VerticalAlignment="Center" />
                                 </StackPanel>
                             </Button>
                             <TextBlock Text="{Binding PackLinkStatus}"

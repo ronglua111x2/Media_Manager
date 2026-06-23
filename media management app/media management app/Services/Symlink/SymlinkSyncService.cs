@@ -25,7 +25,10 @@ public sealed class SymlinkSyncService : ISymlinkSyncService
         _logger = logger;
     }
 
-    public SymlinkSyncResult SyncItem(SourceItem item, string? linkedPath = null)
+    public SymlinkSyncResult SyncItem(
+        SourceItem item,
+        string? linkedPath = null,
+        IReadOnlyList<SourceItem>? linkedGroup = null)
     {
         var result = new SymlinkSyncResult();
         var settings = _settingsService.Current.Symlink;
@@ -44,11 +47,7 @@ public sealed class SymlinkSyncService : ISymlinkSyncService
             return result;
         }
 
-        var linkedGroup = GetItemsSharingLinkedPath(linkedPath);
-        if (linkedGroup.Count == 0)
-        {
-            linkedGroup = new List<SourceItem> { item };
-        }
+        linkedGroup = ResolveLinkedGroup(item, linkedPath, linkedGroup);
 
         var canonicalItem = ApplyTrackedMetadata(SelectCanonicalItem(linkedGroup));
         if (!TryValidateItem(canonicalItem, out var validationError))
@@ -111,7 +110,10 @@ public sealed class SymlinkSyncService : ISymlinkSyncService
         return result;
     }
 
-    public SymlinkSyncResult RemoveItem(SourceItem item, string? linkedPath = null)
+    public SymlinkSyncResult RemoveItem(
+        SourceItem item,
+        string? linkedPath = null,
+        IReadOnlyList<SourceItem>? linkedGroup = null)
     {
         var result = new SymlinkSyncResult();
         var settings = _settingsService.Current.Symlink;
@@ -121,7 +123,7 @@ public sealed class SymlinkSyncService : ISymlinkSyncService
         }
 
         linkedPath ??= item.LinkedPath;
-        var linkedGroup = BuildRemovalGroup(item, linkedPath);
+        linkedGroup = BuildRemovalGroup(item, linkedPath, linkedGroup);
 
         var symlinkPaths = linkedGroup
             .Select(member => member.SymlinkPath)
@@ -177,6 +179,7 @@ public sealed class SymlinkSyncService : ISymlinkSyncService
         var linkedItems = _databaseService.GetSourceItems()
             .Where(item => item.State == ItemState.Linked)
             .ToList();
+        var linkedGroupsByPath = BuildLinkedGroupsByPath(linkedItems);
 
         var syncedLinkedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var item in linkedItems)
@@ -189,7 +192,8 @@ public sealed class SymlinkSyncService : ISymlinkSyncService
                     continue;
                 }
 
-                Merge(aggregate, SyncItem(item, item.LinkedPath));
+                linkedGroupsByPath.TryGetValue(normalizedLinkedPath, out var linkedGroup);
+                Merge(aggregate, SyncItem(item, item.LinkedPath, linkedGroup));
                 continue;
             }
 
@@ -203,6 +207,43 @@ public sealed class SymlinkSyncService : ISymlinkSyncService
         return aggregate;
     }
 
+    private static Dictionary<string, List<SourceItem>> BuildLinkedGroupsByPath(IEnumerable<SourceItem> linkedItems)
+    {
+        var groups = new Dictionary<string, List<SourceItem>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in linkedItems.Where(item => !string.IsNullOrWhiteSpace(item.LinkedPath)))
+        {
+            var normalizedLinkedPath = Path.GetFullPath(item.LinkedPath!);
+            if (!groups.TryGetValue(normalizedLinkedPath, out var group))
+            {
+                group = [];
+                groups[normalizedLinkedPath] = group;
+            }
+
+            group.Add(item);
+        }
+
+        return groups;
+    }
+
+    private List<SourceItem> ResolveLinkedGroup(
+        SourceItem item,
+        string linkedPath,
+        IReadOnlyList<SourceItem>? linkedGroup)
+    {
+        if (linkedGroup is { Count: > 0 })
+        {
+            return linkedGroup.ToList();
+        }
+
+        var group = GetItemsSharingLinkedPath(linkedPath);
+        if (group.Count == 0)
+        {
+            group = [item];
+        }
+
+        return group;
+    }
+
     private List<SourceItem> GetItemsSharingLinkedPath(string linkedPath)
     {
         var normalizedLinkedPath = Path.GetFullPath(linkedPath);
@@ -213,20 +254,34 @@ public sealed class SymlinkSyncService : ISymlinkSyncService
             .ToList();
     }
 
-    private List<SourceItem> BuildRemovalGroup(SourceItem item, string? linkedPath)
+    private List<SourceItem> BuildRemovalGroup(
+        SourceItem item,
+        string? linkedPath,
+        IReadOnlyList<SourceItem>? linkedGroup = null)
     {
         if (string.IsNullOrWhiteSpace(linkedPath))
         {
-            return new List<SourceItem> { item };
+            return [item];
         }
 
-        var group = GetItemsSharingLinkedPath(linkedPath);
-        if (!group.Any(member => member.Id == item.Id))
+        if (linkedGroup is { Count: > 0 })
         {
-            group.Add(item);
+            var group = linkedGroup.ToList();
+            if (!group.Any(member => member.Id == item.Id))
+            {
+                group.Add(item);
+            }
+
+            return group;
         }
 
-        return group;
+        var resolvedGroup = GetItemsSharingLinkedPath(linkedPath);
+        if (!resolvedGroup.Any(member => member.Id == item.Id))
+        {
+            resolvedGroup.Add(item);
+        }
+
+        return resolvedGroup;
     }
 
     private static SourceItem SelectCanonicalItem(IReadOnlyList<SourceItem> items)
