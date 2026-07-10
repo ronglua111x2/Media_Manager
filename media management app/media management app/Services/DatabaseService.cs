@@ -1672,12 +1672,13 @@ public sealed class DatabaseService : IDatabaseService
             command.Parameters.AddWithValue("$MediaId", mediaId.Value);
         }
 
-        command.CommandText = $"""
-            SELECT Id, TargetKind, MediaId, EpisodeId, SeasonNumber, EpisodeNumber, Title, Summary, Status, StatusDetail,
-                   SelectedCandidateName, SelectedCandidateUrl, SelectedCandidatePlugin, SelectedCandidateFileSize,
-                   SelectedCandidateSeeders, SelectedCandidateLeechers, SelectedCandidateQuality, SelectedCandidateAudioCodec,
-                   SelectedCandidateCoveredSeasons, SelectedCandidateContentProfile, SelectedCandidateTotalScore,
-                   TorrentHash, TorrentName, TorrentState, TorrentProgress, CreatedUtc, UpdatedUtc, Source
+         command.CommandText = $"""
+             SELECT Id, TargetKind, MediaId, EpisodeId, SeasonNumber, EpisodeNumber, Title, Summary, Status, StatusDetail,
+                 SelectedCandidateName, SelectedCandidateUrl, SelectedCandidatePlugin, SelectedCandidateFileSize,
+                 SelectedCandidateSeeders, SelectedCandidateLeechers, SelectedCandidateQuality, SelectedCandidateAudioCodec,
+                 SelectedCandidateCoveredSeasons, SelectedCandidateContentProfile, SelectedCandidateTotalScore,
+                 TorrentHash, TorrentName, TorrentState, TorrentProgress, CreatedUtc, UpdatedUtc,
+                 FailedCandidateUrls, LastFailureReason, Source
             FROM TorrentCartOrders
             {(whereClauses.Count == 0 ? string.Empty : $"WHERE {string.Join(" AND ", whereClauses)}")}
             ORDER BY Id;
@@ -1696,12 +1697,13 @@ public sealed class DatabaseService : IDatabaseService
         using var connection = new SqliteConnection(_connectionString);
         connection.Open();
         using var command = connection.CreateCommand();
-        command.CommandText = """
-            SELECT Id, TargetKind, MediaId, EpisodeId, SeasonNumber, EpisodeNumber, Title, Summary, Status, StatusDetail,
-                   SelectedCandidateName, SelectedCandidateUrl, SelectedCandidatePlugin, SelectedCandidateFileSize,
-                   SelectedCandidateSeeders, SelectedCandidateLeechers, SelectedCandidateQuality, SelectedCandidateAudioCodec,
-                   SelectedCandidateCoveredSeasons, SelectedCandidateContentProfile, SelectedCandidateTotalScore,
-                   TorrentHash, TorrentName, TorrentState, TorrentProgress, CreatedUtc, UpdatedUtc, Source
+         command.CommandText = """
+             SELECT Id, TargetKind, MediaId, EpisodeId, SeasonNumber, EpisodeNumber, Title, Summary, Status, StatusDetail,
+                 SelectedCandidateName, SelectedCandidateUrl, SelectedCandidatePlugin, SelectedCandidateFileSize,
+                 SelectedCandidateSeeders, SelectedCandidateLeechers, SelectedCandidateQuality, SelectedCandidateAudioCodec,
+                 SelectedCandidateCoveredSeasons, SelectedCandidateContentProfile, SelectedCandidateTotalScore,
+                 TorrentHash, TorrentName, TorrentState, TorrentProgress, CreatedUtc, UpdatedUtc,
+                 FailedCandidateUrls, LastFailureReason, Source
             FROM TorrentCartOrders
             WHERE Id = $Id
             LIMIT 1;
@@ -1726,13 +1728,15 @@ public sealed class DatabaseService : IDatabaseService
                     SelectedCandidateName, SelectedCandidateUrl, SelectedCandidatePlugin, SelectedCandidateFileSize,
                     SelectedCandidateSeeders, SelectedCandidateLeechers, SelectedCandidateQuality, SelectedCandidateAudioCodec,
                     SelectedCandidateCoveredSeasons, SelectedCandidateContentProfile, SelectedCandidateTotalScore,
-                    TorrentHash, TorrentName, TorrentState, TorrentProgress, CreatedUtc, UpdatedUtc, Source)
+                    TorrentHash, TorrentName, TorrentState, TorrentProgress, CreatedUtc, UpdatedUtc,
+                    FailedCandidateUrls, LastFailureReason, Source)
                 VALUES (
                     $TargetKind, $MediaId, $EpisodeId, $SeasonNumber, $EpisodeNumber, $Title, $Summary, $Status, $StatusDetail,
                     $SelectedCandidateName, $SelectedCandidateUrl, $SelectedCandidatePlugin, $SelectedCandidateFileSize,
                     $SelectedCandidateSeeders, $SelectedCandidateLeechers, $SelectedCandidateQuality, $SelectedCandidateAudioCodec,
                     $SelectedCandidateCoveredSeasons, $SelectedCandidateContentProfile, $SelectedCandidateTotalScore,
-                    $TorrentHash, $TorrentName, $TorrentState, $TorrentProgress, $CreatedUtc, $UpdatedUtc, $Source);
+                    $TorrentHash, $TorrentName, $TorrentState, $TorrentProgress, $CreatedUtc, $UpdatedUtc,
+                    $FailedCandidateUrls, $LastFailureReason, $Source);
                 SELECT last_insert_rowid();
                 """;
             AddTorrentCartOrderParameters(insert, order);
@@ -1748,14 +1752,16 @@ public sealed class DatabaseService : IDatabaseService
                 Id, TargetKind, MediaId, EpisodeId, SeasonNumber, EpisodeNumber, Title, Summary, Status, StatusDetail,
                 SelectedCandidateName, SelectedCandidateUrl, SelectedCandidatePlugin, SelectedCandidateFileSize,
                 SelectedCandidateSeeders, SelectedCandidateLeechers, SelectedCandidateQuality, SelectedCandidateAudioCodec,
-                    SelectedCandidateCoveredSeasons, SelectedCandidateContentProfile, SelectedCandidateTotalScore,
-                TorrentHash, TorrentName, TorrentState, TorrentProgress, CreatedUtc, UpdatedUtc, Source)
+                SelectedCandidateCoveredSeasons, SelectedCandidateContentProfile, SelectedCandidateTotalScore,
+                TorrentHash, TorrentName, TorrentState, TorrentProgress, CreatedUtc, UpdatedUtc,
+                FailedCandidateUrls, LastFailureReason, Source)
             VALUES (
                 $Id, $TargetKind, $MediaId, $EpisodeId, $SeasonNumber, $EpisodeNumber, $Title, $Summary, $Status, $StatusDetail,
                 $SelectedCandidateName, $SelectedCandidateUrl, $SelectedCandidatePlugin, $SelectedCandidateFileSize,
                 $SelectedCandidateSeeders, $SelectedCandidateLeechers, $SelectedCandidateQuality, $SelectedCandidateAudioCodec,
                 $SelectedCandidateCoveredSeasons, $SelectedCandidateContentProfile, $SelectedCandidateTotalScore,
-                $TorrentHash, $TorrentName, $TorrentState, $TorrentProgress, $CreatedUtc, $UpdatedUtc, $Source)
+                $TorrentHash, $TorrentName, $TorrentState, $TorrentProgress, $CreatedUtc, $UpdatedUtc,
+                $FailedCandidateUrls, $LastFailureReason, $Source)
             ON CONFLICT(Id) DO UPDATE SET
                 TargetKind = excluded.TargetKind,
                 MediaId = excluded.MediaId,
@@ -1781,6 +1787,8 @@ public sealed class DatabaseService : IDatabaseService
                 TorrentName = excluded.TorrentName,
                 TorrentState = excluded.TorrentState,
                 TorrentProgress = excluded.TorrentProgress,
+                FailedCandidateUrls = excluded.FailedCandidateUrls,
+                LastFailureReason = excluded.LastFailureReason,
                 Source = excluded.Source,
                 UpdatedUtc = excluded.UpdatedUtc;
             """;
@@ -2369,6 +2377,8 @@ public sealed class DatabaseService : IDatabaseService
         EnsureColumn(connection, "TorrentCartOrders", "TorrentProgress", "REAL NOT NULL DEFAULT 0");
         EnsureColumn(connection, "TorrentCartOrders", "CreatedUtc", "TEXT NOT NULL DEFAULT '1970-01-01T00:00:00.0000000Z'");
         EnsureColumn(connection, "TorrentCartOrders", "UpdatedUtc", "TEXT NOT NULL DEFAULT '1970-01-01T00:00:00.0000000Z'");
+        EnsureColumn(connection, "TorrentCartOrders", "FailedCandidateUrls", "TEXT NOT NULL DEFAULT ''");
+        EnsureColumn(connection, "TorrentCartOrders", "LastFailureReason", "TEXT NOT NULL DEFAULT ''");
         EnsureColumn(connection, "TorrentCartOrders", "Source", "INTEGER NOT NULL DEFAULT 0");
     }
 
@@ -2626,6 +2636,8 @@ public sealed class DatabaseService : IDatabaseService
         command.Parameters.AddWithValue("$TorrentProgress", Math.Clamp(order.TorrentProgress, 0, 1));
         command.Parameters.AddWithValue("$CreatedUtc", (order.CreatedUtc == default ? DateTime.UtcNow : order.CreatedUtc).ToString("O"));
         command.Parameters.AddWithValue("$UpdatedUtc", order.UpdatedUtc.ToString("O"));
+        command.Parameters.AddWithValue("$FailedCandidateUrls", order.FailedCandidateUrls);
+        command.Parameters.AddWithValue("$LastFailureReason", order.LastFailureReason);
         command.Parameters.AddWithValue("$Source", (int)order.Source);
     }
 
@@ -2703,8 +2715,10 @@ public sealed class DatabaseService : IDatabaseService
             TorrentProgress = reader.GetDouble(24),
             CreatedUtc = DateTime.Parse(reader.GetString(25), null, System.Globalization.DateTimeStyles.RoundtripKind),
             UpdatedUtc = DateTime.Parse(reader.GetString(26), null, System.Globalization.DateTimeStyles.RoundtripKind),
-            Source = reader.FieldCount > 27 && !reader.IsDBNull(27)
-                ? (TorrentOrderSource)reader.GetInt32(27)
+            FailedCandidateUrls = reader.FieldCount > 27 && !reader.IsDBNull(27) ? reader.GetString(27) : string.Empty,
+            LastFailureReason = reader.FieldCount > 28 && !reader.IsDBNull(28) ? reader.GetString(28) : string.Empty,
+            Source = reader.FieldCount > 29 && !reader.IsDBNull(29)
+                ? (TorrentOrderSource)reader.GetInt32(29)
                 : TorrentOrderSource.Manual
         };
     }

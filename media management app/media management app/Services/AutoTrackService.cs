@@ -1,3 +1,4 @@
+using System.Text.Json;
 using media_management_app.Common;
 using media_management_app.Models;
 
@@ -649,12 +650,75 @@ public sealed class AutoTrackService : IAutoTrackService
 
                 try
                 {
-                    await AddOrderToClientAsync(order, savePath, cancellationToken);
-                    result.TorrentsAdded++;
-                    NotifyStage(
-                        "Auto-Track",
-                        $"{show.DisplayTitle} — Added {order.Title} → {savePath}",
-                        show);
+                    var candidates = _torrentCartService.GetCandidates(order.Id)
+                        .OrderBy(candidate => candidate.Rank)
+                        .ToList();
+                    if (candidates.Count == 0)
+                    {
+                        result.Failed++;
+                        _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.Failed, "No approved candidates available.");
+                        continue;
+                    }
+
+                    var failedCandidateUrls = GetFailedCandidateUrls(order);
+                    var candidatesToTry = candidates
+                        .Where(candidate => !failedCandidateUrls.Contains(candidate.Url))
+                        .ToList();
+                    if (candidatesToTry.Count == 0)
+                    {
+                        result.Failed++;
+                        _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.Failed, "All candidates have already failed.");
+                        continue;
+                    }
+
+                    var added = false;
+                    for (var index = 0; index < candidatesToTry.Count; index++)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+
+                        var candidate = candidatesToTry[index];
+                        if (!string.Equals(order.SelectedCandidateUrl, candidate.Url, StringComparison.Ordinal))
+                        {
+                            SelectCandidateForRetry(order, candidate);
+                        }
+
+                        try
+                        {
+                            await AddOrderToClientAsync(order, savePath, cancellationToken);
+                            result.TorrentsAdded++;
+                            NotifyStage(
+                                "Auto-Track",
+                                $"{show.DisplayTitle} — Added {order.Title} → {savePath}",
+                                show);
+                            added = true;
+                            break;
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            throw;
+                        }
+                        catch (Exception ex)
+                        {
+                            failedCandidateUrls.Add(candidate.Url);
+                            order.FailedCandidateUrls = SerializeFailedCandidateUrls(failedCandidateUrls);
+                            order.LastFailureReason = ex.Message;
+                            order.StatusDetail = $"Candidate failed: {candidate.Name} — {ex.Message}";
+                            _torrentCartService.SaveOrder(order);
+                            _logger.Warning(
+                                $"Auto-track add failed for '{order.Title}' candidate '{candidate.Name}': {ex.Message}",
+                                LogTarget.All);
+                        }
+                    }
+
+                    if (!added)
+                    {
+                        result.Failed++;
+                        order.Status = TorrentOrderStatus.Failed;
+                        order.StatusDetail = string.IsNullOrWhiteSpace(order.LastFailureReason)
+                            ? "All candidates failed."
+                            : $"All candidates failed. Last error: {order.LastFailureReason}";
+                        _torrentCartService.SaveOrder(order);
+                    }
                 }
                 catch (OperationCanceledException)
                 {
@@ -668,6 +732,47 @@ public sealed class AutoTrackService : IAutoTrackService
                 }
             }
         }
+    }
+
+    private void SelectCandidateForRetry(TorrentCartOrder order, TorrentCartOrderCandidate candidate)
+    {
+        _databaseService.UpdateTorrentCartOrderCandidateSelection(order.Id, candidate.Id);
+        order.SelectedCandidateName = candidate.Name;
+        order.SelectedCandidateUrl = candidate.Url;
+        order.SelectedCandidatePlugin = candidate.PluginName;
+        order.SelectedCandidateFileSize = candidate.FileSize;
+        order.SelectedCandidateSeeders = candidate.Seeders;
+        order.SelectedCandidateLeechers = candidate.Leechers;
+        order.SelectedCandidateQuality = candidate.Quality;
+        order.SelectedCandidateAudioCodec = candidate.AudioCodec;
+        order.SelectedCandidateCoveredSeasons = candidate.CoveredSeasons;
+        order.SelectedCandidateContentProfile = candidate.ContentProfileJson;
+        order.SelectedCandidateTotalScore = candidate.TotalScore;
+        order.StatusDetail = $"Retrying with candidate: {candidate.Name}";
+        _torrentCartService.SaveOrder(order);
+    }
+
+    private static HashSet<string> GetFailedCandidateUrls(TorrentCartOrder order)
+    {
+        if (string.IsNullOrWhiteSpace(order.FailedCandidateUrls))
+        {
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        try
+        {
+            var urls = JsonSerializer.Deserialize<List<string>>(order.FailedCandidateUrls) ?? [];
+            return new HashSet<string>(urls.Where(url => !string.IsNullOrWhiteSpace(url)), StringComparer.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
+    private static string SerializeFailedCandidateUrls(IEnumerable<string> urls)
+    {
+        return JsonSerializer.Serialize(urls.Where(url => !string.IsNullOrWhiteSpace(url)).Distinct(StringComparer.OrdinalIgnoreCase));
     }
 
     private bool IsAutoTrackHuntBlocked(long episodeId)

@@ -54,6 +54,10 @@ public sealed class TorrentCartOrder
 
     public double TorrentProgress { get; set; }
 
+    public string FailedCandidateUrls { get; set; } = string.Empty;
+
+    public string LastFailureReason { get; set; } = string.Empty;
+
     public DateTime CreatedUtc { get; set; } = DateTime.UtcNow;
 
     public DateTime UpdatedUtc { get; set; } = DateTime.UtcNow;
