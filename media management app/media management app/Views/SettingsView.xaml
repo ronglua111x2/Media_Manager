@@ -1372,7 +1372,7 @@
                                 <Border Style="{StaticResource SettingsGuideItemStyle}">
                                     <StackPanel>
                                         <TextBlock Text="Cloudflare WARP" Style="{StaticResource SettingsLabelStyle}" />
-                                        <TextBlock Text="Requires the Cloudflare WARP desktop client installed on Windows. The app uses warp-cli.exe to connect before torrent searches and disconnect afterward."
+                                        <TextBlock Text="Requires the Cloudflare WARP desktop client installed on Windows. The app uses warp-cli.exe to connect before Auto-Track fetch/add and disconnect after torrents are added. If WARP is already connected, the app leaves that session open."
                                                    Style="{StaticResource SettingsHintStyle}" />
                                     </StackPanel>
                                 </Border>

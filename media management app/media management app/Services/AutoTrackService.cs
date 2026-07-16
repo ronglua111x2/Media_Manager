@@ -481,15 +481,23 @@ public sealed class AutoTrackService : IAutoTrackService
             MaxParallelWorkers = settings.Search.MaxParallelWorkersPerShow
         };
 
-        var warpConnected = false;
+        var warpOwnedByUs = false;
         var warpEnabled = _settingsService.Current.Warp?.Enabled ?? true;
         if (warpEnabled && _warpCliService.IsAvailable)
         {
-            var timeout = TimeSpan.FromSeconds(_settingsService.Current.Warp?.ConnectTimeoutSeconds ?? 30);
-            warpConnected = await _warpCliService.ConnectAsync(timeout, cancellationToken);
-            if (!warpConnected)
+            var wasAlreadyConnected = await _warpCliService.IsConnectedAsync(cancellationToken);
+            if (wasAlreadyConnected)
             {
-                _logger.Warning("Auto-track continuing without WARP (connect failed or timed out).", LogTarget.All);
+                _logger.Info("WARP already connected; Auto-Track will leave the existing session open.", LogTarget.File | LogTarget.Console);
+            }
+            else
+            {
+                var timeout = TimeSpan.FromSeconds(_settingsService.Current.Warp?.ConnectTimeoutSeconds ?? 30);
+                warpOwnedByUs = await _warpCliService.ConnectAsync(timeout, cancellationToken);
+                if (!warpOwnedByUs)
+                {
+                    _logger.Warning("Auto-track continuing without WARP (connect failed or timed out).", LogTarget.All);
+                }
             }
         }
 
@@ -590,146 +598,146 @@ public sealed class AutoTrackService : IAutoTrackService
                     _logger.Warning($"Auto-track search failed for '{show.DisplayTitle}': {ex.Message}", LogTarget.All);
                 }
             }
-        }
-        finally
-        {
-            if (warpConnected)
+
+            foreach (var (showId, entry) in pendingOrdersByShow)
             {
-                await _warpCliService.DisconnectAsync(cancellationToken);
+                var show = _databaseService.GetTrackedShow(showId) ?? entry.Show;
+                var batchOrderIds = entry.Orders.Select(order => order.Id).ToList();
+                _torrentCartService.AcceptSelectedCandidates(MediaKind.TvEpisode, showId, batchOrderIds);
+
+                foreach (var queued in entry.Orders)
+                {
+                    var approved = _torrentCartService.GetOrder(queued.Id);
+                    if (approved is null || approved.Status != TorrentOrderStatus.Approved)
+                    {
+                        continue;
+                    }
+
+                    NotifyStage(
+                        "Auto-Track",
+                        $"{show.DisplayTitle} — {approved.Title} candidate: {approved.SelectedCandidateName}",
+                        show);
+                }
             }
-        }
 
-        foreach (var (showId, entry) in pendingOrdersByShow)
-        {
-            var show = _databaseService.GetTrackedShow(showId) ?? entry.Show;
-            var batchOrderIds = entry.Orders.Select(order => order.Id).ToList();
-            _torrentCartService.AcceptSelectedCandidates(MediaKind.TvEpisode, showId, batchOrderIds);
-
-            foreach (var queued in entry.Orders)
+            foreach (var (showId, entry) in pendingOrdersByShow)
             {
-                var approved = _torrentCartService.GetOrder(queued.Id);
-                if (approved is null || approved.Status != TorrentOrderStatus.Approved)
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var show = _databaseService.GetTrackedShow(showId) ?? entry.Show;
+                var savePath = show.AutoTrackDownloadFolder?.Trim();
+                if (string.IsNullOrWhiteSpace(savePath))
                 {
                     continue;
                 }
 
-                NotifyStage(
-                    "Auto-Track",
-                    $"{show.DisplayTitle} — {approved.Title} candidate: {approved.SelectedCandidateName}",
-                    show);
+                var approvedOrders = _torrentCartService.GetOrders(MediaKind.TvEpisode, showId)
+                    .Where(order => entry.Orders.Any(queued => queued.Id == order.Id))
+                    .Where(order => order.Status == TorrentOrderStatus.Approved && order.HasSelectedCandidate)
+                    .ToList();
+
+                foreach (var seasonNumber in approvedOrders
+                             .Where(order => order.SeasonNumber is not null)
+                             .Select(order => order.SeasonNumber!.Value)
+                             .Distinct())
+                {
+                    _trackedShowService.UpdateSeasonDownloadFolder(showId, seasonNumber, savePath);
+                }
+
+                foreach (var order in approvedOrders)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    try
+                    {
+                        var candidates = _torrentCartService.GetCandidates(order.Id)
+                            .OrderBy(candidate => candidate.Rank)
+                            .ToList();
+                        if (candidates.Count == 0)
+                        {
+                            result.Failed++;
+                            _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.Failed, "No approved candidates available.");
+                            continue;
+                        }
+
+                        var failedCandidateUrls = GetFailedCandidateUrls(order);
+                        var candidatesToTry = candidates
+                            .Where(candidate => !failedCandidateUrls.Contains(candidate.Url))
+                            .ToList();
+                        if (candidatesToTry.Count == 0)
+                        {
+                            result.Failed++;
+                            _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.Failed, "All candidates have already failed.");
+                            continue;
+                        }
+
+                        var added = false;
+                        for (var index = 0; index < candidatesToTry.Count; index++)
+                        {
+                            cancellationToken.ThrowIfCancellationRequested();
+
+                            var candidate = candidatesToTry[index];
+                            if (!string.Equals(order.SelectedCandidateUrl, candidate.Url, StringComparison.Ordinal))
+                            {
+                                SelectCandidateForRetry(order, candidate);
+                            }
+
+                            try
+                            {
+                                await AddOrderToClientAsync(order, savePath, cancellationToken);
+                                result.TorrentsAdded++;
+                                NotifyStage(
+                                    "Auto-Track",
+                                    $"{show.DisplayTitle} — Added {order.Title} → {savePath}",
+                                    show);
+                                added = true;
+                                break;
+                            }
+                            catch (OperationCanceledException)
+                            {
+                                throw;
+                            }
+                            catch (Exception ex)
+                            {
+                                failedCandidateUrls.Add(candidate.Url);
+                                order.FailedCandidateUrls = SerializeFailedCandidateUrls(failedCandidateUrls);
+                                order.LastFailureReason = ex.Message;
+                                order.StatusDetail = $"Candidate failed: {candidate.Name} — {ex.Message}";
+                                _torrentCartService.SaveOrder(order);
+                                _logger.Warning(
+                                    $"Auto-track add failed for '{order.Title}' candidate '{candidate.Name}': {ex.Message}",
+                                    LogTarget.All);
+                            }
+                        }
+
+                        if (!added)
+                        {
+                            result.Failed++;
+                            order.Status = TorrentOrderStatus.Failed;
+                            order.StatusDetail = string.IsNullOrWhiteSpace(order.LastFailureReason)
+                                ? "All candidates failed."
+                                : $"All candidates failed. Last error: {order.LastFailureReason}";
+                            _torrentCartService.SaveOrder(order);
+                        }
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        result.Failed++;
+                        _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.Failed, ex.Message);
+                        _logger.Warning($"Auto-track add failed for '{order.Title}': {ex.Message}", LogTarget.All);
+                    }
+                }
             }
         }
-
-        foreach (var (showId, entry) in pendingOrdersByShow)
+        finally
         {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var show = _databaseService.GetTrackedShow(showId) ?? entry.Show;
-            var savePath = show.AutoTrackDownloadFolder?.Trim();
-            if (string.IsNullOrWhiteSpace(savePath))
+            if (warpOwnedByUs)
             {
-                continue;
-            }
-
-            var approvedOrders = _torrentCartService.GetOrders(MediaKind.TvEpisode, showId)
-                .Where(order => entry.Orders.Any(queued => queued.Id == order.Id))
-                .Where(order => order.Status == TorrentOrderStatus.Approved && order.HasSelectedCandidate)
-                .ToList();
-
-            foreach (var seasonNumber in approvedOrders
-                         .Where(order => order.SeasonNumber is not null)
-                         .Select(order => order.SeasonNumber!.Value)
-                         .Distinct())
-            {
-                _trackedShowService.UpdateSeasonDownloadFolder(showId, seasonNumber, savePath);
-            }
-
-            foreach (var order in approvedOrders)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                try
-                {
-                    var candidates = _torrentCartService.GetCandidates(order.Id)
-                        .OrderBy(candidate => candidate.Rank)
-                        .ToList();
-                    if (candidates.Count == 0)
-                    {
-                        result.Failed++;
-                        _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.Failed, "No approved candidates available.");
-                        continue;
-                    }
-
-                    var failedCandidateUrls = GetFailedCandidateUrls(order);
-                    var candidatesToTry = candidates
-                        .Where(candidate => !failedCandidateUrls.Contains(candidate.Url))
-                        .ToList();
-                    if (candidatesToTry.Count == 0)
-                    {
-                        result.Failed++;
-                        _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.Failed, "All candidates have already failed.");
-                        continue;
-                    }
-
-                    var added = false;
-                    for (var index = 0; index < candidatesToTry.Count; index++)
-                    {
-                        cancellationToken.ThrowIfCancellationRequested();
-
-                        var candidate = candidatesToTry[index];
-                        if (!string.Equals(order.SelectedCandidateUrl, candidate.Url, StringComparison.Ordinal))
-                        {
-                            SelectCandidateForRetry(order, candidate);
-                        }
-
-                        try
-                        {
-                            await AddOrderToClientAsync(order, savePath, cancellationToken);
-                            result.TorrentsAdded++;
-                            NotifyStage(
-                                "Auto-Track",
-                                $"{show.DisplayTitle} — Added {order.Title} → {savePath}",
-                                show);
-                            added = true;
-                            break;
-                        }
-                        catch (OperationCanceledException)
-                        {
-                            throw;
-                        }
-                        catch (Exception ex)
-                        {
-                            failedCandidateUrls.Add(candidate.Url);
-                            order.FailedCandidateUrls = SerializeFailedCandidateUrls(failedCandidateUrls);
-                            order.LastFailureReason = ex.Message;
-                            order.StatusDetail = $"Candidate failed: {candidate.Name} — {ex.Message}";
-                            _torrentCartService.SaveOrder(order);
-                            _logger.Warning(
-                                $"Auto-track add failed for '{order.Title}' candidate '{candidate.Name}': {ex.Message}",
-                                LogTarget.All);
-                        }
-                    }
-
-                    if (!added)
-                    {
-                        result.Failed++;
-                        order.Status = TorrentOrderStatus.Failed;
-                        order.StatusDetail = string.IsNullOrWhiteSpace(order.LastFailureReason)
-                            ? "All candidates failed."
-                            : $"All candidates failed. Last error: {order.LastFailureReason}";
-                        _torrentCartService.SaveOrder(order);
-                    }
-                }
-                catch (OperationCanceledException)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    result.Failed++;
-                    _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.Failed, ex.Message);
-                    _logger.Warning($"Auto-track add failed for '{order.Title}': {ex.Message}", LogTarget.All);
-                }
+                await _warpCliService.DisconnectAsync(cancellationToken);
             }
         }
     }
