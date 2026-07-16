@@ -46,4 +46,6 @@ public interface IAutoTorrentLinkService
     AutoTorrentLinkResult RemoveOrphanPackSpecialLink(long sourceItemId);
 
     AutoTorrentLinkResult RefreshLinkStatus(long? showId = null, long? movieId = null);
+
+    AutoTorrentLinkResult ResetEpisodeForRedownload(long showId, int seasonNumber, int episodeNumber);
 }

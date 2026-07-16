@@ -159,9 +159,9 @@ public sealed class TrackedShowService : ITrackedShowService
     {
         _databaseService.UpdateTrackedEpisodeTorrent(
             episodeId,
-            torrentHash,
             string.Empty,
-            "Removed from qBittorrent",
+            string.Empty,
+            string.Empty,
             0);
     }
 

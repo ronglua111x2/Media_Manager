@@ -73,6 +73,9 @@ public sealed partial class LibraryEpisodeRowViewModel : ObservableObject
         ? IsLinked
         : IsTrackedEpisode && !IsOrphanSeparator && !IsSeasonPackMode && (HasTorrent || IsLinked);
 
+    public bool CanReset => IsTrackedEpisode && !IsOrphan && !IsOrphanSeparator && !IsSeasonPackMode &&
+                            (HasTorrent || IsAvailable);
+
     public string LinkActionLabel => IsLinked ? "Unlink" : "Link";
 
     public string LinkActionIconKind => IsLinked ? "Unlink" : "Link";

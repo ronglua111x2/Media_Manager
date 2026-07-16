@@ -298,6 +298,71 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
         return result;
     }
 
+    public AutoTorrentLinkResult ResetEpisodeForRedownload(long showId, int seasonNumber, int episodeNumber)
+    {
+        var result = new AutoTorrentLinkResult();
+
+        // Remove hardlinks and reset SourceItem link fields (handles the case where file still exists)
+        var unlinkResult = RemoveEpisodeLinks(showId, seasonNumber, episodeNumber);
+        result.LinkedCount += unlinkResult.LinkedCount;
+        result.SkippedCount += unlinkResult.SkippedCount;
+        result.Messages.AddRange(unlinkResult.Messages);
+
+        // Find the episode record
+        var episode = _databaseService.GetTrackedEpisodes(showId)
+            .FirstOrDefault(ep => ep.SeasonNumber == seasonNumber && ep.EpisodeNumber == episodeNumber);
+
+        if (episode is null)
+        {
+            result.Messages.Add($"Episode S{seasonNumber:00}E{episodeNumber:00} not found in database.");
+            return result;
+        }
+
+        // Purge stale SourceItems where both the source file and hardlink are gone
+        var show = _databaseService.GetTrackedShow(showId);
+        var providerId = show?.TmdbId.ToString();
+        if (!string.IsNullOrWhiteSpace(providerId))
+        {
+            var staleItems = _databaseService.GetSourceItems()
+                .Where(item =>
+                    item.MediaKind == MediaKind.TvEpisode &&
+                    string.Equals(item.Provider, "tmdb", StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(item.ProviderId, providerId, StringComparison.OrdinalIgnoreCase))
+                .Where(item =>
+                {
+                    var key = GetOutputEpisodeKey(item);
+                    return key == (seasonNumber, episodeNumber);
+                })
+                .Where(item => !File.Exists(item.FilePath) &&
+                               (string.IsNullOrWhiteSpace(item.LinkedPath) || !File.Exists(item.LinkedPath)))
+                .ToList();
+
+            foreach (var staleItem in staleItems)
+            {
+                _databaseService.DeleteSourceItem(staleItem.Id);
+                result.Messages.Add($"Purged stale source item: {staleItem.FileName}");
+            }
+        }
+
+        // Clear torrent hash and download state so the episode becomes Missing and re-searchable
+        _databaseService.UpdateTrackedEpisodeTorrent(episode.Id, string.Empty, string.Empty, string.Empty, 0);
+
+        // Clear stored search candidate
+        _databaseService.ClearTrackedEpisodeSelectedCandidate(episode.Id);
+
+        // Remove any non-terminal cart orders for this episode
+        var episodeOrders = _databaseService.GetTorrentCartOrders(MediaKind.TvEpisode, showId)
+            .Where(order => order.EpisodeId == episode.Id)
+            .ToList();
+        foreach (var order in episodeOrders)
+        {
+            _databaseService.DeleteTorrentCartOrder(order.Id);
+        }
+
+        result.Messages.Add($"Reset S{seasonNumber:00}E{episodeNumber:00}: download state cleared.");
+        return result;
+    }
+
     private async Task LinkEpisodeCoreAsync(TrackedShow show, TrackedEpisode episode, AutoTorrentLinkResult result, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(episode.TorrentHash))

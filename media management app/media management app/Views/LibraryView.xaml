@@ -166,6 +166,26 @@
                                                        Height="15"
                                                        VerticalAlignment="Center" />
                         </Button>
+                        <Button Command="{Binding DataContext.ResetEpisodeCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                CommandParameter="{Binding}"
+                                IsEnabled="{Binding CanReset}"
+                                Margin="4,0,0,0"
+                                ToolTip="Reset download/link state so this episode shows as Missing and can be searched again">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource CompactOutlinedIconButtonStyle}">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding CanReset}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                            <iconPacks:PackIconLucide Kind="RotateCcw"
+                                                       Width="15"
+                                                       Height="15"
+                                                       VerticalAlignment="Center" />
+                        </Button>
                     </StackPanel>
                 </Grid>
                 <TextBlock Text="{Binding Title}"

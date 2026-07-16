@@ -86,11 +86,84 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
             .ToList();
         SyncOrdersFromTrackedItems(allOrders, episodesById, seasons, movies, torrentsByHash, result);
 
-        sourceItems ??= _databaseService.GetSourceItems();
+        // Clear broken LinkedPath values and purge SourceItems where both files are gone.
+        // This allows episodes to transition from Available to Missing when files were deleted externally.
+        RefreshLinkStatusForScope(scope);
+        PurgeOrphanedSourceItemsForScope(scope);
+
+        sourceItems = _databaseService.GetSourceItems();
         RefreshAvailabilityForScope(scope, sourceItems);
         _logger.Info($"Torrent reconciliation complete. {result.Summary}", LogTarget.All);
         Reconciled?.Invoke(this, EventArgs.Empty);
         return result;
+    }
+
+    private void RefreshLinkStatusForScope(TorrentReconciliationScope scope)
+    {
+        if (scope.MediaKind == MediaKind.TvEpisode && scope.MediaId is not null)
+        {
+            _autoTorrentLinkService.RefreshLinkStatus(showId: scope.MediaId.Value);
+            return;
+        }
+
+        if (scope.MediaKind == MediaKind.Movie && scope.MediaId is not null)
+        {
+            _autoTorrentLinkService.RefreshLinkStatus(movieId: scope.MediaId.Value);
+            return;
+        }
+
+        // Global scope: clear all broken links
+        _autoTorrentLinkService.RefreshLinkStatus();
+    }
+
+    private void PurgeOrphanedSourceItemsForScope(TorrentReconciliationScope scope)
+    {
+        var candidates = _databaseService.GetSourceItems().AsEnumerable();
+
+        if (scope.MediaKind == MediaKind.TvEpisode && scope.MediaId is not null)
+        {
+            var providerId = _trackedShowService.GetShows()
+                .FirstOrDefault(s => s.Id == scope.MediaId.Value)?.TmdbId.ToString();
+            if (string.IsNullOrWhiteSpace(providerId))
+            {
+                return;
+            }
+
+            candidates = candidates.Where(item =>
+                item.MediaKind == MediaKind.TvEpisode &&
+                string.Equals(item.Provider, "tmdb", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(item.ProviderId, providerId, StringComparison.OrdinalIgnoreCase));
+        }
+        else if (scope.MediaKind == MediaKind.Movie && scope.MediaId is not null)
+        {
+            var providerId = _trackedMovieService.GetMovies()
+                .FirstOrDefault(m => m.Id == scope.MediaId.Value)?.TmdbId.ToString();
+            if (string.IsNullOrWhiteSpace(providerId))
+            {
+                return;
+            }
+
+            candidates = candidates.Where(item =>
+                item.MediaKind == MediaKind.Movie &&
+                string.Equals(item.Provider, "tmdb", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(item.ProviderId, providerId, StringComparison.OrdinalIgnoreCase));
+        }
+
+        var purgedCount = 0;
+        foreach (var item in candidates.ToList())
+        {
+            if (!File.Exists(item.FilePath) &&
+                (string.IsNullOrWhiteSpace(item.LinkedPath) || !File.Exists(item.LinkedPath)))
+            {
+                _databaseService.DeleteSourceItem(item.Id);
+                purgedCount++;
+            }
+        }
+
+        if (purgedCount > 0)
+        {
+            _logger.Info($"Purged {purgedCount} orphaned source item(s) with missing files.", LogTarget.All);
+        }
     }
 
     private void RefreshAvailabilityForScope(TorrentReconciliationScope scope, IReadOnlyList<SourceItem> sourceItems)

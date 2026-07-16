@@ -126,6 +126,8 @@ public interface IDatabaseService
 
     void UpdateTrackedEpisodeSelectedCandidate(long episodeId, EpisodeFetchCandidate candidate);
 
+    void ClearTrackedEpisodeSelectedCandidate(long episodeId);
+
     void UpdateTrackedShowPreferredQuality(long showId, string preferredQuality);
 
     void UpdateTrackedShowPreferences(long showId, string preferredQuality, string preferredAudioCodec, int minimumSeeders);

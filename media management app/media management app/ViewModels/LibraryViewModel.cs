@@ -496,6 +496,40 @@ public sealed partial class LibraryViewModel : ViewModelBase
         }
     }
 
+    [RelayCommand(CanExecute = nameof(CanResetEpisode))]
+    private async Task ResetEpisode(LibraryEpisodeRowViewModel? episode)
+    {
+        if (episode is null)
+        {
+            return;
+        }
+
+        var confirm = System.Windows.MessageBox.Show(
+            $"Reset download/link state for {episode.EpisodeCode}?\n\nThis clears all download and link data so the episode shows as Missing and can be searched again. Files still on disk are not deleted.",
+            "Reset Episode",
+            System.Windows.MessageBoxButton.OKCancel,
+            System.Windows.MessageBoxImage.Question);
+        if (confirm != System.Windows.MessageBoxResult.OK)
+        {
+            return;
+        }
+
+        try
+        {
+            StatusMessage = $"Resetting {episode.EpisodeCode}...";
+            _autoTorrentLinkService.ResetEpisodeForRedownload(episode.ShowId, episode.SeasonNumber, episode.EpisodeNumber);
+            _trackedShowService.RefreshAvailability(episode.ShowId);
+            await ReloadSelectedDetailAsync();
+            StatusMessage = $"{episode.EpisodeCode} reset — episode is now Missing and ready to search.";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Reset failed for {episode.EpisodeCode}: {ex.Message}";
+        }
+    }
+
+    private bool CanResetEpisode(LibraryEpisodeRowViewModel? episode) => episode?.CanReset == true;
+
     [RelayCommand(CanExecute = nameof(CanRuleLinkSeasonPack))]
     private Task RuleLinkSeasonPack(LibrarySeasonViewModel? season) =>
         RunPackLinkAsync(season, useGeminiForSpecials: false);
@@ -1163,6 +1197,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
         AddSeasonPackToCartCommand.NotifyCanExecuteChanged();
         LinkMovieCommand.NotifyCanExecuteChanged();
         LinkEpisodeCommand.NotifyCanExecuteChanged();
+        ResetEpisodeCommand.NotifyCanExecuteChanged();
         RuleLinkSeasonPackCommand.NotifyCanExecuteChanged();
         AiLinkSeasonPackCommand.NotifyCanExecuteChanged();
         UnlinkSeasonPackCommand.NotifyCanExecuteChanged();
@@ -1176,6 +1211,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
         AddSeasonPackToCartCommand.NotifyCanExecuteChanged();
         LinkMovieCommand.NotifyCanExecuteChanged();
         LinkEpisodeCommand.NotifyCanExecuteChanged();
+        ResetEpisodeCommand.NotifyCanExecuteChanged();
         RuleLinkSeasonPackCommand.NotifyCanExecuteChanged();
         AiLinkSeasonPackCommand.NotifyCanExecuteChanged();
         UnlinkSeasonPackCommand.NotifyCanExecuteChanged();

@@ -1379,6 +1379,28 @@ public sealed class DatabaseService : IDatabaseService
         command.ExecuteNonQuery();
     }
 
+    public void ClearTrackedEpisodeSelectedCandidate(long episodeId)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE TrackedEpisodes
+            SET SelectedCandidateName = NULL,
+                SelectedCandidateUrl = NULL,
+                SelectedCandidatePlugin = NULL,
+                SelectedCandidateFileSize = NULL,
+                SelectedCandidateSeeders = NULL,
+                SelectedCandidateQuality = NULL,
+                SelectedCandidateAudioCodec = NULL,
+                UpdatedUtc = $UpdatedUtc
+            WHERE Id = $Id;
+            """;
+        command.Parameters.AddWithValue("$UpdatedUtc", DateTime.UtcNow.ToString("O"));
+        command.Parameters.AddWithValue("$Id", episodeId);
+        command.ExecuteNonQuery();
+    }
+
     public void UpdateTrackedShowPreferredQuality(long showId, string preferredQuality)
     {
         using var connection = new SqliteConnection(_connectionString);

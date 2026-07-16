@@ -130,7 +130,7 @@ public sealed class TrackedMovieService : ITrackedMovieService
 
     public void MarkTorrentRemoved(long movieId, string torrentHash)
     {
-        _databaseService.UpdateTrackedMovieTorrent(movieId, torrentHash, string.Empty, "Removed from qBittorrent", 0);
+        _databaseService.UpdateTrackedMovieTorrent(movieId, string.Empty, string.Empty, string.Empty, 0);
     }
 
     public void UpdateSelectedCandidate(long movieId, EpisodeFetchCandidate candidate)
