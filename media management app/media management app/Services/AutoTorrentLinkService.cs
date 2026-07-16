@@ -318,12 +318,13 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             return result;
         }
 
-        // Purge stale SourceItems where both the source file and hardlink are gone
+        // Delete all SourceItems for this episode so RefreshAvailability sees it as Missing,
+        // even when the source file still exists on disk (user is resetting to re-download).
         var show = _databaseService.GetTrackedShow(showId);
         var providerId = show?.TmdbId.ToString();
         if (!string.IsNullOrWhiteSpace(providerId))
         {
-            var staleItems = _databaseService.GetSourceItems()
+            var episodeItems = _databaseService.GetSourceItems()
                 .Where(item =>
                     item.MediaKind == MediaKind.TvEpisode &&
                     string.Equals(item.Provider, "tmdb", StringComparison.OrdinalIgnoreCase) &&
@@ -333,14 +334,12 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
                     var key = GetOutputEpisodeKey(item);
                     return key == (seasonNumber, episodeNumber);
                 })
-                .Where(item => !File.Exists(item.FilePath) &&
-                               (string.IsNullOrWhiteSpace(item.LinkedPath) || !File.Exists(item.LinkedPath)))
                 .ToList();
 
-            foreach (var staleItem in staleItems)
+            foreach (var item in episodeItems)
             {
-                _databaseService.DeleteSourceItem(staleItem.Id);
-                result.Messages.Add($"Purged stale source item: {staleItem.FileName}");
+                _databaseService.DeleteSourceItem(item.Id);
+                result.Messages.Add($"Removed source item: {item.FileName}");
             }
         }
 

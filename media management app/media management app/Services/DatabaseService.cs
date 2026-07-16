@@ -1389,8 +1389,8 @@ public sealed class DatabaseService : IDatabaseService
             SET SelectedCandidateName = NULL,
                 SelectedCandidateUrl = NULL,
                 SelectedCandidatePlugin = NULL,
-                SelectedCandidateFileSize = NULL,
-                SelectedCandidateSeeders = NULL,
+                SelectedCandidateFileSize = 0,
+                SelectedCandidateSeeders = 0,
                 SelectedCandidateQuality = NULL,
                 SelectedCandidateAudioCodec = NULL,
                 UpdatedUtc = $UpdatedUtc
