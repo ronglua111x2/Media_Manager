@@ -48,6 +48,9 @@
                         <Run Text="{Binding TotalPendingEpisodes, Mode=OneWay}" />
                         <Run Text=" pending episode(s)" />
                     </TextBlock>
+                    <TextBlock Text="{Binding TmdbRefreshesRemainingLabel}"
+                               Style="{StaticResource MutedTextStyle}"
+                               Margin="0,2,0,0" />
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                     <Button Style="{StaticResource AppOutlinedButtonStyle}"
@@ -162,34 +165,87 @@
                                                           Content="Auto reconcile and hardlink" />
                                                 <CheckBox IsChecked="{Binding UseCustomSchedule, Mode=TwoWay}"
                                                           Margin="0,8,0,0"
-                                                          Content="Use custom schedule" />
-                                                <StackPanel Margin="0,4,0,0"
+                                                          Content="Use custom hunt schedule"
+                                                          ToolTip="Override global Day/Time for when this show may start hunting after TMDB finds a pending episode" />
+                                                <StackPanel Margin="0,6,0,0"
+                                                            MaxWidth="420"
+                                                            HorizontalAlignment="Left"
                                                             Visibility="{Binding UseCustomSchedule, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                    <ComboBox ItemsSource="{Binding AnchorDayOptions}"
-                                                              SelectedItem="{Binding CustomAnchorDay, Mode=TwoWay}"
-                                                              Margin="0,0,0,4" />
-                                                    <TextBox Text="{Binding CustomAnchorTimeLocal, UpdateSourceTrigger=PropertyChanged}"
-                                                             ToolTip="HH:mm" />
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="12" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <StackPanel>
+                                                            <TextBlock Text="Day"
+                                                                       Style="{StaticResource MutedTextStyle}"
+                                                                       Margin="0,0,0,4" />
+                                                            <ComboBox ItemsSource="{Binding AnchorDayOptions}"
+                                                                      SelectedItem="{Binding CustomAnchorDay, Mode=TwoWay}"
+                                                                      MaxWidth="160"
+                                                                      HorizontalAlignment="Left" />
+                                                        </StackPanel>
+                                                        <StackPanel Grid.Column="2">
+                                                            <TextBlock Text="Time"
+                                                                       Style="{StaticResource MutedTextStyle}"
+                                                                       Margin="0,0,0,4" />
+                                                            <materialDesign:TimePicker Is24Hours="True"
+                                                                                       SelectedTimeFormat="Short"
+                                                                                       SelectedTime="{Binding CustomAnchorTime, Mode=TwoWay}"
+                                                                                       Foreground="{StaticResource AppBrushText}"
+                                                                                       FontSize="13"
+                                                                                       MaxWidth="140"
+                                                                                       HorizontalAlignment="Left" />
+                                                        </StackPanel>
+                                                    </Grid>
                                                 </StackPanel>
                                                 <CheckBox IsChecked="{Binding UseCustomQuality, Mode=TwoWay}"
                                                           Margin="0,8,0,0"
                                                           Content="Use custom quality" />
-                                                <StackPanel Margin="0,4,0,0"
+                                                <StackPanel Margin="0,6,0,0"
+                                                            MaxWidth="420"
+                                                            HorizontalAlignment="Left"
                                                             Visibility="{Binding UseCustomQuality, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                    <TextBox Text="{Binding CustomMinQuality, UpdateSourceTrigger=PropertyChanged}"
-                                                             Margin="0,0,0,4"
-                                                             ToolTip="Min quality" />
-                                                    <TextBox Text="{Binding CustomMinSeeders, UpdateSourceTrigger=PropertyChanged}"
-                                                             Margin="0,0,0,4"
-                                                             ToolTip="Min seeders" />
-                                                    <TextBox Text="{Binding CustomMinFileSizeMb, UpdateSourceTrigger=PropertyChanged}"
-                                                             Margin="0,0,0,4"
-                                                             ToolTip="Min file size MB (0=off)" />
-                                                    <TextBox Text="{Binding CustomMaxFileSizeMb, UpdateSourceTrigger=PropertyChanged}"
-                                                             Margin="0,0,0,4"
-                                                             ToolTip="Max file size MB (0=off)" />
-                                                    <TextBox Text="{Binding CustomAllowedQualities, UpdateSourceTrigger=PropertyChanged}"
-                                                             ToolTip="Allowed qualities (comma-separated)" />
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="*" MaxWidth="180" />
+                                                            <ColumnDefinition Width="12" />
+                                                            <ColumnDefinition Width="*" MaxWidth="180" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <Grid.RowDefinitions>
+                                                            <RowDefinition Height="Auto" />
+                                                            <RowDefinition Height="Auto" />
+                                                        </Grid.RowDefinitions>
+                                                        <StackPanel Margin="0,0,0,6">
+                                                            <TextBlock Text="Min quality"
+                                                                       Style="{StaticResource MutedTextStyle}"
+                                                                       Margin="0,0,0,4" />
+                                                            <TextBox Text="{Binding CustomMinQuality, UpdateSourceTrigger=PropertyChanged}" />
+                                                        </StackPanel>
+                                                        <StackPanel Grid.Column="2" Margin="0,0,0,6">
+                                                            <TextBlock Text="Min seeders"
+                                                                       Style="{StaticResource MutedTextStyle}"
+                                                                       Margin="0,0,0,4" />
+                                                            <TextBox Text="{Binding CustomMinSeeders, UpdateSourceTrigger=PropertyChanged}" />
+                                                        </StackPanel>
+                                                        <StackPanel Grid.Row="1" Margin="0,0,0,6">
+                                                            <TextBlock Text="Min size MB (0=off)"
+                                                                       Style="{StaticResource MutedTextStyle}"
+                                                                       Margin="0,0,0,4" />
+                                                            <TextBox Text="{Binding CustomMinFileSizeMb, UpdateSourceTrigger=PropertyChanged}" />
+                                                        </StackPanel>
+                                                        <StackPanel Grid.Row="1" Grid.Column="2" Margin="0,0,0,6">
+                                                            <TextBlock Text="Max size MB (0=off)"
+                                                                       Style="{StaticResource MutedTextStyle}"
+                                                                       Margin="0,0,0,4" />
+                                                            <TextBox Text="{Binding CustomMaxFileSizeMb, UpdateSourceTrigger=PropertyChanged}" />
+                                                        </StackPanel>
+                                                    </Grid>
+                                                    <TextBlock Text="Allowed qualities (comma-separated)"
+                                                               Style="{StaticResource MutedTextStyle}"
+                                                               Margin="0,0,0,4" />
+                                                    <TextBox Text="{Binding CustomAllowedQualities, UpdateSourceTrigger=PropertyChanged}" />
                                                 </StackPanel>
                                             </StackPanel>
                                         </Grid>

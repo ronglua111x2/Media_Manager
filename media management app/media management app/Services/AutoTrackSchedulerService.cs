@@ -189,6 +189,7 @@ public sealed class AutoTrackSchedulerService : IAutoTrackSchedulerService
         {
             var result = await _autoTrackService.RunTmdbDiscoveryAsync(cancellationToken: _shutdown.Token);
             _logger.Info($"Auto-track TMDB discovery cycle complete. {result.Summary}", LogTarget.All);
+            _autoTrackService.RecordRunResult(result);
             NotifyRunCompleted(result);
         }
         catch (OperationCanceledException)
@@ -209,11 +210,14 @@ public sealed class AutoTrackSchedulerService : IAutoTrackSchedulerService
             return;
         }
 
-        _logger.Info("Auto-track torrent hunt cycle starting.", LogTarget.All);
+        _logger.Info("Auto-track torrent hunt resume cycle starting.", LogTarget.All);
 
         try
         {
-            var result = await _autoTrackService.RunTorrentHuntAsync(_shutdown.Token);
+            var result = await _autoTrackService.RunTorrentHuntAsync(
+                _shutdown.Token,
+                resumeOnly: true,
+                bypassSchedule: false);
             _logger.Info($"Auto-track torrent hunt cycle complete. {result.Summary}", LogTarget.All);
             _autoTrackService.RecordRunResult(result);
             NotifyRunCompleted(result);

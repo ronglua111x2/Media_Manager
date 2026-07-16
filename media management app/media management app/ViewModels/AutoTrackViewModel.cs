@@ -62,6 +62,9 @@ public sealed partial class AutoTrackViewModel : ViewModelBase
     private int totalPendingEpisodes;
 
     [ObservableProperty]
+    private string tmdbRefreshesRemainingLabel = string.Empty;
+
+    [ObservableProperty]
     private string statusMessage = string.Empty;
 
     [RelayCommand(CanExecute = nameof(CanRunNow))]
@@ -95,8 +98,9 @@ public sealed partial class AutoTrackViewModel : ViewModelBase
             ? "No runs yet."
             : autoTrack.LastRunSummary;
         SchedulerStatus = autoTrack.Enabled
-            ? $"TMDB every {Math.Clamp(autoTrack.TmdbCheckIntervalMinutes, 5, 1440)}m · Hunt every {Math.Clamp(autoTrack.TorrentHuntIntervalMinutes, 15, 1440)}m · Reconcile every {Math.Clamp(autoTrack.ReconcileIntervalMinutes, 5, 1440)}m · Anchor {autoTrack.AnchorDayOfWeek} {autoTrack.AnchorTimeLocal}"
+            ? $"TMDB every {Math.Clamp(autoTrack.TmdbCheckIntervalMinutes, 5, 1440)}m (then hunt if schedule OK) · Resume hunt every {Math.Clamp(autoTrack.TorrentHuntIntervalMinutes, 15, 1440)}m · Reconcile every {Math.Clamp(autoTrack.ReconcileIntervalMinutes, 5, 1440)}m · Hunt schedule {autoTrack.AnchorDayOfWeek} {autoTrack.AnchorTimeLocal}"
             : "Scheduler disabled in settings";
+        TmdbRefreshesRemainingLabel = BuildTmdbRefreshesRemainingLabel(autoTrack);
 
         TrackedShows.Clear();
         NewEpisodesThisWeek.Clear();
@@ -118,7 +122,8 @@ public sealed partial class AutoTrackViewModel : ViewModelBase
                 episodes,
                 episodeId =>
                     _torrentCartService.TryGetAutoTrackHuntBlockingEpisodeOrder(episodeId, out _) ||
-                    _torrentCartService.HasActiveManualEpisodeOrder(episodeId));
+                    _torrentCartService.HasActiveManualEpisodeOrder(episodeId),
+                huntDelayHours: 0);
             var card = new AutoTrackShowCardViewModel(
                 show,
                 pending,
@@ -185,6 +190,17 @@ public sealed partial class AutoTrackViewModel : ViewModelBase
     {
         return episode.SeasonNumber > fromSeason ||
                (episode.SeasonNumber == fromSeason && episode.EpisodeNumber >= fromEpisode);
+    }
+
+    private static string BuildTmdbRefreshesRemainingLabel(AutoTrackSettings autoTrack)
+    {
+        var max = Math.Clamp(autoTrack.MaxTmdbRefreshesPerDay, 1, 500);
+        var dayKey = DateTime.Now.ToString("yyyy-MM-dd");
+        var used = string.Equals(autoTrack.LastTmdbRefreshDayKey, dayKey, StringComparison.Ordinal)
+            ? Math.Max(0, autoTrack.TmdbRefreshesToday)
+            : 0;
+        var remaining = Math.Max(0, max - used);
+        return $"TMDB refreshes left today: {remaining} ({used}/{max} used)";
     }
 
     private bool CanRunNow() => !IsRunning && !_autoTrackService.IsRunning;

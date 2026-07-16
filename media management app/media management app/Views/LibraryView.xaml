@@ -956,7 +956,7 @@
                                                     Padding="10,6"
                                                     Margin="12,0,8,0"
                                                     Visibility="{Binding IsSelectedShow, Converter={StaticResource BooleanToVisibilityConverter}}"
-                                                    ToolTip="Enable auto-track from a checkpoint episode">
+                                                    ToolTip="Enable auto-track from a checkpoint episode (works even if no episodes have aired yet)">
                                                 <StackPanel Orientation="Horizontal">
                                                     <iconPacks:PackIconLucide Kind="Radar"
                                                                                Width="14"

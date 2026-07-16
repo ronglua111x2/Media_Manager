@@ -932,11 +932,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
         }
 
         var episodes = _trackedShowService.GetEpisodes(show.Id);
-        if (episodes.Count == 0)
-        {
-            StatusMessage = "No episodes available. Sync from TMDB first.";
-            return;
-        }
+        var seasons = _trackedShowService.GetSeasons(show.Id);
 
         var folderOptions = _downloadFolderCatalogService.GetKnownDownloadFolders();
         var defaultFolder = _settingsService.Current.AutoTorrent.DownloadFolders.FirstOrDefault()
@@ -949,7 +945,8 @@ public sealed partial class LibraryViewModel : ViewModelBase
             show.AutoTrackFromSeason,
             show.AutoTrackFromEpisode,
             show.AutoTrackDownloadFolder,
-            show.IsAutoTracked ? show.AutoTrackAutoReconcileAndLink : true)
+            show.IsAutoTracked ? show.AutoTrackAutoReconcileAndLink : true,
+            seasons)
         {
             Owner = System.Windows.Application.Current.MainWindow
         };

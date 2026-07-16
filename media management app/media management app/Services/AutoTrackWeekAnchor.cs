@@ -37,13 +37,17 @@ public static class AutoTrackWeekAnchor
         return weekStart.AddDays(daysFromSunday).Add(anchorTime);
     }
 
-    private static DateTime GetStartOfWeekSunday(DateTime date)
+    public static DateTime ToTimePickerValue(string? timeText)
     {
-        var diff = (7 + (date.DayOfWeek - DayOfWeek.Sunday)) % 7;
-        return date.AddDays(-diff);
+        return DateTime.Today.Add(ParseLocalTime(timeText));
     }
 
-    private static TimeSpan ParseLocalTime(string? timeText)
+    public static string FormatTimeLocal(DateTime? time)
+    {
+        return time?.ToString("HH:mm") ?? "21:00";
+    }
+
+    public static TimeSpan ParseLocalTime(string? timeText)
     {
         if (string.IsNullOrWhiteSpace(timeText))
         {
@@ -59,5 +63,11 @@ public static class AutoTrackWeekAnchor
         }
 
         return new TimeSpan(21, 0, 0);
+    }
+
+    private static DateTime GetStartOfWeekSunday(DateTime date)
+    {
+        var diff = (7 + (date.DayOfWeek - DayOfWeek.Sunday)) % 7;
+        return date.AddDays(-diff);
     }
 }

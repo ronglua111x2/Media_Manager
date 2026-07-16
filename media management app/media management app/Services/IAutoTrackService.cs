@@ -16,7 +16,10 @@ public interface IAutoTrackService
 
     Task<AutoTrackRunResult> RunTmdbDiscoveryAsync(bool bypassAnchor = false, CancellationToken cancellationToken = default);
 
-    Task<AutoTrackRunResult> RunTorrentHuntAsync(CancellationToken cancellationToken = default);
+    Task<AutoTrackRunResult> RunTorrentHuntAsync(
+        CancellationToken cancellationToken = default,
+        bool resumeOnly = false,
+        bool bypassSchedule = false);
 
     Task<AutoTrackRunResult> RunBackgroundReconcileAsync(CancellationToken cancellationToken = default);
 

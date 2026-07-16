@@ -71,16 +71,18 @@ public static class AutoTrackTmdbEligibility
         TrackedShow show,
         IReadOnlyList<TrackedEpisode> episodes,
         Func<long, bool> hasActiveCartOrder,
-        DateTime? nowLocal = null)
+        DateTime? nowLocal = null,
+        int huntDelayHours = 0)
     {
-        return FindLatestPendingEpisode(show, episodes, hasActiveCartOrder, nowLocal) is not null;
+        return FindLatestPendingEpisode(show, episodes, hasActiveCartOrder, nowLocal, huntDelayHours) is not null;
     }
 
     public static TrackedEpisode? FindLatestPendingEpisode(
         TrackedShow show,
         IReadOnlyList<TrackedEpisode> episodes,
         Func<long, bool> hasActiveCartOrder,
-        DateTime? nowLocal = null)
+        DateTime? nowLocal = null,
+        int huntDelayHours = 0)
     {
         if (!show.IsAutoTracked)
         {
@@ -89,11 +91,12 @@ public static class AutoTrackTmdbEligibility
 
         var fromSeason = show.AutoTrackFromSeason!.Value;
         var fromEpisode = show.AutoTrackFromEpisode!.Value;
-        var today = (nowLocal ?? DateTime.Now).Date;
+        var now = nowLocal ?? DateTime.Now;
+        var delayHours = Math.Max(0, huntDelayHours);
 
         return episodes
             .Where(episode => IsAtOrAfterCheckpoint(episode, fromSeason, fromEpisode))
-            .Where(episode => episode.AirDate is null || episode.AirDate.Value.Date <= today)
+            .Where(episode => episode.AirDate is null || episode.AirDate.Value.AddHours(delayHours) <= now)
             .Where(episode => episode.Availability == EpisodeAvailability.Missing)
             .Where(episode => string.IsNullOrWhiteSpace(episode.TorrentHash))
             .Where(episode => !hasActiveCartOrder(episode.Id))

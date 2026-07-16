@@ -13,7 +13,8 @@ public partial class SetAutoTrackDialog : Window
         int? currentSeason,
         int? currentEpisode,
         string? currentDownloadFolder = null,
-        bool autoReconcileAndLink = true)
+        bool autoReconcileAndLink = true,
+        IReadOnlyList<TrackedSeason>? seasons = null)
     {
         InitializeComponent();
 
@@ -25,6 +26,22 @@ public partial class SetAutoTrackDialog : Window
                 episode.EpisodeNumber,
                 $"S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00} - {episode.Title}"))
             .ToList();
+
+        if (options.Count == 0)
+        {
+            var seasonNumber = ResolveDefaultSeasonNumber(seasons);
+            options.Add(new CheckpointOption(
+                seasonNumber,
+                1,
+                $"S{seasonNumber:00}E01 - Start when first episode appears"));
+            HelpText =
+                "No episodes on TMDB yet — auto-track will wait until episodes appear and air, then hunt from this checkpoint.";
+        }
+        else
+        {
+            HelpText =
+                "Choose the first episode to auto-track and assign a fixed download folder for all episodes.";
+        }
 
         CheckpointOptions = new ObservableCollection<CheckpointOption>(options);
         DownloadFolderOptions = new ObservableCollection<string>(downloadFolderOptions);
@@ -41,6 +58,8 @@ public partial class SetAutoTrackDialog : Window
             ?? DownloadFolderOptions.FirstOrDefault();
         AutoReconcileAndLink = autoReconcileAndLink;
     }
+
+    public string HelpText { get; }
 
     public ObservableCollection<CheckpointOption> CheckpointOptions { get; }
 
@@ -88,6 +107,20 @@ public partial class SetAutoTrackDialog : Window
     {
         DialogResult = false;
         Close();
+    }
+
+    private static int ResolveDefaultSeasonNumber(IReadOnlyList<TrackedSeason>? seasons)
+    {
+        if (seasons is null || seasons.Count == 0)
+        {
+            return 1;
+        }
+
+        var regular = seasons
+            .Where(season => season.SeasonNumber >= 1)
+            .OrderBy(season => season.SeasonNumber)
+            .FirstOrDefault();
+        return regular?.SeasonNumber ?? 1;
     }
 
     private static string? FirstNonEmpty(params string?[] values)

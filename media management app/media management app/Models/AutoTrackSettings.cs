@@ -15,6 +15,11 @@ public sealed class AutoTrackSettings
 
     public int TorrentHuntIntervalMinutes { get; set; } = 60;
 
+    /// <summary>
+    /// Minimum hours after an episode air date before auto-track will hunt for torrents (0 = no delay).
+    /// </summary>
+    public int HuntMinHoursAfterAirDate { get; set; } = 4;
+
     public int ReconcileIntervalMinutes { get; set; } = 10;
 
     public int MaxTmdbRefreshesPerDay { get; set; } = 20;

@@ -447,13 +447,21 @@
                                     <CheckBox IsChecked="{Binding AutoTrackEnabled, Mode=TwoWay}"
                                               Margin="0,0,0,8"
                                               Content="Enable scheduled auto-track runs" />
-                                    <TextBlock Text="Weekly anchor day" Style="{StaticResource SettingsLabelStyle}" />
+                                    <TextBlock Text="Default hunt schedule day" Style="{StaticResource SettingsLabelStyle}" />
                                     <ComboBox ItemsSource="{Binding AnchorDayOptions}"
                                               SelectedItem="{Binding AutoTrackAnchorDay, Mode=TwoWay}"
-                                              Margin="0,0,0,8" />
-                                    <TextBlock Text="Weekly anchor time (HH:mm)" Style="{StaticResource SettingsLabelStyle}" />
-                                    <TextBox Text="{Binding AutoTrackAnchorTimeLocal, UpdateSourceTrigger=PropertyChanged}"
-                                             Margin="0,0,0,8" />
+                                              Margin="0,0,0,8"
+                                              MaxWidth="200"
+                                              HorizontalAlignment="Left" />
+                                    <TextBlock Text="Default hunt schedule time" Style="{StaticResource SettingsLabelStyle}" />
+                                    <materialDesign:TimePicker Is24Hours="True"
+                                                               SelectedTimeFormat="Short"
+                                                               SelectedTime="{Binding AutoTrackAnchorTime, Mode=TwoWay}"
+                                                               Foreground="{StaticResource AppBrushText}"
+                                                               Margin="0,0,0,8"
+                                                               MaxWidth="160"
+                                                               HorizontalAlignment="Left"
+                                                               FontSize="13" />
                                     <TextBlock Text="TMDB check interval (minutes)" Style="{StaticResource SettingsLabelStyle}" />
                                     <Border Style="{StaticResource SettingsNumericChromeStyle}" Margin="0,0,0,8">
                                         <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
@@ -467,6 +475,13 @@
                                                                       Value="{Binding AutoTrackTorrentHuntIntervalMinutes, UpdateSourceTrigger=PropertyChanged}"
                                                                       Minimum="15"
                                                                       Maximum="1440" />
+                                    </Border>
+                                    <TextBlock Text="Min hours after air date before hunting (0 = no delay)" Style="{StaticResource SettingsLabelStyle}" />
+                                    <Border Style="{StaticResource SettingsNumericChromeStyle}" Margin="0,0,0,8">
+                                        <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
+                                                                      Value="{Binding AutoTrackHuntMinHoursAfterAirDate, UpdateSourceTrigger=PropertyChanged}"
+                                                                      Minimum="0"
+                                                                      Maximum="48" />
                                     </Border>
                                     <TextBlock Text="Reconcile interval (minutes)" Style="{StaticResource SettingsLabelStyle}" />
                                     <Border Style="{StaticResource SettingsNumericChromeStyle}" Margin="0,0,0,8">
@@ -520,7 +535,7 @@
                                     <TextBlock Text="Allowed qualities (comma-separated, optional)" Style="{StaticResource SettingsLabelStyle}" />
                                     <TextBox Text="{Binding AutoTrackAllowedQualities, UpdateSourceTrigger=PropertyChanged}"
                                              Margin="0,0,0,8" />
-                                    <TextBlock Text="After the weekly anchor, TMDB discovery runs once per show per week. Torrent hunt batches the latest missing episode per show."
+                                    <TextBlock Text="TMDB discovery still uses this weekly schedule once per show per week (API load protection). After each TMDB check, torrent hunt runs only for shows past their hunt schedule (custom or this default) and past the air-date delay. Standalone hunt loop only resumes CandidatesFound carts."
                                                Style="{StaticResource SettingsHintStyle}"
                                                Margin="0,8,0,0"
                                                TextWrapping="Wrap" />

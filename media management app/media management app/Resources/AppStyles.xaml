@@ -424,6 +424,26 @@
         </Style.Triggers>
     </Style>
 
+    <Style TargetType="materialDesign:TimePicker">
+        <Setter Property="Foreground" Value="{StaticResource AppBrushText}" />
+        <Setter Property="TextElement.Foreground" Value="{StaticResource AppBrushText}" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="VerticalContentAlignment" Value="Bottom" />
+    </Style>
+
+    <Style TargetType="materialDesign:TimePickerTextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+        <Setter Property="Foreground" Value="{StaticResource AppBrushText}" />
+        <Setter Property="CaretBrush" Value="{StaticResource AppBrushText}" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="Padding" Value="2,0,2,0" />
+        <Setter Property="Margin" Value="0" />
+        <Setter Property="MinHeight" Value="22" />
+        <Setter Property="VerticalContentAlignment" Value="Bottom" />
+        <Setter Property="materialDesign:TextFieldAssist.TextBoxViewMargin" Value="0" />
+        <Setter Property="materialDesign:HintAssist.HintOpacity" Value="0" />
+    </Style>
+
     <Style TargetType="CheckBox">
         <Setter Property="Foreground" Value="{StaticResource AppBrushText}" />
         <Setter Property="VerticalContentAlignment" Value="Center" />

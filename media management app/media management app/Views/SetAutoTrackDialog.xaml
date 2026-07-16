@@ -10,7 +10,7 @@
         Background="{StaticResource AppBrushCanvas}">
     <DockPanel Margin="16">
         <TextBlock DockPanel.Dock="Top"
-                   Text="Choose the first episode to auto-track and assign a fixed download folder for all episodes."
+                   Text="{Binding HelpText}"
                    TextWrapping="Wrap"
                    Foreground="{StaticResource AppBrushMutedText}"
                    Margin="0,0,0,12" />

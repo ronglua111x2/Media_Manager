@@ -153,16 +153,22 @@ public partial class SettingsViewModel : ViewModelBase
     [ObservableProperty]
     private DayOfWeek autoTrackAnchorDay = DayOfWeek.Sunday;
 
-    public Array AnchorDayOptions => Enum.GetValues(typeof(DayOfWeek));
+    public IReadOnlyList<DayOfWeek> AnchorDayOptions => Enum.GetValues<DayOfWeek>();
 
     [ObservableProperty]
     private string autoTrackAnchorTimeLocal = "21:00";
+
+    [ObservableProperty]
+    private DateTime? autoTrackAnchorTime;
 
     [ObservableProperty]
     private int autoTrackTmdbCheckIntervalMinutes = 30;
 
     [ObservableProperty]
     private int autoTrackTorrentHuntIntervalMinutes = 60;
+
+    [ObservableProperty]
+    private int autoTrackHuntMinHoursAfterAirDate = 4;
 
     [ObservableProperty]
     private int autoTrackReconcileIntervalMinutes = 10;
@@ -695,6 +701,16 @@ public partial class SettingsViewModel : ViewModelBase
         RefreshLibraryRootPreview();
     }
 
+    partial void OnAutoTrackAnchorTimeChanged(DateTime? value)
+    {
+        if (_isLoadingSettings)
+        {
+            return;
+        }
+
+        AutoTrackAnchorTimeLocal = AutoTrackWeekAnchor.FormatTimeLocal(value);
+    }
+
     partial void OnSymlinkUnifiedRootChanged(string value)
     {
         if (_isLoadingSettings)
@@ -884,8 +900,10 @@ public partial class SettingsViewModel : ViewModelBase
             var autoTrack = _settingsService.Current.AutoTrack ?? new AutoTrackSettings();
             AutoTrackAnchorDay = autoTrack.AnchorDayOfWeek;
             AutoTrackAnchorTimeLocal = autoTrack.AnchorTimeLocal;
+            AutoTrackAnchorTime = AutoTrackWeekAnchor.ToTimePickerValue(autoTrack.AnchorTimeLocal);
             AutoTrackTmdbCheckIntervalMinutes = autoTrack.TmdbCheckIntervalMinutes;
             AutoTrackTorrentHuntIntervalMinutes = autoTrack.TorrentHuntIntervalMinutes;
+            AutoTrackHuntMinHoursAfterAirDate = autoTrack.HuntMinHoursAfterAirDate;
             AutoTrackReconcileIntervalMinutes = autoTrack.ReconcileIntervalMinutes;
             AutoTrackMaxTmdbRefreshesPerDay = autoTrack.MaxTmdbRefreshesPerDay;
             AutoTrackMinQuality = autoTrack.Quality?.MinQuality ?? "1080p";
@@ -1133,6 +1151,7 @@ public partial class SettingsViewModel : ViewModelBase
         autoTrack.AnchorTimeLocal = string.IsNullOrWhiteSpace(AutoTrackAnchorTimeLocal) ? "21:00" : AutoTrackAnchorTimeLocal.Trim();
         autoTrack.TmdbCheckIntervalMinutes = Math.Clamp(AutoTrackTmdbCheckIntervalMinutes, 5, 1440);
         autoTrack.TorrentHuntIntervalMinutes = Math.Clamp(AutoTrackTorrentHuntIntervalMinutes, 15, 1440);
+        autoTrack.HuntMinHoursAfterAirDate = Math.Clamp(AutoTrackHuntMinHoursAfterAirDate, 0, 48);
         autoTrack.ReconcileIntervalMinutes = Math.Clamp(AutoTrackReconcileIntervalMinutes, 5, 1440);
         autoTrack.MaxTmdbRefreshesPerDay = Math.Clamp(AutoTrackMaxTmdbRefreshesPerDay, 1, 500);
         autoTrack.Quality ??= new AutoTrackQualityPolicy();
@@ -1150,8 +1169,10 @@ public partial class SettingsViewModel : ViewModelBase
 
         AutoTrackAnchorDay = autoTrack.AnchorDayOfWeek;
         AutoTrackAnchorTimeLocal = autoTrack.AnchorTimeLocal;
+        AutoTrackAnchorTime = AutoTrackWeekAnchor.ToTimePickerValue(autoTrack.AnchorTimeLocal);
         AutoTrackTmdbCheckIntervalMinutes = autoTrack.TmdbCheckIntervalMinutes;
         AutoTrackTorrentHuntIntervalMinutes = autoTrack.TorrentHuntIntervalMinutes;
+        AutoTrackHuntMinHoursAfterAirDate = autoTrack.HuntMinHoursAfterAirDate;
         AutoTrackReconcileIntervalMinutes = autoTrack.ReconcileIntervalMinutes;
         AutoTrackMaxTmdbRefreshesPerDay = autoTrack.MaxTmdbRefreshesPerDay;
         AutoTrackMinSeeders = autoTrack.Quality.MinSeeders;

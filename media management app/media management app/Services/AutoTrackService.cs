@@ -66,24 +66,11 @@ public sealed class AutoTrackService : IAutoTrackService
 
     public async Task<AutoTrackRunResult> RunAsync(CancellationToken cancellationToken = default)
     {
-        var discovery = await RunTmdbDiscoveryAsync(bypassAnchor: true, cancellationToken);
-        var hunt = await RunTorrentHuntAsync(cancellationToken);
-
-        var combined = new AutoTrackRunResult
-        {
-            ShowsProcessed = discovery.ShowsProcessed + hunt.ShowsProcessed,
-            EpisodesQueued = hunt.EpisodesQueued,
-            CandidatesFound = hunt.CandidatesFound,
-            TorrentsAdded = hunt.TorrentsAdded,
-            TmdbRefreshed = discovery.TmdbRefreshed,
-            Failed = discovery.Failed + hunt.Failed,
-            Succeeded = discovery.Succeeded && hunt.Succeeded,
-        };
-        combined.Summary =
-            $"TMDB={discovery.TmdbRefreshed}, Hunt: queued={hunt.EpisodesQueued}, candidates={hunt.CandidatesFound}, added={hunt.TorrentsAdded}, failed={combined.Failed}.";
-        PersistRunResult(combined);
-        NotifyRunSummary(combined);
-        return combined;
+        // TMDB discovery (bypass weekly anchor) then hunts eligible pending with schedule bypass.
+        var result = await RunTmdbDiscoveryAsync(bypassAnchor: true, cancellationToken);
+        PersistRunResult(result);
+        NotifyRunSummary(result);
+        return result;
     }
 
     public async Task<AutoTrackRunResult> RunTmdbDiscoveryAsync(bool bypassAnchor = false, CancellationToken cancellationToken = default)
@@ -103,7 +90,10 @@ public sealed class AutoTrackService : IAutoTrackService
         }
     }
 
-    public async Task<AutoTrackRunResult> RunTorrentHuntAsync(CancellationToken cancellationToken = default)
+    public async Task<AutoTrackRunResult> RunTorrentHuntAsync(
+        CancellationToken cancellationToken = default,
+        bool resumeOnly = false,
+        bool bypassSchedule = false)
     {
         if (!await _huntLock.WaitAsync(0, cancellationToken))
         {
@@ -112,7 +102,7 @@ public sealed class AutoTrackService : IAutoTrackService
 
         try
         {
-            return await RunTorrentHuntCoreAsync(cancellationToken);
+            return await RunTorrentHuntCoreAsync(cancellationToken, resumeOnly, bypassSchedule);
         }
         finally
         {
@@ -258,12 +248,38 @@ public sealed class AutoTrackService : IAutoTrackService
             }
         }
 
-        result.Summary = $"TMDB refreshed={result.TmdbRefreshed}, processed={result.ShowsProcessed}, failed={result.Failed}.";
+        // New hunts run after TMDB checks: schedule-eligible pending episodes (or all if bypassAnchor).
+        var hunt = await RunTorrentHuntAsync(
+            cancellationToken,
+            resumeOnly: false,
+            bypassSchedule: bypassAnchor);
+        MergeHuntIntoDiscoveryResult(result, hunt);
+
+        result.Summary =
+            $"TMDB refreshed={result.TmdbRefreshed}, hunt queued={result.EpisodesQueued}, candidates={result.CandidatesFound}, added={result.TorrentsAdded}, failed={result.Failed}.";
         _logger.Info($"Auto-track TMDB discovery complete. {result.Summary}", LogTarget.All);
         return result;
     }
 
-    private async Task<AutoTrackRunResult> RunTorrentHuntCoreAsync(CancellationToken cancellationToken)
+    private static void MergeHuntIntoDiscoveryResult(AutoTrackRunResult discovery, AutoTrackRunResult hunt)
+    {
+        if (hunt.Summary?.Contains("already running", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            return;
+        }
+
+        discovery.EpisodesQueued += hunt.EpisodesQueued;
+        discovery.CandidatesFound += hunt.CandidatesFound;
+        discovery.TorrentsAdded += hunt.TorrentsAdded;
+        discovery.Failed += hunt.Failed;
+        discovery.Succeeded = discovery.Succeeded && hunt.Succeeded;
+        discovery.ShowsProcessed += hunt.ShowsProcessed;
+    }
+
+    private async Task<AutoTrackRunResult> RunTorrentHuntCoreAsync(
+        CancellationToken cancellationToken,
+        bool resumeOnly,
+        bool bypassSchedule)
     {
         var result = new AutoTrackRunResult { Succeeded = true };
         var settings = GetAutoTrackSettings();
@@ -274,10 +290,12 @@ public sealed class AutoTrackService : IAutoTrackService
             return result;
         }
 
-        var huntQueue = BuildHuntQueue(shows);
+        var huntQueue = BuildHuntQueue(shows, bypassSchedule, resumeOnly);
         if (huntQueue.Count == 0)
         {
-            result.Summary = "No pending latest episodes to hunt.";
+            result.Summary = resumeOnly
+                ? "No CandidatesFound orders to resume."
+                : "No pending latest episodes to hunt.";
             return result;
         }
 
@@ -311,6 +329,11 @@ public sealed class AutoTrackService : IAutoTrackService
                             show);
                     }
 
+                    continue;
+                }
+
+                if (resumeOnly)
+                {
                     continue;
                 }
 
@@ -445,8 +468,14 @@ public sealed class AutoTrackService : IAutoTrackService
         }
     }
 
-    private List<(TrackedShow Show, TrackedEpisode Episode)> BuildHuntQueue(IReadOnlyList<TrackedShow> shows)
+    private List<(TrackedShow Show, TrackedEpisode Episode)> BuildHuntQueue(
+        IReadOnlyList<TrackedShow> shows,
+        bool bypassSchedule,
+        bool resumeOnly)
     {
+        var settings = GetAutoTrackSettings();
+        var huntDelayHours = Math.Clamp(settings.HuntMinHoursAfterAirDate, 0, 48);
+        var nowLocal = DateTime.Now;
         var queue = new List<(TrackedShow Show, TrackedEpisode Episode)>();
         foreach (var show in shows.OrderBy(item => item.Title, StringComparer.OrdinalIgnoreCase))
         {
@@ -455,15 +484,36 @@ public sealed class AutoTrackService : IAutoTrackService
                 continue;
             }
 
+            if (!bypassSchedule &&
+                !resumeOnly &&
+                !AutoTrackWeekAnchor.IsPastAnchorThisWeek(show, nowLocal, settings))
+            {
+                continue;
+            }
+
             var episodes = _trackedShowService.GetEpisodes(show.Id);
             var latest = AutoTrackTmdbEligibility.FindLatestPendingEpisode(
                 show,
                 episodes,
-                IsAutoTrackHuntBlocked);
-            if (latest is not null)
+                IsAutoTrackHuntBlocked,
+                nowLocal,
+                resumeOnly ? 0 : huntDelayHours);
+            if (latest is null)
             {
-                queue.Add((show, latest));
+                continue;
             }
+
+            if (resumeOnly)
+            {
+                if (!_torrentCartService.TryGetAutoTrackHuntBlockingEpisodeOrder(latest.Id, out var blocking) ||
+                    blocking is null ||
+                    blocking.Status != TorrentOrderStatus.CandidatesFound)
+                {
+                    continue;
+                }
+            }
+
+            queue.Add((show, latest));
         }
 
         return queue;

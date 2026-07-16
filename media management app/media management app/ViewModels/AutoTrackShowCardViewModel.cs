@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Windows.Media;
-using CommunityToolkit.Mvvm.ComponentModel;using media_management_app.Models;
+using CommunityToolkit.Mvvm.ComponentModel;
+using media_management_app.Models;
 using media_management_app.Services;
 
 namespace media_management_app.ViewModels;
@@ -37,6 +38,7 @@ public sealed partial class AutoTrackShowCardViewModel : ObservableObject
         UseCustomSchedule = show.AutoTrackAnchorDayOfWeek is not null || !string.IsNullOrWhiteSpace(show.AutoTrackAnchorTimeLocal);
         CustomAnchorDay = show.AutoTrackAnchorDayOfWeek ?? settings.AnchorDayOfWeek;
         CustomAnchorTimeLocal = show.AutoTrackAnchorTimeLocal ?? settings.AnchorTimeLocal;
+        CustomAnchorTime = AutoTrackWeekAnchor.ToTimePickerValue(CustomAnchorTimeLocal);
 
         UseCustomQuality = show.AutoTrackMinQuality is not null ||
                            show.AutoTrackMinSeeders is not null ||
@@ -52,7 +54,7 @@ public sealed partial class AutoTrackShowCardViewModel : ObservableObject
 
         TmdbStatusLine = BuildTmdbStatusLine(show, settings);
         HuntStatusLine = BuildHuntStatusLine(show, latestPendingEpisode);
-        ScheduleStatusLine = $"Schedule: {AutoTrackWeekAnchor.FormatEffectiveAnchor(show, settings)}";
+        ScheduleStatusLine = BuildScheduleStatusLine();
 
         if (!string.IsNullOrWhiteSpace(DownloadFolder) &&
             !DownloadFolderOptions.Contains(DownloadFolder, StringComparer.OrdinalIgnoreCase))
@@ -81,9 +83,10 @@ public sealed partial class AutoTrackShowCardViewModel : ObservableObject
 
     public string HuntStatusLine { get; }
 
-    public string ScheduleStatusLine { get; }
+    [ObservableProperty]
+    private string scheduleStatusLine = string.Empty;
 
-    public Array AnchorDayOptions => Enum.GetValues(typeof(DayOfWeek));
+    public IReadOnlyList<DayOfWeek> AnchorDayOptions => Enum.GetValues<DayOfWeek>();
 
     public ObservableCollection<string> DownloadFolderOptions { get; }
 
@@ -101,6 +104,9 @@ public sealed partial class AutoTrackShowCardViewModel : ObservableObject
 
     [ObservableProperty]
     private string customAnchorTimeLocal = "21:00";
+
+    [ObservableProperty]
+    private DateTime? customAnchorTime;
 
     [ObservableProperty]
     private bool useCustomQuality;
@@ -175,6 +181,7 @@ public sealed partial class AutoTrackShowCardViewModel : ObservableObject
             SaveScheduleOverrides();
         }
 
+        ScheduleStatusLine = BuildScheduleStatusLine();
         _onSettingsSaved?.Invoke();
     }
 
@@ -186,6 +193,7 @@ public sealed partial class AutoTrackShowCardViewModel : ObservableObject
         }
 
         SaveScheduleOverrides();
+        ScheduleStatusLine = BuildScheduleStatusLine();
         _onSettingsSaved?.Invoke();
     }
 
@@ -197,6 +205,31 @@ public sealed partial class AutoTrackShowCardViewModel : ObservableObject
         }
 
         SaveScheduleOverrides();
+        ScheduleStatusLine = BuildScheduleStatusLine();
+        _onSettingsSaved?.Invoke();
+    }
+
+    partial void OnCustomAnchorTimeChanged(DateTime? value)
+    {
+        if (_isInitializing)
+        {
+            return;
+        }
+
+        var formatted = AutoTrackWeekAnchor.FormatTimeLocal(value);
+        if (!string.Equals(CustomAnchorTimeLocal, formatted, StringComparison.Ordinal))
+        {
+            CustomAnchorTimeLocal = formatted;
+            return;
+        }
+
+        if (!UseCustomSchedule)
+        {
+            return;
+        }
+
+        SaveScheduleOverrides();
+        ScheduleStatusLine = BuildScheduleStatusLine();
         _onSettingsSaved?.Invoke();
     }
 
@@ -259,6 +292,17 @@ public sealed partial class AutoTrackShowCardViewModel : ObservableObject
             CustomMaxFileSizeMb > 0 ? CustomMaxFileSizeMb : null,
             string.IsNullOrWhiteSpace(CustomAllowedQualities) ? null : CustomAllowedQualities.Trim(),
             clearOverrides: false);
+    }
+
+    private string BuildScheduleStatusLine()
+    {
+        if (UseCustomSchedule)
+        {
+            var time = string.IsNullOrWhiteSpace(CustomAnchorTimeLocal) ? "21:00" : CustomAnchorTimeLocal.Trim();
+            return $"Schedule: {CustomAnchorDay} {time}";
+        }
+
+        return $"Schedule: {_settings.AnchorDayOfWeek} {AutoTrackWeekAnchor.ParseLocalTime(_settings.AnchorTimeLocal):hh\\:mm}";
     }
 
     private static string BuildTmdbStatusLine(TrackedShow show, AutoTrackSettings settings)
