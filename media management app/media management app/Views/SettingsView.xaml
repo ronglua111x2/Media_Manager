@@ -535,10 +535,6 @@
                                     <TextBlock Text="Allowed qualities (comma-separated, optional)" Style="{StaticResource SettingsLabelStyle}" />
                                     <TextBox Text="{Binding AutoTrackAllowedQualities, UpdateSourceTrigger=PropertyChanged}"
                                              Margin="0,0,0,8" />
-                                    <TextBlock Text="TMDB discovery still uses this weekly schedule once per show per week (API load protection). After each TMDB check, torrent hunt runs only for shows past their hunt schedule (custom or this default) and past the air-date delay. Standalone hunt loop only resumes CandidatesFound carts."
-                                               Style="{StaticResource SettingsHintStyle}"
-                                               Margin="0,8,0,0"
-                                               TextWrapping="Wrap" />
                                 </StackPanel>
                             </materialDesign:Card>
                         </StackPanel>
@@ -585,6 +581,41 @@
                                     <StackPanel>
                                         <TextBlock Text="Exit" Style="{StaticResource SettingsLabelStyle}" />
                                         <TextBlock Text="When close-to-tray is off, the X button exits the app. Use the tray menu Exit option when the app is hidden to tray."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="TMDB check interval" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Controls how often the scheduler wakes up to check eligibility. Actual TMDB API calls are still limited to once per show per week."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Daily TMDB budget" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Limits total TMDB API calls per calendar day across all shows. Resets automatically at midnight. Manual Run Now bypasses this limit."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Weekly schedule" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="TMDB metadata is fetched at most once per show per week, after the configured anchor day/time (API load protection)."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Hunt after TMDB" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="After each TMDB check, torrent hunt runs only for shows past their hunt schedule and past the air-date delay."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Standalone hunt loop" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="The standalone hunt loop only resumes shows with CandidatesFound status, independent of the TMDB schedule."
                                                    Style="{StaticResource SettingsHintStyle}" />
                                     </StackPanel>
                                 </Border>

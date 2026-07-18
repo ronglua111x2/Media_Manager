@@ -169,6 +169,17 @@ public sealed class SettingsService : ISettingsService
         autoTrack.TorrentHuntIntervalMinutes = Math.Clamp(autoTrack.TorrentHuntIntervalMinutes, 15, 1440);
         autoTrack.ReconcileIntervalMinutes = Math.Clamp(autoTrack.ReconcileIntervalMinutes, 5, 1440);
         autoTrack.MaxTmdbRefreshesPerDay = Math.Clamp(autoTrack.MaxTmdbRefreshesPerDay, 1, 500);
+        autoTrack.DailyBudget ??= new TmdbDailyBudget();
+
+        // Migrate legacy day-key / counter into DailyBudget once.
+        if (string.IsNullOrEmpty(autoTrack.DailyBudget.DayKey) &&
+            (!string.IsNullOrEmpty(autoTrack.LastTmdbRefreshDayKey) || autoTrack.TmdbRefreshesToday > 0))
+        {
+            autoTrack.DailyBudget.DayKey = autoTrack.LastTmdbRefreshDayKey ?? string.Empty;
+            autoTrack.DailyBudget.Used = Math.Max(0, autoTrack.TmdbRefreshesToday);
+            autoTrack.LastTmdbRefreshDayKey = null;
+            autoTrack.TmdbRefreshesToday = 0;
+        }
 
         if (string.IsNullOrWhiteSpace(autoTrack.AnchorTimeLocal))
         {

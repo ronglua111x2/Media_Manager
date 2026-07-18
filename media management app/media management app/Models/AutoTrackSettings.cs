@@ -32,7 +32,12 @@ public sealed class AutoTrackSettings
 
     public string? LastRunSummary { get; set; }
 
+    /// <summary>Day-scoped TMDB API budget. Replaces legacy LastTmdbRefreshDayKey / TmdbRefreshesToday.</summary>
+    public TmdbDailyBudget DailyBudget { get; set; } = new();
+
+    /// <summary>Legacy; migrated into <see cref="DailyBudget"/> on load.</summary>
     public string? LastTmdbRefreshDayKey { get; set; }
 
+    /// <summary>Legacy; migrated into <see cref="DailyBudget"/> on load.</summary>
     public int TmdbRefreshesToday { get; set; }
 }

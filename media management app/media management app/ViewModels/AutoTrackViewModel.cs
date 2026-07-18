@@ -195,11 +195,10 @@ public sealed partial class AutoTrackViewModel : ViewModelBase
     private static string BuildTmdbRefreshesRemainingLabel(AutoTrackSettings autoTrack)
     {
         var max = Math.Clamp(autoTrack.MaxTmdbRefreshesPerDay, 1, 500);
-        var dayKey = DateTime.Now.ToString("yyyy-MM-dd");
-        var used = string.Equals(autoTrack.LastTmdbRefreshDayKey, dayKey, StringComparison.Ordinal)
-            ? Math.Max(0, autoTrack.TmdbRefreshesToday)
-            : 0;
-        var remaining = Math.Max(0, max - used);
+        var nowLocal = DateTime.Now;
+        var budget = autoTrack.DailyBudget ?? new TmdbDailyBudget();
+        var remaining = budget.Remaining(max, nowLocal);
+        var used = budget.IsExpiredFor(nowLocal) ? 0 : Math.Max(0, budget.Used);
         return $"TMDB refreshes left today: {remaining} ({used}/{max} used)";
     }
 

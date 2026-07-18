@@ -139,8 +139,14 @@ public sealed class AutoTrackService : IAutoTrackService
             return result;
         }
 
-        EnsureTmdbDailyCounter(settings, nowLocal);
-        var remainingCap = Math.Max(0, settings.MaxTmdbRefreshesPerDay - settings.TmdbRefreshesToday);
+        var budget = settings.DailyBudget ??= new TmdbDailyBudget();
+        var remainingCap = budget.Remaining(settings.MaxTmdbRefreshesPerDay, nowLocal);
+        if (!bypassAnchor && remainingCap == 0)
+        {
+            _logger.Info($"TMDB daily cap already exhausted ({settings.MaxTmdbRefreshesPerDay}/day). Skipping run.", LogTarget.All);
+            result.Summary = $"Daily cap reached ({settings.MaxTmdbRefreshesPerDay}).";
+            return result;
+        }
 
         _logger.Info($"Auto-track TMDB discovery started for {shows.Count} show(s). Cap remaining={remainingCap}.", LogTarget.All);
 
@@ -189,8 +195,8 @@ public sealed class AutoTrackService : IAutoTrackService
                 result.TmdbRefreshed++;
                 if (!bypassAnchor)
                 {
-                    settings.TmdbRefreshesToday++;
-                    remainingCap--;
+                    budget.TryConsume(settings.MaxTmdbRefreshesPerDay, nowLocal);
+                    remainingCap = budget.Remaining(settings.MaxTmdbRefreshesPerDay, nowLocal);
                     _settingsService.Save();
                 }
 
@@ -868,16 +874,6 @@ public sealed class AutoTrackService : IAutoTrackService
     {
         _settingsService.Current.AutoTrack ??= new AutoTrackSettings();
         return _settingsService.Current.AutoTrack;
-    }
-
-    private static void EnsureTmdbDailyCounter(AutoTrackSettings settings, DateTime nowLocal)
-    {
-        var dayKey = nowLocal.ToString("yyyy-MM-dd");
-        if (!string.Equals(settings.LastTmdbRefreshDayKey, dayKey, StringComparison.Ordinal))
-        {
-            settings.LastTmdbRefreshDayKey = dayKey;
-            settings.TmdbRefreshesToday = 0;
-        }
     }
 
     private static AutoTrackRunResult SkippedResult(string summary)
