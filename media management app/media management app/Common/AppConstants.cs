@@ -19,6 +19,8 @@ public static class AppConstants
 
     public const string WindowsStartupRegistryValueName = "MediaManager";
 
+    public const string StartupTaskName = @"MediaManager\AutoStart";
+
     public const string WindowsNotificationAppUserModelId = "MediaManager.Desktop";
 
     /// <summary>TMDB/Jellyfin specials season (Season 00 / S00Exx).</summary>
