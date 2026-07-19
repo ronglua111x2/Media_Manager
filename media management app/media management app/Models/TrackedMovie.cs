@@ -31,6 +31,10 @@ public sealed class TrackedMovie
 
     public EpisodeAvailability Availability { get; set; } = EpisodeAvailability.Missing;
 
+    public UserWatchStatus WatchStatus { get; set; } = UserWatchStatus.None;
+
+    public string WatchStatusLabel => TrackedShow.FormatWatchStatusLabel(WatchStatus);
+
     public string? TorrentHash { get; set; }
 
     public string? TorrentName { get; set; }

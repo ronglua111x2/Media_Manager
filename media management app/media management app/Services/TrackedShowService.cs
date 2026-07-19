@@ -202,6 +202,12 @@ public sealed class TrackedShowService : ITrackedShowService
         _logger.Info($"Updated series status for show id={showId}: {seriesStatus}", LogTarget.All);
     }
 
+    public void UpdateWatchProgress(long showId, UserWatchStatus watchStatus, int watchedEpisodes)
+    {
+        _databaseService.UpdateTrackedShowWatchProgress(showId, watchStatus, watchedEpisodes);
+        _logger.Info($"Updated watch progress for show id={showId}: {watchStatus}, episodes={watchedEpisodes}", LogTarget.All);
+    }
+
     public void SetAlternativeTitleExcludedFromSearch(long showId, string title, bool excluded)
     {
         if (string.IsNullOrWhiteSpace(title))
@@ -249,7 +255,8 @@ public sealed class TrackedShowService : ITrackedShowService
             PreferredQuality = existing?.PreferredQuality ?? preferredQuality,
             PreferredAudioCodec = existing?.PreferredAudioCodec ?? string.Empty,
             MinimumSeeders = existing?.MinimumSeeders ?? 0,
-            SeriesStatus = details.SeriesStatus
+            SeriesStatus = details.SeriesStatus,
+            PlannedEpisodeCount = details.PlannedEpisodeCount
         });
 
         foreach (var season in details.Seasons)

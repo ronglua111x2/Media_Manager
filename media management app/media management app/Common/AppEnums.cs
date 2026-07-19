@@ -108,6 +108,16 @@ public enum ShowSeriesStatus
     Finished = 2
 }
 
+public enum UserWatchStatus
+{
+    None = 0,
+    Watching = 1,
+    Completed = 2,
+    OnHold = 3,
+    Dropped = 4,
+    PlanToWatch = 5
+}
+
 public enum AutoTorrentLinkKind
 {
     Episode = 1,

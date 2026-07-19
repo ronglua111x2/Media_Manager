@@ -322,8 +322,21 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
 
         if (!root.TryGetProperty("seasons", out var seasonsElement) || seasonsElement.ValueKind != JsonValueKind.Array)
         {
+            details.PlannedEpisodeCount = details.EpisodeCount;
             return details;
         }
+
+        var plannedFromSeasons = 0;
+        foreach (var seasonElement in seasonsElement.EnumerateArray())
+        {
+            var summary = ReadSeasonSummary(seasonElement);
+            if (summary.SeasonNumber >= 1)
+            {
+                plannedFromSeasons += Math.Max(0, summary.EpisodeCount);
+            }
+        }
+
+        details.PlannedEpisodeCount = plannedFromSeasons > 0 ? plannedFromSeasons : details.EpisodeCount;
 
         var today = DateTime.Today;
         foreach (var seasonElement in seasonsElement.EnumerateArray())

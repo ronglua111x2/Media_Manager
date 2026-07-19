@@ -153,6 +153,12 @@ public sealed class TrackedMovieService : ITrackedMovieService
         _logger.Info($"Updated recipe assignment for movie id={movieId}: {recipeId ?? "<default>"}", LogTarget.All);
     }
 
+    public void UpdateWatchStatus(long movieId, UserWatchStatus watchStatus)
+    {
+        _databaseService.UpdateTrackedMovieWatchStatus(movieId, watchStatus);
+        _logger.Info($"Updated watch status for movie id={movieId}: {watchStatus}", LogTarget.All);
+    }
+
     public void SetAlternativeTitleExcludedFromSearch(long movieId, string title, bool excluded)
     {
         if (string.IsNullOrWhiteSpace(title))

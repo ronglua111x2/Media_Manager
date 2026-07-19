@@ -33,6 +33,13 @@ public sealed class TrackedShow
 
     public ShowSeriesStatus SeriesStatus { get; set; } = ShowSeriesStatus.Unknown;
 
+    public UserWatchStatus WatchStatus { get; set; } = UserWatchStatus.None;
+
+    public int WatchedEpisodes { get; set; }
+
+    /// <summary>TMDB planned regular-season episode total (excludes specials when populated from seasons[].episode_count).</summary>
+    public int PlannedEpisodeCount { get; set; }
+
     public int? AutoTrackFromSeason { get; set; }
 
     public int? AutoTrackFromEpisode { get; set; }
@@ -72,9 +79,24 @@ public sealed class TrackedShow
         _ => "Unknown"
     };
 
+    public string WatchStatusLabel => FormatWatchStatusLabel(WatchStatus);
+
+    public static string FormatWatchStatusLabel(UserWatchStatus status) => status switch
+    {
+        UserWatchStatus.Watching => "Watching",
+        UserWatchStatus.Completed => "Completed",
+        UserWatchStatus.OnHold => "On-Hold",
+        UserWatchStatus.Dropped => "Dropped",
+        UserWatchStatus.PlanToWatch => "Plan to Watch",
+        _ => "Unset"
+    };
+
     public int TotalEpisodes { get; set; }
 
     public int AvailableEpisodes { get; set; }
+
+    /// <summary>Denominator for watch progress: max(planned from TMDB, synced episode rows).</summary>
+    public int WatchEpisodeTotal => Math.Max(PlannedEpisodeCount, TotalEpisodes);
 
     public bool IsAutoTracked => AutoTrackFromSeason is not null && AutoTrackFromEpisode is not null;
 

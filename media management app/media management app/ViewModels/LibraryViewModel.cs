@@ -36,6 +36,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
     private long? _loadedDetailMediaId;
     private MediaKind? _loadedDetailMediaKind;
     private bool _suppressSeriesStatusUpdate;
+    private bool _suppressWatchProgressUpdate;
 
     public LibraryViewModel(
         ITrackedShowService trackedShowService,
@@ -86,6 +87,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
         _torrentReconciliationService.Reconciled += (_, _) => _ = ReloadSelectedDetailAsync();
         packLinkCoordinatorService.PackReconciled += (_, _) => _ = ReloadSelectedDetailAsync();
         lifecycleService.AppModeChanged += OnAppModeChanged;
+        SelectedWatchStatusFilter = WatchStatusFilterOptions[0];
         RefreshLibrary();
         StatusMessage = "Select a media card to view details.";
     }
@@ -109,6 +111,27 @@ public sealed partial class LibraryViewModel : ViewModelBase
         MediaCardSortMode.Title
     ];
 
+    public IReadOnlyList<WatchStatusOption> WatchStatusOptions { get; } =
+    [
+        new() { Status = UserWatchStatus.None, Label = "Unset" },
+        new() { Status = UserWatchStatus.Watching, Label = "Watching" },
+        new() { Status = UserWatchStatus.Completed, Label = "Completed" },
+        new() { Status = UserWatchStatus.OnHold, Label = "On-Hold" },
+        new() { Status = UserWatchStatus.Dropped, Label = "Dropped" },
+        new() { Status = UserWatchStatus.PlanToWatch, Label = "Plan to Watch" }
+    ];
+
+    public IReadOnlyList<WatchStatusFilterOption> WatchStatusFilterOptions { get; } =
+    [
+        new() { Status = null, Label = "All statuses" },
+        new() { Status = UserWatchStatus.None, Label = "Unset" },
+        new() { Status = UserWatchStatus.Watching, Label = "Watching" },
+        new() { Status = UserWatchStatus.Completed, Label = "Completed" },
+        new() { Status = UserWatchStatus.OnHold, Label = "On-Hold" },
+        new() { Status = UserWatchStatus.Dropped, Label = "Dropped" },
+        new() { Status = UserWatchStatus.PlanToWatch, Label = "Plan to Watch" }
+    ];
+
     [ObservableProperty]
     private LibraryMediaCardViewModel? selectedMediaCard;
 
@@ -122,10 +145,25 @@ public sealed partial class LibraryViewModel : ViewModelBase
     private ShowSeriesStatus selectedShowSeriesStatus;
 
     [ObservableProperty]
+    private UserWatchStatus selectedWatchStatus;
+
+    [ObservableProperty]
+    private int selectedWatchedEpisodes;
+
+    [ObservableProperty]
+    private int selectedWatchTotalEpisodes;
+
+    [ObservableProperty]
     private ImageSource? selectedPosterImage;
 
     [ObservableProperty]
     private MediaCardSortMode mediaSortMode = MediaCardSortMode.DateAddedDesc;
+
+    [ObservableProperty]
+    private string mediaSearchQuery = string.Empty;
+
+    [ObservableProperty]
+    private WatchStatusFilterOption? selectedWatchStatusFilter;
 
     [ObservableProperty]
     private string statusMessage = string.Empty;
@@ -145,13 +183,28 @@ public sealed partial class LibraryViewModel : ViewModelBase
     [ObservableProperty]
     private bool showHiddenSeasons;
 
+    public bool HasLibraryMedia => _allMediaCards.Count > 0;
+
     public bool HasMedia => MediaCards.Count > 0;
+
+    public bool HasNoFilterMatches => HasLibraryMedia && !HasMedia;
 
     public bool HasSelectedMedia => SelectedMediaCard is not null;
 
     public bool IsSelectedShow => SelectedShow is not null;
 
     public bool IsSelectedMovie => SelectedMovie is not null;
+
+    public bool ShowWatchEpisodeControls => IsSelectedShow;
+
+    public string SelectedWatchEpisodesLabel =>
+        $"Episodes: {SelectedWatchedEpisodes}/{SelectedWatchTotalEpisodes}";
+
+    public bool CanIncrementWatchedEpisodes =>
+        IsSelectedShow && SelectedWatchTotalEpisodes > 0 && SelectedWatchedEpisodes < SelectedWatchTotalEpisodes;
+
+    public bool CanDecrementWatchedEpisodes =>
+        IsSelectedShow && SelectedWatchedEpisodes > 0;
 
     public bool ShowStopAutoTrackButton => IsSelectedShow && SelectedShow?.IsAutoTracked == true;
 
@@ -192,7 +245,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
         var selectedKind = SelectedMediaCard?.MediaKind;
 
         _allMediaCards = _mediaCardCatalogService.LoadCards();
-        ApplyMediaCardSort();
+        ApplyMediaCardFilterAndSort();
 
         if (selectedId is not null && selectedKind is not null)
         {
@@ -200,10 +253,15 @@ public sealed partial class LibraryViewModel : ViewModelBase
         }
 
         SelectedMediaCard ??= MediaCards.FirstOrDefault();
+        OnPropertyChanged(nameof(HasLibraryMedia));
         OnPropertyChanged(nameof(HasMedia));
-        StatusMessage = MediaCards.Count == 0
+        OnPropertyChanged(nameof(HasNoFilterMatches));
+        DeleteEntireLibraryCommand.NotifyCanExecuteChanged();
+        StatusMessage = _allMediaCards.Count == 0
             ? "No media in library. Use Find/Add to add shows or movies."
-            : $"Loaded {MediaCards.Count} media item(s).";
+            : MediaCards.Count == 0
+                ? "No media matches the current search/filter."
+                : $"Loaded {MediaCards.Count} media item(s).";
     }
 
     [RelayCommand]
@@ -905,6 +963,53 @@ public sealed partial class LibraryViewModel : ViewModelBase
         RefreshLibrary();
     }
 
+    partial void OnSelectedWatchStatusChanged(UserWatchStatus value)
+    {
+        if (_suppressWatchProgressUpdate)
+        {
+            return;
+        }
+
+        PersistSelectedWatchProgress(value, SelectedWatchedEpisodes);
+    }
+
+    partial void OnSelectedWatchedEpisodesChanged(int value)
+    {
+        OnPropertyChanged(nameof(SelectedWatchEpisodesLabel));
+        OnPropertyChanged(nameof(CanIncrementWatchedEpisodes));
+        OnPropertyChanged(nameof(CanDecrementWatchedEpisodes));
+        IncrementWatchedEpisodesCommand.NotifyCanExecuteChanged();
+        DecrementWatchedEpisodesCommand.NotifyCanExecuteChanged();
+
+        if (_suppressWatchProgressUpdate || !IsSelectedShow)
+        {
+            return;
+        }
+
+        PersistSelectedWatchProgress(SelectedWatchStatus, value);
+    }
+
+    partial void OnSelectedWatchTotalEpisodesChanged(int value)
+    {
+        OnPropertyChanged(nameof(SelectedWatchEpisodesLabel));
+        OnPropertyChanged(nameof(CanIncrementWatchedEpisodes));
+        IncrementWatchedEpisodesCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnMediaSearchQueryChanged(string value)
+    {
+        ApplyMediaCardFilterAndSort();
+        OnPropertyChanged(nameof(HasMedia));
+        OnPropertyChanged(nameof(HasNoFilterMatches));
+    }
+
+    partial void OnSelectedWatchStatusFilterChanged(WatchStatusFilterOption? value)
+    {
+        ApplyMediaCardFilterAndSort();
+        OnPropertyChanged(nameof(HasMedia));
+        OnPropertyChanged(nameof(HasNoFilterMatches));
+    }
+
     [RelayCommand(CanExecute = nameof(IsSelectedShow))]
     private void CycleSelectedShowSeriesStatus()
     {
@@ -914,6 +1019,28 @@ public sealed partial class LibraryViewModel : ViewModelBase
             ShowSeriesStatus.Ongoing => ShowSeriesStatus.Finished,
             _ => ShowSeriesStatus.Unknown
         };
+    }
+
+    [RelayCommand(CanExecute = nameof(CanIncrementWatchedEpisodes))]
+    private void IncrementWatchedEpisodes()
+    {
+        if (!CanIncrementWatchedEpisodes)
+        {
+            return;
+        }
+
+        PersistSelectedWatchProgress(SelectedWatchStatus, SelectedWatchedEpisodes + 1);
+    }
+
+    [RelayCommand(CanExecute = nameof(CanDecrementWatchedEpisodes))]
+    private void DecrementWatchedEpisodes()
+    {
+        if (!CanDecrementWatchedEpisodes)
+        {
+            return;
+        }
+
+        PersistSelectedWatchProgress(SelectedWatchStatus, SelectedWatchedEpisodes - 1);
     }
 
     [RelayCommand(CanExecute = nameof(IsSelectedShow))]
@@ -1009,7 +1136,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
             : result.Summary;
     }
 
-    [RelayCommand(CanExecute = nameof(HasMedia))]
+    [RelayCommand(CanExecute = nameof(HasLibraryMedia))]
     private void DeleteEntireLibrary()
     {
         var confirm = System.Windows.MessageBox.Show(
@@ -1056,7 +1183,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
 
     partial void OnMediaSortModeChanged(MediaCardSortMode value)
     {
-        ApplyMediaCardSort();
+        ApplyMediaCardFilterAndSort();
         OnPropertyChanged(nameof(IsDateSortSelected));
         OnPropertyChanged(nameof(IsTypeSortSelected));
         OnPropertyChanged(nameof(IsNameSortSelected));
@@ -1081,6 +1208,11 @@ public sealed partial class LibraryViewModel : ViewModelBase
     {
         OnPropertyChanged(nameof(ShowHiddenSeasonsButtonLabel));
         OnPropertyChanged(nameof(ShowStopAutoTrackButton));
+        OnPropertyChanged(nameof(ShowWatchEpisodeControls));
+        OnPropertyChanged(nameof(CanIncrementWatchedEpisodes));
+        OnPropertyChanged(nameof(CanDecrementWatchedEpisodes));
+        IncrementWatchedEpisodesCommand.NotifyCanExecuteChanged();
+        DecrementWatchedEpisodesCommand.NotifyCanExecuteChanged();
     }
 
     partial void OnSelectedMovieChanged(LibraryMovieDetailViewModel? value)
@@ -1126,6 +1258,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
         {
             _loadedDetailMediaId = null;
             _loadedDetailMediaKind = null;
+            SetWatchProgressUi(UserWatchStatus.None, watchedEpisodes: 0, totalEpisodes: 0);
             return;
         }
 
@@ -1144,6 +1277,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
             _suppressSeriesStatusUpdate = true;
             SelectedShowSeriesStatus = show.SeriesStatus;
             _suppressSeriesStatusUpdate = false;
+            SetWatchProgressUi(show.WatchStatus, show.WatchedEpisodes, show.WatchEpisodeTotal);
             SelectedPosterImage = await _posterImageService.LoadAsync(
                 card.PosterPath,
                 card.MediaKind,
@@ -1160,6 +1294,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
         }
 
         SelectedMovie = BuildMovieDetail(movie, sourceItems);
+        SetWatchProgressUi(movie.WatchStatus, watchedEpisodes: 0, totalEpisodes: 0);
         SelectedPosterImage = await _posterImageService.LoadAsync(
             card.PosterPath,
             card.MediaKind,
@@ -1314,15 +1449,29 @@ public sealed partial class LibraryViewModel : ViewModelBase
         };
     }
 
-    private void ApplyMediaCardSort()
+    private void ApplyMediaCardFilterAndSort()
     {
+        IEnumerable<LibraryMediaCardViewModel> filtered = _allMediaCards;
+
+        if (!string.IsNullOrWhiteSpace(MediaSearchQuery))
+        {
+            var query = MediaSearchQuery.Trim();
+            filtered = filtered.Where(card =>
+                card.Title.Contains(query, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (SelectedWatchStatusFilter?.Status is { } statusFilter)
+        {
+            filtered = filtered.Where(card => card.WatchStatus == statusFilter);
+        }
+
         var sorted = MediaSortMode switch
         {
-            MediaCardSortMode.TypeThenTitle => _allMediaCards
+            MediaCardSortMode.TypeThenTitle => filtered
                 .OrderBy(card => card.MediaKind)
                 .ThenBy(card => card.Title),
-            MediaCardSortMode.Title => _allMediaCards.OrderBy(card => card.Title),
-            _ => _allMediaCards.OrderByDescending(card => card.CreatedUtc)
+            MediaCardSortMode.Title => filtered.OrderBy(card => card.Title),
+            _ => filtered.OrderByDescending(card => card.CreatedUtc)
         };
 
         var selectedId = SelectedMediaCard?.Id;
@@ -1337,8 +1486,94 @@ public sealed partial class LibraryViewModel : ViewModelBase
 
         if (selectedId is not null && selectedKind is not null)
         {
-            SelectedMediaCard = MediaCards.FirstOrDefault(card => card.Id == selectedId && card.MediaKind == selectedKind);
+            var stillVisible = MediaCards.FirstOrDefault(card => card.Id == selectedId && card.MediaKind == selectedKind);
+            SelectedMediaCard = stillVisible ?? MediaCards.FirstOrDefault();
         }
+        else if (SelectedMediaCard is null)
+        {
+            SelectedMediaCard = MediaCards.FirstOrDefault();
+        }
+
+        OnPropertyChanged(nameof(HasMedia));
+        OnPropertyChanged(nameof(HasNoFilterMatches));
+    }
+
+    private void SetWatchProgressUi(UserWatchStatus status, int watchedEpisodes, int totalEpisodes)
+    {
+        _suppressWatchProgressUpdate = true;
+        SelectedWatchStatus = status;
+        SelectedWatchTotalEpisodes = Math.Max(0, totalEpisodes);
+        SelectedWatchedEpisodes = Math.Clamp(watchedEpisodes, 0, SelectedWatchTotalEpisodes);
+        _suppressWatchProgressUpdate = false;
+        OnPropertyChanged(nameof(ShowWatchEpisodeControls));
+        OnPropertyChanged(nameof(SelectedWatchEpisodesLabel));
+        OnPropertyChanged(nameof(CanIncrementWatchedEpisodes));
+        OnPropertyChanged(nameof(CanDecrementWatchedEpisodes));
+        IncrementWatchedEpisodesCommand.NotifyCanExecuteChanged();
+        DecrementWatchedEpisodesCommand.NotifyCanExecuteChanged();
+    }
+
+    private void PersistSelectedWatchProgress(UserWatchStatus status, int watchedEpisodes)
+    {
+        if (SelectedShow is not null)
+        {
+            var total = SelectedWatchTotalEpisodes;
+            var (normalizedStatus, normalizedWatched) = NormalizeShowWatchProgress(status, watchedEpisodes, total);
+            _trackedShowService.UpdateWatchProgress(SelectedShow.Id, normalizedStatus, normalizedWatched);
+            SetWatchProgressUi(normalizedStatus, normalizedWatched, total);
+            SelectedMediaCard?.ApplyWatchProgress(normalizedStatus, normalizedWatched);
+            SyncCardInAllMedia(SelectedMediaCard);
+            StatusMessage = $"Watch progress updated: {TrackedShow.FormatWatchStatusLabel(normalizedStatus)}, {normalizedWatched}/{total}.";
+            return;
+        }
+
+        if (SelectedMovie is not null)
+        {
+            _trackedMovieService.UpdateWatchStatus(SelectedMovie.Id, status);
+            SetWatchProgressUi(status, watchedEpisodes: 0, totalEpisodes: 0);
+            SelectedMediaCard?.ApplyWatchProgress(status, watched: 0);
+            SyncCardInAllMedia(SelectedMediaCard);
+            StatusMessage = $"Watch status updated: {TrackedShow.FormatWatchStatusLabel(status)}.";
+        }
+    }
+
+    private void SyncCardInAllMedia(LibraryMediaCardViewModel? card)
+    {
+        if (card is null)
+        {
+            return;
+        }
+
+        var catalogCard = _allMediaCards.FirstOrDefault(item => item.Id == card.Id && item.MediaKind == card.MediaKind);
+        catalogCard?.ApplyWatchProgress(card.WatchStatus, card.WatchedEpisodes);
+
+        // Re-apply filter if the card may no longer match the watch-status filter.
+        if (SelectedWatchStatusFilter?.Status is not null)
+        {
+            ApplyMediaCardFilterAndSort();
+        }
+    }
+
+    private static (UserWatchStatus Status, int Watched) NormalizeShowWatchProgress(
+        UserWatchStatus status,
+        int watched,
+        int total)
+    {
+        var clampedTotal = Math.Max(0, total);
+        var clampedWatched = Math.Clamp(watched, 0, clampedTotal);
+
+        if (status == UserWatchStatus.Completed && clampedTotal > 0)
+        {
+            clampedWatched = clampedTotal;
+        }
+
+        if (clampedTotal > 0 && clampedWatched >= clampedTotal)
+        {
+            status = UserWatchStatus.Completed;
+            clampedWatched = clampedTotal;
+        }
+
+        return (status, clampedWatched);
     }
 
     private async Task RunImportActionAsync(Func<Task> action)

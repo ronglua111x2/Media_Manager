@@ -1,6 +1,7 @@
 using System.Windows.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using media_management_app.Common;
+using media_management_app.Models;
 
 namespace media_management_app.ViewModels;
 
@@ -21,6 +22,9 @@ public partial class LibraryMediaCardViewModel : ObservableObject
     public int AvailableCount { get; init; }
 
     public int TotalCount { get; init; }
+
+    /// <summary>Watch progress denominator (max planned/synced). Distinct from disk TotalCount.</summary>
+    public int WatchTotalCount { get; init; }
 
     public string? Overview { get; init; }
 
@@ -58,6 +62,39 @@ public partial class LibraryMediaCardViewModel : ObservableObject
     public bool IsShow => MediaKind == MediaKind.TvEpisode;
 
     public bool IsMovie => MediaKind == MediaKind.Movie;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(WatchStatusLabel))]
+    [NotifyPropertyChangedFor(nameof(HasWatchStatusLabel))]
+    [NotifyPropertyChangedFor(nameof(WatchedProgressLabel))]
+    [NotifyPropertyChangedFor(nameof(HasWatchedProgressLabel))]
+    [NotifyPropertyChangedFor(nameof(HasWatchRow))]
+    private UserWatchStatus watchStatus;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(WatchedProgressLabel))]
+    [NotifyPropertyChangedFor(nameof(HasWatchedProgressLabel))]
+    [NotifyPropertyChangedFor(nameof(HasWatchRow))]
+    private int watchedEpisodes;
+
+    public string WatchStatusLabel => TrackedShow.FormatWatchStatusLabel(WatchStatus);
+
+    public bool HasWatchStatusLabel => WatchStatus != UserWatchStatus.None;
+
+    public string WatchedProgressLabel =>
+        IsShow && (WatchStatus != UserWatchStatus.None || WatchedEpisodes > 0)
+            ? $"Watched {WatchedEpisodes}/{WatchTotalCount}"
+            : string.Empty;
+
+    public bool HasWatchedProgressLabel => !string.IsNullOrWhiteSpace(WatchedProgressLabel);
+
+    public bool HasWatchRow => HasWatchStatusLabel || HasWatchedProgressLabel;
+
+    public void ApplyWatchProgress(UserWatchStatus status, int watched)
+    {
+        WatchStatus = status;
+        WatchedEpisodes = watched;
+    }
 
     [ObservableProperty]
     private bool isSelected;

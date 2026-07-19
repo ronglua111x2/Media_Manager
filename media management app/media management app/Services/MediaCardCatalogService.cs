@@ -36,10 +36,13 @@ public sealed class MediaCardCatalogService : IMediaCardCatalogService
             CreatedUtc = show.CreatedUtc,
             AvailableCount = show.AvailableEpisodes,
             TotalCount = show.TotalEpisodes,
+            WatchTotalCount = show.WatchEpisodeTotal,
             Overview = show.Overview,
             PosterPath = show.PosterPath,
             SeriesStatusLabel = show.SeriesStatusLabel,
-            OrderCount = _torrentCartService.GetOrderCount(MediaKind.TvEpisode, show.Id)
+            OrderCount = _torrentCartService.GetOrderCount(MediaKind.TvEpisode, show.Id),
+            WatchStatus = show.WatchStatus,
+            WatchedEpisodes = show.WatchedEpisodes
         });
         var movies = _trackedMovieService.GetMovies().Select(movie => new LibraryMediaCardViewModel
         {
@@ -51,9 +54,11 @@ public sealed class MediaCardCatalogService : IMediaCardCatalogService
             CreatedUtc = movie.CreatedUtc,
             AvailableCount = movie.Availability == EpisodeAvailability.Available ? 1 : 0,
             TotalCount = 1,
+            WatchTotalCount = 1,
             Overview = movie.Overview,
             PosterPath = movie.PosterPath,
-            OrderCount = _torrentCartService.GetOrderCount(MediaKind.Movie, movie.Id)
+            OrderCount = _torrentCartService.GetOrderCount(MediaKind.Movie, movie.Id),
+            WatchStatus = movie.WatchStatus
         });
 
         return shows.Concat(movies).ToList();

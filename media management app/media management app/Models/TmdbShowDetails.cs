@@ -16,6 +16,9 @@ public sealed class TmdbShowDetails
 
     public int EpisodeCount { get; set; }
 
+    /// <summary>Sum of seasons[].episode_count for season_number &gt;= 1, or fallback to number_of_episodes.</summary>
+    public int PlannedEpisodeCount { get; set; }
+
     public Common.ShowSeriesStatus SeriesStatus { get; set; } = Common.ShowSeriesStatus.Unknown;
 
     public List<TmdbSeasonDetails> Seasons { get; set; } = [];
