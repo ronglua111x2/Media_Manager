@@ -48,4 +48,6 @@ public interface IAutoTorrentLinkService
     AutoTorrentLinkResult RefreshLinkStatus(long? showId = null, long? movieId = null);
 
     AutoTorrentLinkResult ResetEpisodeForRedownload(long showId, int seasonNumber, int episodeNumber);
+
+    AutoTorrentLinkResult ResetSeasonPackForRedownload(long showId, int ownerSeasonNumber);
 }

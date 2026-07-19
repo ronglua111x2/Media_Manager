@@ -104,11 +104,16 @@ public partial class LibrarySeasonViewModel : ObservableObject
 
     public bool CanUnlinkPack => IsPackMode && !IsCoveredByAnotherPack && IsPackLinked;
 
+    public bool CanCleanupPack =>
+        IsPackMode && !IsCoveredByAnotherPack && (HasPackTorrent || IsPackLinked || IsPackInCart);
+
     public bool ShowPackLinkButtons => CanRuleLinkPack;
 
     public bool ShowAiLinkButton => CanAiLinkPack;
 
     public bool ShowPackUnlinkButton => CanUnlinkPack;
+
+    public bool ShowPackCleanupButton => CanCleanupPack;
 
     public string RuleLinkPackToolTip => "Link pack using rules only (no AI API call)";
 
@@ -116,8 +121,13 @@ public partial class LibrarySeasonViewModel : ObservableObject
 
     public string UnlinkPackToolTip => "Remove generated library hardlinks for this season pack";
 
+    public string CleanupPackToolTip =>
+        "Reset pack download/link state so this season shows as Missing and can be added to cart again";
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanAddPackToCart))]
+    [NotifyPropertyChangedFor(nameof(CanCleanupPack))]
+    [NotifyPropertyChangedFor(nameof(ShowPackCleanupButton))]
     [NotifyPropertyChangedFor(nameof(PackLinkStatus))]
     private bool isPackInCart;
 
@@ -125,8 +135,10 @@ public partial class LibrarySeasonViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(CanRuleLinkPack))]
     [NotifyPropertyChangedFor(nameof(CanAiLinkPack))]
     [NotifyPropertyChangedFor(nameof(CanUnlinkPack))]
+    [NotifyPropertyChangedFor(nameof(CanCleanupPack))]
     [NotifyPropertyChangedFor(nameof(ShowPackLinkButtons))]
     [NotifyPropertyChangedFor(nameof(ShowPackUnlinkButton))]
+    [NotifyPropertyChangedFor(nameof(ShowPackCleanupButton))]
     [NotifyPropertyChangedFor(nameof(PackLinkStatus))]
     private bool isPackLinked;
 
@@ -147,8 +159,10 @@ public partial class LibrarySeasonViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(CanRuleLinkPack))]
     [NotifyPropertyChangedFor(nameof(CanAiLinkPack))]
     [NotifyPropertyChangedFor(nameof(CanUnlinkPack))]
+    [NotifyPropertyChangedFor(nameof(CanCleanupPack))]
     [NotifyPropertyChangedFor(nameof(ShowPackLinkButtons))]
     [NotifyPropertyChangedFor(nameof(ShowPackUnlinkButton))]
+    [NotifyPropertyChangedFor(nameof(ShowPackCleanupButton))]
     [NotifyPropertyChangedFor(nameof(CanTogglePackMode))]
     private bool isPackMode;
 
@@ -162,8 +176,10 @@ public partial class LibrarySeasonViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(CanRuleLinkPack))]
     [NotifyPropertyChangedFor(nameof(CanAiLinkPack))]
     [NotifyPropertyChangedFor(nameof(CanUnlinkPack))]
+    [NotifyPropertyChangedFor(nameof(CanCleanupPack))]
     [NotifyPropertyChangedFor(nameof(ShowPackLinkButtons))]
     [NotifyPropertyChangedFor(nameof(ShowPackUnlinkButton))]
+    [NotifyPropertyChangedFor(nameof(ShowPackCleanupButton))]
     [NotifyPropertyChangedFor(nameof(CanTogglePackMode))]
     private int? selectedPackOwnerSeasonNumber;
 
@@ -176,7 +192,9 @@ public partial class LibrarySeasonViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(CanRuleLinkPack))]
     [NotifyPropertyChangedFor(nameof(CanAiLinkPack))]
     [NotifyPropertyChangedFor(nameof(CanUnlinkPack))]
+    [NotifyPropertyChangedFor(nameof(CanCleanupPack))]
     [NotifyPropertyChangedFor(nameof(ShowPackUnlinkButton))]
+    [NotifyPropertyChangedFor(nameof(ShowPackCleanupButton))]
     [NotifyPropertyChangedFor(nameof(CanTogglePackMode))]
     private string selectedPackName = string.Empty;
 
@@ -191,8 +209,10 @@ public partial class LibrarySeasonViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(CanRuleLinkPack))]
     [NotifyPropertyChangedFor(nameof(CanAiLinkPack))]
     [NotifyPropertyChangedFor(nameof(CanUnlinkPack))]
+    [NotifyPropertyChangedFor(nameof(CanCleanupPack))]
     [NotifyPropertyChangedFor(nameof(ShowPackLinkButtons))]
     [NotifyPropertyChangedFor(nameof(ShowPackUnlinkButton))]
+    [NotifyPropertyChangedFor(nameof(ShowPackCleanupButton))]
     [NotifyPropertyChangedFor(nameof(HasPackTorrent))]
     [NotifyPropertyChangedFor(nameof(IsPackTorrentComplete))]
     [NotifyPropertyChangedFor(nameof(CanAddPackToCart))]

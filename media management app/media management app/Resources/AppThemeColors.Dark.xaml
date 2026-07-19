@@ -44,6 +44,13 @@
     <Color x:Key="AppColorPlaceholderInfo">#1e2838</Color>
     <Color x:Key="AppColorChipMuted">#252d3d</Color>
     <Color x:Key="AppColorDisabledBackground">#252d3d</Color>
+    <!-- MAL-inspired watch status colors -->
+    <Color x:Key="AppColorWatchUnset">#93a0b8</Color>
+    <Color x:Key="AppColorWatchWatching">#4f8ef7</Color>
+    <Color x:Key="AppColorWatchCompleted">#3dce7a</Color>
+    <Color x:Key="AppColorWatchOnHold">#e0a54a</Color>
+    <Color x:Key="AppColorWatchDropped">#e05555</Color>
+    <Color x:Key="AppColorWatchPlanToWatch">#9aa3b5</Color>
 
     <SolidColorBrush x:Key="AppBrushCanvas" Color="{StaticResource AppColorCanvas}" />
     <SolidColorBrush x:Key="AppBrushSurface" Color="{StaticResource AppColorSurface}" />
@@ -89,4 +96,10 @@
     <SolidColorBrush x:Key="AppBrushPlaceholderInfo" Color="{StaticResource AppColorPlaceholderInfo}" />
     <SolidColorBrush x:Key="AppBrushChipMuted" Color="{StaticResource AppColorChipMuted}" />
     <SolidColorBrush x:Key="AppBrushDisabledBackground" Color="{StaticResource AppColorDisabledBackground}" />
+    <SolidColorBrush x:Key="AppBrushWatchUnset" Color="{StaticResource AppColorWatchUnset}" />
+    <SolidColorBrush x:Key="AppBrushWatchWatching" Color="{StaticResource AppColorWatchWatching}" />
+    <SolidColorBrush x:Key="AppBrushWatchCompleted" Color="{StaticResource AppColorWatchCompleted}" />
+    <SolidColorBrush x:Key="AppBrushWatchOnHold" Color="{StaticResource AppColorWatchOnHold}" />
+    <SolidColorBrush x:Key="AppBrushWatchDropped" Color="{StaticResource AppColorWatchDropped}" />
+    <SolidColorBrush x:Key="AppBrushWatchPlanToWatch" Color="{StaticResource AppColorWatchPlanToWatch}" />
 </ResourceDictionary>

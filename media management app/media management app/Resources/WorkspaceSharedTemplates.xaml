@@ -55,7 +55,7 @@
                         <TextBlock Text="{Binding WatchStatusLabel}"
                                    FontSize="12"
                                    FontWeight="SemiBold"
-                                   Foreground="{StaticResource AppBrushAccent}"
+                                   Foreground="{Binding WatchStatus, Converter={StaticResource UserWatchStatusToBrushConverter}}"
                                    TextTrimming="CharacterEllipsis"
                                    TextWrapping="NoWrap"
                                    Visibility="{Binding HasWatchStatusLabel, Converter={StaticResource BooleanToVisibilityConverter}}" />

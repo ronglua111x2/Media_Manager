@@ -618,6 +618,28 @@ public sealed partial class LibraryViewModel : ViewModelBase
         }
     }
 
+    [RelayCommand(CanExecute = nameof(CanCleanupSeasonPack))]
+    private async Task CleanupSeasonPack(LibrarySeasonViewModel? season)
+    {
+        if (season is null)
+        {
+            return;
+        }
+
+        try
+        {
+            StatusMessage = $"Cleaning up season {season.SeasonNumber:00} pack...";
+            var result = _autoTorrentLinkService.ResetSeasonPackForRedownload(season.ShowId, season.SeasonNumber);
+            _trackedShowService.RefreshAvailability(season.ShowId);
+            await ReloadSelectedDetailAsync();
+            StatusMessage = $"Pack cleanup for S{season.SeasonNumber:00}: {result.Summary}.";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Pack cleanup failed for S{season.SeasonNumber:00}: {ex.Message}";
+        }
+    }
+
     private async Task RunPackLinkAsync(LibrarySeasonViewModel? season, bool useGeminiForSpecials)
     {
         if (season is null)
@@ -826,14 +848,8 @@ public sealed partial class LibraryViewModel : ViewModelBase
     {
         try
         {
-            var scope = SelectedMediaCard is null
-                ? TorrentReconciliationScope.All
-                : TorrentReconciliationScope.ForMedia(SelectedMediaCard.MediaKind, SelectedMediaCard.Id);
-            StatusMessage = SelectedMediaCard is null
-                ? "Reconciling existing qBittorrent torrents..."
-                : $"Reconciling existing qBittorrent torrents for {SelectedMediaCard.Title}...";
-
-            var result = await _torrentReconciliationService.ReconcileAsync(scope);
+            StatusMessage = "Reconciling existing qBittorrent torrents for entire library...";
+            var result = await _torrentReconciliationService.ReconcileAsync(TorrentReconciliationScope.All);
             await ReloadSelectedDetailAsync();
             StatusMessage = $"Torrent reconciliation complete. {result.Summary}.";
         }
@@ -1413,6 +1429,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
         RuleLinkSeasonPackCommand.NotifyCanExecuteChanged();
         AiLinkSeasonPackCommand.NotifyCanExecuteChanged();
         UnlinkSeasonPackCommand.NotifyCanExecuteChanged();
+        CleanupSeasonPackCommand.NotifyCanExecuteChanged();
     }
 
     private async Task ReloadSelectedDetailAsync()
@@ -1427,6 +1444,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
         RuleLinkSeasonPackCommand.NotifyCanExecuteChanged();
         AiLinkSeasonPackCommand.NotifyCanExecuteChanged();
         UnlinkSeasonPackCommand.NotifyCanExecuteChanged();
+        CleanupSeasonPackCommand.NotifyCanExecuteChanged();
     }
 
     private LibraryShowDetailViewModel BuildShowDetail(
@@ -1598,12 +1616,12 @@ public sealed partial class LibraryViewModel : ViewModelBase
         if (SelectedShow is not null)
         {
             var total = SelectedWatchTotalEpisodes;
-            var (normalizedStatus, normalizedWatched) = NormalizeShowWatchProgress(status, watchedEpisodes, total);
-            _trackedShowService.UpdateWatchProgress(SelectedShow.Id, normalizedStatus, normalizedWatched);
-            SetWatchProgressUi(normalizedStatus, normalizedWatched, total);
-            SelectedMediaCard?.ApplyWatchProgress(normalizedStatus, normalizedWatched);
+            var clampedWatched = Math.Clamp(watchedEpisodes, 0, Math.Max(0, total));
+            _trackedShowService.UpdateWatchProgress(SelectedShow.Id, status, clampedWatched);
+            SetWatchProgressUi(status, clampedWatched, total);
+            SelectedMediaCard?.ApplyWatchProgress(status, clampedWatched);
             SyncCardInAllMedia(SelectedMediaCard);
-            StatusMessage = $"Watch progress updated: {TrackedShow.FormatWatchStatusLabel(normalizedStatus)}, {normalizedWatched}/{total}.";
+            StatusMessage = $"Watch progress updated: {TrackedShow.FormatWatchStatusLabel(status)}, {clampedWatched}/{total}.";
             return;
         }
 
@@ -1632,28 +1650,6 @@ public sealed partial class LibraryViewModel : ViewModelBase
         {
             ApplyMediaCardFilterAndSort();
         }
-    }
-
-    private static (UserWatchStatus Status, int Watched) NormalizeShowWatchProgress(
-        UserWatchStatus status,
-        int watched,
-        int total)
-    {
-        var clampedTotal = Math.Max(0, total);
-        var clampedWatched = Math.Clamp(watched, 0, clampedTotal);
-
-        if (status == UserWatchStatus.Completed && clampedTotal > 0)
-        {
-            clampedWatched = clampedTotal;
-        }
-
-        if (clampedTotal > 0 && clampedWatched >= clampedTotal)
-        {
-            status = UserWatchStatus.Completed;
-            clampedWatched = clampedTotal;
-        }
-
-        return (status, clampedWatched);
     }
 
     private async Task RunImportActionAsync(Func<Task> action)
@@ -1749,6 +1745,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
         RuleLinkSeasonPackCommand.NotifyCanExecuteChanged();
         AiLinkSeasonPackCommand.NotifyCanExecuteChanged();
         UnlinkSeasonPackCommand.NotifyCanExecuteChanged();
+        CleanupSeasonPackCommand.NotifyCanExecuteChanged();
         StatusMessage = $"Season {seasonNumber:00} set to {mode} mode.";
     }
 
@@ -1880,6 +1877,8 @@ public sealed partial class LibraryViewModel : ViewModelBase
     private bool CanAiLinkSeasonPack(LibrarySeasonViewModel? season) => season?.CanAiLinkPack == true;
 
     private bool CanUnlinkSeasonPack(LibrarySeasonViewModel? season) => season?.CanUnlinkPack == true;
+
+    private bool CanCleanupSeasonPack(LibrarySeasonViewModel? season) => season?.CanCleanupPack == true;
 
     private void OnAppModeChanged(object? sender, AppMode mode)
     {

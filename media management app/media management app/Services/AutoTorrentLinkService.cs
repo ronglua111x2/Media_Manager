@@ -362,6 +362,50 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
         return result;
     }
 
+    public AutoTorrentLinkResult ResetSeasonPackForRedownload(long showId, int ownerSeasonNumber)
+    {
+        var result = new AutoTorrentLinkResult();
+
+        // Capture pack SourceItems before unlink clears their link fields.
+        var show = _databaseService.GetTrackedShow(showId);
+        var providerId = show?.TmdbId.ToString();
+        var packItems = string.IsNullOrWhiteSpace(providerId)
+            ? []
+            : _databaseService.GetSourceItems()
+                .Where(item =>
+                    item.MediaKind == MediaKind.TvEpisode &&
+                    string.Equals(item.Provider, "tmdb", StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(item.ProviderId, providerId, StringComparison.OrdinalIgnoreCase) &&
+                    item.AutoTorrentPackOwnerSeasonNumber == ownerSeasonNumber &&
+                    (item.AutoTorrentLinkKind == AutoTorrentLinkKind.SeasonPack ||
+                     item.IsOrphanPackSpecial))
+                .ToList();
+
+        var unlinkResult = RemoveSeasonPackLinks(showId, ownerSeasonNumber);
+        result.LinkedCount += unlinkResult.LinkedCount;
+        result.SkippedCount += unlinkResult.SkippedCount;
+        result.Messages.AddRange(unlinkResult.Messages);
+
+        foreach (var item in packItems)
+        {
+            _databaseService.DeleteSourceItem(item.Id);
+            result.Messages.Add($"Removed source item: {item.FileName}");
+        }
+
+        _databaseService.ClearTrackedSeasonSelectedPack(showId, ownerSeasonNumber);
+
+        var packOrders = _databaseService.GetTorrentCartOrders(MediaKind.TvEpisode, showId)
+            .Where(order => order.EpisodeId is null && order.SeasonNumber == ownerSeasonNumber)
+            .ToList();
+        foreach (var order in packOrders)
+        {
+            _databaseService.DeleteTorrentCartOrder(order.Id);
+        }
+
+        result.Messages.Add($"Reset season S{ownerSeasonNumber:00} pack: download state cleared.");
+        return result;
+    }
+
     private async Task LinkEpisodeCoreAsync(TrackedShow show, TrackedEpisode episode, AutoTorrentLinkResult result, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(episode.TorrentHash))
