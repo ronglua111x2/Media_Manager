@@ -11,6 +11,8 @@ public sealed class ShowMetadataSyncResult
     public int NewEpisodesAdded { get; init; }
 
     public string? ErrorMessage { get; init; }
+
+    public string OrganizationLabel { get; init; } = "Default (TMDB seasons)";
 }
 
 public sealed class MovieMetadataSyncResult

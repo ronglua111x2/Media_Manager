@@ -11,4 +11,11 @@ public interface ITmdbShowCatalogService
     Task<TmdbShowDetails> GetTvShowSummaryAsync(int tmdbId, CancellationToken cancellationToken = default);
 
     Task<TmdbShowDetails> GetTvShowDetailsAsync(int tmdbId, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<TmdbEpisodeGroupSummary>> GetTvEpisodeGroupsAsync(int tmdbId, CancellationToken cancellationToken = default);
+
+    Task<TmdbShowDetails> GetTvShowDetailsByEpisodeGroupAsync(
+        int tmdbId,
+        string episodeGroupId,
+        CancellationToken cancellationToken = default);
 }

@@ -10,6 +10,7 @@ using CommunityToolkit.Mvvm.Input;
 using media_management_app.Common;
 using media_management_app.Models;
 using media_management_app.Services;
+using media_management_app.Views;
 
 namespace media_management_app.ViewModels;
 
@@ -278,7 +279,36 @@ public sealed partial class FindAddViewModel : ViewModelBase
             }
             else
             {
-                var show = await _trackedShowService.AddShowAsync(SelectedResult.ToShowSearchResult());
+                string? episodeGroupId = null;
+                string? episodeGroupName = null;
+                var episodeGroups = await _trackedShowService.GetEpisodeGroupsAsync(SelectedResult.TmdbId);
+                if (episodeGroups.Count > 0)
+                {
+                    var dialog = new EpisodeOrganizationDialog(
+                        SelectedResult.Year is null
+                            ? SelectedResult.Title
+                            : $"{SelectedResult.Title} ({SelectedResult.Year})",
+                        SelectedResult.SeasonCount,
+                        SelectedResult.EpisodeCount,
+                        episodeGroups)
+                    {
+                        Owner = System.Windows.Application.Current.MainWindow
+                    };
+
+                    if (dialog.ShowDialog() != true)
+                    {
+                        StatusMessage = "Add cancelled.";
+                        return;
+                    }
+
+                    episodeGroupId = dialog.SelectedEpisodeGroupId;
+                    episodeGroupName = dialog.SelectedEpisodeGroupName;
+                }
+
+                var show = await _trackedShowService.AddShowAsync(
+                    SelectedResult.ToShowSearchResult(),
+                    episodeGroupId,
+                    episodeGroupName);
                 _trackedShowService.UpdateRecipe(show.Id, SelectedRecipeId);
                 _trackedShowService.UpdatePackRecipe(show.Id, GetDefaultRecipeId(MediaKind.TvSeasonPack));
             }

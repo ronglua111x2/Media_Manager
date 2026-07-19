@@ -357,6 +357,139 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
         return details;
     }
 
+    public async Task<IReadOnlyList<TmdbEpisodeGroupSummary>> GetTvEpisodeGroupsAsync(int tmdbId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(_settingsService.Current.TmdbReadAccessToken))
+        {
+            throw new InvalidOperationException("TMDb read access token is not configured.");
+        }
+
+        ConfigureHeaders();
+        using var response = await GetAsyncWithRetryAsync($"tv/{tmdbId}/episode_groups", cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            _logger.Warning($"TMDb episode groups lookup failed for series {tmdbId}: {(int)response.StatusCode}", LogTarget.File | LogTarget.Console);
+            return [];
+        }
+
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+        if (!document.RootElement.TryGetProperty("results", out var results) || results.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        return results.EnumerateArray()
+            .Select(result => new TmdbEpisodeGroupSummary
+            {
+                Id = GetString(result, "id") ?? string.Empty,
+                Name = GetString(result, "name") ?? "Episode Group",
+                Type = GetInt(result, "type") ?? 0,
+                EpisodeCount = GetInt(result, "episode_count") ?? 0,
+                GroupCount = GetInt(result, "group_count") ?? 0
+            })
+            .Where(group => !string.IsNullOrWhiteSpace(group.Id))
+            .OrderBy(group => group.Type)
+            .ThenBy(group => group.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    public async Task<TmdbShowDetails> GetTvShowDetailsByEpisodeGroupAsync(
+        int tmdbId,
+        string episodeGroupId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(episodeGroupId))
+        {
+            throw new ArgumentException("Episode group id is required.", nameof(episodeGroupId));
+        }
+
+        if (string.IsNullOrWhiteSpace(_settingsService.Current.TmdbReadAccessToken))
+        {
+            throw new InvalidOperationException("TMDb read access token is not configured.");
+        }
+
+        ConfigureHeaders();
+
+        // Show-level metadata still comes from the standard TV details endpoint.
+        using var detailsResponse = await GetAsyncWithRetryAsync($"tv/{tmdbId}?language=en-US", cancellationToken);
+        detailsResponse.EnsureSuccessStatusCode();
+
+        await using var detailsStream = await detailsResponse.Content.ReadAsStreamAsync(cancellationToken);
+        using var detailsDocument = await JsonDocument.ParseAsync(detailsStream, cancellationToken: cancellationToken);
+        var root = detailsDocument.RootElement;
+        var firstAirDate = GetString(root, "first_air_date");
+        var primaryTitle = GetString(root, "name") ?? string.Empty;
+        var originalName = GetString(root, "original_name");
+        var alternativeTitles = await GetTvAlternativeTitlesAsync(
+            tmdbId,
+            primaryTitle,
+            originalName,
+            cancellationToken);
+
+        using var groupResponse = await GetAsyncWithRetryAsync(
+            $"tv/episode_group/{Uri.EscapeDataString(episodeGroupId)}?language=en-US",
+            cancellationToken);
+        groupResponse.EnsureSuccessStatusCode();
+
+        await using var groupStream = await groupResponse.Content.ReadAsStreamAsync(cancellationToken);
+        using var groupDocument = await JsonDocument.ParseAsync(groupStream, cancellationToken: cancellationToken);
+        var groupRoot = groupDocument.RootElement;
+
+        var details = new TmdbShowDetails
+        {
+            TmdbId = tmdbId,
+            Title = primaryTitle,
+            FirstAirYear = ParseYear(firstAirDate),
+            Overview = GetString(root, "overview"),
+            PosterPath = GetString(root, "poster_path"),
+            SeasonCount = GetInt(groupRoot, "group_count") ?? 0,
+            EpisodeCount = GetInt(groupRoot, "episode_count") ?? 0,
+            SeriesStatus = MapTmdbSeriesStatus(GetString(root, "status")),
+            AlternativeTitles = alternativeTitles
+        };
+
+        if (!groupRoot.TryGetProperty("groups", out var groupsElement) || groupsElement.ValueKind != JsonValueKind.Array)
+        {
+            details.PlannedEpisodeCount = details.EpisodeCount;
+            return details;
+        }
+
+        var today = DateTime.Today;
+        var plannedFromGroups = 0;
+
+        // Sort groups by their order field and assign season numbers.
+        // A group named "Specials" (case-insensitive) maps to season 0.
+        // All other groups are numbered sequentially from 1.
+        var sortedGroups = groupsElement.EnumerateArray()
+            .OrderBy(group => GetInt(group, "order") ?? int.MaxValue)
+            .ToList();
+
+        var regularSeasonCounter = 0;
+        foreach (var groupElement in sortedGroups)
+        {
+            var groupName = GetString(groupElement, "name") ?? string.Empty;
+            var isSpecials = IsSpecialsGroupName(groupName);
+            var seasonNumber = isSpecials ? AppConstants.SpecialsSeasonNumber : ++regularSeasonCounter;
+
+            var season = MapEpisodeGroupToSeason(groupElement, seasonNumber, today);
+            if (seasonNumber >= 1)
+            {
+                plannedFromGroups += season.EpisodeCount;
+            }
+
+            if (season.Episodes.Count > 0)
+            {
+                details.Seasons.Add(season);
+            }
+        }
+
+        details.PlannedEpisodeCount = plannedFromGroups > 0 ? plannedFromGroups : details.EpisodeCount;
+        details.SeasonCount = details.Seasons.Count(season => season.SeasonNumber >= 1);
+        details.EpisodeCount = details.Seasons.Sum(season => season.Episodes.Count);
+        return details;
+    }
+
     public async Task<IReadOnlyList<TmdbMovieSearchResult>> SearchMoviesAsync(string query, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(query))
@@ -798,12 +931,7 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
             }
 
             var airDate = ParseDate(GetString(episodeElement, "air_date"));
-            if (!isSpecialsSeason && (airDate is null || airDate.Value.Date > today))
-            {
-                continue;
-            }
-
-            if (isSpecialsSeason && airDate is not null && airDate.Value.Date > today)
+            if (!ShouldIncludeEpisodeByAirDate(airDate, isSpecialsSeason, today))
             {
                 continue;
             }
@@ -819,6 +947,66 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
 
         details.EpisodeCount = details.Episodes.Count;
         return details;
+    }
+
+    private static bool IsSpecialsGroupName(string name)
+    {
+        var trimmed = name.Trim();
+        return string.Equals(trimmed, "Specials", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(trimmed, "Special", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static TmdbSeasonDetails MapEpisodeGroupToSeason(JsonElement groupElement, int seasonNumber, DateTime today)
+    {
+        var details = new TmdbSeasonDetails { SeasonNumber = seasonNumber };
+        if (!groupElement.TryGetProperty("episodes", out var episodesElement) || episodesElement.ValueKind != JsonValueKind.Array)
+        {
+            return details;
+        }
+
+        var isSpecialsSeason = seasonNumber == AppConstants.SpecialsSeasonNumber;
+        foreach (var episodeElement in episodesElement.EnumerateArray()
+                     .OrderBy(episode => GetInt(episode, "order") ?? int.MaxValue))
+        {
+            var episodeOrder = GetInt(episodeElement, "order");
+            var episodeNumber = episodeOrder is null ? 0 : episodeOrder.Value + 1;
+            if (episodeNumber <= 0)
+            {
+                continue;
+            }
+
+            var airDate = ParseDate(GetString(episodeElement, "air_date"));
+            if (!ShouldIncludeEpisodeByAirDate(airDate, isSpecialsSeason, today))
+            {
+                continue;
+            }
+
+            details.Episodes.Add(new TmdbEpisodeDetails
+            {
+                SeasonNumber = seasonNumber,
+                EpisodeNumber = episodeNumber,
+                Title = GetString(episodeElement, "name") ?? $"Episode {episodeNumber}",
+                AirDate = airDate
+            });
+        }
+
+        details.EpisodeCount = details.Episodes.Count;
+        return details;
+    }
+
+    private static bool ShouldIncludeEpisodeByAirDate(DateTime? airDate, bool isSpecialsSeason, DateTime today)
+    {
+        if (!isSpecialsSeason && (airDate is null || airDate.Value.Date > today))
+        {
+            return false;
+        }
+
+        if (isSpecialsSeason && airDate is not null && airDate.Value.Date > today)
+        {
+            return false;
+        }
+
+        return true;
     }
 
     private async Task PopulateShowCountsAsync(TmdbShowSearchResult result, CancellationToken cancellationToken)

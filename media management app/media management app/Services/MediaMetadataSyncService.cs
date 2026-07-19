@@ -49,30 +49,34 @@ public sealed class MediaMetadataSyncService : IMediaMetadataSyncService
         var episodeCountBefore = _databaseService.GetTrackedEpisodes(showId).Count;
         try
         {
-            await _trackedShowService.RefreshShowAsync(show, cancellationToken);
+            var refreshed = await _trackedShowService.RefreshShowAsync(show, cancellationToken);
             var episodeCountAfter = _databaseService.GetTrackedEpisodes(showId).Count;
             var newEpisodesAdded = Math.Max(0, episodeCountAfter - episodeCountBefore);
             _logger.Info(
-                $"TMDB refresh succeeded for show id={showId}: {show.Title}, new episodes={newEpisodesAdded}",
+                $"TMDB refresh succeeded for show id={showId}: {refreshed.DisplayTitle}, organization={refreshed.EpisodeOrganizationLabel}, new episodes={newEpisodesAdded}",
                 LogTarget.All);
 
             return new ShowMetadataSyncResult
             {
                 ShowId = showId,
-                Title = show.Title,
+                Title = refreshed.DisplayTitle,
                 Success = true,
-                NewEpisodesAdded = newEpisodesAdded
+                NewEpisodesAdded = newEpisodesAdded,
+                OrganizationLabel = refreshed.EpisodeOrganizationLabel
             };
         }
         catch (Exception ex)
         {
-            _logger.Warning($"TMDB refresh failed for show id={showId}: {show.Title}. {ex.Message}", LogTarget.All);
+            _logger.Warning(
+                $"TMDB refresh failed for show id={showId}: {show.Title} ({show.EpisodeOrganizationLabel}). {ex.Message}",
+                LogTarget.All);
             return new ShowMetadataSyncResult
             {
                 ShowId = showId,
                 Title = show.Title,
                 Success = false,
-                ErrorMessage = ex.Message
+                ErrorMessage = ex.Message,
+                OrganizationLabel = show.EpisodeOrganizationLabel
             };
         }
     }

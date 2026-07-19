@@ -21,6 +21,12 @@ public sealed class TrackedShow
 
     public string? ExcludedAlternativeTitlesJson { get; set; }
 
+    /// <summary>Null = default TMDB seasons; non-null = TMDB episode group id used for S/E organization.</summary>
+    public string? EpisodeGroupId { get; set; }
+
+    /// <summary>Cached display name for <see cref="EpisodeGroupId"/>.</summary>
+    public string? EpisodeGroupName { get; set; }
+
     public string? RecipeId { get; set; }
 
     public string? PackRecipeId { get; set; }
@@ -71,6 +77,12 @@ public sealed class TrackedShow
     public DateTime UpdatedUtc { get; set; } = DateTime.UtcNow;
 
     public string DisplayTitle => FirstAirYear is null ? Title : $"{Title} ({FirstAirYear})";
+
+    public bool UsesEpisodeGroup => !string.IsNullOrWhiteSpace(EpisodeGroupId);
+
+    public string EpisodeOrganizationLabel => UsesEpisodeGroup
+        ? (string.IsNullOrWhiteSpace(EpisodeGroupName) ? "Episode Group" : EpisodeGroupName!)
+        : "Default (TMDB seasons)";
 
     public string SeriesStatusLabel => SeriesStatus switch
     {

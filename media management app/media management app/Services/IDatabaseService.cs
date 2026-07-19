@@ -142,6 +142,8 @@ public interface IDatabaseService
 
     void UpdateTrackedShowExcludedAlternativeTitles(long showId, string? excludedAlternativeTitlesJson);
 
+    void UpdateTrackedShowEpisodeOrganization(long showId, string? episodeGroupId, string? episodeGroupName);
+
     IReadOnlyList<TrackedMovie> GetTrackedMovies();
 
     TrackedMovie? GetTrackedMovie(long id);

@@ -6,11 +6,25 @@ public interface ITrackedShowService
 {
     Task<IReadOnlyList<TmdbShowSearchResult>> SearchShowsAsync(string query, CancellationToken cancellationToken = default);
 
-    Task<TrackedShow> AddShowAsync(TmdbShowSearchResult result, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<TmdbEpisodeGroupSummary>> GetEpisodeGroupsAsync(int tmdbId, CancellationToken cancellationToken = default);
+
+    Task<TmdbShowDetails> GetShowSummaryAsync(int tmdbId, CancellationToken cancellationToken = default);
+
+    Task<TrackedShow> AddShowAsync(
+        TmdbShowSearchResult result,
+        string? episodeGroupId = null,
+        string? episodeGroupName = null,
+        CancellationToken cancellationToken = default);
 
     Task<TrackedShow> ImportShowByTmdbIdAsync(int tmdbId, CancellationToken cancellationToken = default);
 
     Task<TrackedShow> RefreshShowAsync(TrackedShow show, CancellationToken cancellationToken = default);
+
+    Task<TrackedShow> SwitchEpisodeOrganizationAsync(
+        TrackedShow show,
+        string? episodeGroupId,
+        string? episodeGroupName,
+        CancellationToken cancellationToken = default);
 
     IReadOnlyList<TrackedShow> GetShows();
 

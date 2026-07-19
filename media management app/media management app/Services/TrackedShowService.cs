@@ -27,14 +27,30 @@ public sealed class TrackedShowService : ITrackedShowService
         return _catalogService.SearchTvShowsAsync(query, cancellationToken);
     }
 
-    public async Task<TrackedShow> AddShowAsync(TmdbShowSearchResult result, CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<TmdbEpisodeGroupSummary>> GetEpisodeGroupsAsync(int tmdbId, CancellationToken cancellationToken = default)
     {
-        var details = await _catalogService.GetTvShowDetailsAsync(result.TmdbId, cancellationToken);
-        var showId = ImportShow(details, "1080p");
+        return _catalogService.GetTvEpisodeGroupsAsync(tmdbId, cancellationToken);
+    }
+
+    public Task<TmdbShowDetails> GetShowSummaryAsync(int tmdbId, CancellationToken cancellationToken = default)
+    {
+        return _catalogService.GetTvShowSummaryAsync(tmdbId, cancellationToken);
+    }
+
+    public async Task<TrackedShow> AddShowAsync(
+        TmdbShowSearchResult result,
+        string? episodeGroupId = null,
+        string? episodeGroupName = null,
+        CancellationToken cancellationToken = default)
+    {
+        var details = await ResolveShowDetailsAsync(result.TmdbId, episodeGroupId, cancellationToken);
+        var showId = ImportShow(details, "1080p", episodeGroupId, episodeGroupName);
         await CachePosterAsync(details.TmdbId, details.PosterPath, cancellationToken);
         RefreshAvailability(showId);
         var show = _databaseService.GetTrackedShow(showId) ?? throw new InvalidOperationException("Tracked show was not saved.");
-        _logger.Info($"Tracked show added: {show.DisplayTitle}, Episodes={show.TotalEpisodes}", LogTarget.All);
+        _logger.Info(
+            $"Tracked show added: {show.DisplayTitle}, Episodes={show.TotalEpisodes}, Organization={show.EpisodeOrganizationLabel}",
+            LogTarget.All);
         return show;
     }
 
@@ -51,13 +67,53 @@ public sealed class TrackedShowService : ITrackedShowService
 
     public async Task<TrackedShow> RefreshShowAsync(TrackedShow show, CancellationToken cancellationToken = default)
     {
-        var details = await _catalogService.GetTvShowDetailsAsync(show.TmdbId, cancellationToken);
-        var showId = ImportShow(details, show.PreferredQuality);
+        // Always re-read organization from DB so Sync/AutoTrack cannot use a stale in-memory route.
+        var persisted = _databaseService.GetTrackedShow(show.Id) ?? show;
+        var episodeGroupId = persisted.EpisodeGroupId;
+        var episodeGroupName = persisted.EpisodeGroupName;
+
+        var details = await ResolveShowDetailsAsync(persisted.TmdbId, episodeGroupId, cancellationToken);
+        var showId = ImportShow(details, persisted.PreferredQuality, episodeGroupId, episodeGroupName);
         await CachePosterAsync(details.TmdbId, details.PosterPath, cancellationToken);
         RefreshAvailability(showId);
         var refreshed = _databaseService.GetTrackedShow(showId) ?? throw new InvalidOperationException("Tracked show was not refreshed.");
-        _logger.Info($"Tracked show refreshed: {refreshed.DisplayTitle}, Episodes={refreshed.TotalEpisodes}", LogTarget.All);
+        _logger.Info(
+            $"Tracked show refreshed: {refreshed.DisplayTitle}, Episodes={refreshed.TotalEpisodes}, Organization={refreshed.EpisodeOrganizationLabel}",
+            LogTarget.All);
         return refreshed;
+    }
+
+    public async Task<TrackedShow> SwitchEpisodeOrganizationAsync(
+        TrackedShow show,
+        string? episodeGroupId,
+        string? episodeGroupName,
+        CancellationToken cancellationToken = default)
+    {
+        var normalizedGroupId = string.IsNullOrWhiteSpace(episodeGroupId) ? null : episodeGroupId.Trim();
+        var normalizedGroupName = normalizedGroupId is null
+            ? null
+            : (string.IsNullOrWhiteSpace(episodeGroupName) ? "Episode Group" : episodeGroupName.Trim());
+
+        var currentGroupId = string.IsNullOrWhiteSpace(show.EpisodeGroupId) ? null : show.EpisodeGroupId.Trim();
+        var isSameRoute = string.Equals(currentGroupId, normalizedGroupId, StringComparison.Ordinal);
+
+        // Always persist + hard-rebuild so mapping fixes and TMDB group edits are applied cleanly.
+        _databaseService.UpdateTrackedShowEpisodeOrganization(show.Id, normalizedGroupId, normalizedGroupName);
+        _databaseService.DeleteTrackedSeasonsAndEpisodes(show.Id);
+        _databaseService.DeleteFetchJobsForMedia(show.Id, MediaKind.TvEpisode);
+
+        var details = await ResolveShowDetailsAsync(show.TmdbId, normalizedGroupId, cancellationToken);
+        var showId = ImportShow(details, show.PreferredQuality, normalizedGroupId, normalizedGroupName);
+        await CachePosterAsync(details.TmdbId, details.PosterPath, cancellationToken);
+        RefreshAvailability(showId);
+
+        var rebuilt = _databaseService.GetTrackedShow(showId) ?? throw new InvalidOperationException("Tracked show was not rebuilt.");
+        _logger.Info(
+            isSameRoute
+                ? $"Tracked show organization rebuilt in place: {rebuilt.DisplayTitle} ({rebuilt.EpisodeOrganizationLabel}), Episodes={rebuilt.TotalEpisodes}"
+                : $"Tracked show organization switched: {rebuilt.DisplayTitle} -> {rebuilt.EpisodeOrganizationLabel}, Episodes={rebuilt.TotalEpisodes}",
+            LogTarget.All);
+        return rebuilt;
     }
 
     public IReadOnlyList<TrackedShow> GetShows()
@@ -238,9 +294,30 @@ public sealed class TrackedShowService : ITrackedShowService
             LogTarget.All);
     }
 
-    private long ImportShow(TmdbShowDetails details, string preferredQuality)
+    private long ImportShow(
+        TmdbShowDetails details,
+        string preferredQuality,
+        string? episodeGroupId = null,
+        string? episodeGroupName = null)
     {
         var existing = _databaseService.GetTrackedShowByTmdbId(details.TmdbId);
+
+        // First insert uses explicit args. Refresh/switch rely on the row (Switch updates organization first).
+        string? resolvedGroupId;
+        string? resolvedGroupName;
+        if (existing is null)
+        {
+            resolvedGroupId = string.IsNullOrWhiteSpace(episodeGroupId) ? null : episodeGroupId.Trim();
+            resolvedGroupName = resolvedGroupId is null
+                ? null
+                : (string.IsNullOrWhiteSpace(episodeGroupName) ? "Episode Group" : episodeGroupName.Trim());
+        }
+        else
+        {
+            resolvedGroupId = existing.EpisodeGroupId;
+            resolvedGroupName = existing.EpisodeGroupName;
+        }
+
         var showId = _databaseService.UpsertTrackedShow(new TrackedShow
         {
             TmdbId = details.TmdbId,
@@ -250,6 +327,8 @@ public sealed class TrackedShowService : ITrackedShowService
             PosterPath = details.PosterPath,
             AlternativeTitlesJson = TrackedShow.SerializeAlternativeTitles(details.AlternativeTitles),
             ExcludedAlternativeTitlesJson = existing?.ExcludedAlternativeTitlesJson,
+            EpisodeGroupId = resolvedGroupId,
+            EpisodeGroupName = resolvedGroupName,
             RecipeId = existing?.RecipeId,
             PackRecipeId = existing?.PackRecipeId,
             PreferredQuality = existing?.PreferredQuality ?? preferredQuality,
@@ -291,6 +370,16 @@ public sealed class TrackedShowService : ITrackedShowService
         }
 
         return showId;
+    }
+
+    private Task<TmdbShowDetails> ResolveShowDetailsAsync(
+        int tmdbId,
+        string? episodeGroupId,
+        CancellationToken cancellationToken)
+    {
+        return string.IsNullOrWhiteSpace(episodeGroupId)
+            ? _catalogService.GetTvShowDetailsAsync(tmdbId, cancellationToken)
+            : _catalogService.GetTvShowDetailsByEpisodeGroupAsync(tmdbId, episodeGroupId, cancellationToken);
     }
 
     private void RefreshAvailabilityCore(long showId, IReadOnlyList<SourceItem> sourceItems)

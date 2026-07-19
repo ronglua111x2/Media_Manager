@@ -935,7 +935,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
                 RefreshLibrary();
                 await ReloadSelectedDetailAsync();
                 StatusMessage = result.Success
-                    ? $"TMDB refresh complete for {result.Title}. {result.NewEpisodesAdded} new episode(s) added."
+                    ? $"TMDB refresh complete for {result.Title} via {result.OrganizationLabel}. {result.NewEpisodesAdded} new episode(s) added."
                     : $"TMDB refresh failed for {result.Title}: {result.ErrorMessage}";
                 return;
             }
@@ -1110,6 +1110,83 @@ public sealed partial class LibraryViewModel : ViewModelBase
 
     private bool CanStopAutoTrack() => SelectedShow?.IsAutoTracked == true;
 
+    [RelayCommand(CanExecute = nameof(IsSelectedShow))]
+    private async Task ChangeEpisodeOrganizationAsync()
+    {
+        if (SelectedShow is null)
+        {
+            return;
+        }
+
+        await RunImportActionAsync(async () =>
+        {
+            var show = _trackedShowService.GetShows().FirstOrDefault(item => item.Id == SelectedShow.Id);
+            if (show is null)
+            {
+                StatusMessage = "Selected show was not found.";
+                return;
+            }
+
+            StatusMessage = $"Loading episode groups for {show.DisplayTitle}...";
+            var episodeGroups = await _trackedShowService.GetEpisodeGroupsAsync(show.TmdbId);
+            if (episodeGroups.Count == 0 && !show.UsesEpisodeGroup)
+            {
+                System.Windows.MessageBox.Show(
+                    "This show has no TMDB episode groups. Only default season organization is available.",
+                    "Episode Organization",
+                    System.Windows.MessageBoxButton.OK,
+                    System.Windows.MessageBoxImage.Information);
+                StatusMessage = "No episode groups available.";
+                return;
+            }
+
+            var summary = await _trackedShowService.GetShowSummaryAsync(show.TmdbId);
+            var dialog = new EpisodeOrganizationDialog(
+                show.DisplayTitle,
+                summary.SeasonCount,
+                summary.EpisodeCount,
+                episodeGroups,
+                show.EpisodeGroupId,
+                confirmButtonText: "Apply")
+            {
+                Owner = System.Windows.Application.Current.MainWindow
+            };
+
+            if (dialog.ShowDialog() != true)
+            {
+                StatusMessage = "Organization change cancelled.";
+                return;
+            }
+
+            var selectedGroupId = dialog.SelectedEpisodeGroupId;
+            var confirm = System.Windows.MessageBox.Show(
+                $"This rebuilds season/episode structure for {show.DisplayTitle}.\n\n" +
+                "Hardlinks, torrent candidates, and pack links will be cleared.\n" +
+                "Watch status and watched-episode count are kept, but may no longer match the new numbering.\n\n" +
+                "Continue?",
+                "Change Episode Organization",
+                System.Windows.MessageBoxButton.YesNo,
+                System.Windows.MessageBoxImage.Warning);
+
+            if (confirm != System.Windows.MessageBoxResult.Yes)
+            {
+                StatusMessage = "Organization change cancelled.";
+                return;
+            }
+
+            StatusMessage = $"Rebuilding {show.DisplayTitle} with new organization...";
+            var rebuilt = await _trackedShowService.SwitchEpisodeOrganizationAsync(
+                show,
+                selectedGroupId,
+                dialog.SelectedEpisodeGroupName);
+            _torrentCartService.ClearCart(MediaKind.TvEpisode, show.Id);
+            RefreshLibrary();
+            await ReloadSelectedDetailAsync();
+            StatusMessage =
+                $"Organization set for {rebuilt.DisplayTitle} → {rebuilt.EpisodeOrganizationLabel}. {rebuilt.TotalEpisodes} episode(s). Sync TMDB will keep this route.";
+        });
+    }
+
     [RelayCommand(CanExecute = nameof(HasSelectedMedia))]
     private void DeleteSelectedMedia()
     {
@@ -1179,6 +1256,9 @@ public sealed partial class LibraryViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsSelectedShow));
         OnPropertyChanged(nameof(IsSelectedMovie));
         OnPropertyChanged(nameof(ShowStopAutoTrackButton));
+        ChangeEpisodeOrganizationCommand.NotifyCanExecuteChanged();
+        SetAutoTrackCommand.NotifyCanExecuteChanged();
+        StopAutoTrackCommand.NotifyCanExecuteChanged();
     }
 
     partial void OnMediaSortModeChanged(MediaCardSortMode value)
