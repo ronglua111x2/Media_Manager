@@ -9,5 +9,11 @@ public sealed class TmdbEpisodeDetails
     public string Title { get; set; } = string.Empty;
 
     public DateTime? AirDate { get; set; }
+
+    public string? Overview { get; set; }
+
+    public double? VoteAverage { get; set; }
+
+    public string? StillPath { get; set; }
 }
 

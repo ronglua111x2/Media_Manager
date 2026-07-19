@@ -941,7 +941,10 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
                 SeasonNumber = seasonNumber,
                 EpisodeNumber = episodeNumber,
                 Title = GetString(episodeElement, "name") ?? $"Episode {episodeNumber}",
-                AirDate = airDate
+                AirDate = airDate,
+                Overview = GetString(episodeElement, "overview"),
+                VoteAverage = GetDouble(episodeElement, "vote_average"),
+                StillPath = GetString(episodeElement, "still_path")
             });
         }
 
@@ -986,7 +989,10 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
                 SeasonNumber = seasonNumber,
                 EpisodeNumber = episodeNumber,
                 Title = GetString(episodeElement, "name") ?? $"Episode {episodeNumber}",
-                AirDate = airDate
+                AirDate = airDate,
+                Overview = GetString(episodeElement, "overview"),
+                VoteAverage = GetDouble(episodeElement, "vote_average"),
+                StillPath = GetString(episodeElement, "still_path")
             });
         }
 
@@ -1300,6 +1306,13 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
     {
         return element.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.Number
             ? property.GetInt32()
+            : null;
+    }
+
+    private static double? GetDouble(JsonElement element, string propertyName)
+    {
+        return element.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.Number
+            ? property.GetDouble()
             : null;
     }
 

@@ -364,7 +364,10 @@ public sealed class TrackedShowService : ITrackedShowService
                     SeasonNumber = episode.SeasonNumber,
                     EpisodeNumber = episode.EpisodeNumber,
                     Title = episode.Title,
-                    AirDate = episode.AirDate
+                    AirDate = episode.AirDate,
+                    Overview = episode.Overview,
+                    VoteAverage = episode.VoteAverage,
+                    StillPath = episode.StillPath
                 });
             }
         }

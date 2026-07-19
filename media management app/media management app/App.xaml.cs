@@ -140,6 +140,7 @@ public partial class App : System.Windows.Application
         services.AddSingleton<IHardlinkService, HardlinkService>();
         services.AddSingleton<ISymlinkService, SymlinkService>();
         services.AddSingleton<ISymlinkSyncService, SymlinkSyncService>();
+        services.AddSingleton<INfoWriterService, NfoWriterService>();
         services.AddSingleton<ISymlinkCoordinatorService, SymlinkCoordinatorService>();
         services.AddSingleton<ISourceReconciliationService, SourceReconciliationService>();
         services.AddSingleton<IQbittorrentClient, QbittorrentClient>();

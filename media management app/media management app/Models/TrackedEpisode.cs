@@ -18,6 +18,12 @@ public sealed class TrackedEpisode
 
     public string AirDateDisplay => AirDate?.ToString("yyyy-MM-dd") ?? string.Empty;
 
+    public string? Overview { get; set; }
+
+    public double? VoteAverage { get; set; }
+
+    public string? StillPath { get; set; }
+
     public EpisodeAvailability Availability { get; set; } = EpisodeAvailability.Missing;
 
     public string? TorrentHash { get; set; }

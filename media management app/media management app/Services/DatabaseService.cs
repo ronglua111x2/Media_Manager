@@ -1249,12 +1249,15 @@ public sealed class DatabaseService : IDatabaseService
         var now = DateTime.UtcNow;
         using var command = connection.CreateCommand();
         command.CommandText = """
-            INSERT INTO TrackedEpisodes (ShowId, SeasonNumber, EpisodeNumber, Title, AirDate, Availability, TorrentHash, TorrentName, TorrentState, TorrentProgress, TorrentUpdatedUtc, SelectedCandidateName, SelectedCandidateUrl, SelectedCandidatePlugin, SelectedCandidateFileSize, SelectedCandidateSeeders, SelectedCandidateQuality, SelectedCandidateAudioCodec, CreatedUtc, UpdatedUtc)
-            VALUES ($ShowId, $SeasonNumber, $EpisodeNumber, $Title, $AirDate, $Availability, $TorrentHash, $TorrentName, $TorrentState, $TorrentProgress, $TorrentUpdatedUtc, $SelectedCandidateName, $SelectedCandidateUrl, $SelectedCandidatePlugin, $SelectedCandidateFileSize, $SelectedCandidateSeeders, $SelectedCandidateQuality, $SelectedCandidateAudioCodec, $CreatedUtc, $UpdatedUtc)
+            INSERT INTO TrackedEpisodes (ShowId, SeasonNumber, EpisodeNumber, Title, AirDate, Availability, TorrentHash, TorrentName, TorrentState, TorrentProgress, TorrentUpdatedUtc, SelectedCandidateName, SelectedCandidateUrl, SelectedCandidatePlugin, SelectedCandidateFileSize, SelectedCandidateSeeders, SelectedCandidateQuality, SelectedCandidateAudioCodec, Overview, VoteAverage, StillPath, CreatedUtc, UpdatedUtc)
+            VALUES ($ShowId, $SeasonNumber, $EpisodeNumber, $Title, $AirDate, $Availability, $TorrentHash, $TorrentName, $TorrentState, $TorrentProgress, $TorrentUpdatedUtc, $SelectedCandidateName, $SelectedCandidateUrl, $SelectedCandidatePlugin, $SelectedCandidateFileSize, $SelectedCandidateSeeders, $SelectedCandidateQuality, $SelectedCandidateAudioCodec, $Overview, $VoteAverage, $StillPath, $CreatedUtc, $UpdatedUtc)
             ON CONFLICT(ShowId, SeasonNumber, EpisodeNumber) DO UPDATE SET
                 Title = excluded.Title,
                 AirDate = excluded.AirDate,
                 Availability = excluded.Availability,
+                Overview = excluded.Overview,
+                VoteAverage = excluded.VoteAverage,
+                StillPath = excluded.StillPath,
                 TorrentHash = TrackedEpisodes.TorrentHash,
                 TorrentName = TrackedEpisodes.TorrentName,
                 TorrentState = TrackedEpisodes.TorrentState,
@@ -1287,6 +1290,9 @@ public sealed class DatabaseService : IDatabaseService
         command.Parameters.AddWithValue("$SelectedCandidateSeeders", episode.SelectedCandidateSeeders);
         command.Parameters.AddWithValue("$SelectedCandidateQuality", (object?)episode.SelectedCandidateQuality ?? DBNull.Value);
         command.Parameters.AddWithValue("$SelectedCandidateAudioCodec", (object?)episode.SelectedCandidateAudioCodec ?? DBNull.Value);
+        command.Parameters.AddWithValue("$Overview", (object?)episode.Overview ?? DBNull.Value);
+        command.Parameters.AddWithValue("$VoteAverage", (object?)episode.VoteAverage ?? DBNull.Value);
+        command.Parameters.AddWithValue("$StillPath", (object?)episode.StillPath ?? DBNull.Value);
         command.Parameters.AddWithValue("$CreatedUtc", (episode.CreatedUtc == default ? now : episode.CreatedUtc).ToString("O"));
         command.Parameters.AddWithValue("$UpdatedUtc", now.ToString("O"));
         command.ExecuteNonQuery();
@@ -1304,7 +1310,7 @@ public sealed class DatabaseService : IDatabaseService
                    TorrentHash, TorrentName, TorrentState, TorrentProgress, TorrentUpdatedUtc,
                    SelectedCandidateName, SelectedCandidateUrl, SelectedCandidatePlugin, SelectedCandidateFileSize,
                    SelectedCandidateSeeders, SelectedCandidateQuality, SelectedCandidateAudioCodec,
-                   CreatedUtc, UpdatedUtc
+                   CreatedUtc, UpdatedUtc, Overview, VoteAverage, StillPath
             FROM TrackedEpisodes
             WHERE ShowId = $ShowId
             ORDER BY SeasonNumber, EpisodeNumber;
@@ -2341,6 +2347,9 @@ public sealed class DatabaseService : IDatabaseService
         EnsureColumn(connection, "TrackedEpisodes", "SelectedCandidateSeeders", "INTEGER NOT NULL DEFAULT 0");
         EnsureColumn(connection, "TrackedEpisodes", "SelectedCandidateQuality", "TEXT NULL");
         EnsureColumn(connection, "TrackedEpisodes", "SelectedCandidateAudioCodec", "TEXT NULL");
+        EnsureColumn(connection, "TrackedEpisodes", "Overview", "TEXT NULL");
+        EnsureColumn(connection, "TrackedEpisodes", "VoteAverage", "REAL NULL");
+        EnsureColumn(connection, "TrackedEpisodes", "StillPath", "TEXT NULL");
     }
 
     private static void InitializeTrackedMovies(SqliteConnection connection)
@@ -2590,7 +2599,10 @@ public sealed class DatabaseService : IDatabaseService
             SelectedCandidateQuality = reader.IsDBNull(17) ? null : reader.GetString(17),
             SelectedCandidateAudioCodec = reader.IsDBNull(18) ? null : reader.GetString(18),
             CreatedUtc = DateTime.Parse(reader.GetString(19), null, System.Globalization.DateTimeStyles.RoundtripKind),
-            UpdatedUtc = DateTime.Parse(reader.GetString(20), null, System.Globalization.DateTimeStyles.RoundtripKind)
+            UpdatedUtc = DateTime.Parse(reader.GetString(20), null, System.Globalization.DateTimeStyles.RoundtripKind),
+            Overview = reader.IsDBNull(21) ? null : reader.GetString(21),
+            VoteAverage = reader.IsDBNull(22) ? null : reader.GetDouble(22),
+            StillPath = reader.IsDBNull(23) ? null : reader.GetString(23)
         };
     }
 
