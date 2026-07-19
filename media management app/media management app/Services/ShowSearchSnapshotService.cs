@@ -52,11 +52,13 @@ public sealed class ShowSearchSnapshotService
             return [];
         }
 
+        var totalQueries = queries.Count;
         _logger.Info(
-            $"Snapshot search queries for {show.DisplayTitle}. Recipe='{recipe.Name}', Queries={queries.Count}: {string.Join(" | ", queries)}",
+            $"Snapshot search starting {totalQueries} query(ies) for {show.DisplayTitle}. Recipe='{recipe.Name}': {string.Join(" | ", queries)}",
             LogTarget.All);
 
         var combined = new List<TorrentSearchResult>();
+        var completedQueries = 0;
         foreach (var query in queries)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -67,6 +69,11 @@ public sealed class ShowSearchSnapshotService
                 idleTimeoutSeconds,
                 progressService,
                 cancellationToken);
+            completedQueries++;
+            _logger.Info(
+                $"Snapshot search query succeeded {completedQueries}/{totalQueries}. Remaining={totalQueries - completedQueries}. Query='{query}'. Results={snapshot.Count}.",
+                LogTarget.All);
+
             combined = combined
                 .Concat(snapshot)
                 .GroupBy(result => result.FileUrl, StringComparer.OrdinalIgnoreCase)
@@ -75,6 +82,13 @@ public sealed class ShowSearchSnapshotService
 
             if (combined.Count >= targetResults)
             {
+                if (completedQueries < totalQueries)
+                {
+                    _logger.Info(
+                        $"Snapshot search stopped early for {show.DisplayTitle}: reached target results ({targetResults}). Completed={completedQueries}/{totalQueries}, Skipped={totalQueries - completedQueries}.",
+                        LogTarget.All);
+                }
+
                 break;
             }
         }

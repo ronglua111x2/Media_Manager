@@ -364,14 +364,28 @@ public sealed class FetchJobService : IFetchJobService
 
     private async Task<IReadOnlyList<TorrentSearchResult>> SearchManyAsync(IReadOnlyList<string> queries, CancellationToken cancellationToken)
     {
+        var plannedQueries = queries
+            .Where(query => !string.IsNullOrWhiteSpace(query))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var totalQueries = plannedQueries.Count;
+        _logger.Info(
+            $"SearchMany planned {totalQueries} query(ies): {string.Join(" | ", plannedQueries)}",
+            LogTarget.All);
+
         var results = new List<TorrentSearchResult>();
-        foreach (var query in queries.Where(query => !string.IsNullOrWhiteSpace(query)).Distinct(StringComparer.OrdinalIgnoreCase))
+        var completedQueries = 0;
+        foreach (var query in plannedQueries)
         {
             for (var attempt = 1; attempt <= SearchCapacityRetryCount; attempt++)
             {
                 try
                 {
                     results.AddRange(await _qbittorrentClient.SearchAsync(new TorrentSearchRequest { Query = query }, cancellationToken));
+                    completedQueries++;
+                    _logger.Info(
+                        $"Search query succeeded {completedQueries}/{totalQueries}. Remaining={totalQueries - completedQueries}. Query='{query}'.",
+                        LogTarget.All);
                     break;
                 }
                 catch (QbittorrentSearchCapacityException) when (attempt < SearchCapacityRetryCount)
@@ -414,11 +428,26 @@ public sealed class FetchJobService : IFetchJobService
         var maxCandidates = RecipeRuntimeSettings.GetMaxCandidatesPerFetch(recipe, _settingsService.Current.AutoTorrent);
         var resultsByUrl = new Dictionary<string, TorrentSearchResult>(StringComparer.OrdinalIgnoreCase);
         var matchedCandidates = new List<(EpisodeFetchCandidate Candidate, RecipeCandidateResult Match)>();
+        var plannedQueries = queries
+            .Where(query => !string.IsNullOrWhiteSpace(query))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var totalQueries = plannedQueries.Count;
+        var label = $"{show.DisplayTitle} S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00}";
+        _logger.Info(
+            $"Episode search starting {totalQueries} query(ies) for {label}. Recipe='{recipe.Name}': {string.Join(" | ", plannedQueries)}",
+            LogTarget.All);
 
-        foreach (var query in queries.Where(query => !string.IsNullOrWhiteSpace(query)).Distinct(StringComparer.OrdinalIgnoreCase))
+        var completedQueries = 0;
+        foreach (var query in plannedQueries)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var queryResults = await SearchSingleQueryAsync(query, cancellationToken);
+            completedQueries++;
+            _logger.Info(
+                $"Episode search query succeeded {completedQueries}/{totalQueries}. Remaining={totalQueries - completedQueries}. Query='{query}'. Results={queryResults.Count}.",
+                LogTarget.All);
+
             foreach (var result in queryResults)
             {
                 if (!string.IsNullOrWhiteSpace(result.FileUrl))
@@ -453,6 +482,13 @@ public sealed class FetchJobService : IFetchJobService
 
             if (matchedCandidates.Count >= maxCandidates)
             {
+                if (completedQueries < totalQueries)
+                {
+                    _logger.Info(
+                        $"Episode search stopped early for {label}: reached max candidates ({maxCandidates}). Completed={completedQueries}/{totalQueries}, Skipped={totalQueries - completedQueries}.",
+                        LogTarget.All);
+                }
+
                 break;
             }
         }

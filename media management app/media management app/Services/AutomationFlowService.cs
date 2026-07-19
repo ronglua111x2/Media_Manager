@@ -108,22 +108,35 @@ public sealed class AutomationFlowService : IAutomationFlowService
         var plugins = string.IsNullOrWhiteSpace(searchSource?.Plugins) ? "enabled" : searchSource!.Plugins;
         var category = string.IsNullOrWhiteSpace(searchSource?.Category) ? "all" : searchSource!.Category;
         var parallelSearches = RecipeRuntimeSettings.GetParallelSearchCount(recipe, _settingsService.Current.AutoTorrent);
-        var throttler = new SemaphoreSlim(parallelSearches);
-        var tasks = queries
+        var plannedQueries = queries
             .Where(query => !string.IsNullOrWhiteSpace(query))
             .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var totalQueries = plannedQueries.Count;
+        _logger.Info(
+            $"Recipe search starting {totalQueries} query(ies). Recipe='{recipe.Name}': {string.Join(" | ", plannedQueries)}",
+            LogTarget.All);
+
+        var throttler = new SemaphoreSlim(parallelSearches);
+        var completedQueries = 0;
+        var tasks = plannedQueries
             .Select(async query =>
             {
                 await throttler.WaitAsync(cancellationToken);
                 try
                 {
-                    return await _qbittorrentClient.SearchAsync(new TorrentSearchRequest
+                    var queryResults = await _qbittorrentClient.SearchAsync(new TorrentSearchRequest
                     {
                         Query = query,
                         Plugins = plugins,
                         Category = category,
                         Limit = requestLimit
                     }, cancellationToken);
+                    var completed = Interlocked.Increment(ref completedQueries);
+                    _logger.Info(
+                        $"Recipe search query succeeded {completed}/{totalQueries}. Remaining={totalQueries - completed}. Query='{query}'. Results={queryResults.Count}.",
+                        LogTarget.All);
+                    return queryResults;
                 }
                 finally
                 {
