@@ -463,19 +463,14 @@
                                                                HorizontalAlignment="Left"
                                                                FontSize="13" />
                                     <TextBlock Text="TMDB check interval (minutes)" Style="{StaticResource SettingsLabelStyle}" />
-                                    <Border Style="{StaticResource SettingsNumericChromeStyle}" Margin="0,0,0,8">
+                                    <Border Style="{StaticResource SettingsNumericChromeStyle}" Margin="0,0,0,4">
                                         <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
                                                                       Value="{Binding AutoTrackTmdbCheckIntervalMinutes, UpdateSourceTrigger=PropertyChanged}"
                                                                       Minimum="5"
                                                                       Maximum="1440" />
                                     </Border>
-                                    <TextBlock Text="Torrent hunt interval (minutes)" Style="{StaticResource SettingsLabelStyle}" />
-                                    <Border Style="{StaticResource SettingsNumericChromeStyle}" Margin="0,0,0,8">
-                                        <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
-                                                                      Value="{Binding AutoTrackTorrentHuntIntervalMinutes, UpdateSourceTrigger=PropertyChanged}"
-                                                                      Minimum="15"
-                                                                      Maximum="1440" />
-                                    </Border>
+                                    <TextBlock Style="{StaticResource SettingsHintStyle}" Margin="0,0,0,8"
+                                               Text="Torrent hunt runs only when this check finds pending episodes (or when you press Run Now). There is no separate blind hunt timer." />
                                     <TextBlock Text="Min hours after air date before hunting (0 = no delay)" Style="{StaticResource SettingsLabelStyle}" />
                                     <Border Style="{StaticResource SettingsNumericChromeStyle}" Margin="0,0,0,8">
                                         <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
@@ -483,13 +478,15 @@
                                                                       Minimum="0"
                                                                       Maximum="48" />
                                     </Border>
-                                    <TextBlock Text="Reconcile interval (minutes)" Style="{StaticResource SettingsLabelStyle}" />
-                                    <Border Style="{StaticResource SettingsNumericChromeStyle}" Margin="0,0,0,8">
+                                    <TextBlock Text="Reconcile poll while downloads pending (minutes)" Style="{StaticResource SettingsLabelStyle}" />
+                                    <Border Style="{StaticResource SettingsNumericChromeStyle}" Margin="0,0,0,4">
                                         <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
                                                                       Value="{Binding AutoTrackReconcileIntervalMinutes, UpdateSourceTrigger=PropertyChanged}"
                                                                       Minimum="5"
                                                                       Maximum="1440" />
                                     </Border>
+                                    <TextBlock Style="{StaticResource SettingsHintStyle}" Margin="0,0,0,8"
+                                               Text="Runs only after Auto-Track successfully adds torrents, and only while downloads are still pending. Idle Auto-Track does not reconcile on a timer." />
                                     <TextBlock Text="Max TMDB refreshes per day" Style="{StaticResource SettingsLabelStyle}" />
                                     <Border Style="{StaticResource SettingsNumericChromeStyle}" Margin="0,0,0,8">
                                         <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
@@ -1383,6 +1380,11 @@
                                     <CheckBox IsChecked="{Binding WarpEnabled, Mode=TwoWay}"
                                               Margin="0,0,0,8"
                                               Content="Enable WARP CLI integration" />
+                                    <CheckBox IsChecked="{Binding WarpAutoRecoverOnSsl, Mode=TwoWay}"
+                                              Margin="0,0,0,4"
+                                              Content="Auto-recover with WARP on SSL/TLS errors (Auto-Track only)" />
+                                    <TextBlock Style="{StaticResource SettingsHintStyle}" Margin="0,0,0,8"
+                                               Text="If an Auto-Track TMDB refresh fails with SSL/TLS, connect WARP, retry, keep WARP for the rest of that cycle, then disconnect. Does not affect Library TMDB." />
                                     <TextBlock Text="Executable path (optional override)" Style="{StaticResource SettingsLabelStyle}" />
                                     <TextBox Text="{Binding WarpExecutablePath, UpdateSourceTrigger=PropertyChanged}"
                                              Style="{StaticResource SettingsTextBoxStyle}" />
@@ -1418,7 +1420,7 @@
                                 <Border Style="{StaticResource SettingsGuideItemStyle}">
                                     <StackPanel>
                                         <TextBlock Text="Cloudflare WARP" Style="{StaticResource SettingsLabelStyle}" />
-                                        <TextBlock Text="Requires the Cloudflare WARP desktop client installed on Windows. The app uses warp-cli.exe to connect before Auto-Track fetch/add and disconnect after torrents are added. If WARP is already connected, the app leaves that session open."
+                                        <TextBlock Text="Requires the Cloudflare WARP desktop client installed on Windows. The app uses warp-cli.exe to connect before Auto-Track hunt fetch/add and disconnect after torrents are added. Optionally, Auto-Track TMDB can self-recover on SSL/TLS by connecting WARP for that cycle then disconnecting. Library TMDB is unaffected. If WARP is already connected, the app leaves that session open unless Auto-Track owned the connect."
                                                    Style="{StaticResource SettingsHintStyle}" />
                                     </StackPanel>
                                 </Border>

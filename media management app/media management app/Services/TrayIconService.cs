@@ -128,6 +128,18 @@ public sealed class TrayIconService : ITrayIconService
             return;
         }
 
+        if (result.TmdbRefreshed == 0 &&
+            result.EpisodesQueued == 0 &&
+            result.CandidatesFound == 0 &&
+            result.TorrentsAdded == 0 &&
+            result.LinkedCount == 0 &&
+            result.Failed == 0 &&
+            result.Succeeded)
+        {
+            UpdateTrayTooltip();
+            return;
+        }
+
         var title = result.Succeeded ? "Auto-Track" : "Auto-Track (issues)";
         var icon = result.Succeeded ? WinForms.ToolTipIcon.Info : WinForms.ToolTipIcon.Warning;
         var message = string.IsNullOrWhiteSpace(result.Summary)

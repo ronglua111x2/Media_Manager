@@ -10,6 +10,8 @@ public sealed class SettingsService : ISettingsService
     private const string SettingsLoadLogFileName = "settings-load.log";
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
+    private readonly object _saveLock = new();
+
     public SettingsService()
     {
         Current = new AppSettings();
@@ -76,11 +78,17 @@ public sealed class SettingsService : ISettingsService
 
     public void Save()
     {
-        EnsureDefaults();
-        Directory.CreateDirectory(Current.StateFolder);
-        var json = JsonSerializer.Serialize(Current, JsonOptions);
-        File.WriteAllText(SettingsFilePath, json);
-        WriteBootstrapLog(Current.StateFolder, $"Saved settings to '{SettingsFilePath}'. SourceFolders={Current.SourceFolders.Count}, TokenConfigured={!string.IsNullOrWhiteSpace(Current.TmdbReadAccessToken)}.");
+        lock (_saveLock)
+        {
+            EnsureDefaults();
+            Directory.CreateDirectory(Current.StateFolder);
+            var json = JsonSerializer.Serialize(Current, JsonOptions);
+            var targetPath = SettingsFilePath;
+            var tempPath = targetPath + ".tmp";
+            File.WriteAllText(tempPath, json);
+            File.Move(tempPath, targetPath, overwrite: true);
+            WriteBootstrapLog(Current.StateFolder, $"Saved settings to '{targetPath}'. SourceFolders={Current.SourceFolders.Count}, TokenConfigured={!string.IsNullOrWhiteSpace(Current.TmdbReadAccessToken)}.");
+        }
     }
 
     private void EnsureDefaults()

@@ -1,3 +1,5 @@
+using System.IO;
+using System.Net.Http;
 using System.Text.Json;
 using media_management_app.Common;
 using media_management_app.Models;
@@ -140,131 +142,300 @@ public sealed class AutoTrackService : IAutoTrackService
         }
 
         var budget = settings.DailyBudget ??= new TmdbDailyBudget();
-        var remainingCap = budget.Remaining(settings.MaxTmdbRefreshesPerDay, nowLocal);
-        if (!bypassAnchor && remainingCap == 0)
+        var maxPerDay = settings.MaxTmdbRefreshesPerDay;
+        var remainingCap = budget.Remaining(maxPerDay, nowLocal);
+        var budgetMutated = false;
+        var enforceDailyBudget = !bypassAnchor;
+        var pendingHuntCount = BuildHuntQueue(shows, bypassSchedule: bypassAnchor, resumeOnly: false).Count;
+
+        if (bypassAnchor)
         {
-            _logger.Info($"TMDB daily cap already exhausted ({settings.MaxTmdbRefreshesPerDay}/day). Skipping run.", LogTarget.All);
-            result.Summary = $"Daily cap reached ({settings.MaxTmdbRefreshesPerDay}).";
+            _logger.Info(
+                $"Auto-track TMDB discovery started for {shows.Count} show(s). Manual Run Now — daily budget not applied (remaining would be {remainingCap}/{maxPerDay}).",
+                LogTarget.All);
+        }
+        else if (remainingCap == 0 && pendingHuntCount == 0)
+        {
+            result.Summary = $"Daily cap reached ({maxPerDay}/day); no pending episodes to hunt.";
+            _logger.Debug(result.Summary, LogTarget.File | LogTarget.Console);
             return result;
         }
-
-        _logger.Info($"Auto-track TMDB discovery started for {shows.Count} show(s). Cap remaining={remainingCap}.", LogTarget.All);
-
-        foreach (var show in shows.OrderBy(item => item.Title, StringComparer.OrdinalIgnoreCase))
+        else if (remainingCap == 0)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            result.ShowsProcessed++;
+            _logger.Info(
+                $"TMDB daily cap already exhausted ({maxPerDay}/day). Skipping refreshes; hunting {pendingHuntCount} pending episode(s).",
+                LogTarget.All);
+        }
+        else
+        {
+            _logger.Info(
+                $"Auto-track TMDB discovery started for {shows.Count} show(s). Cap remaining={remainingCap}/{maxPerDay}.",
+                LogTarget.All);
+        }
 
-            var currentShow = _databaseService.GetTrackedShow(show.Id) ?? show;
-            var episodes = _trackedShowService.GetEpisodes(currentShow.Id);
+        var warpOwnedByUs = false;
+        var warpSettings = _settingsService.Current.Warp;
+        var autoRecoverOnSsl = (warpSettings?.Enabled ?? true) &&
+                               (warpSettings?.AutoRecoverOnSsl ?? true) &&
+                               _warpCliService.IsAvailable;
 
-            if (AutoTrackTmdbEligibility.ShouldResetDormantState(currentShow, settings, nowLocal))
+        try
+        {
+            foreach (var show in shows.OrderBy(item => item.Title, StringComparer.OrdinalIgnoreCase))
             {
-                _databaseService.UpdateTrackedShowAutoTrackTmdbState(
-                    currentShow.Id,
-                    AutoTrackTmdbState.Active,
-                    currentShow.AutoTrackLastTmdbWeekKey);
-                currentShow = _databaseService.GetTrackedShow(currentShow.Id) ?? currentShow;
-            }
+                cancellationToken.ThrowIfCancellationRequested();
+                result.ShowsProcessed++;
 
-            if (currentShow.SeriesStatus == ShowSeriesStatus.Finished &&
-                AutoTrackTmdbEligibility.IsFullyCaughtUp(currentShow, episodes) &&
-                currentShow.AutoTrackTmdbState != AutoTrackTmdbState.FinishedComplete)
-            {
-                _databaseService.UpdateTrackedShowAutoTrackTmdbState(
-                    currentShow.Id,
-                    AutoTrackTmdbState.FinishedComplete,
-                    currentShow.AutoTrackLastTmdbWeekKey);
-                continue;
-            }
+                var currentShow = _databaseService.GetTrackedShow(show.Id) ?? show;
+                var episodes = _trackedShowService.GetEpisodes(currentShow.Id);
 
-            if (!AutoTrackTmdbEligibility.ShouldRefreshTmdb(currentShow, settings, episodes, nowLocal, bypassAnchor))
-            {
-                continue;
-            }
-
-            if (!bypassAnchor && remainingCap <= 0)
-            {
-                _logger.Info($"Auto-track TMDB daily cap reached ({settings.MaxTmdbRefreshesPerDay}).", LogTarget.All);
-                break;
-            }
-
-            try
-            {
-                var refreshedShow = await _trackedShowService.RefreshShowAsync(currentShow, cancellationToken);
-                result.TmdbRefreshed++;
-                if (!bypassAnchor)
+                if (AutoTrackTmdbEligibility.ShouldResetDormantState(currentShow, settings, nowLocal))
                 {
-                    budget.TryConsume(settings.MaxTmdbRefreshesPerDay, nowLocal);
-                    remainingCap = budget.Remaining(settings.MaxTmdbRefreshesPerDay, nowLocal);
-                    _settingsService.Save();
+                    _databaseService.UpdateTrackedShowAutoTrackTmdbState(
+                        currentShow.Id,
+                        AutoTrackTmdbState.Active,
+                        currentShow.AutoTrackLastTmdbWeekKey);
+                    currentShow = _databaseService.GetTrackedShow(currentShow.Id) ?? currentShow;
                 }
 
-                var refreshedEpisodes = _trackedShowService.GetEpisodes(refreshedShow.Id);
-                var weekKey = AutoTrackWeekAnchor.WeekKey(nowLocal);
-                var hasPendingLatest = AutoTrackTmdbEligibility.HasPendingLatestEpisode(
-                    refreshedShow,
-                    refreshedEpisodes,
-                    IsAutoTrackHuntBlocked,
-                    nowLocal);
-
-                AutoTrackTmdbState nextState;
-                if (hasPendingLatest)
+                if (currentShow.SeriesStatus == ShowSeriesStatus.Finished &&
+                    AutoTrackTmdbEligibility.IsFullyCaughtUp(currentShow, episodes) &&
+                    currentShow.AutoTrackTmdbState != AutoTrackTmdbState.FinishedComplete)
                 {
-                    nextState = AutoTrackTmdbState.Active;
-                }
-                else if (refreshedShow.SeriesStatus == ShowSeriesStatus.Finished &&
-                         AutoTrackTmdbEligibility.IsFullyCaughtUp(refreshedShow, refreshedEpisodes))
-                {
-                    nextState = AutoTrackTmdbState.FinishedComplete;
-                }
-                else if (refreshedShow.SeriesStatus == ShowSeriesStatus.Ongoing &&
-                         AutoTrackTmdbEligibility.IsFullyCaughtUp(refreshedShow, refreshedEpisodes))
-                {
-                    nextState = AutoTrackTmdbState.DormantCaughtUp;
-                }
-                else
-                {
-                    nextState = AutoTrackTmdbState.Active;
+                    _databaseService.UpdateTrackedShowAutoTrackTmdbState(
+                        currentShow.Id,
+                        AutoTrackTmdbState.FinishedComplete,
+                        currentShow.AutoTrackLastTmdbWeekKey);
+                    continue;
                 }
 
-                _databaseService.UpdateTrackedShowAutoTrackTmdbState(refreshedShow.Id, nextState, weekKey);
-
-                if (hasPendingLatest)
+                if (!AutoTrackTmdbEligibility.ShouldRefreshTmdb(currentShow, settings, episodes, nowLocal, bypassAnchor))
                 {
-                    var latest = AutoTrackTmdbEligibility.FindLatestPendingEpisode(
+                    continue;
+                }
+
+                if (enforceDailyBudget && remainingCap <= 0)
+                {
+                    _logger.Info(
+                        $"Auto-track TMDB daily cap reached ({budget.Used}/{maxPerDay} used). Stopping further refreshes.",
+                        LogTarget.All);
+                    break;
+                }
+
+                try
+                {
+                    var refreshedShow = await RefreshShowWithSslWarpRecoveryAsync(
+                        currentShow,
+                        autoRecoverOnSsl,
+                        () => warpOwnedByUs,
+                        owned => warpOwnedByUs = owned,
+                        cancellationToken);
+
+                    result.TmdbRefreshed++;
+                    if (enforceDailyBudget)
+                    {
+                        if (!budget.TryConsume(maxPerDay, nowLocal))
+                        {
+                            _logger.Warning(
+                                $"TMDB budget consume failed after successful refresh (used={budget.Used}/{maxPerDay}).",
+                                LogTarget.All);
+                        }
+
+                        remainingCap = budget.Remaining(maxPerDay, nowLocal);
+                        budgetMutated = true;
+                        _logger.Info(
+                            $"TMDB refresh ok for '{refreshedShow.DisplayTitle}'. Budget {budget.Used}/{maxPerDay} used, remaining={remainingCap}.",
+                            LogTarget.File | LogTarget.Console);
+                    }
+                    else
+                    {
+                        _logger.Info(
+                            $"TMDB refresh ok for '{refreshedShow.DisplayTitle}' (manual Run Now — budget unchanged).",
+                            LogTarget.File | LogTarget.Console);
+                    }
+
+                    var refreshedEpisodes = _trackedShowService.GetEpisodes(refreshedShow.Id);
+                    var weekKey = AutoTrackWeekAnchor.WeekKey(nowLocal);
+                    var hasPendingLatest = AutoTrackTmdbEligibility.HasPendingLatestEpisode(
                         refreshedShow,
                         refreshedEpisodes,
                         IsAutoTrackHuntBlocked,
                         nowLocal);
-                    if (latest is not null)
+
+                    AutoTrackTmdbState nextState;
+                    if (hasPendingLatest)
                     {
-                        NotifyStage(
-                            "Auto-Track",
-                            $"{refreshedShow.DisplayTitle} — New episode S{latest.SeasonNumber:00}E{latest.EpisodeNumber:00} detected.",
-                            refreshedShow);
+                        nextState = AutoTrackTmdbState.Active;
+                    }
+                    else if (refreshedShow.SeriesStatus == ShowSeriesStatus.Finished &&
+                             AutoTrackTmdbEligibility.IsFullyCaughtUp(refreshedShow, refreshedEpisodes))
+                    {
+                        nextState = AutoTrackTmdbState.FinishedComplete;
+                    }
+                    else if (refreshedShow.SeriesStatus == ShowSeriesStatus.Ongoing &&
+                             AutoTrackTmdbEligibility.IsFullyCaughtUp(refreshedShow, refreshedEpisodes))
+                    {
+                        nextState = AutoTrackTmdbState.DormantCaughtUp;
+                    }
+                    else
+                    {
+                        nextState = AutoTrackTmdbState.Active;
+                    }
+
+                    _databaseService.UpdateTrackedShowAutoTrackTmdbState(refreshedShow.Id, nextState, weekKey);
+
+                    if (hasPendingLatest)
+                    {
+                        var latest = AutoTrackTmdbEligibility.FindLatestPendingEpisode(
+                            refreshedShow,
+                            refreshedEpisodes,
+                            IsAutoTrackHuntBlocked,
+                            nowLocal);
+                        if (latest is not null)
+                        {
+                            NotifyStage(
+                                "Auto-Track",
+                                $"{refreshedShow.DisplayTitle} — New episode S{latest.SeasonNumber:00}E{latest.EpisodeNumber:00} detected.",
+                                refreshedShow);
+                        }
                     }
                 }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    result.Failed++;
+                    result.Succeeded = false;
+                    _logger.Warning($"Auto-track TMDB refresh failed for '{currentShow.DisplayTitle}': {ex.Message}", LogTarget.All);
+                }
             }
-            catch (Exception ex)
+
+            // New hunts run after TMDB checks: schedule-eligible pending episodes (or all if bypassAnchor).
+            var hunt = await RunTorrentHuntAsync(
+                cancellationToken,
+                resumeOnly: false,
+                bypassSchedule: bypassAnchor);
+            MergeHuntIntoDiscoveryResult(result, hunt);
+        }
+        finally
+        {
+            if (warpOwnedByUs)
             {
-                result.Failed++;
-                result.Succeeded = false;
-                _logger.Warning($"Auto-track TMDB refresh failed for '{currentShow.DisplayTitle}': {ex.Message}", LogTarget.All);
+                await _warpCliService.DisconnectAsync(cancellationToken);
             }
         }
 
-        // New hunts run after TMDB checks: schedule-eligible pending episodes (or all if bypassAnchor).
-        var hunt = await RunTorrentHuntAsync(
-            cancellationToken,
-            resumeOnly: false,
-            bypassSchedule: bypassAnchor);
-        MergeHuntIntoDiscoveryResult(result, hunt);
-
         result.Summary =
             $"TMDB refreshed={result.TmdbRefreshed}, hunt queued={result.EpisodesQueued}, candidates={result.CandidatesFound}, added={result.TorrentsAdded}, failed={result.Failed}.";
-        _logger.Info($"Auto-track TMDB discovery complete. {result.Summary}", LogTarget.All);
+        if (budgetMutated)
+        {
+            try
+            {
+                _settingsService.Save();
+            }
+            catch (IOException ex)
+            {
+                _logger.Warning($"Failed to persist TMDB daily budget after discovery: {ex.Message}. Retrying once.", LogTarget.All);
+                try
+                {
+                    _settingsService.Save();
+                }
+                catch (Exception retryEx)
+                {
+                    _logger.Warning($"TMDB daily budget persist retry failed: {retryEx.Message}", LogTarget.All);
+                }
+            }
+        }
+
+        if (result.TmdbRefreshed > 0 ||
+            result.EpisodesQueued > 0 ||
+            result.CandidatesFound > 0 ||
+            result.TorrentsAdded > 0 ||
+            result.Failed > 0)
+        {
+            _logger.Info($"Auto-track TMDB discovery complete. {result.Summary}", LogTarget.All);
+        }
+        else
+        {
+            _logger.Debug($"Auto-track TMDB discovery complete. {result.Summary}", LogTarget.File | LogTarget.Console);
+        }
+
         return result;
+    }
+
+    private async Task<TrackedShow> RefreshShowWithSslWarpRecoveryAsync(
+        TrackedShow show,
+        bool autoRecoverOnSsl,
+        Func<bool> getWarpOwned,
+        Action<bool> setWarpOwned,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _trackedShowService.RefreshShowAsync(show, cancellationToken);
+        }
+        catch (Exception ex) when (autoRecoverOnSsl && IsSslOrTlsError(ex))
+        {
+            _logger.Warning(
+                $"TMDB SSL/TLS error for '{show.DisplayTitle}': {ex.Message}. Attempting WARP self-recover.",
+                LogTarget.All);
+
+            if (!getWarpOwned())
+            {
+                var alreadyConnected = await _warpCliService.IsConnectedAsync(cancellationToken);
+                if (alreadyConnected)
+                {
+                    _logger.Info(
+                        "WARP already connected; Auto-Track SSL recover will leave the existing session open.",
+                        LogTarget.File | LogTarget.Console);
+                }
+                else
+                {
+                    var timeout = TimeSpan.FromSeconds(_settingsService.Current.Warp?.ConnectTimeoutSeconds ?? 30);
+                    var connected = await _warpCliService.ConnectAsync(timeout, cancellationToken);
+                    if (!connected)
+                    {
+                        _logger.Warning(
+                            "WARP connect for SSL self-recover failed or timed out. Re-throwing original TMDB error.",
+                            LogTarget.All);
+                        throw;
+                    }
+
+                    setWarpOwned(true);
+                }
+            }
+
+            _logger.Info($"Retrying TMDB refresh for '{show.DisplayTitle}' with WARP.", LogTarget.All);
+            return await _trackedShowService.RefreshShowAsync(show, cancellationToken);
+        }
+    }
+
+    private static bool IsSslOrTlsError(Exception exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is System.Security.Authentication.AuthenticationException)
+            {
+                return true;
+            }
+
+            if (current is System.IO.IOException or HttpRequestException)
+            {
+                var message = current.Message;
+                if (message.Contains("SSL", StringComparison.OrdinalIgnoreCase) ||
+                    message.Contains("TLS", StringComparison.OrdinalIgnoreCase) ||
+                    message.Contains("certificate", StringComparison.OrdinalIgnoreCase) ||
+                    message.Contains("secure channel", StringComparison.OrdinalIgnoreCase) ||
+                    message.Contains("schannel", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private static void MergeHuntIntoDiscoveryResult(AutoTrackRunResult discovery, AutoTrackRunResult hunt)
@@ -392,7 +563,18 @@ public sealed class AutoTrackService : IAutoTrackService
     private async Task<AutoTrackRunResult> RunBackgroundReconcileCoreAsync(CancellationToken cancellationToken)
     {
         var result = new AutoTrackRunResult { Succeeded = true };
-        var shows = _trackedShowService.GetAutoTrackedShows();
+        var pendingShowIds = GetPendingAutoTrackReconcileShowIds();
+        if (pendingShowIds.Count == 0)
+        {
+            result.Summary = "Reconcile skipped: no pending download queue.";
+            _logger.Info(result.Summary, LogTarget.File | LogTarget.Console);
+            return result;
+        }
+
+        var shows = _trackedShowService.GetAutoTrackedShows()
+            .Where(show => pendingShowIds.Contains(show.Id))
+            .ToList();
+
         foreach (var show in shows)
         {
             if (!show.AutoTrackAutoReconcileAndLink)
@@ -436,6 +618,50 @@ public sealed class AutoTrackService : IAutoTrackService
 
         result.Summary = $"Reconcile: shows={result.ShowsProcessed}, linked={result.LinkedCount}.";
         return result;
+    }
+
+    public bool HasPendingAutoTrackDownloadQueue()
+    {
+        return GetPendingAutoTrackReconcileShowIds().Count > 0;
+    }
+
+    private HashSet<long> GetPendingAutoTrackReconcileShowIds()
+    {
+        var pendingShowIds = new HashSet<long>();
+
+        foreach (var order in _databaseService.GetTorrentCartOrders())
+        {
+            if (order.Source != TorrentOrderSource.AutoTrack ||
+                order.TargetKind != MediaKind.TvEpisode)
+            {
+                continue;
+            }
+
+            if (order.Status is TorrentOrderStatus.AddedToClient or TorrentOrderStatus.Downloading)
+            {
+                pendingShowIds.Add(order.MediaId);
+            }
+        }
+
+        foreach (var show in _trackedShowService.GetAutoTrackedShows())
+        {
+            if (!show.AutoTrackAutoReconcileAndLink)
+            {
+                continue;
+            }
+
+            foreach (var episode in _trackedShowService.GetEpisodes(show.Id))
+            {
+                if (!string.IsNullOrWhiteSpace(episode.TorrentHash) &&
+                    episode.Availability != EpisodeAvailability.Available)
+                {
+                    pendingShowIds.Add(show.Id);
+                    break;
+                }
+            }
+        }
+
+        return pendingShowIds;
     }
 
     private async Task LinkReadyAutoTrackEpisodesAsync(TrackedShow show, CancellationToken cancellationToken)

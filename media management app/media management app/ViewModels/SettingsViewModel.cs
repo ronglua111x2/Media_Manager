@@ -204,6 +204,9 @@ public partial class SettingsViewModel : ViewModelBase
     private bool warpEnabled = true;
 
     [ObservableProperty]
+    private bool warpAutoRecoverOnSsl = true;
+
+    [ObservableProperty]
     private string? warpExecutablePath;
 
     [ObservableProperty]
@@ -915,6 +918,7 @@ public partial class SettingsViewModel : ViewModelBase
             AutoTrackMaxParallelWorkersPerShow = autoTrack.Search?.MaxParallelWorkersPerShow ?? 1;
             AutoTrackForceParallelEpisodeSearch = autoTrack.Search?.ForceParallelEpisodeSearch ?? true;
             WarpEnabled = _settingsService.Current.Warp.Enabled;
+            WarpAutoRecoverOnSsl = _settingsService.Current.Warp.AutoRecoverOnSsl;
             WarpExecutablePath = _settingsService.Current.Warp.ExecutablePath;
             WarpConnectTimeoutSeconds = _settingsService.Current.Warp.ConnectTimeoutSeconds;
             AutoTorrentDownloadFolders.Clear();
@@ -950,6 +954,7 @@ public partial class SettingsViewModel : ViewModelBase
     {
         _settingsService.Current.Warp ??= new WarpSettings();
         _settingsService.Current.Warp.Enabled = WarpEnabled;
+        _settingsService.Current.Warp.AutoRecoverOnSsl = WarpAutoRecoverOnSsl;
         _settingsService.Current.Warp.ExecutablePath = string.IsNullOrWhiteSpace(WarpExecutablePath)
             ? null
             : WarpExecutablePath.Trim();

@@ -23,5 +23,10 @@ public interface IAutoTrackService
 
     Task<AutoTrackRunResult> RunBackgroundReconcileAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// True when auto-track has cart orders downloading/added or episodes with a torrent hash not yet Available.
+    /// </summary>
+    bool HasPendingAutoTrackDownloadQueue();
+
     void RecordRunResult(AutoTrackRunResult result);
 }

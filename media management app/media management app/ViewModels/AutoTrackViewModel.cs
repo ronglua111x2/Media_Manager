@@ -76,6 +76,11 @@ public sealed partial class AutoTrackViewModel : ViewModelBase
         {
             StatusMessage = "Running auto-track...";
             var result = await _autoTrackService.RunAsync();
+            if (result.TorrentsAdded > 0)
+            {
+                _autoTrackSchedulerService.RequestReconcileAfterAdds();
+            }
+
             StatusMessage = result.Summary;
             RefreshDashboard();
         }
@@ -98,7 +103,7 @@ public sealed partial class AutoTrackViewModel : ViewModelBase
             ? "No runs yet."
             : autoTrack.LastRunSummary;
         SchedulerStatus = autoTrack.Enabled
-            ? $"TMDB every {Math.Clamp(autoTrack.TmdbCheckIntervalMinutes, 5, 1440)}m (then hunt if schedule OK) · Resume hunt every {Math.Clamp(autoTrack.TorrentHuntIntervalMinutes, 15, 1440)}m · Reconcile every {Math.Clamp(autoTrack.ReconcileIntervalMinutes, 5, 1440)}m · Hunt schedule {autoTrack.AnchorDayOfWeek} {autoTrack.AnchorTimeLocal}"
+            ? $"TMDB every {Math.Clamp(autoTrack.TmdbCheckIntervalMinutes, 5, 1440)}m (hunt only when pending episodes) · Reconcile poll while downloads pending every {Math.Clamp(autoTrack.ReconcileIntervalMinutes, 5, 1440)}m · Hunt schedule {autoTrack.AnchorDayOfWeek} {autoTrack.AnchorTimeLocal}"
             : "Scheduler disabled in settings";
         TmdbRefreshesRemainingLabel = BuildTmdbRefreshesRemainingLabel(autoTrack);
 
