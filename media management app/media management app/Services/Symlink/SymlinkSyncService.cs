@@ -106,6 +106,7 @@ public sealed class SymlinkSyncService : ISymlinkSyncService
             result.CreatedCount++;
         }
 
+        result.TouchedSymlinkPaths.Add(Path.GetFullPath(symlinkPath));
         result.Messages.Add($"Symlinked {canonicalItem.FileName}");
         return result;
     }
@@ -538,5 +539,12 @@ public sealed class SymlinkSyncService : ISymlinkSyncService
         aggregate.SkippedCount += itemResult.SkippedCount;
         aggregate.ErrorCount += itemResult.ErrorCount;
         aggregate.Messages.AddRange(itemResult.Messages);
+        foreach (var path in itemResult.TouchedSymlinkPaths)
+        {
+            if (!aggregate.TouchedSymlinkPaths.Contains(path, StringComparer.OrdinalIgnoreCase))
+            {
+                aggregate.TouchedSymlinkPaths.Add(path);
+            }
+        }
     }
 }

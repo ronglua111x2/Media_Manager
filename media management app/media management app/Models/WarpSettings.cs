@@ -9,8 +9,9 @@ public sealed class WarpSettings
     public int ConnectTimeoutSeconds { get; set; } = 30;
 
     /// <summary>
-    /// When true, Auto-Track TMDB refresh self-recovers on SSL/TLS errors by
-    /// connecting WARP for the rest of that cycle, then disconnecting.
+    /// When true, Auto-Track TMDB refresh and Jellyfin path-refresh pre-probe
+    /// self-recover on SSL/TLS errors by connecting WARP for that operation,
+    /// then disconnecting if this app owned the connect.
     /// Does not apply to Library or other non-auto-track TMDB calls.
     /// </summary>
     public bool AutoRecoverOnSsl { get; set; } = true;

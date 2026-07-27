@@ -501,6 +501,13 @@
                                                                       Minimum="1"
                                                                       Maximum="20" />
                                     </Border>
+                                    <TextBlock Text="Episodes per show per hunt cycle" Style="{StaticResource SettingsLabelStyle}" />
+                                    <Border Style="{StaticResource SettingsNumericChromeStyle}" Margin="0,0,0,8">
+                                        <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
+                                                                      Value="{Binding AutoTrackMaxEpisodesPerShowPerHuntCycle, UpdateSourceTrigger=PropertyChanged}"
+                                                                      Minimum="1"
+                                                                      Maximum="50" />
+                                    </Border>
                                     <CheckBox IsChecked="{Binding AutoTrackForceParallelEpisodeSearch, Mode=TwoWay}"
                                               Margin="0,0,0,8"
                                               Content="Force parallel episode search (no snapshot)" />
@@ -532,6 +539,27 @@
                                     <TextBlock Text="Allowed qualities (comma-separated, optional)" Style="{StaticResource SettingsLabelStyle}" />
                                     <TextBox Text="{Binding AutoTrackAllowedQualities, UpdateSourceTrigger=PropertyChanged}"
                                              Margin="0,0,0,8" />
+                                    <TextBlock Text="Jellyfin path refresh" Style="{StaticResource SettingsSectionTitleStyle}" Margin="0,8,0,8" />
+                                    <CheckBox IsChecked="{Binding AutoTrackJellyfinRefreshEnabled, Mode=TwoWay}"
+                                              Margin="0,0,0,8"
+                                              Content="Notify Jellyfin after Auto-Track symlink create/repair (path-based)" />
+                                    <TextBlock Style="{StaticResource SettingsHintStyle}" Margin="0,0,0,8"
+                                               Text="Uses Library/Media/Updated for new paths only. Skips episode-group shows (NFO). TMDB SSL uses WARP Auto-Recover when needed." />
+                                    <TextBlock Text="Jellyfin base URL" Style="{StaticResource SettingsLabelStyle}" />
+                                    <TextBox Text="{Binding AutoTrackJellyfinBaseUrl, UpdateSourceTrigger=PropertyChanged}"
+                                             Margin="0,0,0,8" />
+                                    <TextBlock Text="Jellyfin API key" Style="{StaticResource SettingsLabelStyle}" />
+                                    <TextBox Text="{Binding AutoTrackJellyfinApiKey, UpdateSourceTrigger=PropertyChanged}"
+                                             Margin="0,0,0,8" />
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                        <Button Command="{Binding TestJellyfinConnectionCommand}"
+                                                Content="Test Jellyfin"
+                                                Margin="0,0,8,0"
+                                                Style="{StaticResource MaterialDesignOutlinedButton}" />
+                                        <Button Command="{Binding FlushJellyfinRefreshQueueCommand}"
+                                                Content="Flush refresh queue"
+                                                Style="{StaticResource MaterialDesignOutlinedButton}" />
+                                    </StackPanel>
                                 </StackPanel>
                             </materialDesign:Card>
                         </StackPanel>

@@ -15,7 +15,7 @@ public sealed partial class AutoTrackShowCardViewModel : ObservableObject
     public AutoTrackShowCardViewModel(
         TrackedShow show,
         int pendingEpisodes,
-        TrackedEpisode? latestPendingEpisode,
+        IReadOnlyList<TrackedEpisode> huntBatchEpisodes,
         AutoTrackSettings settings,
         IReadOnlyList<string> downloadFolderOptions,
         ITrackedShowService trackedShowService,
@@ -53,7 +53,7 @@ public sealed partial class AutoTrackShowCardViewModel : ObservableObject
                                  string.Join(", ", settings.Quality?.AllowedQualities ?? []);
 
         TmdbStatusLine = BuildTmdbStatusLine(show, settings);
-        HuntStatusLine = BuildHuntStatusLine(show, latestPendingEpisode);
+        HuntStatusLine = BuildHuntStatusLine(show, huntBatchEpisodes);
         ScheduleStatusLine = BuildScheduleStatusLine();
 
         if (!string.IsNullOrWhiteSpace(DownloadFolder) &&
@@ -321,11 +321,12 @@ public sealed partial class AutoTrackShowCardViewModel : ObservableObject
         return $"Next TMDB: after {AutoTrackWeekAnchor.FormatEffectiveAnchor(show, settings)}";
     }
 
-    private static string BuildHuntStatusLine(TrackedShow show, TrackedEpisode? latestPendingEpisode)
+    private static string BuildHuntStatusLine(TrackedShow show, IReadOnlyList<TrackedEpisode> huntBatchEpisodes)
     {
-        if (latestPendingEpisode is not null)
+        var line = AutoTrackTmdbEligibility.FormatHuntStatusLine(huntBatchEpisodes);
+        if (!string.IsNullOrEmpty(line))
         {
-            return $"Hunting: S{latestPendingEpisode.SeasonNumber:00}E{latestPendingEpisode.EpisodeNumber:00}";
+            return line;
         }
 
         return show.AutoTrackTmdbState switch

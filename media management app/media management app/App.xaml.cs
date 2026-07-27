@@ -101,6 +101,7 @@ public partial class App : System.Windows.Application
         {
             _serviceProvider?.GetService<IAutoTrackSchedulerService>()?.Dispose();
             _serviceProvider?.GetService<ISymlinkCoordinatorService>()?.Dispose();
+            _serviceProvider?.GetService<IJellyfinLibraryRefreshService>()?.Dispose();
             _serviceProvider?.GetService<ILogCleanupService>()?.Dispose();
             _serviceProvider?.GetService<ITrayIconService>()?.Dispose();
         }
@@ -141,6 +142,8 @@ public partial class App : System.Windows.Application
         services.AddSingleton<ISymlinkService, SymlinkService>();
         services.AddSingleton<ISymlinkSyncService, SymlinkSyncService>();
         services.AddSingleton<INfoWriterService, NfoWriterService>();
+        services.AddSingleton<IJellyfinClient, JellyfinClient>();
+        services.AddSingleton<IJellyfinLibraryRefreshService, JellyfinLibraryRefreshService>();
         services.AddSingleton<ISymlinkCoordinatorService, SymlinkCoordinatorService>();
         services.AddSingleton<ISourceReconciliationService, SourceReconciliationService>();
         services.AddSingleton<IQbittorrentClient, QbittorrentClient>();

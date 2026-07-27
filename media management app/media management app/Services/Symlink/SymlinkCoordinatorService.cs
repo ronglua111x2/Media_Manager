@@ -15,6 +15,7 @@ public sealed class SymlinkCoordinatorService : ISymlinkCoordinatorService
     private readonly IPosterImageService _posterImageService;
     private readonly IWindowsNotificationService _windowsNotificationService;
     private readonly INfoWriterService _nfoWriterService;
+    private readonly IJellyfinLibraryRefreshService _jellyfinLibraryRefreshService;
     private readonly IAppLogger _logger;
     private readonly SemaphoreSlim _syncGate = new(1, 1);
     private readonly CancellationTokenSource _shutdown = new();
@@ -31,6 +32,7 @@ public sealed class SymlinkCoordinatorService : ISymlinkCoordinatorService
         IPosterImageService posterImageService,
         IWindowsNotificationService windowsNotificationService,
         INfoWriterService nfoWriterService,
+        IJellyfinLibraryRefreshService jellyfinLibraryRefreshService,
         IAppLogger logger)
     {
         _settingsService = settingsService;
@@ -40,6 +42,7 @@ public sealed class SymlinkCoordinatorService : ISymlinkCoordinatorService
         _posterImageService = posterImageService;
         _windowsNotificationService = windowsNotificationService;
         _nfoWriterService = nfoWriterService;
+        _jellyfinLibraryRefreshService = jellyfinLibraryRefreshService;
         _logger = logger;
 
         _eventHub.HardlinkCreated += OnHardlinkCreated;
@@ -61,6 +64,7 @@ public sealed class SymlinkCoordinatorService : ISymlinkCoordinatorService
         {
             var result = await Task.Run(_symlinkSyncService.ReconcileAll, cancellationToken);
             await Task.Run(WriteAndCleanupEpisodeGroupNfos, cancellationToken);
+            await NotifyJellyfinForTouchedPathsAsync(result, cancellationToken);
             return result;
         }
         finally
@@ -189,11 +193,50 @@ public sealed class SymlinkCoordinatorService : ISymlinkCoordinatorService
             if (result.CreatedCount > 0 || result.RepairedCount > 0)
             {
                 NotifySymlinkedItem(e.Item);
+                _jellyfinLibraryRefreshService.EnqueueFromSourceItem(e.Item);
             }
         }
         finally
         {
             _syncGate.Release();
+        }
+    }
+
+    private async Task NotifyJellyfinForTouchedPathsAsync(SymlinkSyncResult result, CancellationToken cancellationToken)
+    {
+        if (result.TouchedSymlinkPaths.Count == 0)
+        {
+            return;
+        }
+
+        var itemsBySymlink = _databaseService.GetSourceItems()
+            .Where(item => item.State == ItemState.Linked)
+            .Where(item => !string.IsNullOrWhiteSpace(item.SymlinkPath))
+            .GroupBy(item => Path.GetFullPath(item.SymlinkPath!), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+
+        foreach (var path in result.TouchedSymlinkPaths)
+        {
+            var normalized = Path.GetFullPath(path);
+            if (!itemsBySymlink.TryGetValue(normalized, out var item))
+            {
+                continue;
+            }
+
+            _jellyfinLibraryRefreshService.EnqueueFromSourceItem(item);
+        }
+
+        _logger.Info(
+            $"Jellyfin refresh after SyncNow: {result.TouchedSymlinkPaths.Count} touched symlink(s), flushing queue.",
+            LogTarget.All);
+
+        try
+        {
+            await _jellyfinLibraryRefreshService.FlushAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error("Jellyfin refresh after SyncNow failed.", ex, LogTarget.All);
         }
     }
 

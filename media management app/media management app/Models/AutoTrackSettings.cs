@@ -28,6 +28,8 @@ public sealed class AutoTrackSettings
 
     public AutoTrackSearchSettings Search { get; set; } = new();
 
+    public JellyfinRefreshSettings Jellyfin { get; set; } = new();
+
     public DateTime? LastRunUtc { get; set; }
 
     public string? LastRunSummary { get; set; }

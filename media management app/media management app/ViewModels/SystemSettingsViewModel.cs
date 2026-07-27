@@ -19,12 +19,13 @@ public sealed class SystemSettingsViewModel : SettingsViewModel
         IThemeService themeService,
         ISymlinkCoordinatorService symlinkCoordinatorService,
         ISymlinkService symlinkService,
+        IJellyfinLibraryRefreshService jellyfinLibraryRefreshService,
         HttpClient httpClient,
         IGeminiApiClient geminiApiClient,
         IGeminiModelCatalogService geminiModelCatalog,
         GeminiQuotaTracker geminiQuotaTracker,
         IAppLogger logger)
-        : base(settingsService, databaseService, libraryPathResolver, qbittorrentClient, warpCliService, windowsStartupService, trayIconService, windowsNotificationService, themeService, symlinkCoordinatorService, symlinkService, httpClient, geminiApiClient, geminiModelCatalog, geminiQuotaTracker, logger)
+        : base(settingsService, databaseService, libraryPathResolver, qbittorrentClient, warpCliService, windowsStartupService, trayIconService, windowsNotificationService, themeService, symlinkCoordinatorService, symlinkService, jellyfinLibraryRefreshService, httpClient, geminiApiClient, geminiModelCatalog, geminiQuotaTracker, logger)
     {
     }
 }

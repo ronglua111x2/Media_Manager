@@ -122,17 +122,20 @@ public sealed partial class AutoTrackViewModel : ViewModelBase
             var episodes = _trackedShowService.GetEpisodes(show.Id);
             var pending = CountPendingEpisodes(show, episodes);
             pendingTotal += pending;
-            var latestPending = AutoTrackTmdbEligibility.FindLatestPendingEpisode(
-                show,
-                episodes,
-                episodeId =>
-                    _torrentCartService.TryGetAutoTrackHuntBlockingEpisodeOrder(episodeId, out _) ||
-                    _torrentCartService.HasActiveManualEpisodeOrder(episodeId),
-                huntDelayHours: 0);
+            var maxEpisodesPerShow = Math.Clamp(autoTrack.Search?.MaxEpisodesPerShowPerHuntCycle ?? 5, 1, 50);
+            var huntBatch = AutoTrackTmdbEligibility.FindPendingEpisodes(
+                    show,
+                    episodes,
+                    episodeId =>
+                        _torrentCartService.TryGetAutoTrackHuntBlockingEpisodeOrder(episodeId, out _) ||
+                        _torrentCartService.HasActiveManualEpisodeOrder(episodeId),
+                    huntDelayHours: 0)
+                .Take(maxEpisodesPerShow)
+                .ToList();
             var card = new AutoTrackShowCardViewModel(
                 show,
                 pending,
-                latestPending,
+                huntBatch,
                 autoTrack,
                 folderOptions,
                 _trackedShowService);

@@ -323,7 +323,7 @@ public sealed class AutoTrackService : IAutoTrackService
         {
             if (warpOwnedByUs)
             {
-                await _warpCliService.DisconnectAsync(cancellationToken);
+                await _warpCliService.DisconnectAsync(CancellationToken.None);
             }
         }
 
@@ -376,7 +376,7 @@ public sealed class AutoTrackService : IAutoTrackService
         {
             return await _trackedShowService.RefreshShowAsync(show, cancellationToken);
         }
-        catch (Exception ex) when (autoRecoverOnSsl && IsSslOrTlsError(ex))
+        catch (Exception ex) when (autoRecoverOnSsl && SslTlsErrorDetector.IsSslOrTlsError(ex))
         {
             _logger.Warning(
                 $"TMDB SSL/TLS error for '{show.DisplayTitle}': {ex.Message}. Attempting WARP self-recover.",
@@ -384,58 +384,31 @@ public sealed class AutoTrackService : IAutoTrackService
 
             if (!getWarpOwned())
             {
-                var alreadyConnected = await _warpCliService.IsConnectedAsync(cancellationToken);
-                if (alreadyConnected)
+                var timeout = TimeSpan.FromSeconds(_settingsService.Current.Warp?.ConnectTimeoutSeconds ?? 30);
+                var attempt = await _warpCliService.ConnectOwnedAsync(timeout, cancellationToken);
+                if (!attempt.Connected)
+                {
+                    _logger.Warning(
+                        "WARP connect for SSL self-recover failed or timed out. Re-throwing original TMDB error.",
+                        LogTarget.All);
+                    throw;
+                }
+
+                if (attempt.Owned)
+                {
+                    setWarpOwned(true);
+                }
+                else
                 {
                     _logger.Info(
                         "WARP already connected; Auto-Track SSL recover will leave the existing session open.",
                         LogTarget.File | LogTarget.Console);
-                }
-                else
-                {
-                    var timeout = TimeSpan.FromSeconds(_settingsService.Current.Warp?.ConnectTimeoutSeconds ?? 30);
-                    var connected = await _warpCliService.ConnectAsync(timeout, cancellationToken);
-                    if (!connected)
-                    {
-                        _logger.Warning(
-                            "WARP connect for SSL self-recover failed or timed out. Re-throwing original TMDB error.",
-                            LogTarget.All);
-                        throw;
-                    }
-
-                    setWarpOwned(true);
                 }
             }
 
             _logger.Info($"Retrying TMDB refresh for '{show.DisplayTitle}' with WARP.", LogTarget.All);
             return await _trackedShowService.RefreshShowAsync(show, cancellationToken);
         }
-    }
-
-    private static bool IsSslOrTlsError(Exception exception)
-    {
-        for (var current = exception; current is not null; current = current.InnerException)
-        {
-            if (current is System.Security.Authentication.AuthenticationException)
-            {
-                return true;
-            }
-
-            if (current is System.IO.IOException or HttpRequestException)
-            {
-                var message = current.Message;
-                if (message.Contains("SSL", StringComparison.OrdinalIgnoreCase) ||
-                    message.Contains("TLS", StringComparison.OrdinalIgnoreCase) ||
-                    message.Contains("certificate", StringComparison.OrdinalIgnoreCase) ||
-                    message.Contains("secure channel", StringComparison.OrdinalIgnoreCase) ||
-                    message.Contains("schannel", StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
-            }
-        }
-
-        return false;
     }
 
     private static void MergeHuntIntoDiscoveryResult(AutoTrackRunResult discovery, AutoTrackRunResult hunt)
@@ -472,7 +445,7 @@ public sealed class AutoTrackService : IAutoTrackService
         {
             result.Summary = resumeOnly
                 ? "No CandidatesFound orders to resume."
-                : "No pending latest episodes to hunt.";
+                : "No pending episodes to hunt.";
             return result;
         }
 
@@ -480,7 +453,7 @@ public sealed class AutoTrackService : IAutoTrackService
         var batch = huntQueue.Take(batchSize).ToList();
         var pendingOrdersByShow = new Dictionary<long, (TrackedShow Show, List<TorrentCartOrder> Orders)>();
 
-        foreach (var (show, latestEpisode) in batch)
+        foreach (var (show, episodesToHunt) in batch)
         {
             cancellationToken.ThrowIfCancellationRequested();
             result.ShowsProcessed++;
@@ -491,57 +464,62 @@ public sealed class AutoTrackService : IAutoTrackService
                 continue;
             }
 
-            TorrentCartOrder? order = null;
-            try
+            var orders = new List<TorrentCartOrder>();
+            foreach (var episode in episodesToHunt)
             {
-                if (_torrentCartService.TryGetAutoTrackHuntBlockingEpisodeOrder(latestEpisode.Id, out var blockingOrder))
+                TorrentCartOrder? order = null;
+                try
                 {
-                    if (TryResumeAutoTrackCandidatesFoundOrder(show, blockingOrder, out order))
+                    if (_torrentCartService.TryGetAutoTrackHuntBlockingEpisodeOrder(episode.Id, out var blockingOrder))
                     {
-                        pendingOrdersByShow[show.Id] = (show, [order]);
-                        result.EpisodesQueued++;
-                        NotifyStage(
-                            "Auto-Track",
-                            $"{show.DisplayTitle} — Resuming accept/add for {order.Title}.",
-                            show);
+                        if (TryResumeAutoTrackCandidatesFoundOrder(show, blockingOrder, out order))
+                        {
+                            orders.Add(order);
+                            result.EpisodesQueued++;
+                            NotifyStage(
+                                "Auto-Track",
+                                $"{show.DisplayTitle} — Resuming accept/add for {order.Title}.",
+                                show);
+                        }
+
+                        continue;
                     }
 
-                    continue;
-                }
+                    if (resumeOnly)
+                    {
+                        continue;
+                    }
 
-                if (resumeOnly)
+                    order = _torrentCartService.PrepareAutoTrackEpisodeOrder(
+                        show.Id,
+                        episode.Id,
+                        episode.SeasonNumber,
+                        episode.EpisodeNumber,
+                        episode.Title);
+                    orders.Add(order);
+                    result.EpisodesQueued++;
+                }
+                catch (InvalidOperationException ex) when (ex.Message.Contains("manual cart order", StringComparison.OrdinalIgnoreCase))
                 {
-                    continue;
+                    _logger.Info(
+                        $"Auto-track skipped S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00} for '{show.DisplayTitle}': manual cart order in progress.",
+                        LogTarget.All);
                 }
-
-                order = _torrentCartService.PrepareAutoTrackEpisodeOrder(
-                    show.Id,
-                    latestEpisode.Id,
-                    latestEpisode.SeasonNumber,
-                    latestEpisode.EpisodeNumber,
-                    latestEpisode.Title);
-                result.EpisodesQueued++;
-            }
-            catch (InvalidOperationException ex) when (ex.Message.Contains("manual cart order", StringComparison.OrdinalIgnoreCase))
-            {
-                _logger.Info(
-                    $"Auto-track skipped S{latestEpisode.SeasonNumber:00}E{latestEpisode.EpisodeNumber:00} for '{show.DisplayTitle}': manual cart order in progress.",
-                    LogTarget.All);
-            }
-            catch (Exception ex)
-            {
-                result.Failed++;
-                _logger.Warning(
-                    $"Auto-track failed to queue S{latestEpisode.SeasonNumber:00}E{latestEpisode.EpisodeNumber:00} for '{show.DisplayTitle}': {ex.Message}",
-                    LogTarget.All);
+                catch (Exception ex)
+                {
+                    result.Failed++;
+                    _logger.Warning(
+                        $"Auto-track failed to queue S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00} for '{show.DisplayTitle}': {ex.Message}",
+                        LogTarget.All);
+                }
             }
 
-            if (order is not null)
+            if (orders.Count > 0)
             {
-                pendingOrdersByShow[show.Id] = (show, [order]);
+                pendingOrdersByShow[show.Id] = (show, orders);
                 NotifyStage(
                     "Auto-Track",
-                    $"{show.DisplayTitle} — Hunting S{latestEpisode.SeasonNumber:00}E{latestEpisode.EpisodeNumber:00}.",
+                    $"{show.DisplayTitle} — {FormatHuntBatchStage(episodesToHunt)}.",
                     show);
             }
         }
@@ -700,15 +678,16 @@ public sealed class AutoTrackService : IAutoTrackService
         }
     }
 
-    private List<(TrackedShow Show, TrackedEpisode Episode)> BuildHuntQueue(
+    private List<(TrackedShow Show, IReadOnlyList<TrackedEpisode> Episodes)> BuildHuntQueue(
         IReadOnlyList<TrackedShow> shows,
         bool bypassSchedule,
         bool resumeOnly)
     {
         var settings = GetAutoTrackSettings();
         var huntDelayHours = Math.Clamp(settings.HuntMinHoursAfterAirDate, 0, 48);
+        var maxEpisodesPerShow = Math.Clamp(settings.Search.MaxEpisodesPerShowPerHuntCycle, 1, 50);
         var nowLocal = DateTime.Now;
-        var queue = new List<(TrackedShow Show, TrackedEpisode Episode)>();
+        var queue = new List<(TrackedShow Show, IReadOnlyList<TrackedEpisode> Episodes)>();
         foreach (var show in shows.OrderBy(item => item.Title, StringComparer.OrdinalIgnoreCase))
         {
             if (string.IsNullOrWhiteSpace(show.AutoTrackDownloadFolder))
@@ -724,31 +703,47 @@ public sealed class AutoTrackService : IAutoTrackService
             }
 
             var episodes = _trackedShowService.GetEpisodes(show.Id);
-            var latest = AutoTrackTmdbEligibility.FindLatestPendingEpisode(
+            var pending = AutoTrackTmdbEligibility.FindPendingEpisodes(
                 show,
                 episodes,
                 IsAutoTrackHuntBlocked,
                 nowLocal,
                 resumeOnly ? 0 : huntDelayHours);
-            if (latest is null)
+            if (pending.Count == 0)
             {
                 continue;
             }
 
+            List<TrackedEpisode> batch;
             if (resumeOnly)
             {
-                if (!_torrentCartService.TryGetAutoTrackHuntBlockingEpisodeOrder(latest.Id, out var blocking) ||
-                    blocking is null ||
-                    blocking.Status != TorrentOrderStatus.CandidatesFound)
+                batch = pending
+                    .Where(episode =>
+                        _torrentCartService.TryGetAutoTrackHuntBlockingEpisodeOrder(episode.Id, out var blocking) &&
+                        blocking is not null &&
+                        blocking.Status == TorrentOrderStatus.CandidatesFound)
+                    .Take(maxEpisodesPerShow)
+                    .ToList();
+                if (batch.Count == 0)
                 {
                     continue;
                 }
             }
+            else
+            {
+                batch = pending.Take(maxEpisodesPerShow).ToList();
+            }
 
-            queue.Add((show, latest));
+            queue.Add((show, batch));
         }
 
         return queue;
+    }
+
+    private static string FormatHuntBatchStage(IReadOnlyList<TrackedEpisode> episodes)
+    {
+        var line = AutoTrackTmdbEligibility.FormatHuntStatusLine(episodes);
+        return string.IsNullOrEmpty(line) ? "No pending hunt" : line.Replace("Hunting: ", "Hunting ", StringComparison.Ordinal);
     }
 
     private async Task RunFetchAndAddPhaseAsync(
@@ -767,19 +762,25 @@ public sealed class AutoTrackService : IAutoTrackService
         var warpEnabled = _settingsService.Current.Warp?.Enabled ?? true;
         if (warpEnabled && _warpCliService.IsAvailable)
         {
-            var wasAlreadyConnected = await _warpCliService.IsConnectedAsync(cancellationToken);
-            if (wasAlreadyConnected)
+            var timeout = TimeSpan.FromSeconds(_settingsService.Current.Warp?.ConnectTimeoutSeconds ?? 30);
+            var attempt = await _warpCliService.ConnectOwnedAsync(timeout, cancellationToken);
+            warpOwnedByUs = attempt.Owned;
+            if (!attempt.Connected)
             {
-                _logger.Info("WARP already connected; Auto-Track will leave the existing session open.", LogTarget.File | LogTarget.Console);
+                _logger.Warning("Auto-track continuing without WARP (connect failed or timed out).", LogTarget.All);
+            }
+            else if (attempt.Owned)
+            {
+                var orderCount = pendingOrdersByShow.Sum(entry => entry.Value.Orders.Count);
+                _logger.Info(
+                    $"WARP connected for hunt fetch/add ({pendingOrdersByShow.Count} show(s), {orderCount} order(s)).",
+                    LogTarget.File | LogTarget.Console);
             }
             else
             {
-                var timeout = TimeSpan.FromSeconds(_settingsService.Current.Warp?.ConnectTimeoutSeconds ?? 30);
-                warpOwnedByUs = await _warpCliService.ConnectAsync(timeout, cancellationToken);
-                if (!warpOwnedByUs)
-                {
-                    _logger.Warning("Auto-track continuing without WARP (connect failed or timed out).", LogTarget.All);
-                }
+                _logger.Info(
+                    "WARP already connected; Auto-Track hunt will reuse the existing session (not owned).",
+                    LogTarget.File | LogTarget.Console);
             }
         }
 
@@ -1019,7 +1020,11 @@ public sealed class AutoTrackService : IAutoTrackService
         {
             if (warpOwnedByUs)
             {
-                await _warpCliService.DisconnectAsync(cancellationToken);
+                var orderCount = pendingOrdersByShow.Sum(entry => entry.Value.Orders.Count);
+                _logger.Info(
+                    $"Disconnecting WARP after hunt fetch/add ({pendingOrdersByShow.Count} show(s), {orderCount} order(s)).",
+                    LogTarget.File | LogTarget.Console);
+                await _warpCliService.DisconnectAsync(CancellationToken.None);
             }
         }
     }
@@ -1099,7 +1104,10 @@ public sealed class AutoTrackService : IAutoTrackService
     private AutoTrackSettings GetAutoTrackSettings()
     {
         _settingsService.Current.AutoTrack ??= new AutoTrackSettings();
-        return _settingsService.Current.AutoTrack;
+        var autoTrack = _settingsService.Current.AutoTrack;
+        autoTrack.Search ??= new AutoTrackSearchSettings();
+        autoTrack.Quality ??= new AutoTrackQualityPolicy();
+        return autoTrack;
     }
 
     private static AutoTrackRunResult SkippedResult(string summary)

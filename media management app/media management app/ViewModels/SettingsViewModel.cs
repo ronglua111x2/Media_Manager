@@ -26,6 +26,7 @@ public partial class SettingsViewModel : ViewModelBase
     private readonly IThemeService _themeService;
     private readonly ISymlinkCoordinatorService _symlinkCoordinatorService;
     private readonly ISymlinkService _symlinkService;
+    private readonly IJellyfinLibraryRefreshService _jellyfinLibraryRefreshService;
     private readonly HttpClient _httpClient;
     private readonly IGeminiApiClient _geminiApiClient;
     private readonly IGeminiModelCatalogService _geminiModelCatalog;
@@ -195,10 +196,22 @@ public partial class SettingsViewModel : ViewModelBase
     private int autoTrackMaxShowsPerHuntCycle = 3;
 
     [ObservableProperty]
+    private int autoTrackMaxEpisodesPerShowPerHuntCycle = 5;
+
+    [ObservableProperty]
     private int autoTrackMaxParallelWorkersPerShow = 1;
 
     [ObservableProperty]
     private bool autoTrackForceParallelEpisodeSearch = true;
+
+    [ObservableProperty]
+    private bool autoTrackJellyfinRefreshEnabled;
+
+    [ObservableProperty]
+    private string autoTrackJellyfinBaseUrl = "http://127.0.0.1:8096";
+
+    [ObservableProperty]
+    private string? autoTrackJellyfinApiKey;
 
     [ObservableProperty]
     private bool warpEnabled = true;
@@ -256,6 +269,7 @@ public partial class SettingsViewModel : ViewModelBase
         IThemeService themeService,
         ISymlinkCoordinatorService symlinkCoordinatorService,
         ISymlinkService symlinkService,
+        IJellyfinLibraryRefreshService jellyfinLibraryRefreshService,
         HttpClient httpClient,
         IGeminiApiClient geminiApiClient,
         IGeminiModelCatalogService geminiModelCatalog,
@@ -273,6 +287,7 @@ public partial class SettingsViewModel : ViewModelBase
         _themeService = themeService;
         _symlinkCoordinatorService = symlinkCoordinatorService;
         _symlinkService = symlinkService;
+        _jellyfinLibraryRefreshService = jellyfinLibraryRefreshService;
         _httpClient = httpClient;
         _geminiApiClient = geminiApiClient;
         _geminiModelCatalog = geminiModelCatalog;
@@ -623,6 +638,42 @@ public partial class SettingsViewModel : ViewModelBase
     }
 
     [RelayCommand]
+    private async Task TestJellyfinConnection()
+    {
+        ApplyAutoTrackSettings();
+        try
+        {
+            StatusMessage = "Testing Jellyfin connection...";
+            var summary = await _jellyfinLibraryRefreshService.TestConnectionAsync();
+            StatusMessage = $"Jellyfin OK: {summary}. Save settings to persist changes.";
+            _logger.Info(StatusMessage, LogTarget.All);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Jellyfin connection failed: {ex.Message}";
+            _logger.Error("Jellyfin connection test failed.", ex, LogTarget.All);
+        }
+    }
+
+    [RelayCommand]
+    private async Task FlushJellyfinRefreshQueue()
+    {
+        ApplyAutoTrackSettings();
+        try
+        {
+            StatusMessage = "Flushing Jellyfin path refresh queue...";
+            await _jellyfinLibraryRefreshService.FlushAsync();
+            StatusMessage = "Jellyfin path refresh flush finished. See logs for details.";
+            _logger.Info(StatusMessage, LogTarget.All);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Jellyfin path refresh flush failed: {ex.Message}";
+            _logger.Error("Jellyfin path refresh flush failed.", ex, LogTarget.All);
+        }
+    }
+
+    [RelayCommand]
     private void BrowseAutoTorrentDownloadFolder()
     {
         var selected = BrowseFolder(AutoTorrentDownloadFolder, "Select Auto Torrent download folder");
@@ -915,8 +966,15 @@ public partial class SettingsViewModel : ViewModelBase
             AutoTrackMaxFileSizeMb = autoTrack.Quality?.MaxFileSizeMb ?? 0;
             AutoTrackAllowedQualities = string.Join(", ", autoTrack.Quality?.AllowedQualities ?? []);
             AutoTrackMaxShowsPerHuntCycle = autoTrack.Search?.MaxShowsPerHuntCycle ?? 3;
+            AutoTrackMaxEpisodesPerShowPerHuntCycle = autoTrack.Search?.MaxEpisodesPerShowPerHuntCycle ?? 5;
             AutoTrackMaxParallelWorkersPerShow = autoTrack.Search?.MaxParallelWorkersPerShow ?? 1;
             AutoTrackForceParallelEpisodeSearch = autoTrack.Search?.ForceParallelEpisodeSearch ?? true;
+            var jellyfin = autoTrack.Jellyfin ?? new JellyfinRefreshSettings();
+            AutoTrackJellyfinRefreshEnabled = jellyfin.Enabled;
+            AutoTrackJellyfinBaseUrl = string.IsNullOrWhiteSpace(jellyfin.BaseUrl)
+                ? "http://127.0.0.1:8096"
+                : jellyfin.BaseUrl;
+            AutoTrackJellyfinApiKey = jellyfin.ApiKey;
             WarpEnabled = _settingsService.Current.Warp.Enabled;
             WarpAutoRecoverOnSsl = _settingsService.Current.Warp.AutoRecoverOnSsl;
             WarpExecutablePath = _settingsService.Current.Warp.ExecutablePath;
@@ -1169,8 +1227,18 @@ public partial class SettingsViewModel : ViewModelBase
             : AutoTrackAllowedQualities.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
         autoTrack.Search ??= new AutoTrackSearchSettings();
         autoTrack.Search.MaxShowsPerHuntCycle = Math.Clamp(AutoTrackMaxShowsPerHuntCycle, 1, 20);
+        autoTrack.Search.MaxEpisodesPerShowPerHuntCycle = Math.Clamp(AutoTrackMaxEpisodesPerShowPerHuntCycle, 1, 50);
         autoTrack.Search.MaxParallelWorkersPerShow = Math.Clamp(AutoTrackMaxParallelWorkersPerShow, 1, 4);
         autoTrack.Search.ForceParallelEpisodeSearch = AutoTrackForceParallelEpisodeSearch;
+        autoTrack.Jellyfin ??= new JellyfinRefreshSettings();
+        autoTrack.Jellyfin.Enabled = AutoTrackJellyfinRefreshEnabled;
+        autoTrack.Jellyfin.BaseUrl = string.IsNullOrWhiteSpace(AutoTrackJellyfinBaseUrl)
+            ? "http://127.0.0.1:8096"
+            : AutoTrackJellyfinBaseUrl.Trim().TrimEnd('/');
+        autoTrack.Jellyfin.ApiKey = string.IsNullOrWhiteSpace(AutoTrackJellyfinApiKey)
+            ? null
+            : AutoTrackJellyfinApiKey.Trim();
+        AutoTrackJellyfinBaseUrl = autoTrack.Jellyfin.BaseUrl;
 
         AutoTrackAnchorDay = autoTrack.AnchorDayOfWeek;
         AutoTrackAnchorTimeLocal = autoTrack.AnchorTimeLocal;
@@ -1182,6 +1250,7 @@ public partial class SettingsViewModel : ViewModelBase
         AutoTrackMaxTmdbRefreshesPerDay = autoTrack.MaxTmdbRefreshesPerDay;
         AutoTrackMinSeeders = autoTrack.Quality.MinSeeders;
         AutoTrackMaxShowsPerHuntCycle = autoTrack.Search.MaxShowsPerHuntCycle;
+        AutoTrackMaxEpisodesPerShowPerHuntCycle = autoTrack.Search.MaxEpisodesPerShowPerHuntCycle;
         AutoTrackMaxParallelWorkersPerShow = autoTrack.Search.MaxParallelWorkersPerShow;
     }
 

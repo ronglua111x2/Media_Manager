@@ -74,7 +74,7 @@ public static class AutoTrackTmdbEligibility
         DateTime? nowLocal = null,
         int huntDelayHours = 0)
     {
-        return FindLatestPendingEpisode(show, episodes, hasActiveCartOrder, nowLocal, huntDelayHours) is not null;
+        return FindPendingEpisodes(show, episodes, hasActiveCartOrder, nowLocal, huntDelayHours).Count > 0;
     }
 
     public static TrackedEpisode? FindLatestPendingEpisode(
@@ -84,9 +84,20 @@ public static class AutoTrackTmdbEligibility
         DateTime? nowLocal = null,
         int huntDelayHours = 0)
     {
+        var pending = FindPendingEpisodes(show, episodes, hasActiveCartOrder, nowLocal, huntDelayHours);
+        return pending.Count == 0 ? null : pending[^1];
+    }
+
+    public static IReadOnlyList<TrackedEpisode> FindPendingEpisodes(
+        TrackedShow show,
+        IReadOnlyList<TrackedEpisode> episodes,
+        Func<long, bool> hasActiveCartOrder,
+        DateTime? nowLocal = null,
+        int huntDelayHours = 0)
+    {
         if (!show.IsAutoTracked)
         {
-            return null;
+            return [];
         }
 
         var fromSeason = show.AutoTrackFromSeason!.Value;
@@ -100,14 +111,31 @@ public static class AutoTrackTmdbEligibility
             .Where(episode => episode.Availability == EpisodeAvailability.Missing)
             .Where(episode => string.IsNullOrWhiteSpace(episode.TorrentHash))
             .Where(episode => !hasActiveCartOrder(episode.Id))
-            .OrderByDescending(episode => episode.SeasonNumber)
-            .ThenByDescending(episode => episode.EpisodeNumber)
-            .FirstOrDefault();
+            .OrderBy(episode => episode.SeasonNumber)
+            .ThenBy(episode => episode.EpisodeNumber)
+            .ToList();
     }
 
     private static bool IsAtOrAfterCheckpoint(TrackedEpisode episode, int fromSeason, int fromEpisode)
     {
         return episode.SeasonNumber > fromSeason ||
                (episode.SeasonNumber == fromSeason && episode.EpisodeNumber >= fromEpisode);
+    }
+
+    public static string FormatHuntStatusLine(IReadOnlyList<TrackedEpisode> episodes)
+    {
+        if (episodes.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var first = episodes[0];
+        if (episodes.Count == 1)
+        {
+            return $"Hunting: S{first.SeasonNumber:00}E{first.EpisodeNumber:00}";
+        }
+
+        var last = episodes[^1];
+        return $"Hunting: S{first.SeasonNumber:00}E{first.EpisodeNumber:00}–S{last.SeasonNumber:00}E{last.EpisodeNumber:00} ({episodes.Count})";
     }
 }

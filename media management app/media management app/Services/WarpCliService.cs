@@ -34,10 +34,16 @@ public sealed class WarpCliService : IWarpCliService
 
     public async Task<bool> ConnectAsync(TimeSpan timeout, CancellationToken ct = default)
     {
+        var attempt = await ConnectOwnedAsync(timeout, ct);
+        return attempt.Connected;
+    }
+
+    public async Task<WarpConnectAttempt> ConnectOwnedAsync(TimeSpan timeout, CancellationToken ct = default)
+    {
         if (!IsAvailable)
         {
             _logger.Warning($"WARP CLI not available at {ResolvedExecutablePath}.", LogTarget.All);
-            return false;
+            return new WarpConnectAttempt(false, false);
         }
 
         try
@@ -45,7 +51,7 @@ public sealed class WarpCliService : IWarpCliService
             if (await IsConnectedAsync(ct))
             {
                 _logger.Info("WARP is already connected.", LogTarget.File | LogTarget.Console);
-                return true;
+                return new WarpConnectAttempt(true, false);
             }
 
             _logger.Info("Connecting WARP via warp-cli...", LogTarget.All);
@@ -59,7 +65,7 @@ public sealed class WarpCliService : IWarpCliService
                 if (await IsConnectedAsync(ct))
                 {
                     _logger.Info("WARP connected.", LogTarget.All);
-                    return true;
+                    return new WarpConnectAttempt(true, true);
                 }
 
                 var remaining = deadline - DateTime.UtcNow;
@@ -74,7 +80,7 @@ public sealed class WarpCliService : IWarpCliService
             }
 
             _logger.Warning($"WARP connect timed out after {timeout.TotalSeconds:0}s.", LogTarget.All);
-            return false;
+            return new WarpConnectAttempt(false, false);
         }
         catch (OperationCanceledException)
         {
@@ -83,7 +89,7 @@ public sealed class WarpCliService : IWarpCliService
         catch (Exception ex)
         {
             _logger.Warning($"WARP connect failed: {ex.Message}", LogTarget.All);
-            return false;
+            return new WarpConnectAttempt(false, false);
         }
     }
 
