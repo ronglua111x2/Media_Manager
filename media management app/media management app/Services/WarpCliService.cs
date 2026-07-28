@@ -11,11 +11,16 @@ public sealed class WarpCliService : IWarpCliService
     private const int StatusPollIntervalMilliseconds = 2000;
 
     private readonly ISettingsService _settingsService;
+    private readonly IWindowsNotificationService _windowsNotificationService;
     private readonly IAppLogger _logger;
 
-    public WarpCliService(ISettingsService settingsService, IAppLogger logger)
+    public WarpCliService(
+        ISettingsService settingsService,
+        IWindowsNotificationService windowsNotificationService,
+        IAppLogger logger)
     {
         _settingsService = settingsService;
+        _windowsNotificationService = windowsNotificationService;
         _logger = logger;
     }
 
@@ -65,6 +70,12 @@ public sealed class WarpCliService : IWarpCliService
                 if (await IsConnectedAsync(ct))
                 {
                     _logger.Info("WARP connected.", LogTarget.All);
+                    _windowsNotificationService.TryShow(new WindowsNotificationRequest
+                    {
+                        Title = "WARP",
+                        Message = "Connected.",
+                        Kind = NotificationKind.WarpRecovered
+                    });
                     return new WarpConnectAttempt(true, true);
                 }
 
@@ -108,6 +119,12 @@ public sealed class WarpCliService : IWarpCliService
             _logger.Info(
                 $"WARP disconnect completed (exit {result.ExitCode}). Output: {result.Output.Trim()}",
                 LogTarget.File | LogTarget.Console);
+            _windowsNotificationService.TryShow(new WindowsNotificationRequest
+            {
+                Title = "WARP",
+                Message = "Disconnected.",
+                Kind = NotificationKind.WarpDisconnected
+            });
         }
         catch (OperationCanceledException)
         {

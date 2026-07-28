@@ -18,6 +18,8 @@ public sealed class AppSettings
 
     public UiSettings Ui { get; set; } = new();
 
+    public NotificationSettings Notifications { get; set; } = new();
+
     public List<string> SourceFolders { get; set; } = [];
 
     public LibraryRootMode LibraryRootMode { get; set; } = LibraryRootMode.AutoPerDrive;

@@ -7,12 +7,17 @@ namespace media_management_app.Services;
 
 public sealed class WindowsNotificationService : IWindowsNotificationService
 {
+    private readonly ISettingsService _settingsService;
     private readonly ITrayIconService _trayIconService;
     private readonly IAppLogger _logger;
     private bool _initialized;
 
-    public WindowsNotificationService(ITrayIconService trayIconService, IAppLogger logger)
+    public WindowsNotificationService(
+        ISettingsService settingsService,
+        ITrayIconService trayIconService,
+        IAppLogger logger)
     {
+        _settingsService = settingsService;
         _trayIconService = trayIconService;
         _logger = logger;
     }
@@ -35,7 +40,8 @@ public sealed class WindowsNotificationService : IWindowsNotificationService
         {
             Title = title,
             Message = message,
-            Tag = tag
+            Tag = tag,
+            Kind = NotificationKind.Test
         });
     }
 
@@ -44,6 +50,14 @@ public sealed class WindowsNotificationService : IWindowsNotificationService
         if (!_initialized)
         {
             Initialize();
+        }
+
+        if (!NotificationCatalog.IsEnabled(_settingsService.Current.Notifications, request.Kind))
+        {
+            _logger.Debug(
+                $"Windows notification skipped (disabled). Kind='{request.Kind}', Title='{request.Title}'.",
+                LogTarget.File | LogTarget.Console);
+            return false;
         }
 
         var safeTitle = string.IsNullOrWhiteSpace(request.Title) ? "Media Manager" : request.Title.Trim();
@@ -78,7 +92,7 @@ public sealed class WindowsNotificationService : IWindowsNotificationService
             });
 
             _logger.Info(
-                $"Windows notification sent. Title='{safeTitle}', Tag='{tag}', Group='{group}', HeroImage='{request.HeroImagePathOrUrl ?? "(none)"}'.",
+                $"Windows notification sent. Kind='{request.Kind}', Title='{safeTitle}', Tag='{tag}', Group='{group}', HeroImage='{request.HeroImagePathOrUrl ?? "(none)"}'.",
                 LogTarget.All);
             return true;
         }

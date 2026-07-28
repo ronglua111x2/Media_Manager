@@ -243,6 +243,8 @@ public partial class SettingsViewModel : ViewModelBase
     [ObservableProperty]
     private string notificationTestImagePathOrUrl = string.Empty;
 
+    public ObservableCollection<NotificationPreferenceItemViewModel> NotificationPreferences { get; } = [];
+
     [ObservableProperty]
     private string? selectedSourceFolder;
 
@@ -394,6 +396,7 @@ public partial class SettingsViewModel : ViewModelBase
         ApplyAutoTrackSettings();
         ApplyUiSettings();
         ApplySymlinkSettings();
+        ApplyNotificationSettings();
         _settingsService.Save();
         try
         {
@@ -423,6 +426,7 @@ public partial class SettingsViewModel : ViewModelBase
         {
             Title = title,
             Message = message,
+            Kind = NotificationKind.Test,
             Tag = null,
             HeroImagePathOrUrl = string.IsNullOrWhiteSpace(NotificationTestImagePathOrUrl)
                 ? null
@@ -979,6 +983,7 @@ public partial class SettingsViewModel : ViewModelBase
             WarpAutoRecoverOnSsl = _settingsService.Current.Warp.AutoRecoverOnSsl;
             WarpExecutablePath = _settingsService.Current.Warp.ExecutablePath;
             WarpConnectTimeoutSeconds = _settingsService.Current.Warp.ConnectTimeoutSeconds;
+            LoadNotificationPreferences();
             AutoTorrentDownloadFolders.Clear();
             foreach (var folder in _settingsService.Current.AutoTorrent.DownloadFolders)
             {
@@ -1186,6 +1191,32 @@ public partial class SettingsViewModel : ViewModelBase
         _settingsService.Current.Startup.RunAtStartup = RunAtStartup;
         _settingsService.Current.Startup.StartMinimized = StartMinimized;
         _settingsService.Current.Startup.CloseToTray = CloseToTray;
+    }
+
+    private void LoadNotificationPreferences()
+    {
+        var settings = _settingsService.Current.Notifications ??= new NotificationSettings();
+        NotificationPreferences.Clear();
+        foreach (var definition in NotificationCatalog.Preferences)
+        {
+            NotificationPreferences.Add(new NotificationPreferenceItemViewModel(
+                definition.Kind,
+                definition.Title,
+                definition.Description,
+                NotificationCatalog.IsEnabled(settings, definition.Kind)));
+        }
+    }
+
+    private void ApplyNotificationSettings()
+    {
+        _settingsService.Current.Notifications ??= new NotificationSettings();
+        var map = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in NotificationPreferences)
+        {
+            map[item.Kind.ToString()] = item.IsEnabled;
+        }
+
+        _settingsService.Current.Notifications.EnabledByKind = map;
     }
 
     private void ApplyUiSettings()

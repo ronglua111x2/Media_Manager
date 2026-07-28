@@ -248,6 +248,7 @@ public sealed class SymlinkCoordinatorService : ISymlinkCoordinatorService
         {
             Title = "Media Manager",
             Message = message,
+            Kind = NotificationKind.SymlinkCreated,
             HeroImagePathOrUrl = poster,
             AppLogoOverridePathOrUrl = poster
         });

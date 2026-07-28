@@ -111,6 +111,15 @@ public sealed class SettingsService : ISettingsService
         Current.Logs ??= new LogSettings();
         Current.Startup ??= new AppStartupSettings();
         Current.Ui ??= new UiSettings();
+        Current.Notifications ??= new NotificationSettings();
+        Current.Notifications.EnabledByKind ??= new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        if (!ReferenceEquals(Current.Notifications.EnabledByKind.Comparer, StringComparer.OrdinalIgnoreCase))
+        {
+            Current.Notifications.EnabledByKind = new Dictionary<string, bool>(
+                Current.Notifications.EnabledByKind,
+                StringComparer.OrdinalIgnoreCase);
+        }
+
         Current.Logs.MaxLinesPerFile = Math.Clamp(
             Current.Logs.MaxLinesPerFile,
             AppConstants.MinLogLinesPerFile,

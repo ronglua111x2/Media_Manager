@@ -1,3 +1,5 @@
+using media_management_app.Common;
+
 namespace media_management_app.Models;
 
 public sealed class WindowsNotificationRequest
@@ -5,6 +7,8 @@ public sealed class WindowsNotificationRequest
     public required string Title { get; init; }
 
     public required string Message { get; init; }
+
+    public NotificationKind Kind { get; init; } = NotificationKind.Test;
 
     /// <summary>null/empty = auto-generate unique tag so toasts stack.</summary>
     public string? Tag { get; init; }

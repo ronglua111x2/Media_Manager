@@ -1297,6 +1297,36 @@
                                                 CornerRadius="4"
                                                 Background="{StaticResource AppBrushAccent}"
                                                 Margin="0,0,8,0" />
+                                        <TextBlock Text="Notification preferences" Style="{StaticResource SettingsSectionTitleStyle}" Margin="0" />
+                                    </StackPanel>
+                                    <TextBlock Text="Choose which Action Center toasts to show. Changes apply after Save; no restart needed."
+                                               Style="{StaticResource SettingsHintStyle}"
+                                               Margin="0,0,0,12" />
+                                    <ItemsControl ItemsSource="{Binding NotificationPreferences}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Margin="0,0,0,10">
+                                                    <CheckBox IsChecked="{Binding IsEnabled, Mode=TwoWay}"
+                                                              Content="{Binding Title}" />
+                                                    <TextBlock Text="{Binding Description}"
+                                                               Style="{StaticResource SettingsHintStyle}"
+                                                               Margin="28,2,0,0"
+                                                               TextWrapping="Wrap" />
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </materialDesign:Card>
+
+                            <materialDesign:Card Style="{StaticResource SettingsCardStyle}">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <Border Width="8"
+                                                Height="24"
+                                                CornerRadius="4"
+                                                Background="{StaticResource AppBrushAccent}"
+                                                Margin="0,0,8,0" />
                                         <TextBlock Text="Test Notification" Style="{StaticResource SettingsSectionTitleStyle}" Margin="0" />
                                     </StackPanel>
                                     <TextBlock Text="Title" Style="{StaticResource SettingsLabelStyle}" />
@@ -1342,6 +1372,13 @@
                         <Border Grid.Column="2" Style="{StaticResource SettingsGuidePanelStyle}">
                             <StackPanel>
                                 <TextBlock Text="Guide" Style="{StaticResource SettingsSectionTitleStyle}" />
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Preferences" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Toggle categories above, then Save. New toast types added in future updates appear here automatically and default to on."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
                                 <Border Style="{StaticResource SettingsGuideItemStyle}">
                                     <StackPanel>
                                         <TextBlock Text="Action Center" Style="{StaticResource SettingsLabelStyle}" />

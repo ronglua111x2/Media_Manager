@@ -296,7 +296,8 @@ public sealed class AutoTrackService : IAutoTrackService
                             NotifyStage(
                                 "Auto-Track",
                                 $"{refreshedShow.DisplayTitle} — New episode S{latest.SeasonNumber:00}E{latest.EpisodeNumber:00} detected.",
-                                refreshedShow);
+                                refreshedShow,
+                                NotificationKind.AutoTrackNewEpisode);
                         }
                     }
                 }
@@ -460,7 +461,11 @@ public sealed class AutoTrackService : IAutoTrackService
 
             if (string.IsNullOrWhiteSpace(show.AutoTrackDownloadFolder))
             {
-                NotifyStage("Auto-Track", $"{show.DisplayTitle} — Skipped: assign download folder on Home.", show);
+                NotifyStage(
+                    "Auto-Track",
+                    $"{show.DisplayTitle} — Skipped: assign download folder on Home.",
+                    show,
+                    NotificationKind.AutoTrackHuntProgress);
                 continue;
             }
 
@@ -479,7 +484,8 @@ public sealed class AutoTrackService : IAutoTrackService
                             NotifyStage(
                                 "Auto-Track",
                                 $"{show.DisplayTitle} — Resuming accept/add for {order.Title}.",
-                                show);
+                                show,
+                                NotificationKind.AutoTrackHuntProgress);
                         }
 
                         continue;
@@ -520,7 +526,8 @@ public sealed class AutoTrackService : IAutoTrackService
                 NotifyStage(
                     "Auto-Track",
                     $"{show.DisplayTitle} — {FormatHuntBatchStage(episodesToHunt)}.",
-                    show);
+                    show,
+                    NotificationKind.AutoTrackHuntProgress);
             }
         }
 
@@ -858,7 +865,8 @@ public sealed class AutoTrackService : IAutoTrackService
                             NotifyStage(
                                 "Auto-Track",
                                 $"{show.DisplayTitle} — {order.Title}: no candidates passed quality policy.",
-                                show);
+                                show,
+                                NotificationKind.AutoTrackHuntProgress);
                             continue;
                         }
 
@@ -899,7 +907,8 @@ public sealed class AutoTrackService : IAutoTrackService
                     NotifyStage(
                         "Auto-Track",
                         $"{show.DisplayTitle} — {approved.Title} candidate: {approved.SelectedCandidateName}",
-                        show);
+                        show,
+                        NotificationKind.AutoTrackHuntProgress);
                 }
             }
 
@@ -972,7 +981,8 @@ public sealed class AutoTrackService : IAutoTrackService
                                 NotifyStage(
                                     "Auto-Track",
                                     $"{show.DisplayTitle} — Added {order.Title} → {savePath}",
-                                    show);
+                                    show,
+                                    NotificationKind.AutoTrackHuntProgress);
                                 added = true;
                                 break;
                             }
@@ -1189,7 +1199,7 @@ public sealed class AutoTrackService : IAutoTrackService
         _settingsService.Save();
     }
 
-    private void NotifyStage(string title, string message, TrackedShow show)
+    private void NotifyStage(string title, string message, TrackedShow show, NotificationKind kind)
     {
         var poster = _posterImageService.GetNotificationHeroImage(
             MediaKind.TvEpisode,
@@ -1199,6 +1209,7 @@ public sealed class AutoTrackService : IAutoTrackService
         {
             Title = title,
             Message = message,
+            Kind = kind,
             Tag = null,
             HeroImagePathOrUrl = poster,
             AppLogoOverridePathOrUrl = poster
@@ -1210,7 +1221,8 @@ public sealed class AutoTrackService : IAutoTrackService
         NotifyStage(
             "Auto-Track",
             $"{show.DisplayTitle} — Hardlinked {FormatEpisodeLabel(episode)}",
-            show);
+            show,
+            NotificationKind.AutoTrackHardlinked);
     }
 
     private static string FormatEpisodeLabel(TrackedEpisode episode)
@@ -1275,6 +1287,7 @@ public sealed class AutoTrackService : IAutoTrackService
         {
             Title = "Auto-Track",
             Message = result.Summary,
+            Kind = NotificationKind.AutoTrackRunSummary,
             Tag = null
         });
     }
