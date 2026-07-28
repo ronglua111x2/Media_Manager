@@ -77,6 +77,7 @@ public sealed class SymlinkSyncService : ISymlinkSyncService
             string.Equals(Path.GetFullPath(existingTarget!), Path.GetFullPath(linkedPath), StringComparison.OrdinalIgnoreCase))
         {
             PersistSymlinkPathForGroup(linkedGroup, symlinkPath);
+            PersistSymlinkPath(item, symlinkPath);
             result.SkippedCount++;
             return result;
         }
@@ -101,6 +102,8 @@ public sealed class SymlinkSyncService : ISymlinkSyncService
         }
 
         PersistSymlinkPathForGroup(linkedGroup, symlinkPath);
+        // Caller event item may be a different instance than DB-loaded linkedGroup members.
+        PersistSymlinkPath(item, symlinkPath);
         if (result.RepairedCount == 0)
         {
             result.CreatedCount++;

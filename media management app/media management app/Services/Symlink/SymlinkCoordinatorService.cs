@@ -193,6 +193,14 @@ public sealed class SymlinkCoordinatorService : ISymlinkCoordinatorService
             if (result.CreatedCount > 0 || result.RepairedCount > 0)
             {
                 NotifySymlinkedItem(e.Item);
+                // Event SourceItem is often a different instance than DB-loaded linkedGroup;
+                // SyncItem now persists onto it, but prefer TouchedSymlinkPaths as fallback.
+                if (string.IsNullOrWhiteSpace(e.Item.SymlinkPath) && result.TouchedSymlinkPaths.Count > 0)
+                {
+                    e.Item.SymlinkPath = result.TouchedSymlinkPaths[0];
+                }
+
+                e.Item.SymlinkPath ??= ResolveSymlinkPath(e.Item);
                 _jellyfinLibraryRefreshService.EnqueueFromSourceItem(e.Item);
             }
         }
