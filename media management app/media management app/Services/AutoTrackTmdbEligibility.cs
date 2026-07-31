@@ -22,17 +22,12 @@ public static class AutoTrackTmdbEligibility
             return false;
         }
 
-        if (!bypassAnchor && show.AutoTrackLastTmdbWeekKey == AutoTrackWeekAnchor.WeekKey(nowLocal))
+        if (!bypassAnchor && HasSatisfiedPostAnchorRefreshThisWeek(show, settings, nowLocal))
         {
             return false;
         }
 
         if (show.SeriesStatus == ShowSeriesStatus.Finished && IsFullyCaughtUp(show, episodes))
-        {
-            return false;
-        }
-
-        if (!bypassAnchor && show.AutoTrackTmdbState == AutoTrackTmdbState.DormantCaughtUp)
         {
             return false;
         }
@@ -49,7 +44,22 @@ public static class AutoTrackTmdbEligibility
     {
         return show.AutoTrackTmdbState == AutoTrackTmdbState.DormantCaughtUp &&
                AutoTrackWeekAnchor.IsPastAnchorThisWeek(show, nowLocal, settings) &&
-               show.AutoTrackLastTmdbWeekKey != AutoTrackWeekAnchor.WeekKey(nowLocal);
+               !HasSatisfiedPostAnchorRefreshThisWeek(show, settings, nowLocal);
+    }
+
+    public static bool HasSatisfiedPostAnchorRefreshThisWeek(
+        TrackedShow show,
+        AutoTrackSettings settings,
+        DateTime nowLocal)
+    {
+        if (show.AutoTrackLastTmdbRefreshLocal is null)
+        {
+            return false;
+        }
+
+        var (day, time) = AutoTrackWeekAnchor.GetEffectiveAnchor(show, settings);
+        var anchorThisWeek = AutoTrackWeekAnchor.GetAnchorDateTimeThisWeek(day, time, nowLocal);
+        return show.AutoTrackLastTmdbRefreshLocal.Value >= anchorThisWeek;
     }
 
     public static bool IsFullyCaughtUp(TrackedShow show, IReadOnlyList<TrackedEpisode> episodes)

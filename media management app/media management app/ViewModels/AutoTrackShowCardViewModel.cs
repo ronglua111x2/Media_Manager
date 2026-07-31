@@ -308,9 +308,14 @@ public sealed partial class AutoTrackShowCardViewModel : ObservableObject
     private static string BuildTmdbStatusLine(TrackedShow show, AutoTrackSettings settings)
     {
         var now = DateTime.Now;
+        if (show.AutoTrackLastTmdbRefreshLocal is not null)
+        {
+            return $"Last TMDB: {show.AutoTrackLastTmdbRefreshLocal.Value:yyyy-MM-dd HH:mm}";
+        }
+
         if (!string.IsNullOrWhiteSpace(show.AutoTrackLastTmdbWeekKey))
         {
-            return $"Last TMDB: {show.AutoTrackLastTmdbWeekKey}";
+            return $"Last TMDB week: {show.AutoTrackLastTmdbWeekKey}";
         }
 
         if (AutoTrackWeekAnchor.IsPastAnchorThisWeek(show, now, settings))

@@ -60,6 +60,9 @@ public sealed class TrackedShow
 
     public string? AutoTrackLastTmdbWeekKey { get; set; }
 
+    /// <summary>Local timestamp of the last TMDB refresh for auto-track (null = never refreshed under this field).</summary>
+    public DateTime? AutoTrackLastTmdbRefreshLocal { get; set; }
+
     public AutoTrackTmdbState AutoTrackTmdbState { get; set; } = AutoTrackTmdbState.Active;
 
     public string? AutoTrackMinQuality { get; set; }

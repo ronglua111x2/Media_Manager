@@ -44,7 +44,11 @@ public interface IDatabaseService
 
     void UpdateTrackedShowAutoTrackReconcileAndLink(long showId, bool autoReconcileAndLink);
 
-    void UpdateTrackedShowAutoTrackTmdbState(long showId, AutoTrackTmdbState tmdbState, string? lastTmdbWeekKey);
+    void UpdateTrackedShowAutoTrackTmdbState(
+        long showId,
+        AutoTrackTmdbState tmdbState,
+        string? lastTmdbWeekKey,
+        DateTime? lastTmdbRefreshLocal);
 
     void UpdateTrackedShowAutoTrackScheduleOverrides(
         long showId,

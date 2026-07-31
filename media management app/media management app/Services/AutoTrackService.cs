@@ -194,7 +194,8 @@ public sealed class AutoTrackService : IAutoTrackService
                     _databaseService.UpdateTrackedShowAutoTrackTmdbState(
                         currentShow.Id,
                         AutoTrackTmdbState.Active,
-                        currentShow.AutoTrackLastTmdbWeekKey);
+                        currentShow.AutoTrackLastTmdbWeekKey,
+                        currentShow.AutoTrackLastTmdbRefreshLocal);
                     currentShow = _databaseService.GetTrackedShow(currentShow.Id) ?? currentShow;
                 }
 
@@ -205,7 +206,8 @@ public sealed class AutoTrackService : IAutoTrackService
                     _databaseService.UpdateTrackedShowAutoTrackTmdbState(
                         currentShow.Id,
                         AutoTrackTmdbState.FinishedComplete,
-                        currentShow.AutoTrackLastTmdbWeekKey);
+                        currentShow.AutoTrackLastTmdbWeekKey,
+                        currentShow.AutoTrackLastTmdbRefreshLocal);
                     continue;
                 }
 
@@ -255,7 +257,7 @@ public sealed class AutoTrackService : IAutoTrackService
                     }
 
                     var refreshedEpisodes = _trackedShowService.GetEpisodes(refreshedShow.Id);
-                    var weekKey = AutoTrackWeekAnchor.WeekKey(nowLocal);
+                    var pastAnchor = AutoTrackWeekAnchor.IsPastAnchorThisWeek(refreshedShow, nowLocal, settings);
                     var hasPendingLatest = AutoTrackTmdbEligibility.HasPendingLatestEpisode(
                         refreshedShow,
                         refreshedEpisodes,
@@ -263,26 +265,52 @@ public sealed class AutoTrackService : IAutoTrackService
                         nowLocal);
 
                     AutoTrackTmdbState nextState;
+                    string? weekKeyToStore = refreshedShow.AutoTrackLastTmdbWeekKey;
                     if (hasPendingLatest)
                     {
                         nextState = AutoTrackTmdbState.Active;
+                        if (pastAnchor)
+                        {
+                            weekKeyToStore = AutoTrackWeekAnchor.WeekKey(nowLocal);
+                        }
                     }
                     else if (refreshedShow.SeriesStatus == ShowSeriesStatus.Finished &&
                              AutoTrackTmdbEligibility.IsFullyCaughtUp(refreshedShow, refreshedEpisodes))
                     {
                         nextState = AutoTrackTmdbState.FinishedComplete;
+                        if (pastAnchor)
+                        {
+                            weekKeyToStore = AutoTrackWeekAnchor.WeekKey(nowLocal);
+                        }
                     }
                     else if (refreshedShow.SeriesStatus == ShowSeriesStatus.Ongoing &&
                              AutoTrackTmdbEligibility.IsFullyCaughtUp(refreshedShow, refreshedEpisodes))
                     {
-                        nextState = AutoTrackTmdbState.DormantCaughtUp;
+                        // Pre-anchor Run Now must not mark dormant / satisfy this week's schedule.
+                        if (pastAnchor)
+                        {
+                            nextState = AutoTrackTmdbState.DormantCaughtUp;
+                            weekKeyToStore = AutoTrackWeekAnchor.WeekKey(nowLocal);
+                        }
+                        else
+                        {
+                            nextState = AutoTrackTmdbState.Active;
+                        }
                     }
                     else
                     {
                         nextState = AutoTrackTmdbState.Active;
+                        if (pastAnchor)
+                        {
+                            weekKeyToStore = AutoTrackWeekAnchor.WeekKey(nowLocal);
+                        }
                     }
 
-                    _databaseService.UpdateTrackedShowAutoTrackTmdbState(refreshedShow.Id, nextState, weekKey);
+                    _databaseService.UpdateTrackedShowAutoTrackTmdbState(
+                        refreshedShow.Id,
+                        nextState,
+                        weekKeyToStore,
+                        nowLocal);
 
                     if (hasPendingLatest)
                     {
