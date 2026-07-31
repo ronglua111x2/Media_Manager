@@ -66,11 +66,11 @@ public sealed class WindowsNotificationService : IWindowsNotificationService
             ? Guid.NewGuid().ToString("N")
             : request.Tag.Trim();
         var group = string.IsNullOrWhiteSpace(request.Group) ? "MediaManager" : request.Group.Trim();
-        var heroImage = request.HeroImagePathOrUrl;
-        if (string.IsNullOrWhiteSpace(heroImage) &&
-            NotificationHeroImages.TryGetDefault(request.Kind, out var defaultHero))
+        var appLogo = request.AppLogoOverridePathOrUrl;
+        if (string.IsNullOrWhiteSpace(appLogo) &&
+            NotificationBrandImages.TryGetDefault(request.Kind, out var defaultLogo))
         {
-            heroImage = defaultHero;
+            appLogo = defaultLogo;
         }
 
         try
@@ -81,12 +81,14 @@ public sealed class WindowsNotificationService : IWindowsNotificationService
                 .AddText(safeTitle)
                 .AddText(safeMessage);
 
-            if (TryResolveImageUri(heroImage, out var heroUri))
+            // Only use explicit hero when caller sets it (e.g. test notification).
+            // Brand defaults use the small inline app-logo slot next to the text.
+            if (TryResolveImageUri(request.HeroImagePathOrUrl, out var heroUri))
             {
                 builder.AddHeroImage(heroUri);
             }
 
-            if (TryResolveImageUri(request.AppLogoOverridePathOrUrl, out var logoUri))
+            if (TryResolveImageUri(appLogo, out var logoUri))
             {
                 builder.AddAppLogoOverride(logoUri, ToastGenericAppLogoCrop.Default);
             }
@@ -98,7 +100,7 @@ public sealed class WindowsNotificationService : IWindowsNotificationService
             });
 
             _logger.Info(
-                $"Windows notification sent. Kind='{request.Kind}', Title='{safeTitle}', Tag='{tag}', Group='{group}', HeroImage='{heroImage ?? "(none)"}'.",
+                $"Windows notification sent. Kind='{request.Kind}', Title='{safeTitle}', Tag='{tag}', Group='{group}', AppLogo='{appLogo ?? "(none)"}', HeroImage='{request.HeroImagePathOrUrl ?? "(none)"}'.",
                 LogTarget.All);
             return true;
         }

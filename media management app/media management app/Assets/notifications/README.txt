@@ -1,15 +1,12 @@
-Official notification hero images (do not AI-generate replacements):
+Inline toast icons (small image beside title/body — NOT hero banners):
 
-  jellyfin-hero.png
-    Source: jellyfin/jellyfin-ux (official branding)
-    File: logos/PNG-background-space/jellyfin-horizontal--color-on-dark.png
+  warp-logo.png
+    Cloudflare One Client / WARP app icon from the installed client:
+    ...\Cloudflare WARP\data\flutter_assets\assets\app_icon\pngs\cloudflare-one-client-logo.png
+
+  jellyfin-logo.png
+    Official Jellyfin icon from jellyfin/jellyfin-ux:
+    logos/PNG-4x/jellyfin-icon--color-on-dark.png
     https://github.com/jellyfin/jellyfin-ux
 
-  warp-hero.png
-    Source logo: Cloudflare One Client / WARP install asset
-    cloudflare-one-client-logo.png
-    (from Program Files\Cloudflare\Cloudflare WARP\...\app_icon\pngs\)
-    Composited onto a simple 720x360 dark banner for Windows toast hero size.
-
-After replacing files, rebuild so they copy to:
-  <output>\Assets\notifications\
+Prefer square PNGs. Rebuild to copy into <output>\Assets\notifications\

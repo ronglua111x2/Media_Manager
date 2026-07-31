@@ -1348,7 +1348,7 @@
                                              TextWrapping="Wrap"
                                              MinHeight="72"
                                              VerticalScrollBarVisibility="Auto" />
-                                    <TextBlock Text="Cover image (optional)" Style="{StaticResource SettingsLabelStyle}" />
+                                    <TextBlock Text="Hero / cover image (optional, large banner)" Style="{StaticResource SettingsLabelStyle}" />
                                     <DockPanel LastChildFill="True">
                                         <Button DockPanel.Dock="Right"
                                                 Command="{Binding BrowseNotificationTestImageCommand}"
@@ -1362,7 +1362,33 @@
                                         <TextBox Text="{Binding NotificationTestImagePathOrUrl, UpdateSourceTrigger=PropertyChanged}"
                                                  Style="{StaticResource SettingsTextBoxStyle}" />
                                     </DockPanel>
-                                    <TextBlock Text="Local file path or HTTPS URL (e.g. TMDB poster)."
+                                    <TextBlock Text="Local path or HTTPS URL. Leave empty for no banner."
+                                               Style="{StaticResource SettingsHintStyle}"
+                                               Margin="0,0,0,10" />
+                                    <TextBlock Text="Inline icon (optional, small image beside text)" Style="{StaticResource SettingsLabelStyle}" />
+                                    <DockPanel LastChildFill="True">
+                                        <Button DockPanel.Dock="Right"
+                                                Command="{Binding BrowseNotificationTestInlineImageCommand}"
+                                                Style="{StaticResource SettingsIconTextButtonStyle}"
+                                                Margin="8,0,0,10">
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconLucide Kind="Image" Width="16" Height="16" Margin="0,0,7,0" />
+                                                <TextBlock Text="Browse" />
+                                            </StackPanel>
+                                        </Button>
+                                        <TextBox Text="{Binding NotificationTestInlineImagePathOrUrl, UpdateSourceTrigger=PropertyChanged}"
+                                                 Style="{StaticResource SettingsTextBoxStyle}" />
+                                    </DockPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                        <Button Command="{Binding UseWarpLogoForTestInlineCommand}"
+                                                Content="Use WARP logo"
+                                                Margin="0,0,8,0"
+                                                Style="{StaticResource MaterialDesignOutlinedButton}" />
+                                        <Button Command="{Binding UseJellyfinLogoForTestInlineCommand}"
+                                                Content="Use Jellyfin logo"
+                                                Style="{StaticResource MaterialDesignOutlinedButton}" />
+                                    </StackPanel>
+                                    <TextBlock Text="Same slot as Auto-Track posters / WARP·Jellyfin status toasts. Prefer a square PNG."
                                                Style="{StaticResource SettingsHintStyle}"
                                                Margin="0,0,0,10" />
                                     <Button Command="{Binding SendTestNotificationCommand}"

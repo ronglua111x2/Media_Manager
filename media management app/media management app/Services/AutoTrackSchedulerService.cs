@@ -261,13 +261,22 @@ public sealed class AutoTrackSchedulerService : IAutoTrackSchedulerService
         {
             var result = await _autoTrackService.RunBackgroundReconcileAsync(_shutdown.Token);
             _logger.Info($"Auto-track reconcile cycle complete. {result.Summary}", LogTarget.All);
+
+            // Mirror TMDB discovery: refresh News/Auto dashboards (and tray) when reconcile changed state.
+            if (IsMeaningfulAutoTrackResult(result))
+            {
+                _autoTrackService.RecordRunResult(result);
+                NotifyRunCompleted(result);
+            }
         }
         catch (OperationCanceledException)
         {
         }
         catch (Exception ex)
         {
+            var result = FailedResult($"Reconcile failed: {ex.Message}");
             _logger.Warning($"Auto-track reconcile loop failed: {ex.Message}", LogTarget.All);
+            NotifyRunCompleted(result);
         }
     }
 

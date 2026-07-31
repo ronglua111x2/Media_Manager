@@ -189,6 +189,12 @@ public sealed class AutoTrackService : IAutoTrackService
                 var currentShow = _databaseService.GetTrackedShow(show.Id) ?? show;
                 var episodes = _trackedShowService.GetEpisodes(currentShow.Id);
 
+                var isPastAnchorNow = AutoTrackWeekAnchor.IsPastAnchorThisWeek(currentShow, nowLocal, settings);
+                var isSatisfiedThisWeek = AutoTrackTmdbEligibility.HasSatisfiedPostAnchorRefreshThisWeek(currentShow, settings, nowLocal);
+                _logger.Info(
+                    $"Anchor check '{currentShow.DisplayTitle}': anchor={AutoTrackWeekAnchor.FormatEffectiveAnchor(currentShow, settings)}, now={nowLocal:yyyy-MM-dd HH:mm}, pastAnchor={isPastAnchorNow}, satisfiedThisWeek={isSatisfiedThisWeek}, state={currentShow.AutoTrackTmdbState}, weekKey={currentShow.AutoTrackLastTmdbWeekKey}, lastRefresh={currentShow.AutoTrackLastTmdbRefreshLocal:yyyy-MM-dd HH:mm}.",
+                    LogTarget.All);
+
                 if (AutoTrackTmdbEligibility.ShouldResetDormantState(currentShow, settings, nowLocal))
                 {
                     _databaseService.UpdateTrackedShowAutoTrackTmdbState(

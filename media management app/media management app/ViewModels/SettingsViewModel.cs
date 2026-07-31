@@ -246,6 +246,9 @@ public partial class SettingsViewModel : ViewModelBase
     [ObservableProperty]
     private string notificationTestImagePathOrUrl = string.Empty;
 
+    [ObservableProperty]
+    private string notificationTestInlineImagePathOrUrl = string.Empty;
+
     public ObservableCollection<NotificationPreferenceItemViewModel> NotificationPreferences { get; } = [];
 
     [ObservableProperty]
@@ -433,7 +436,10 @@ public partial class SettingsViewModel : ViewModelBase
             Tag = null,
             HeroImagePathOrUrl = string.IsNullOrWhiteSpace(NotificationTestImagePathOrUrl)
                 ? null
-                : NotificationTestImagePathOrUrl.Trim()
+                : NotificationTestImagePathOrUrl.Trim(),
+            AppLogoOverridePathOrUrl = string.IsNullOrWhiteSpace(NotificationTestInlineImagePathOrUrl)
+                ? null
+                : NotificationTestInlineImagePathOrUrl.Trim()
         });
         StatusMessage = sent
             ? "Test notification sent. Check Windows Action Center."
@@ -443,23 +449,77 @@ public partial class SettingsViewModel : ViewModelBase
     [RelayCommand]
     private void BrowseNotificationTestImage()
     {
+        var selected = BrowseNotificationImageFile(
+            NotificationTestImagePathOrUrl,
+            "Select hero / cover image");
+        if (!string.IsNullOrWhiteSpace(selected))
+        {
+            NotificationTestImagePathOrUrl = selected;
+        }
+    }
+
+    [RelayCommand]
+    private void BrowseNotificationTestInlineImage()
+    {
+        var selected = BrowseNotificationImageFile(
+            NotificationTestInlineImagePathOrUrl,
+            "Select inline icon (beside text)");
+        if (!string.IsNullOrWhiteSpace(selected))
+        {
+            NotificationTestInlineImagePathOrUrl = selected;
+        }
+    }
+
+    [RelayCommand]
+    private void UseWarpLogoForTestInline()
+    {
+        if (!TrySetBrandLogoForTestInline("warp-logo.png", out var path))
+        {
+            StatusMessage = "WARP logo not found. Rebuild so Assets/notifications/warp-logo.png is copied to output.";
+            return;
+        }
+
+        NotificationTestInlineImagePathOrUrl = path;
+        StatusMessage = $"Inline test icon set to WARP logo: {path}";
+    }
+
+    [RelayCommand]
+    private void UseJellyfinLogoForTestInline()
+    {
+        if (!TrySetBrandLogoForTestInline("jellyfin-logo.png", out var path))
+        {
+            StatusMessage = "Jellyfin logo not found. Rebuild so Assets/notifications/jellyfin-logo.png is copied to output.";
+            return;
+        }
+
+        NotificationTestInlineImagePathOrUrl = path;
+        StatusMessage = $"Inline test icon set to Jellyfin logo: {path}";
+    }
+
+    private static string? BrowseNotificationImageFile(string? currentPath, string title)
+    {
         using var dialog = new WinForms.OpenFileDialog
         {
-            Title = "Select cover image",
+            Title = title,
             Filter = "Image files (*.jpg;*.jpeg;*.png;*.webp;*.bmp)|*.jpg;*.jpeg;*.png;*.webp;*.bmp|All files (*.*)|*.*",
             CheckFileExists = true
         };
 
-        if (!string.IsNullOrWhiteSpace(NotificationTestImagePathOrUrl) && File.Exists(NotificationTestImagePathOrUrl))
+        if (!string.IsNullOrWhiteSpace(currentPath) && File.Exists(currentPath))
         {
-            dialog.InitialDirectory = Path.GetDirectoryName(NotificationTestImagePathOrUrl);
-            dialog.FileName = Path.GetFileName(NotificationTestImagePathOrUrl);
+            dialog.InitialDirectory = Path.GetDirectoryName(currentPath);
+            dialog.FileName = Path.GetFileName(currentPath);
         }
 
-        if (dialog.ShowDialog() == WinForms.DialogResult.OK)
-        {
-            NotificationTestImagePathOrUrl = dialog.FileName;
-        }
+        return dialog.ShowDialog() == WinForms.DialogResult.OK
+            ? dialog.FileName
+            : null;
+    }
+
+    private static bool TrySetBrandLogoForTestInline(string fileName, out string absolutePath)
+    {
+        absolutePath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "Assets", "notifications", fileName));
+        return File.Exists(absolutePath);
     }
 
     [RelayCommand]
