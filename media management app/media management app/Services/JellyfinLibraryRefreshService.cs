@@ -8,11 +8,13 @@ namespace media_management_app.Services;
 public sealed class JellyfinLibraryRefreshService : IJellyfinLibraryRefreshService
 {
     private static readonly TimeSpan DebounceDelay = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan TaskPollInterval = TimeSpan.FromSeconds(5);
 
     private readonly ISettingsService _settingsService;
     private readonly IDatabaseService _databaseService;
     private readonly IJellyfinClient _jellyfinClient;
     private readonly IWarpCliService _warpCliService;
+    private readonly IWindowsNotificationService _windowsNotificationService;
     private readonly HttpClient _httpClient;
     private readonly IAppLogger _logger;
     private readonly object _queueLock = new();
@@ -26,6 +28,7 @@ public sealed class JellyfinLibraryRefreshService : IJellyfinLibraryRefreshServi
         IDatabaseService databaseService,
         IJellyfinClient jellyfinClient,
         IWarpCliService warpCliService,
+        IWindowsNotificationService windowsNotificationService,
         HttpClient httpClient,
         IAppLogger logger)
     {
@@ -33,6 +36,7 @@ public sealed class JellyfinLibraryRefreshService : IJellyfinLibraryRefreshServi
         _databaseService = databaseService;
         _jellyfinClient = jellyfinClient;
         _warpCliService = warpCliService;
+        _windowsNotificationService = windowsNotificationService;
         _httpClient = httpClient;
         _logger = logger;
     }
@@ -219,6 +223,8 @@ public sealed class JellyfinLibraryRefreshService : IJellyfinLibraryRefreshServi
 
         await _flushGate.WaitAsync(cancellationToken);
         var warpOwnedByUs = false;
+        var heldOwnedWarp = false;
+        var refreshWindowMessage = "Hold expired.";
         try
         {
             _logger.Info(
@@ -231,6 +237,25 @@ public sealed class JellyfinLibraryRefreshService : IJellyfinLibraryRefreshServi
                 cancellationToken);
 
             await _jellyfinClient.ReportMediaUpdatedAsync(paths, cancellationToken);
+
+            _windowsNotificationService.TryShow(new WindowsNotificationRequest
+            {
+                Title = "Jellyfin",
+                Message = $"Path notify sent ({paths.Count} path(s)).",
+                Kind = NotificationKind.JellyfinPathNotified
+            });
+
+            if (warpOwnedByUs)
+            {
+                heldOwnedWarp = true;
+                refreshWindowMessage = await HoldWarpForJellyfinAsync(jellyfinSettings, cancellationToken);
+            }
+            else
+            {
+                _logger.Info(
+                    "Jellyfin refresh: WARP not owned by this flush; skipping post-notify hold.",
+                    LogTarget.All);
+            }
         }
         catch (Exception ex)
         {
@@ -241,7 +266,7 @@ public sealed class JellyfinLibraryRefreshService : IJellyfinLibraryRefreshServi
         {
             if (warpOwnedByUs)
             {
-                _logger.Info("Disconnecting WARP after Jellyfin refresh (owned session).", LogTarget.All);
+                _logger.Info("Disconnecting WARP after Jellyfin refresh hold (owned session).", LogTarget.All);
                 try
                 {
                     await _warpCliService.DisconnectAsync(CancellationToken.None);
@@ -252,7 +277,113 @@ public sealed class JellyfinLibraryRefreshService : IJellyfinLibraryRefreshServi
                 }
             }
 
+            if (heldOwnedWarp)
+            {
+                _windowsNotificationService.TryShow(new WindowsNotificationRequest
+                {
+                    Title = "Jellyfin",
+                    Message = refreshWindowMessage,
+                    Kind = NotificationKind.JellyfinRefreshWindowEnded
+                });
+            }
+
             _flushGate.Release();
+        }
+    }
+
+    private async Task<string> HoldWarpForJellyfinAsync(
+        JellyfinRefreshSettings jellyfinSettings,
+        CancellationToken cancellationToken)
+    {
+        var holdSeconds = Math.Clamp(
+            jellyfinSettings.WarpHoldSecondsAfterNotify <= 0
+                ? JellyfinRefreshSettings.DefaultWarpHoldSecondsAfterNotify
+                : jellyfinSettings.WarpHoldSecondsAfterNotify,
+            JellyfinRefreshSettings.MinWarpHoldSecondsAfterNotify,
+            JellyfinRefreshSettings.MaxWarpHoldSecondsAfterNotify);
+        var maxHoldSeconds = Math.Min(
+            JellyfinRefreshSettings.MaxWarpHoldSecondsAfterNotify,
+            holdSeconds * 2);
+        var holdDeadline = DateTime.UtcNow.AddSeconds(holdSeconds);
+        var hardDeadline = DateTime.UtcNow.AddSeconds(maxHoldSeconds);
+        var sawLibraryTaskRunning = false;
+        var endedBecauseTaskIdle = false;
+
+        _logger.Info(
+            $"Jellyfin refresh WARP hold starting: hold={holdSeconds}s, max={maxHoldSeconds}s.",
+            LogTarget.All);
+
+        while (DateTime.UtcNow < hardDeadline)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var runningLibraryTasks = await TryGetRunningLibraryTasksAsync(cancellationToken);
+            if (runningLibraryTasks.Count > 0)
+            {
+                sawLibraryTaskRunning = true;
+                var names = string.Join(", ", runningLibraryTasks.Select(task => task.Name ?? task.Key ?? "task"));
+                _logger.Info(
+                    $"Jellyfin library task(s) still running during WARP hold: {names}. Extending until idle (max {maxHoldSeconds}s).",
+                    LogTarget.All);
+            }
+            else if (sawLibraryTaskRunning)
+            {
+                endedBecauseTaskIdle = true;
+                _logger.Info(
+                    "Jellyfin library task(s) returned to Idle during WARP hold.",
+                    LogTarget.All);
+                break;
+            }
+            else if (DateTime.UtcNow >= holdDeadline)
+            {
+                _logger.Info(
+                    $"Jellyfin refresh WARP hold of {holdSeconds}s elapsed with no running library task.",
+                    LogTarget.All);
+                break;
+            }
+
+            var remainingToHard = hardDeadline - DateTime.UtcNow;
+            if (remainingToHard <= TimeSpan.Zero)
+            {
+                break;
+            }
+
+            var delay = TimeSpan.FromMilliseconds(
+                Math.Min(TaskPollInterval.TotalMilliseconds, remainingToHard.TotalMilliseconds));
+            await Task.Delay(delay, cancellationToken);
+        }
+
+        if (DateTime.UtcNow >= hardDeadline && !endedBecauseTaskIdle)
+        {
+            _logger.Warning(
+                $"Jellyfin refresh WARP hold hit max {maxHoldSeconds}s; disconnecting.",
+                LogTarget.All);
+            return sawLibraryTaskRunning
+                ? $"Refresh window ended (max hold {maxHoldSeconds}s; library task still running)."
+                : $"Refresh window ended (max hold {maxHoldSeconds}s).";
+        }
+
+        return endedBecauseTaskIdle
+            ? "Refresh window ended (library task idle)."
+            : $"Refresh window ended (hold {holdSeconds}s expired).";
+    }
+
+    private async Task<IReadOnlyList<JellyfinScheduledTaskInfo>> TryGetRunningLibraryTasksAsync(
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var tasks = await _jellyfinClient.GetScheduledTasksAsync(cancellationToken);
+            return tasks
+                .Where(task => task.IsLibraryRefreshRelated && task.IsRunning)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.Debug(
+                $"Jellyfin ScheduledTasks poll failed during WARP hold: {ex.Message}",
+                LogTarget.File | LogTarget.Console);
+            return [];
         }
     }
 

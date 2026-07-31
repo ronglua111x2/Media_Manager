@@ -63,9 +63,12 @@
     <PackageReference Include="WPF-UI" Version="4.3.0" />
   </ItemGroup>
 
-  <ItemGroup>
+    <ItemGroup>
     <Resource Include="Assets\app-icon.ico" />
     <None Include="Assets\*.svg" />
+    <Content Include="Assets\notifications\*.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
 </Project>

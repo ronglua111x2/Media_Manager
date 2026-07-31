@@ -9,5 +9,7 @@ public enum NotificationKind
     AutoTrackRunSummary = 4,
     SymlinkCreated = 5,
     WarpRecovered = 6,
-    WarpDisconnected = 7
+    WarpDisconnected = 7,
+    JellyfinPathNotified = 8,
+    JellyfinRefreshWindowEnded = 9
 }

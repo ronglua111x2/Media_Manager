@@ -551,6 +551,15 @@
                                     <TextBlock Text="Jellyfin API key" Style="{StaticResource SettingsLabelStyle}" />
                                     <TextBox Text="{Binding AutoTrackJellyfinApiKey, UpdateSourceTrigger=PropertyChanged}"
                                              Margin="0,0,0,8" />
+                                    <TextBlock Text="Keep WARP on after Jellyfin notify (seconds)" Style="{StaticResource SettingsLabelStyle}" />
+                                    <Border Style="{StaticResource SettingsNumericChromeStyle}" Margin="0,0,0,4">
+                                        <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
+                                                                      Value="{Binding AutoTrackJellyfinWarpHoldSeconds, UpdateSourceTrigger=PropertyChanged}"
+                                                                      Minimum="15"
+                                                                      Maximum="600" />
+                                    </Border>
+                                    <TextBlock Style="{StaticResource SettingsHintStyle}" Margin="0,0,0,8"
+                                               Text="Owned WARP stays connected after path notify so Jellyfin LibraryMonitor/TMDB can finish. Extends if a library scan task is still running (capped)." />
                                     <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                                         <Button Command="{Binding TestJellyfinConnectionCommand}"
                                                 Content="Test Jellyfin"

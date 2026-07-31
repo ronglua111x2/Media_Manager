@@ -214,6 +214,9 @@ public partial class SettingsViewModel : ViewModelBase
     private string? autoTrackJellyfinApiKey;
 
     [ObservableProperty]
+    private int autoTrackJellyfinWarpHoldSeconds = JellyfinRefreshSettings.DefaultWarpHoldSecondsAfterNotify;
+
+    [ObservableProperty]
     private bool warpEnabled = true;
 
     [ObservableProperty]
@@ -979,6 +982,9 @@ public partial class SettingsViewModel : ViewModelBase
                 ? "http://127.0.0.1:8096"
                 : jellyfin.BaseUrl;
             AutoTrackJellyfinApiKey = jellyfin.ApiKey;
+            AutoTrackJellyfinWarpHoldSeconds = jellyfin.WarpHoldSecondsAfterNotify <= 0
+                ? JellyfinRefreshSettings.DefaultWarpHoldSecondsAfterNotify
+                : jellyfin.WarpHoldSecondsAfterNotify;
             WarpEnabled = _settingsService.Current.Warp.Enabled;
             WarpAutoRecoverOnSsl = _settingsService.Current.Warp.AutoRecoverOnSsl;
             WarpExecutablePath = _settingsService.Current.Warp.ExecutablePath;
@@ -1269,7 +1275,12 @@ public partial class SettingsViewModel : ViewModelBase
         autoTrack.Jellyfin.ApiKey = string.IsNullOrWhiteSpace(AutoTrackJellyfinApiKey)
             ? null
             : AutoTrackJellyfinApiKey.Trim();
+        autoTrack.Jellyfin.WarpHoldSecondsAfterNotify = Math.Clamp(
+            AutoTrackJellyfinWarpHoldSeconds,
+            JellyfinRefreshSettings.MinWarpHoldSecondsAfterNotify,
+            JellyfinRefreshSettings.MaxWarpHoldSecondsAfterNotify);
         AutoTrackJellyfinBaseUrl = autoTrack.Jellyfin.BaseUrl;
+        AutoTrackJellyfinWarpHoldSeconds = autoTrack.Jellyfin.WarpHoldSecondsAfterNotify;
 
         AutoTrackAnchorDay = autoTrack.AnchorDayOfWeek;
         AutoTrackAnchorTimeLocal = autoTrack.AnchorTimeLocal;

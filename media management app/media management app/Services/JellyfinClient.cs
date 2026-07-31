@@ -93,6 +93,42 @@ public sealed class JellyfinClient : IJellyfinClient, IDisposable
             LogTarget.All);
     }
 
+    public async Task<IReadOnlyList<JellyfinScheduledTaskInfo>> GetScheduledTasksAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var settings = RequireConfiguredSettings();
+        using var request = CreateRequest(HttpMethod.Get, settings, "ScheduledTasks");
+        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            throw new InvalidOperationException(
+                $"Jellyfin ScheduledTasks failed: {(int)response.StatusCode} {response.ReasonPhrase}. {TrimBody(body)}");
+        }
+
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+        if (document.RootElement.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        var tasks = new List<JellyfinScheduledTaskInfo>();
+        foreach (var element in document.RootElement.EnumerateArray())
+        {
+            tasks.Add(new JellyfinScheduledTaskInfo
+            {
+                Id = TryGetString(element, "Id"),
+                Key = TryGetString(element, "Key"),
+                Name = TryGetString(element, "Name"),
+                Category = TryGetString(element, "Category"),
+                State = TryGetString(element, "State")
+            });
+        }
+
+        return tasks;
+    }
+
     public void Dispose()
     {
         if (_disposed)
@@ -102,6 +138,17 @@ public sealed class JellyfinClient : IJellyfinClient, IDisposable
 
         _disposed = true;
         _httpClient.Dispose();
+    }
+
+    private static string? TryGetString(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var property) ||
+            property.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+        {
+            return null;
+        }
+
+        return property.GetString();
     }
 
     private JellyfinRefreshSettings RequireConfiguredSettings()

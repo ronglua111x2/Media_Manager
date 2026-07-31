@@ -38,7 +38,15 @@ public static class NotificationCatalog
         new(
             NotificationKind.WarpDisconnected,
             "WARP disconnected",
-            "When the app disconnects an owned WARP session.")
+            "When the app disconnects an owned WARP session."),
+        new(
+            NotificationKind.JellyfinPathNotified,
+            "Jellyfin: path notify sent",
+            "When Library/Media/Updated is accepted for new Auto-Track symlink paths."),
+        new(
+            NotificationKind.JellyfinRefreshWindowEnded,
+            "Jellyfin: refresh window ended",
+            "When the post-notify WARP hold finishes (library task idle or hold expired).")
     ];
 
     public static bool IsUserToggleable(NotificationKind kind) => kind != NotificationKind.Test;
