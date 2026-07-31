@@ -15,6 +15,14 @@ public interface IPosterImageService
         int width = 342,
         CancellationToken cancellationToken = default);
 
+    Task<ImageSource?> LoadStillAsync(
+        string? stillPath,
+        int showTmdbId,
+        int seasonNumber,
+        int episodeNumber,
+        int width = 300,
+        CancellationToken cancellationToken = default);
+
     string? GetDisplayUri(MediaKind mediaKind, int tmdbId, string? posterPath, int width = 342);
 
     Task EnsureCachedAsync(
@@ -25,6 +33,10 @@ public interface IPosterImageService
 
     void DeleteCached(MediaKind mediaKind, int tmdbId);
 
+    void DeleteStill(int showTmdbId, int seasonNumber, int episodeNumber);
+
+    void DeleteStillsNotIn(IReadOnlyCollection<(int ShowTmdbId, int Season, int Episode)> keep);
+
     void DeleteAllCached();
 
     string? GetNotificationHeroImage(MediaKind mediaKind, int tmdbId, string? posterPath);
@@ -33,6 +45,7 @@ public interface IPosterImageService
 public sealed class PosterImageService : IPosterImageService
 {
     private const int DefaultPosterWidth = 342;
+    private const int DefaultStillWidth = 300;
 
     private static readonly HttpClient PosterHttpClient = new();
     private readonly ISettingsService _settingsService;
@@ -78,6 +91,34 @@ public sealed class PosterImageService : IPosterImageService
         }
 
         return await LoadFromRemoteAsync(posterPath, width, cancellationToken);
+    }
+
+    public async Task<ImageSource?> LoadStillAsync(
+        string? stillPath,
+        int showTmdbId,
+        int seasonNumber,
+        int episodeNumber,
+        int width = DefaultStillWidth,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(stillPath))
+        {
+            return null;
+        }
+
+        var localPath = GetStillFilePath(showTmdbId, seasonNumber, episodeNumber);
+        if (File.Exists(localPath) && IsStillCacheValid(showTmdbId, seasonNumber, episodeNumber, stillPath))
+        {
+            return LoadImageFromFile(localPath);
+        }
+
+        return await DownloadAndCacheStillAsync(
+            stillPath,
+            showTmdbId,
+            seasonNumber,
+            episodeNumber,
+            width,
+            cancellationToken);
     }
 
     public string? GetDisplayUri(MediaKind mediaKind, int tmdbId, string? posterPath, int width = DefaultPosterWidth)
@@ -133,6 +174,61 @@ public sealed class PosterImageService : IPosterImageService
         RemoveMemoryCacheEntries(mediaKind, tmdbId);
     }
 
+    public void DeleteStill(int showTmdbId, int seasonNumber, int episodeNumber)
+    {
+        var imagePath = GetStillFilePath(showTmdbId, seasonNumber, episodeNumber);
+        var metaPath = GetStillMetaFilePath(showTmdbId, seasonNumber, episodeNumber);
+        if (File.Exists(imagePath))
+        {
+            File.Delete(imagePath);
+        }
+
+        if (File.Exists(metaPath))
+        {
+            File.Delete(metaPath);
+        }
+
+        _memoryCache.Remove(BuildStillMemoryCacheKey(showTmdbId, seasonNumber, episodeNumber));
+    }
+
+    public void DeleteStillsNotIn(IReadOnlyCollection<(int ShowTmdbId, int Season, int Episode)> keep)
+    {
+        var folder = GetStillsFolder();
+        if (!Directory.Exists(folder))
+        {
+            return;
+        }
+
+        var keepKeys = keep
+            .Select(item => BuildStillFileKey(item.ShowTmdbId, item.Season, item.Episode))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var imagePath in Directory.EnumerateFiles(folder, "*.jpg"))
+        {
+            var key = Path.GetFileNameWithoutExtension(imagePath);
+            if (keepKeys.Contains(key))
+            {
+                continue;
+            }
+
+            var metaPath = Path.ChangeExtension(imagePath, ".path");
+            try
+            {
+                File.Delete(imagePath);
+                if (File.Exists(metaPath))
+                {
+                    File.Delete(metaPath);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Still cleanup failed for '{imagePath}': {ex.Message}", LogTarget.File | LogTarget.Console);
+            }
+
+            _memoryCache.Remove($"still:{key}");
+        }
+    }
+
     public void DeleteAllCached()
     {
         var root = GetPostersRoot();
@@ -165,6 +261,11 @@ public sealed class PosterImageService : IPosterImageService
         return Path.Combine(_settingsService.Current.StateFolder, AppConstants.PostersFolderName);
     }
 
+    private string GetStillsFolder()
+    {
+        return Path.Combine(GetPostersRoot(), AppConstants.PosterStillsFolderName);
+    }
+
     private static string GetMediaFolder(MediaKind mediaKind)
     {
         return mediaKind == MediaKind.Movie
@@ -188,6 +289,26 @@ public sealed class PosterImageService : IPosterImageService
         return Path.Combine(GetPostersRoot(), GetMediaFolder(mediaKind), $"{tmdbId}.path");
     }
 
+    private static string BuildStillFileKey(int showTmdbId, int seasonNumber, int episodeNumber)
+    {
+        return $"{showTmdbId}_S{seasonNumber:00}E{episodeNumber:00}";
+    }
+
+    private string GetStillFilePath(int showTmdbId, int seasonNumber, int episodeNumber)
+    {
+        return Path.Combine(GetStillsFolder(), $"{BuildStillFileKey(showTmdbId, seasonNumber, episodeNumber)}.jpg");
+    }
+
+    private string GetStillMetaFilePath(int showTmdbId, int seasonNumber, int episodeNumber)
+    {
+        return Path.Combine(GetStillsFolder(), $"{BuildStillFileKey(showTmdbId, seasonNumber, episodeNumber)}.path");
+    }
+
+    private static string BuildStillMemoryCacheKey(int showTmdbId, int seasonNumber, int episodeNumber)
+    {
+        return $"still:{BuildStillFileKey(showTmdbId, seasonNumber, episodeNumber)}";
+    }
+
     private bool IsCacheValid(MediaKind mediaKind, int tmdbId, string posterPath)
     {
         var imagePath = GetLocalFilePathForWrite(mediaKind, tmdbId);
@@ -203,6 +324,23 @@ public sealed class PosterImageService : IPosterImageService
         }
 
         return string.Equals(File.ReadAllText(metaPath), posterPath, StringComparison.Ordinal);
+    }
+
+    private bool IsStillCacheValid(int showTmdbId, int seasonNumber, int episodeNumber, string stillPath)
+    {
+        var imagePath = GetStillFilePath(showTmdbId, seasonNumber, episodeNumber);
+        if (!File.Exists(imagePath))
+        {
+            return false;
+        }
+
+        var metaPath = GetStillMetaFilePath(showTmdbId, seasonNumber, episodeNumber);
+        if (!File.Exists(metaPath))
+        {
+            return true;
+        }
+
+        return string.Equals(File.ReadAllText(metaPath), stillPath, StringComparison.Ordinal);
     }
 
     private async Task<ImageSource?> DownloadAndCacheAsync(
@@ -239,6 +377,48 @@ public sealed class PosterImageService : IPosterImageService
         {
             _logger.Warning(
                 $"Poster cache failed for {mediaKind} tmdbId={tmdbId}: {ex.Message}",
+                LogTarget.File | LogTarget.Console);
+            return null;
+        }
+    }
+
+    private async Task<ImageSource?> DownloadAndCacheStillAsync(
+        string stillPath,
+        int showTmdbId,
+        int seasonNumber,
+        int episodeNumber,
+        int width,
+        CancellationToken cancellationToken)
+    {
+        var remoteUrl = BuildRemoteUrl(stillPath, width);
+        try
+        {
+            var bytes = await PosterHttpClient.GetByteArrayAsync(remoteUrl, cancellationToken);
+            Directory.CreateDirectory(GetStillsFolder());
+
+            var imagePath = GetStillFilePath(showTmdbId, seasonNumber, episodeNumber);
+            await File.WriteAllBytesAsync(imagePath, bytes, cancellationToken);
+            await File.WriteAllTextAsync(
+                GetStillMetaFilePath(showTmdbId, seasonNumber, episodeNumber),
+                stillPath,
+                cancellationToken);
+
+            var image = LoadImageFromBytes(bytes);
+            if (image is not null)
+            {
+                _memoryCache[BuildStillMemoryCacheKey(showTmdbId, seasonNumber, episodeNumber)] = image;
+            }
+
+            return image;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning(
+                $"Still cache failed for tmdbId={showTmdbId} S{seasonNumber:00}E{episodeNumber:00}: {ex.Message}",
                 LogTarget.File | LogTarget.Console);
             return null;
         }

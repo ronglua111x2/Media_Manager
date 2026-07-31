@@ -17,6 +17,7 @@ public partial class MainViewModel : ViewModelBase
 
     public MainViewModel(
         AutoTrackViewModel autoTrackViewModel,
+        NewsViewModel newsViewModel,
         FindAddViewModel findAddViewModel,
         LibraryViewModel libraryViewModel,
         TorrentWorkspaceViewModel torrentWorkspaceViewModel,
@@ -32,6 +33,7 @@ public partial class MainViewModel : ViewModelBase
         _workspaceMap = new Dictionary<AppWorkspaceKind, ViewModelBase>
         {
             [AppWorkspaceKind.AutoTrack] = autoTrackViewModel,
+            [AppWorkspaceKind.News] = newsViewModel,
             [AppWorkspaceKind.FindAdd] = findAddViewModel,
             [AppWorkspaceKind.Library] = libraryViewModel,
             [AppWorkspaceKind.Torrent] = torrentWorkspaceViewModel,
@@ -44,10 +46,17 @@ public partial class MainViewModel : ViewModelBase
         [
             new ShellNavigationItem
             {
+                Kind = AppWorkspaceKind.News,
+                Label = "News",
+                Description = "New episodes this week",
+                IconKind = "Newspaper"
+            },
+            new ShellNavigationItem
+            {
                 Kind = AppWorkspaceKind.AutoTrack,
-                Label = "Home",
-                Description = "Auto-track dashboard",
-                IconKind = "House"
+                Label = "Auto",
+                Description = "Auto-track controls",
+                IconKind = "Bot"
             },
             new ShellNavigationItem
             {
@@ -95,7 +104,7 @@ public partial class MainViewModel : ViewModelBase
 
         _deviceStatusService.StatusChanged += OnDeviceStatusChanged;
         ApplyDeviceStatus();
-        NavigateTo(AppWorkspaceKind.AutoTrack);
+        NavigateTo(AppWorkspaceKind.News);
 
         _statusTimer = new DispatcherTimer
         {

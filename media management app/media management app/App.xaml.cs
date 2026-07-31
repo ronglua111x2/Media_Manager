@@ -187,6 +187,7 @@ public partial class App : System.Windows.Application
         services.AddSingleton<IAutoTrackSchedulerService, AutoTrackSchedulerService>();
 
         services.AddSingleton<AutoTrackViewModel>();
+        services.AddSingleton<NewsViewModel>();
         services.AddSingleton<FindAddViewModel>();
         services.AddSingleton<LibraryViewModel>();
         services.AddSingleton<TorrentWorkspaceViewModel>();

@@ -8,5 +8,6 @@ public enum AppWorkspaceKind
     Torrent = 3,
     Qbittorrent = 4,
     Recipe = 5,
-    SystemSettings = 6
+    SystemSettings = 6,
+    News = 7
 }

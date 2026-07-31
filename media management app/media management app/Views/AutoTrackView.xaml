@@ -37,7 +37,7 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <StackPanel>
-                    <TextBlock Text="Home" Style="{StaticResource SectionTitleStyle}" />
+                    <TextBlock Text="Auto" Style="{StaticResource SectionTitleStyle}" />
                     <TextBlock Text="{Binding SchedulerStatus}" Style="{StaticResource MutedTextStyle}" Margin="0,4,0,0" />
                     <TextBlock Text="{Binding LastRunSummary, StringFormat=Last run: {0}}"
                                Style="{StaticResource MutedTextStyle}"

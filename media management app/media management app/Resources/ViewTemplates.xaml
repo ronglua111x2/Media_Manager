@@ -5,6 +5,9 @@
     <DataTemplate DataType="{x:Type vm:AutoTrackViewModel}">
         <views:AutoTrackView />
     </DataTemplate>
+    <DataTemplate DataType="{x:Type vm:NewsViewModel}">
+        <views:NewsView />
+    </DataTemplate>
     <DataTemplate DataType="{x:Type vm:FindAddViewModel}">
         <views:FindAddView />
     </DataTemplate>
