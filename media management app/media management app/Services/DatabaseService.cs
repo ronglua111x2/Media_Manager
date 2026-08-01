@@ -1167,7 +1167,7 @@ public sealed class DatabaseService : IDatabaseService
             """;
         command.Parameters.AddWithValue("$Hash", torrent.Hash);
         command.Parameters.AddWithValue("$Name", torrent.Name);
-        command.Parameters.AddWithValue("$State", torrent.IsComplete ? "Downloaded" : torrent.State);
+        command.Parameters.AddWithValue("$State", QbittorrentTorrentStateNormalizer.Normalize(torrent.State, torrent.IsComplete));
         command.Parameters.AddWithValue("$Progress", Math.Clamp(torrent.Progress, 0, 1));
         command.Parameters.AddWithValue("$ShowId", showId);
         command.Parameters.AddWithValue("$OwnerSeasonNumber", ownerSeasonNumber);

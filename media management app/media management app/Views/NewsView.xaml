@@ -2,7 +2,8 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
-             xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes">
+             xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+             xmlns:common="clr-namespace:media_management_app.Common">
     <UserControl.Resources>
         <Style x:Key="MutedTextStyle" TargetType="TextBlock">
             <Setter Property="Foreground" Value="{StaticResource AppBrushMutedText}" />
@@ -19,6 +20,44 @@
             <Setter Property="Background" Value="{StaticResource AppBrushSurfaceRaised}" />
             <Setter Property="Padding" Value="14" />
             <Setter Property="Margin" Value="0,0,0,12" />
+        </Style>
+
+        <Style x:Key="NewsSortSegmentButtonStyle" TargetType="Button" BasedOn="{StaticResource SortSegmentButtonStyle}">
+            <Setter Property="MinHeight" Value="36" />
+            <Setter Property="MinWidth" Value="44" />
+            <Setter Property="Padding" Value="12,8" />
+        </Style>
+
+        <Style x:Key="NewsEpisodeTitleStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource AppBrushText}" />
+            <Setter Property="FontSize" Value="15" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        </Style>
+
+        <Style x:Key="NewsEpisodeShowStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource AppBrushMutedText}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="Medium" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        </Style>
+
+        <Style x:Key="NewsEpisodeMetaStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource AppBrushMutedText}" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Opacity" Value="0.85" />
+        </Style>
+
+        <Style x:Key="NewsEpisodeOverviewStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource AppBrushText}" />
+            <Setter Property="FontSize" Value="12.5" />
+            <Setter Property="FontWeight" Value="Normal" />
+            <Setter Property="Opacity" Value="0.72" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+            <Setter Property="LineHeight" Value="18" />
+            <Setter Property="MaxHeight" Value="36" />
         </Style>
     </UserControl.Resources>
 
@@ -68,13 +107,50 @@
                 <DockPanel>
                     <Grid DockPanel.Dock="Top" Margin="0,0,0,10">
                         <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <TextBlock Text="New This Week"
                                    Style="{StaticResource SectionTitleStyle}"
-                                   VerticalAlignment="Center" />
-                        <Button Grid.Column="1"
+                                   VerticalAlignment="Center"
+                                   Margin="0,0,12,0" />
+                        <Border Grid.Column="1"
+                                BorderBrush="{StaticResource AppBrushBorder}"
+                                BorderThickness="1"
+                                CornerRadius="8"
+                                ClipToBounds="True"
+                                VerticalAlignment="Center"
+                                Height="36">
+                            <StackPanel Orientation="Horizontal">
+                                <Button Style="{StaticResource NewsSortSegmentButtonStyle}"
+                                        Command="{Binding SetNewsSortModeCommand}"
+                                        CommandParameter="{x:Static common:NewsEpisodeSortMode.AirDateDesc}"
+                                        Tag="{Binding IsAirDateSortSelected}"
+                                        BorderThickness="0,0,1,0"
+                                        ToolTip="By airdate">
+                                    <iconPacks:PackIconLucide Kind="CalendarClock" Width="18" Height="18" />
+                                </Button>
+                                <Button Style="{StaticResource NewsSortSegmentButtonStyle}"
+                                        Command="{Binding SetNewsSortModeCommand}"
+                                        CommandParameter="{x:Static common:NewsEpisodeSortMode.TrackedShow}"
+                                        Tag="{Binding IsTrackedShowSortSelected}"
+                                        BorderThickness="0,0,1,0"
+                                        ToolTip="By tracked show">
+                                    <iconPacks:PackIconLucide Kind="Layers" Width="18" Height="18" />
+                                </Button>
+                                <Button Style="{StaticResource NewsSortSegmentButtonStyle}"
+                                        Command="{Binding SetNewsSortModeCommand}"
+                                        CommandParameter="{x:Static common:NewsEpisodeSortMode.Status}"
+                                        Tag="{Binding IsStatusSortSelected}"
+                                        BorderThickness="0"
+                                        ToolTip="By status">
+                                    <iconPacks:PackIconLucide Kind="ListFilter" Width="18" Height="18" />
+                                </Button>
+                            </StackPanel>
+                        </Border>
+                        <Button Grid.Column="3"
                                 Style="{StaticResource AppOutlinedButtonStyle}"
                                 Command="{Binding OpenJellyfinCommand}"
                                 Padding="10,6"
@@ -96,48 +172,60 @@
                                     <Border Background="{StaticResource AppBrushSurface}"
                                             BorderBrush="{StaticResource AppBrushBorder}"
                                             BorderThickness="1"
-                                            CornerRadius="8"
-                                            Padding="10"
-                                            Margin="0,0,0,8">
+                                            CornerRadius="10"
+                                            Padding="12"
+                                            Margin="0,0,0,10">
                                         <Grid>
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="Auto" />
                                                 <ColumnDefinition Width="*" />
                                                 <ColumnDefinition Width="Auto" />
                                             </Grid.ColumnDefinitions>
-                                            <Border Width="160"
-                                                    Height="90"
-                                                    CornerRadius="6"
+                                            <Border Width="180"
+                                                    Height="101"
+                                                    CornerRadius="8"
                                                     Background="{StaticResource AppBrushChipMuted}"
                                                     ClipToBounds="True">
                                                 <Image Source="{Binding StillImage}"
                                                        Stretch="UniformToFill" />
                                             </Border>
                                             <StackPanel Grid.Column="1"
-                                                        Margin="12,0,12,0"
+                                                        Margin="14,0,14,0"
                                                         VerticalAlignment="Center">
-                                                <TextBlock Text="{Binding EpisodeTitle}"
-                                                           FontWeight="SemiBold"
-                                                           FontSize="14"
-                                                           TextWrapping="Wrap"
-                                                           TextTrimming="CharacterEllipsis" />
+                                                <DockPanel LastChildFill="True">
+                                                    <Border DockPanel.Dock="Left"
+                                                            Background="{StaticResource AppBrushAccentSoft}"
+                                                            CornerRadius="4"
+                                                            Padding="7,2"
+                                                            Margin="0,1,8,0"
+                                                            VerticalAlignment="Top">
+                                                        <TextBlock Text="{Binding EpisodeLabel}"
+                                                                   FontSize="11"
+                                                                   FontWeight="Bold"
+                                                                   Foreground="{StaticResource AppBrushAccent}" />
+                                                    </Border>
+                                                    <TextBlock Text="{Binding EpisodeTitle}"
+                                                               Style="{StaticResource NewsEpisodeTitleStyle}" />
+                                                </DockPanel>
                                                 <TextBlock Text="{Binding ShowTitle}"
-                                                           Style="{StaticResource MutedTextStyle}"
-                                                           FontSize="12"
-                                                           Margin="0,4,0,0"
-                                                           TextTrimming="CharacterEllipsis" />
-                                                <TextBlock Style="{StaticResource MutedTextStyle}" Margin="0,4,0,0">
-                                                    <Run Text="{Binding EpisodeLabel, Mode=OneWay}" />
-                                                    <Run Text=" · " />
-                                                    <Run Text="{Binding AirDateDisplay, Mode=OneWay}" />
-                                                </TextBlock>
+                                                           Style="{StaticResource NewsEpisodeShowStyle}"
+                                                           Margin="0,8,0,0" />
+                                                <StackPanel Orientation="Horizontal" Margin="0,5,0,0">
+                                                    <iconPacks:PackIconLucide Kind="Calendar"
+                                                                               Width="12"
+                                                                               Height="12"
+                                                                               Margin="0,0,5,0"
+                                                                               VerticalAlignment="Center"
+                                                                               Foreground="{StaticResource AppBrushMutedText}"
+                                                                               Opacity="0.85" />
+                                                    <TextBlock Text="{Binding AirDateDisplay}"
+                                                               Style="{StaticResource NewsEpisodeMetaStyle}"
+                                                               VerticalAlignment="Center" />
+                                                </StackPanel>
                                                 <TextBlock Text="{Binding Overview}"
-                                                           Margin="0,6,0,0"
-                                                           TextWrapping="Wrap"
-                                                           MaxHeight="40"
-                                                           TextTrimming="CharacterEllipsis">
+                                                           Margin="0,8,0,0">
                                                     <TextBlock.Style>
-                                                        <Style TargetType="TextBlock" BasedOn="{StaticResource MutedTextStyle}">
+                                                        <Style TargetType="TextBlock" BasedOn="{StaticResource NewsEpisodeOverviewStyle}">
                                                             <Setter Property="Visibility" Value="Visible" />
                                                             <Style.Triggers>
                                                                 <DataTrigger Binding="{Binding HasOverview}" Value="False">
@@ -149,12 +237,13 @@
                                                 </TextBlock>
                                             </StackPanel>
                                             <Border Grid.Column="2"
-                                                    VerticalAlignment="Center"
+                                                    VerticalAlignment="Top"
+                                                    Margin="0,2,0,0"
                                                     Padding="10,6"
-                                                    CornerRadius="6"
-                                                    Background="{StaticResource AppBrushChipMuted}">
+                                                    CornerRadius="999"
+                                                    Background="{StaticResource AppBrushAccentSoft}">
                                                 <TextBlock Text="{Binding StatusLabel}"
-                                                           FontSize="12"
+                                                           FontSize="11"
                                                            FontWeight="SemiBold"
                                                            Foreground="{StaticResource AppBrushAccent}" />
                                             </Border>

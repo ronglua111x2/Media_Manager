@@ -1253,7 +1253,7 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         var addedTorrent = await _qbittorrentClient.AddTorrentAsync(CreateAddTorrentRequest(order, savePath), cancellationToken);
         order.TorrentHash = addedTorrent.Hash;
         order.TorrentName = addedTorrent.Name;
-        order.TorrentState = addedTorrent.State;
+        order.TorrentState = QbittorrentTorrentStateNormalizer.Normalize(addedTorrent.State, addedTorrent.IsComplete);
         order.TorrentProgress = addedTorrent.Progress;
         order.Status = addedTorrent.IsComplete ? TorrentOrderStatus.Completed : TorrentOrderStatus.Downloading;
         order.StatusDetail = addedTorrent.IsComplete

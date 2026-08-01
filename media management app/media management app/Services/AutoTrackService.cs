@@ -1188,7 +1188,7 @@ public sealed class AutoTrackService : IAutoTrackService
 
         order.TorrentHash = addedTorrent.Hash;
         order.TorrentName = addedTorrent.Name;
-        order.TorrentState = addedTorrent.State;
+        order.TorrentState = QbittorrentTorrentStateNormalizer.Normalize(addedTorrent.State, addedTorrent.IsComplete);
         order.TorrentProgress = addedTorrent.Progress;
         order.Status = addedTorrent.IsComplete ? TorrentOrderStatus.Completed : TorrentOrderStatus.Downloading;
         order.StatusDetail = addedTorrent.IsComplete

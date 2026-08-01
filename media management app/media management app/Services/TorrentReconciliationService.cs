@@ -443,7 +443,7 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
     {
         order.TorrentHash = torrent.Hash;
         order.TorrentName = torrent.Name;
-        order.TorrentState = torrent.State;
+        order.TorrentState = QbittorrentTorrentStateNormalizer.Normalize(torrent.State, torrent.IsComplete);
         order.TorrentProgress = torrent.Progress;
         order.Status = torrent.IsComplete ? TorrentOrderStatus.Completed : TorrentOrderStatus.Downloading;
         order.StatusDetail = torrent.IsComplete

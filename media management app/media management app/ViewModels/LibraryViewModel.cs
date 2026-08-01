@@ -37,6 +37,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
     private MediaKind? _loadedDetailMediaKind;
     private bool _suppressSeriesStatusUpdate;
     private bool _suppressWatchProgressUpdate;
+    private int _watchProgressSuppressGeneration;
 
     public LibraryViewModel(
         ITrackedShowService trackedShowService,
@@ -87,10 +88,12 @@ public sealed partial class LibraryViewModel : ViewModelBase
         _torrentReconciliationService.Reconciled += (_, _) => _ = ReloadSelectedDetailAsync();
         packLinkCoordinatorService.PackReconciled += (_, _) => _ = ReloadSelectedDetailAsync();
         lifecycleService.AppModeChanged += OnAppModeChanged;
-        SelectedWatchStatusFilter = WatchStatusFilterOptions[0];
+        RestoreLibraryUiState();
         RefreshLibrary();
         StatusMessage = "Select a media card to view details.";
     }
+
+    private bool _isRestoringLibraryUiState;
 
     public ObservableCollection<LibraryMediaCardViewModel> MediaCards { get; } = [];
 
@@ -1017,6 +1020,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
         ApplyMediaCardFilterAndSort();
         OnPropertyChanged(nameof(HasMedia));
         OnPropertyChanged(nameof(HasNoFilterMatches));
+        PersistLibraryUiState();
     }
 
     partial void OnSelectedWatchStatusFilterChanged(WatchStatusFilterOption? value)
@@ -1024,6 +1028,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
         ApplyMediaCardFilterAndSort();
         OnPropertyChanged(nameof(HasMedia));
         OnPropertyChanged(nameof(HasNoFilterMatches));
+        PersistLibraryUiState();
     }
 
     [RelayCommand(CanExecute = nameof(IsSelectedShow))]
@@ -1283,6 +1288,47 @@ public sealed partial class LibraryViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsDateSortSelected));
         OnPropertyChanged(nameof(IsTypeSortSelected));
         OnPropertyChanged(nameof(IsNameSortSelected));
+        PersistLibraryUiState();
+    }
+
+    private void RestoreLibraryUiState()
+    {
+        _isRestoringLibraryUiState = true;
+        try
+        {
+            var ui = _settingsService.Current.Ui ?? new UiSettings();
+            MediaSortMode = ui.LibraryMediaSortMode;
+            MediaSearchQuery = ui.LibraryMediaSearchQuery ?? string.Empty;
+            SelectedWatchStatusFilter = WatchStatusFilterOptions.FirstOrDefault(option =>
+                option.Status == ui.LibraryWatchStatusFilter) ?? WatchStatusFilterOptions[0];
+        }
+        finally
+        {
+            _isRestoringLibraryUiState = false;
+        }
+    }
+
+    private void PersistLibraryUiState()
+    {
+        if (_isRestoringLibraryUiState)
+        {
+            return;
+        }
+
+        var ui = _settingsService.Current.Ui ??= new UiSettings();
+        var search = MediaSearchQuery ?? string.Empty;
+        var filter = SelectedWatchStatusFilter?.Status;
+        if (ui.LibraryMediaSortMode == MediaSortMode &&
+            string.Equals(ui.LibraryMediaSearchQuery, search, StringComparison.Ordinal) &&
+            ui.LibraryWatchStatusFilter == filter)
+        {
+            return;
+        }
+
+        ui.LibraryMediaSortMode = MediaSortMode;
+        ui.LibraryMediaSearchQuery = search;
+        ui.LibraryWatchStatusFilter = filter;
+        _settingsService.Save();
     }
 
     partial void OnIsImportBusyChanged(bool value)
@@ -1341,6 +1387,9 @@ public sealed partial class LibraryViewModel : ViewModelBase
 
     private async Task LoadSelectedMediaAsync(LibraryMediaCardViewModel? card)
     {
+        // Block watch-status persistence until SetWatchProgressUi finishes settling bindings.
+        _suppressWatchProgressUpdate = true;
+
         var expandedSeasons = SelectedShow?.Seasons
             .Where(season => season.IsExpanded)
             .Select(season => season.SeasonNumber)
@@ -1584,8 +1633,12 @@ public sealed partial class LibraryViewModel : ViewModelBase
 
         if (selectedId is not null && selectedKind is not null)
         {
-            var stillVisible = MediaCards.FirstOrDefault(card => card.Id == selectedId && card.MediaKind == selectedKind);
-            SelectedMediaCard = stillVisible ?? MediaCards.FirstOrDefault();
+            // Keep selection only when it still matches the filter. Do not auto-select the
+            // next card: that reloads detail while SelectedWatchStatus may still hold the
+            // status just applied, and the ComboBox TwoWay binding can cascade that status
+            // onto every remaining filtered item (e.g. Watching → all marked Completed).
+            SelectedMediaCard = MediaCards.FirstOrDefault(card =>
+                card.Id == selectedId && card.MediaKind == selectedKind);
         }
         else if (SelectedMediaCard is null)
         {
@@ -1598,17 +1651,29 @@ public sealed partial class LibraryViewModel : ViewModelBase
 
     private void SetWatchProgressUi(UserWatchStatus status, int watchedEpisodes, int totalEpisodes)
     {
+        var generation = ++_watchProgressSuppressGeneration;
         _suppressWatchProgressUpdate = true;
         SelectedWatchStatus = status;
         SelectedWatchTotalEpisodes = Math.Max(0, totalEpisodes);
         SelectedWatchedEpisodes = Math.Clamp(watchedEpisodes, 0, SelectedWatchTotalEpisodes);
-        _suppressWatchProgressUpdate = false;
         OnPropertyChanged(nameof(ShowWatchEpisodeControls));
         OnPropertyChanged(nameof(SelectedWatchEpisodesLabel));
         OnPropertyChanged(nameof(CanIncrementWatchedEpisodes));
         OnPropertyChanged(nameof(CanDecrementWatchedEpisodes));
         IncrementWatchedEpisodesCommand.NotifyCanExecuteChanged();
         DecrementWatchedEpisodesCommand.NotifyCanExecuteChanged();
+
+        // Defer clearing suppress so stale ComboBox SelectedValue write-backs after
+        // selection/filter changes are ignored.
+        System.Windows.Application.Current?.Dispatcher.BeginInvoke(
+            () =>
+            {
+                if (generation == _watchProgressSuppressGeneration)
+                {
+                    _suppressWatchProgressUpdate = false;
+                }
+            },
+            DispatcherPriority.Background);
     }
 
     private void PersistSelectedWatchProgress(UserWatchStatus status, int watchedEpisodes)

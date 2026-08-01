@@ -9,12 +9,14 @@ public sealed partial class NewsEpisodeCardViewModel : ObservableObject
 {
     public NewsEpisodeCardViewModel(TrackedShow show, TrackedEpisode episode)
     {
+        ShowId = show.Id;
         ShowTmdbId = show.TmdbId;
         SeasonNumber = episode.SeasonNumber;
         EpisodeNumber = episode.EpisodeNumber;
         ShowTitle = show.DisplayTitle;
         EpisodeLabel = $"S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00}";
         EpisodeTitle = episode.Title;
+        AirDate = episode.AirDate;
         AirDateDisplay = episode.AirDateDisplay;
         Overview = string.IsNullOrWhiteSpace(episode.Overview)
             ? string.Empty
@@ -22,8 +24,11 @@ public sealed partial class NewsEpisodeCardViewModel : ObservableObject
         StillPath = episode.StillPath;
         ShowPosterPath = show.PosterPath;
         StatusLabel = BuildStatusLabel(episode);
+        StatusSortRank = GetStatusSortRank(episode);
         IsAvailable = episode.Availability == EpisodeAvailability.Available;
     }
+
+    public long ShowId { get; }
 
     public int ShowTmdbId { get; }
 
@@ -37,6 +42,8 @@ public sealed partial class NewsEpisodeCardViewModel : ObservableObject
 
     public string EpisodeTitle { get; }
 
+    public DateTime? AirDate { get; }
+
     public string AirDateDisplay { get; }
 
     public string Overview { get; }
@@ -48,6 +55,8 @@ public sealed partial class NewsEpisodeCardViewModel : ObservableObject
     public string? ShowPosterPath { get; }
 
     public string StatusLabel { get; }
+
+    public int StatusSortRank { get; }
 
     public bool IsAvailable { get; }
 
@@ -63,19 +72,34 @@ public sealed partial class NewsEpisodeCardViewModel : ObservableObject
             return "Available";
         }
 
-        if (!string.IsNullOrWhiteSpace(episode.TorrentState))
+        if (!string.IsNullOrWhiteSpace(episode.TorrentState) ||
+            !string.IsNullOrWhiteSpace(episode.TorrentHash))
         {
+            var normalized = QbittorrentTorrentStateNormalizer.Normalize(
+                episode.TorrentState,
+                isComplete: false);
             var progress = episode.TorrentProgress > 0
                 ? $" ({episode.TorrentProgress:P0})"
                 : string.Empty;
-            return $"{episode.TorrentState}{progress}";
-        }
-
-        if (!string.IsNullOrWhiteSpace(episode.TorrentHash))
-        {
-            return "Downloading";
+            return $"{normalized}{progress}";
         }
 
         return "Missing";
+    }
+
+    private static int GetStatusSortRank(TrackedEpisode episode)
+    {
+        if (episode.Availability == EpisodeAvailability.Available)
+        {
+            return 2;
+        }
+
+        if (!string.IsNullOrWhiteSpace(episode.TorrentHash) ||
+            !string.IsNullOrWhiteSpace(episode.TorrentState))
+        {
+            return 1;
+        }
+
+        return 0;
     }
 }

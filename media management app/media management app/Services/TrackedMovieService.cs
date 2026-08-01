@@ -124,7 +124,7 @@ public sealed class TrackedMovieService : ITrackedMovieService
             movieId,
             torrent.Hash,
             torrent.Name,
-            torrent.IsComplete ? "Downloaded" : torrent.State,
+            QbittorrentTorrentStateNormalizer.Normalize(torrent.State, torrent.IsComplete),
             torrent.Progress);
     }
 

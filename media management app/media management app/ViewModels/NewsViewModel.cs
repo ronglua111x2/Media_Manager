@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Windows.Media;
+using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using media_management_app.Common;
 using media_management_app.Models;
@@ -14,6 +15,8 @@ public sealed partial class NewsViewModel : ViewModelBase
     private readonly ITrackedShowService _trackedShowService;
     private readonly ITorrentCartService _torrentCartService;
     private readonly IPosterImageService _posterImageService;
+    private readonly List<NewsEpisodeCardViewModel> _weekEpisodeSource = [];
+    private bool _isRestoringUiState;
 
     public NewsViewModel(
         ISettingsService settingsService,
@@ -32,12 +35,45 @@ public sealed partial class NewsViewModel : ViewModelBase
             System.Windows.Application.Current.Dispatcher.Invoke(UpdateDashboard);
         };
 
+        _isRestoringUiState = true;
+        NewsSortMode = _settingsService.Current.Ui?.NewsEpisodeSortMode ?? NewsEpisodeSortMode.AirDateDesc;
+        _isRestoringUiState = false;
+
         UpdateDashboard();
     }
 
     public ObservableCollection<NewsShowCardViewModel> TrackedShows { get; } = [];
 
     public ObservableCollection<NewsEpisodeCardViewModel> NewEpisodesThisWeek { get; } = [];
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsAirDateSortSelected))]
+    [NotifyPropertyChangedFor(nameof(IsTrackedShowSortSelected))]
+    [NotifyPropertyChangedFor(nameof(IsStatusSortSelected))]
+    private NewsEpisodeSortMode newsSortMode = NewsEpisodeSortMode.AirDateDesc;
+
+    public bool IsAirDateSortSelected => NewsSortMode == NewsEpisodeSortMode.AirDateDesc;
+
+    public bool IsTrackedShowSortSelected => NewsSortMode == NewsEpisodeSortMode.TrackedShow;
+
+    public bool IsStatusSortSelected => NewsSortMode == NewsEpisodeSortMode.Status;
+
+    [RelayCommand]
+    private void SetNewsSortMode(NewsEpisodeSortMode mode)
+    {
+        NewsSortMode = mode;
+    }
+
+    partial void OnNewsSortModeChanged(NewsEpisodeSortMode value)
+    {
+        ApplyNewsEpisodeSort();
+        if (_isRestoringUiState)
+        {
+            return;
+        }
+
+        PersistNewsSortMode(value);
+    }
 
     [RelayCommand(CanExecute = nameof(CanOpenJellyfin))]
     private void OpenJellyfin()
@@ -69,6 +105,7 @@ public sealed partial class NewsViewModel : ViewModelBase
     {
         OpenJellyfinCommand.NotifyCanExecuteChanged();
         TrackedShows.Clear();
+        _weekEpisodeSource.Clear();
         NewEpisodesThisWeek.Clear();
 
         var shows = _trackedShowService.GetAutoTrackedShows();
@@ -98,11 +135,10 @@ public sealed partial class NewsViewModel : ViewModelBase
                          .Where(episode => IsAtOrAfterCheckpoint(
                              episode,
                              show.AutoTrackFromSeason.Value,
-                             show.AutoTrackFromEpisode.Value))
-                         .OrderByDescending(episode => episode.AirDate))
+                             show.AutoTrackFromEpisode.Value)))
             {
                 var episodeCard = new NewsEpisodeCardViewModel(show, episode);
-                NewEpisodesThisWeek.Add(episodeCard);
+                _weekEpisodeSource.Add(episodeCard);
                 if (!string.IsNullOrWhiteSpace(episode.StillPath))
                 {
                     stillKeepSet.Add((show.TmdbId, episode.SeasonNumber, episode.EpisodeNumber));
@@ -112,7 +148,57 @@ public sealed partial class NewsViewModel : ViewModelBase
             }
         }
 
+        ApplyNewsEpisodeSort();
         _posterImageService.DeleteStillsNotIn(stillKeepSet);
+    }
+
+    private void ApplyNewsEpisodeSort()
+    {
+        NewEpisodesThisWeek.Clear();
+        foreach (var card in SortWeekEpisodes(_weekEpisodeSource, NewsSortMode))
+        {
+            NewEpisodesThisWeek.Add(card);
+        }
+    }
+
+    private static IEnumerable<NewsEpisodeCardViewModel> SortWeekEpisodes(
+        IReadOnlyList<NewsEpisodeCardViewModel> source,
+        NewsEpisodeSortMode mode)
+    {
+        return mode switch
+        {
+            NewsEpisodeSortMode.TrackedShow => source
+                .GroupBy(card => card.ShowId)
+                .OrderByDescending(group => group.Max(card => card.AirDate ?? DateTime.MinValue))
+                .ThenBy(group => group.First().ShowTitle, StringComparer.OrdinalIgnoreCase)
+                .SelectMany(group => group
+                    .OrderByDescending(card => card.AirDate)
+                    .ThenBy(card => card.SeasonNumber)
+                    .ThenBy(card => card.EpisodeNumber)),
+            NewsEpisodeSortMode.Status => source
+                .OrderBy(card => card.StatusSortRank)
+                .ThenByDescending(card => card.AirDate)
+                .ThenBy(card => card.ShowTitle, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(card => card.SeasonNumber)
+                .ThenBy(card => card.EpisodeNumber),
+            _ => source
+                .OrderByDescending(card => card.AirDate)
+                .ThenBy(card => card.ShowTitle, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(card => card.SeasonNumber)
+                .ThenBy(card => card.EpisodeNumber)
+        };
+    }
+
+    private void PersistNewsSortMode(NewsEpisodeSortMode mode)
+    {
+        var ui = _settingsService.Current.Ui ??= new UiSettings();
+        if (ui.NewsEpisodeSortMode == mode)
+        {
+            return;
+        }
+
+        ui.NewsEpisodeSortMode = mode;
+        _settingsService.Save();
     }
 
     private int CountPendingEpisodes(TrackedShow show, IReadOnlyList<TrackedEpisode> episodes)

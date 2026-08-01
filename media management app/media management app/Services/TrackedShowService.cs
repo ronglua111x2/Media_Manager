@@ -207,7 +207,7 @@ public sealed class TrackedShowService : ITrackedShowService
             episodeId,
             torrent.Hash,
             torrent.Name,
-            torrent.IsComplete ? "Downloaded" : torrent.State,
+            QbittorrentTorrentStateNormalizer.Normalize(torrent.State, torrent.IsComplete),
             torrent.Progress);
     }
 
