@@ -497,6 +497,17 @@ public sealed class SymlinkSyncService : ISymlinkSyncService
         _databaseService.UpdateSourceItem(item);
     }
 
+    public void PruneEmptyFolders(string? startDirectory)
+    {
+        var settings = _settingsService.Current.Symlink;
+        if (!settings.Enabled || string.IsNullOrWhiteSpace(settings.UnifiedRoot))
+        {
+            return;
+        }
+
+        CleanupEmptyFolders(startDirectory, settings.UnifiedRoot);
+    }
+
     private void CleanupEmptyFolders(string? startDirectory, string outputRoot)
     {
         if (string.IsNullOrWhiteSpace(startDirectory) || !Directory.Exists(startDirectory))

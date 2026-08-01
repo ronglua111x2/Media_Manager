@@ -9,4 +9,6 @@ public interface ISymlinkSyncService
     SymlinkSyncResult RemoveItem(SourceItem item, string? linkedPath = null, IReadOnlyList<SourceItem>? linkedGroup = null);
 
     SymlinkSyncResult ReconcileAll();
+
+    void PruneEmptyFolders(string? startDirectory);
 }

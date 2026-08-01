@@ -135,6 +135,48 @@ public sealed class NfoWriterService : INfoWriterService
         }
     }
 
+    public void DeleteTvShowNfo(string showFolderPath)
+    {
+        if (string.IsNullOrWhiteSpace(showFolderPath))
+        {
+            return;
+        }
+
+        var nfoPath = Path.Combine(showFolderPath, TvShowNfoFileName);
+        if (!File.Exists(nfoPath))
+        {
+            return;
+        }
+
+        try
+        {
+            File.Delete(nfoPath);
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning($"Failed to delete tvshow.nfo at {nfoPath}: {ex.Message}", LogTarget.All);
+        }
+    }
+
+    public bool HasRemainingEpisodeArtifacts(string showFolderPath)
+    {
+        if (string.IsNullOrWhiteSpace(showFolderPath) || !Directory.Exists(showFolderPath))
+        {
+            return false;
+        }
+
+        try
+        {
+            return Directory.EnumerateFiles(showFolderPath, "*", SearchOption.AllDirectories)
+                .Any(path => !string.Equals(Path.GetFileName(path), TvShowNfoFileName, StringComparison.OrdinalIgnoreCase));
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning($"Failed to enumerate artifacts under {showFolderPath}: {ex.Message}", LogTarget.All);
+            return true;
+        }
+    }
+
     public void CleanupOrphanEpisodeNfos(string showFolderPath, IEnumerable<string> activeSymlinkPaths)
     {
         if (string.IsNullOrWhiteSpace(showFolderPath) || !Directory.Exists(showFolderPath))

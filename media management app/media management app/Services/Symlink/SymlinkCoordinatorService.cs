@@ -310,15 +310,47 @@ public sealed class SymlinkCoordinatorService : ISymlinkCoordinatorService
         try
         {
             var nfoTargets = CollectSymlinkPathsForNfoCleanup(e.Item);
+            var seasonFolders = nfoTargets
+                .Select(Path.GetDirectoryName)
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Select(path => Path.GetFullPath(path!))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            var showFolders = nfoTargets
+                .Select(GetShowFolderFromEpisodeSymlink)
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Select(path => Path.GetFullPath(path!))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            // Delete episode NFOs before symlink removal so empty-folder prune can collapse seasons.
+            foreach (var symlinkPath in nfoTargets)
+            {
+                _nfoWriterService.DeleteEpisodeNfo(symlinkPath);
+            }
+
             var result = await Task.Run(() => _symlinkSyncService.RemoveItem(e.Item, e.LinkedPath), cancellationToken);
             if (result.RemovedCount > 0 || result.ErrorCount > 0)
             {
                 _logger.Info($"Symlink event removal for {e.Item.FileName}. {result.Summary}", LogTarget.All);
             }
 
-            foreach (var symlinkPath in nfoTargets)
+            foreach (var showFolder in showFolders)
             {
-                _nfoWriterService.DeleteEpisodeNfo(symlinkPath);
+                if (!_nfoWriterService.HasRemainingEpisodeArtifacts(showFolder))
+                {
+                    _nfoWriterService.DeleteTvShowNfo(showFolder);
+                }
+            }
+
+            foreach (var seasonFolder in seasonFolders)
+            {
+                _symlinkSyncService.PruneEmptyFolders(seasonFolder);
+            }
+
+            foreach (var showFolder in showFolders)
+            {
+                _symlinkSyncService.PruneEmptyFolders(showFolder);
             }
         }
         finally
@@ -412,6 +444,7 @@ public sealed class SymlinkCoordinatorService : ISymlinkCoordinatorService
         foreach (var (showFolder, entry) in activePathsByShowFolder)
         {
             _nfoWriterService.CleanupOrphanEpisodeNfos(showFolder, entry.Paths);
+            PruneEmptySeasonFolders(showFolder);
         }
 
         // Clean leftover NFOs for episode-group shows that currently have no active symlinks.
@@ -431,7 +464,34 @@ public sealed class SymlinkCoordinatorService : ISymlinkCoordinatorService
                 }
 
                 _nfoWriterService.CleanupOrphanEpisodeNfos(showFolder, Array.Empty<string>());
+                _nfoWriterService.DeleteTvShowNfo(showFolder);
+                PruneEmptySeasonFolders(showFolder);
+                _symlinkSyncService.PruneEmptyFolders(showFolder);
             }
+        }
+    }
+
+    private void PruneEmptySeasonFolders(string showFolder)
+    {
+        if (string.IsNullOrWhiteSpace(showFolder) || !Directory.Exists(showFolder))
+        {
+            return;
+        }
+
+        IEnumerable<string> seasonFolders;
+        try
+        {
+            seasonFolders = Directory.EnumerateDirectories(showFolder).ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning($"Failed to enumerate season folders under {showFolder}: {ex.Message}", LogTarget.All);
+            return;
+        }
+
+        foreach (var seasonFolder in seasonFolders)
+        {
+            _symlinkSyncService.PruneEmptyFolders(seasonFolder);
         }
     }
 
@@ -514,12 +574,18 @@ public sealed class SymlinkCoordinatorService : ISymlinkCoordinatorService
             .FirstOrDefault(path => !string.IsNullOrWhiteSpace(path));
     }
 
-    private static List<string> CollectSymlinkPathsForNfoCleanup(SourceItem item)
+    private List<string> CollectSymlinkPathsForNfoCleanup(SourceItem item)
     {
         var paths = new List<string>();
         if (!string.IsNullOrWhiteSpace(item.SymlinkPath))
         {
             paths.Add(item.SymlinkPath);
+        }
+
+        var resolvedPath = ResolveSymlinkPath(item);
+        if (!string.IsNullOrWhiteSpace(resolvedPath))
+        {
+            paths.Add(resolvedPath);
         }
 
         return paths

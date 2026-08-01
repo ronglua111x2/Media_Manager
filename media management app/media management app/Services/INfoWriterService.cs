@@ -10,5 +10,9 @@ public interface INfoWriterService
 
     void DeleteEpisodeNfo(string symlinkPath);
 
+    void DeleteTvShowNfo(string showFolderPath);
+
+    bool HasRemainingEpisodeArtifacts(string showFolderPath);
+
     void CleanupOrphanEpisodeNfos(string showFolderPath, IEnumerable<string> activeSymlinkPaths);
 }
