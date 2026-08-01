@@ -14,4 +14,19 @@ public sealed class UiSettings
 
     /// <summary>Null means "All statuses".</summary>
     public UserWatchStatus? LibraryWatchStatusFilter { get; set; }
+
+    public long? LibrarySelectedMediaId { get; set; }
+
+    public MediaKind? LibrarySelectedMediaKind { get; set; }
+
+    public MediaCardSortMode TorrentMediaSortMode { get; set; } = MediaCardSortMode.DateAddedDesc;
+
+    public string TorrentMediaSearchQuery { get; set; } = string.Empty;
+
+    /// <summary>Null means "All statuses".</summary>
+    public UserWatchStatus? TorrentWatchStatusFilter { get; set; }
+
+    public long? TorrentSelectedMediaId { get; set; }
+
+    public MediaKind? TorrentSelectedMediaKind { get; set; }
 }

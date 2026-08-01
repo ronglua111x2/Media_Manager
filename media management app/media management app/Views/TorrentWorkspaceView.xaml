@@ -309,11 +309,26 @@
                         </Button>
                     </Grid>
 
+                    <TextBox Text="{Binding MediaSearchQuery, UpdateSourceTrigger=PropertyChanged}"
+                             Margin="0,14,0,8"
+                             MinHeight="34"
+                             materialDesign:HintAssist.Hint="Search media"
+                             materialDesign:HintAssist.IsFloating="False"
+                             VerticalContentAlignment="Center" />
+
+                    <ComboBox ItemsSource="{Binding WatchStatusFilterOptions}"
+                              SelectedItem="{Binding SelectedWatchStatusFilter}"
+                              DisplayMemberPath="Label"
+                              Margin="0,0,0,10"
+                              MinHeight="34"
+                              Padding="8,4"
+                              ToolTip="Filter by watch status" />
+
                     <Border BorderBrush="{StaticResource AppBrushBorder}"
                             BorderThickness="1"
                             CornerRadius="7"
                             ClipToBounds="True"
-                            Margin="0,14,0,12">
+                            Margin="0,0,0,12">
                         <UniformGrid Rows="1" Columns="3">
                             <Button Style="{StaticResource SortSegmentButtonStyle}"
                                     Command="{Binding SetMediaSortModeCommand}"
@@ -343,26 +358,55 @@
                     </Border>
                 </StackPanel>
 
-                <TextBlock Text="No media yet. Use Find/Add first."
-                           TextAlignment="Center"
-                           VerticalAlignment="Center">
-                    <TextBlock.Style>
-                        <Style TargetType="TextBlock" BasedOn="{StaticResource MutedTextStyle}">
-                            <Setter Property="Visibility" Value="Collapsed" />
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding HasMedia}" Value="False">
-                                    <Setter Property="Visibility" Value="Visible" />
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </TextBlock.Style>
-                </TextBlock>
+                <Grid>
+                    <TextBlock Text="No media yet. Use Find/Add first."
+                               TextAlignment="Center"
+                               VerticalAlignment="Center">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock" BasedOn="{StaticResource MutedTextStyle}">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasLibraryMedia}" Value="False">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
 
-                <ScrollViewer VerticalScrollBarVisibility="Auto"
-                              HorizontalScrollBarVisibility="Disabled">
-                    <ItemsControl ItemsSource="{Binding MediaCards}"
-                                  ItemTemplate="{StaticResource WorkspaceMediaCardTemplate}" />
-                </ScrollViewer>
+                    <TextBlock Text="No media matches the current search/filter."
+                               TextAlignment="Center"
+                               TextWrapping="Wrap"
+                               Margin="8,0"
+                               VerticalAlignment="Center">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock" BasedOn="{StaticResource MutedTextStyle}">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasNoFilterMatches}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+
+                    <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled">
+                        <ScrollViewer.Style>
+                            <Style TargetType="ScrollViewer">
+                                <Setter Property="Visibility" Value="Visible" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasMedia}" Value="False">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ScrollViewer.Style>
+                        <ItemsControl ItemsSource="{Binding MediaCards}"
+                                      ItemTemplate="{StaticResource WorkspaceMediaCardTemplate}" />
+                    </ScrollViewer>
+                </Grid>
             </DockPanel>
         </materialDesign:Card>
         <!-- #endregion -->

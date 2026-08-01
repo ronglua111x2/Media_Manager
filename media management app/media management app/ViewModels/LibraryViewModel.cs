@@ -94,6 +94,8 @@ public sealed partial class LibraryViewModel : ViewModelBase
     }
 
     private bool _isRestoringLibraryUiState;
+    private long? _pendingRestoreMediaId;
+    private MediaKind? _pendingRestoreMediaKind;
 
     public ObservableCollection<LibraryMediaCardViewModel> MediaCards { get; } = [];
 
@@ -255,6 +257,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
             SelectedMediaCard = MediaCards.FirstOrDefault(card => card.Id == selectedId && card.MediaKind == selectedKind);
         }
 
+        TryRestorePendingSelectedMedia();
         SelectedMediaCard ??= MediaCards.FirstOrDefault();
         OnPropertyChanged(nameof(HasLibraryMedia));
         OnPropertyChanged(nameof(HasMedia));
@@ -1273,6 +1276,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
             _ = LoadSelectedMediaAsync(value);
         }
 
+        PersistLibraryUiState();
         OnPropertyChanged(nameof(HasSelectedMedia));
         OnPropertyChanged(nameof(IsSelectedShow));
         OnPropertyChanged(nameof(IsSelectedMovie));
@@ -1301,11 +1305,33 @@ public sealed partial class LibraryViewModel : ViewModelBase
             MediaSearchQuery = ui.LibraryMediaSearchQuery ?? string.Empty;
             SelectedWatchStatusFilter = WatchStatusFilterOptions.FirstOrDefault(option =>
                 option.Status == ui.LibraryWatchStatusFilter) ?? WatchStatusFilterOptions[0];
+            _pendingRestoreMediaId = ui.LibrarySelectedMediaId;
+            _pendingRestoreMediaKind = ui.LibrarySelectedMediaKind;
         }
         finally
         {
             _isRestoringLibraryUiState = false;
         }
+    }
+
+    private void TryRestorePendingSelectedMedia()
+    {
+        if (SelectedMediaCard is not null ||
+            _pendingRestoreMediaId is null ||
+            _pendingRestoreMediaKind is null)
+        {
+            _pendingRestoreMediaId = null;
+            _pendingRestoreMediaKind = null;
+            return;
+        }
+
+        var pendingId = _pendingRestoreMediaId;
+        var pendingKind = _pendingRestoreMediaKind;
+        _pendingRestoreMediaId = null;
+        _pendingRestoreMediaKind = null;
+
+        SelectedMediaCard = MediaCards.FirstOrDefault(card =>
+            card.Id == pendingId && card.MediaKind == pendingKind);
     }
 
     private void PersistLibraryUiState()
@@ -1318,9 +1344,13 @@ public sealed partial class LibraryViewModel : ViewModelBase
         var ui = _settingsService.Current.Ui ??= new UiSettings();
         var search = MediaSearchQuery ?? string.Empty;
         var filter = SelectedWatchStatusFilter?.Status;
+        var selectedId = SelectedMediaCard?.Id;
+        var selectedKind = SelectedMediaCard?.MediaKind;
         if (ui.LibraryMediaSortMode == MediaSortMode &&
             string.Equals(ui.LibraryMediaSearchQuery, search, StringComparison.Ordinal) &&
-            ui.LibraryWatchStatusFilter == filter)
+            ui.LibraryWatchStatusFilter == filter &&
+            ui.LibrarySelectedMediaId == selectedId &&
+            ui.LibrarySelectedMediaKind == selectedKind)
         {
             return;
         }
@@ -1328,6 +1358,8 @@ public sealed partial class LibraryViewModel : ViewModelBase
         ui.LibraryMediaSortMode = MediaSortMode;
         ui.LibraryMediaSearchQuery = search;
         ui.LibraryWatchStatusFilter = filter;
+        ui.LibrarySelectedMediaId = selectedId;
+        ui.LibrarySelectedMediaKind = selectedKind;
         _settingsService.Save();
     }
 
@@ -1639,10 +1671,6 @@ public sealed partial class LibraryViewModel : ViewModelBase
             // onto every remaining filtered item (e.g. Watching → all marked Completed).
             SelectedMediaCard = MediaCards.FirstOrDefault(card =>
                 card.Id == selectedId && card.MediaKind == selectedKind);
-        }
-        else if (SelectedMediaCard is null)
-        {
-            SelectedMediaCard = MediaCards.FirstOrDefault();
         }
 
         OnPropertyChanged(nameof(HasMedia));
