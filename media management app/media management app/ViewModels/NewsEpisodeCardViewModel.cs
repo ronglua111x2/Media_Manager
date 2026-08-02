@@ -24,6 +24,7 @@ public sealed partial class NewsEpisodeCardViewModel : ObservableObject
         StillPath = episode.StillPath;
         ShowPosterPath = show.PosterPath;
         StatusLabel = BuildStatusLabel(episode);
+        StatusKind = GetStatusKind(episode);
         StatusSortRank = GetStatusSortRank(episode);
         IsAvailable = episode.Availability == EpisodeAvailability.Available;
     }
@@ -56,6 +57,9 @@ public sealed partial class NewsEpisodeCardViewModel : ObservableObject
 
     public string StatusLabel { get; }
 
+    /// <summary>Available | Missing | Downloading | Attention | Error — used for status badge colors.</summary>
+    public string StatusKind { get; }
+
     public int StatusSortRank { get; }
 
     public bool IsAvailable { get; }
@@ -85,6 +89,33 @@ public sealed partial class NewsEpisodeCardViewModel : ObservableObject
         }
 
         return "Missing";
+    }
+
+    private static string GetStatusKind(TrackedEpisode episode)
+    {
+        if (episode.Availability == EpisodeAvailability.Available)
+        {
+            return "Available";
+        }
+
+        if (string.IsNullOrWhiteSpace(episode.TorrentState) &&
+            string.IsNullOrWhiteSpace(episode.TorrentHash))
+        {
+            return "Missing";
+        }
+
+        var normalized = QbittorrentTorrentStateNormalizer.Normalize(
+            episode.TorrentState,
+            isComplete: false);
+
+        return normalized switch
+        {
+            QbittorrentTorrentStateNormalizer.Error or
+            QbittorrentTorrentStateNormalizer.MissingFiles => "Error",
+            QbittorrentTorrentStateNormalizer.Stalled or
+            QbittorrentTorrentStateNormalizer.Paused => "Attention",
+            _ => "Downloading"
+        };
     }
 
     private static int GetStatusSortRank(TrackedEpisode episode)

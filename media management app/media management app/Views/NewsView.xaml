@@ -240,12 +240,49 @@
                                                     VerticalAlignment="Top"
                                                     Margin="0,2,0,0"
                                                     Padding="10,6"
-                                                    CornerRadius="999"
-                                                    Background="{StaticResource AppBrushAccentSoft}">
+                                                    CornerRadius="999">
+                                                <Border.Style>
+                                                    <Style TargetType="Border">
+                                                        <Setter Property="Background" Value="{StaticResource AppBrushAccentSoft}" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding StatusKind}" Value="Missing">
+                                                                <Setter Property="Background" Value="{StaticResource AppBrushStatusMutedBg}" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding StatusKind}" Value="Downloading">
+                                                                <Setter Property="Background" Value="{StaticResource AppBrushMovieSoft}" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding StatusKind}" Value="Attention">
+                                                                <Setter Property="Background" Value="{StaticResource AppBrushNewSoft}" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding StatusKind}" Value="Error">
+                                                                <Setter Property="Background" Value="{StaticResource AppBrushStatusErrorBg}" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
                                                 <TextBlock Text="{Binding StatusLabel}"
                                                            FontSize="11"
-                                                           FontWeight="SemiBold"
-                                                           Foreground="{StaticResource AppBrushAccent}" />
+                                                           FontWeight="SemiBold">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Foreground" Value="{StaticResource AppBrushAccent}" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding StatusKind}" Value="Missing">
+                                                                    <Setter Property="Foreground" Value="{StaticResource AppBrushMutedText}" />
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding StatusKind}" Value="Downloading">
+                                                                    <Setter Property="Foreground" Value="{StaticResource AppBrushMovieAccent}" />
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding StatusKind}" Value="Attention">
+                                                                    <Setter Property="Foreground" Value="{StaticResource AppBrushWarning}" />
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding StatusKind}" Value="Error">
+                                                                    <Setter Property="Foreground" Value="{StaticResource AppBrushDanger}" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
                                             </Border>
                                         </Grid>
                                     </Border>
