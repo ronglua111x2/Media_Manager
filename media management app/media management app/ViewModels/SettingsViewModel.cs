@@ -217,6 +217,19 @@ public partial class SettingsViewModel : ViewModelBase
     private int autoTrackJellyfinWarpHoldSeconds = JellyfinRefreshSettings.DefaultWarpHoldSecondsAfterNotify;
 
     [ObservableProperty]
+    private bool autoTrackJellyfinLogEarlyDisconnectEnabled;
+
+    [ObservableProperty]
+    private string? autoTrackJellyfinLogPath;
+
+    [ObservableProperty]
+    private int autoTrackJellyfinLogQuietSeconds =
+        JellyfinRefreshSettings.DefaultLogQuietSecondsAfterRefresh;
+
+    [ObservableProperty]
+    private string autoTrackJellyfinLogPathTestStatus = string.Empty;
+
+    [ObservableProperty]
     private bool warpEnabled = true;
 
     [ObservableProperty]
@@ -741,6 +754,95 @@ public partial class SettingsViewModel : ViewModelBase
     }
 
     [RelayCommand]
+    private void BrowseJellyfinLogPath()
+    {
+        var initial = AutoTrackJellyfinLogPath;
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(initial) && System.IO.File.Exists(initial))
+            {
+                initial = System.IO.Path.GetDirectoryName(initial);
+            }
+        }
+        catch
+        {
+            // Ignore invalid initial path.
+        }
+
+        var selected = BrowseFolder(initial, "Select Jellyfin log folder");
+        if (string.IsNullOrWhiteSpace(selected))
+        {
+            return;
+        }
+
+        AutoTrackJellyfinLogPath = selected;
+        AutoTrackJellyfinLogPathTestStatus = string.Empty;
+    }
+
+    [RelayCommand]
+    private void BrowseJellyfinLogFile()
+    {
+        using var dialog = new WinForms.OpenFileDialog
+        {
+            Title = "Select Jellyfin log file",
+            Filter = "Jellyfin log (*.log)|*.log|All files (*.*)|*.*",
+            CheckFileExists = true,
+            Multiselect = false
+        };
+
+        if (!string.IsNullOrWhiteSpace(AutoTrackJellyfinLogPath))
+        {
+            try
+            {
+                if (System.IO.File.Exists(AutoTrackJellyfinLogPath))
+                {
+                    dialog.InitialDirectory = System.IO.Path.GetDirectoryName(AutoTrackJellyfinLogPath);
+                    dialog.FileName = System.IO.Path.GetFileName(AutoTrackJellyfinLogPath);
+                }
+                else if (System.IO.Directory.Exists(AutoTrackJellyfinLogPath))
+                {
+                    dialog.InitialDirectory = AutoTrackJellyfinLogPath;
+                }
+            }
+            catch
+            {
+                // Ignore invalid initial path.
+            }
+        }
+
+        if (dialog.ShowDialog() != WinForms.DialogResult.OK ||
+            string.IsNullOrWhiteSpace(dialog.FileName))
+        {
+            return;
+        }
+
+        AutoTrackJellyfinLogPath = dialog.FileName;
+        AutoTrackJellyfinLogPathTestStatus = string.Empty;
+    }
+
+    [RelayCommand]
+    private void TestJellyfinLogPath()
+    {
+        ApplyAutoTrackSettings();
+        if (JellyfinLogPathValidator.TryResolveAndValidate(
+                AutoTrackJellyfinLogPath,
+                out var resolvedPath,
+                out var errorMessage))
+        {
+            var fileName = System.IO.Path.GetFileName(resolvedPath);
+            AutoTrackJellyfinLogPathTestStatus = $"OK — using {fileName}";
+            StatusMessage = $"Jellyfin log path OK: {resolvedPath}. Save settings to persist changes.";
+            _logger.Info(StatusMessage, LogTarget.All);
+        }
+        else
+        {
+            AutoTrackJellyfinLogPathTestStatus = errorMessage;
+            StatusMessage = $"Jellyfin log path invalid: {errorMessage}";
+            _logger.Warning(StatusMessage, LogTarget.All);
+        }
+    }
+
+    [RelayCommand]
     private void BrowseAutoTorrentDownloadFolder()
     {
         var selected = BrowseFolder(AutoTorrentDownloadFolder, "Select Auto Torrent download folder");
@@ -1045,6 +1147,12 @@ public partial class SettingsViewModel : ViewModelBase
             AutoTrackJellyfinWarpHoldSeconds = jellyfin.WarpHoldSecondsAfterNotify <= 0
                 ? JellyfinRefreshSettings.DefaultWarpHoldSecondsAfterNotify
                 : jellyfin.WarpHoldSecondsAfterNotify;
+            AutoTrackJellyfinLogEarlyDisconnectEnabled = jellyfin.EnableLogEarlyDisconnect;
+            AutoTrackJellyfinLogPath = jellyfin.LogPath;
+            AutoTrackJellyfinLogQuietSeconds = jellyfin.LogQuietSecondsAfterRefresh <= 0
+                ? JellyfinRefreshSettings.DefaultLogQuietSecondsAfterRefresh
+                : jellyfin.LogQuietSecondsAfterRefresh;
+            AutoTrackJellyfinLogPathTestStatus = string.Empty;
             WarpEnabled = _settingsService.Current.Warp.Enabled;
             WarpAutoRecoverOnSsl = _settingsService.Current.Warp.AutoRecoverOnSsl;
             WarpExecutablePath = _settingsService.Current.Warp.ExecutablePath;
@@ -1339,8 +1447,18 @@ public partial class SettingsViewModel : ViewModelBase
             AutoTrackJellyfinWarpHoldSeconds,
             JellyfinRefreshSettings.MinWarpHoldSecondsAfterNotify,
             JellyfinRefreshSettings.MaxWarpHoldSecondsAfterNotify);
+        autoTrack.Jellyfin.EnableLogEarlyDisconnect = AutoTrackJellyfinLogEarlyDisconnectEnabled;
+        autoTrack.Jellyfin.LogPath = string.IsNullOrWhiteSpace(AutoTrackJellyfinLogPath)
+            ? null
+            : AutoTrackJellyfinLogPath.Trim();
+        autoTrack.Jellyfin.LogQuietSecondsAfterRefresh = Math.Clamp(
+            AutoTrackJellyfinLogQuietSeconds,
+            JellyfinRefreshSettings.MinLogQuietSecondsAfterRefresh,
+            JellyfinRefreshSettings.MaxLogQuietSecondsAfterRefresh);
         AutoTrackJellyfinBaseUrl = autoTrack.Jellyfin.BaseUrl;
         AutoTrackJellyfinWarpHoldSeconds = autoTrack.Jellyfin.WarpHoldSecondsAfterNotify;
+        AutoTrackJellyfinLogPath = autoTrack.Jellyfin.LogPath;
+        AutoTrackJellyfinLogQuietSeconds = autoTrack.Jellyfin.LogQuietSecondsAfterRefresh;
 
         AutoTrackAnchorDay = autoTrack.AnchorDayOfWeek;
         AutoTrackAnchorTimeLocal = autoTrack.AnchorTimeLocal;

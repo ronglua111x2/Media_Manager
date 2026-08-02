@@ -6,6 +6,10 @@ public sealed class JellyfinRefreshSettings
     public const int MinWarpHoldSecondsAfterNotify = 15;
     public const int MaxWarpHoldSecondsAfterNotify = 600;
 
+    public const int DefaultLogQuietSecondsAfterRefresh = 30;
+    public const int MinLogQuietSecondsAfterRefresh = 10;
+    public const int MaxLogQuietSecondsAfterRefresh = 120;
+
     /// <summary>
     /// When true, Auto-Track symlink create/repair (and SyncNow) notifies Jellyfin
     /// of new paths via Library/Media/Updated.
@@ -21,4 +25,20 @@ public sealed class JellyfinRefreshSettings
     /// so LibraryMonitor/TMDB can finish while WARP is still up.
     /// </summary>
     public int WarpHoldSecondsAfterNotify { get; set; } = DefaultWarpHoldSecondsAfterNotify;
+
+    /// <summary>
+    /// When true and <see cref="LogPath"/> validates, owned WARP hold may end early
+    /// after Jellyfin log shows refresh + quiet period. Invalid path keeps timer-only behavior.
+    /// </summary>
+    public bool EnableLogEarlyDisconnect { get; set; }
+
+    /// <summary>
+    /// Jellyfin log folder (preferred) or a specific <c>.log</c> file path.
+    /// </summary>
+    public string? LogPath { get; set; }
+
+    /// <summary>
+    /// Quiet window after the last matching Jellyfin log line before early WARP disconnect.
+    /// </summary>
+    public int LogQuietSecondsAfterRefresh { get; set; } = DefaultLogQuietSecondsAfterRefresh;
 }

@@ -215,6 +215,26 @@ public sealed class SettingsService : ISettingsService
             autoTrack.Jellyfin.WarpHoldSecondsAfterNotify,
             JellyfinRefreshSettings.MinWarpHoldSecondsAfterNotify,
             JellyfinRefreshSettings.MaxWarpHoldSecondsAfterNotify);
+
+        if (autoTrack.Jellyfin.LogQuietSecondsAfterRefresh <= 0)
+        {
+            autoTrack.Jellyfin.LogQuietSecondsAfterRefresh =
+                JellyfinRefreshSettings.DefaultLogQuietSecondsAfterRefresh;
+        }
+
+        autoTrack.Jellyfin.LogQuietSecondsAfterRefresh = Math.Clamp(
+            autoTrack.Jellyfin.LogQuietSecondsAfterRefresh,
+            JellyfinRefreshSettings.MinLogQuietSecondsAfterRefresh,
+            JellyfinRefreshSettings.MaxLogQuietSecondsAfterRefresh);
+
+        if (string.IsNullOrWhiteSpace(autoTrack.Jellyfin.LogPath))
+        {
+            autoTrack.Jellyfin.LogPath = null;
+        }
+        else
+        {
+            autoTrack.Jellyfin.LogPath = autoTrack.Jellyfin.LogPath.Trim();
+        }
         autoTrack.Search.MaxShowsPerHuntCycle = Math.Clamp(autoTrack.Search.MaxShowsPerHuntCycle, 1, 20);
         autoTrack.Search.MaxEpisodesPerShowPerHuntCycle = Math.Clamp(autoTrack.Search.MaxEpisodesPerShowPerHuntCycle, 1, 50);
         autoTrack.Search.MaxParallelWorkersPerShow = Math.Clamp(autoTrack.Search.MaxParallelWorkersPerShow, 1, 4);

@@ -9,6 +9,7 @@ public sealed class JellyfinLibraryRefreshService : IJellyfinLibraryRefreshServi
 {
     private static readonly TimeSpan DebounceDelay = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan TaskPollInterval = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan LogPollInterval = TimeSpan.FromSeconds(2);
 
     private readonly ISettingsService _settingsService;
     private readonly IDatabaseService _databaseService;
@@ -306,6 +307,190 @@ public sealed class JellyfinLibraryRefreshService : IJellyfinLibraryRefreshServi
             holdSeconds * 2);
         var holdDeadline = DateTime.UtcNow.AddSeconds(holdSeconds);
         var hardDeadline = DateTime.UtcNow.AddSeconds(maxHoldSeconds);
+
+        JellyfinLogTailer? tailer = null;
+        if (jellyfinSettings.EnableLogEarlyDisconnect)
+        {
+            if (!JellyfinLogPathValidator.TryResolveAndValidate(
+                    jellyfinSettings.LogPath,
+                    out var resolvedPath,
+                    out var validateError))
+            {
+                _logger.Info(
+                    $"Jellyfin log early disconnect skipped: invalid log path — {validateError}",
+                    LogTarget.All);
+            }
+            else if (!JellyfinLogTailer.TryOpen(resolvedPath, out tailer, out var openError))
+            {
+                _logger.Info(
+                    $"Jellyfin log early disconnect skipped: {openError}",
+                    LogTarget.All);
+            }
+            else
+            {
+                _logger.Info(
+                    $"Jellyfin log early disconnect enabled: tailing '{tailer!.FilePath}' (quiet={ClampQuietSeconds(jellyfinSettings)}s).",
+                    LogTarget.All);
+            }
+        }
+
+        try
+        {
+            if (tailer is not null)
+            {
+                return await HoldWarpWithLogAsync(
+                    jellyfinSettings,
+                    tailer,
+                    holdSeconds,
+                    maxHoldSeconds,
+                    holdDeadline,
+                    hardDeadline,
+                    cancellationToken);
+            }
+
+            return await HoldWarpTimerOnlyAsync(
+                holdSeconds,
+                maxHoldSeconds,
+                holdDeadline,
+                hardDeadline,
+                cancellationToken);
+        }
+        finally
+        {
+            tailer?.Dispose();
+        }
+    }
+
+    private async Task<string> HoldWarpWithLogAsync(
+        JellyfinRefreshSettings jellyfinSettings,
+        JellyfinLogTailer tailer,
+        int holdSeconds,
+        int maxHoldSeconds,
+        DateTime holdDeadline,
+        DateTime hardDeadline,
+        CancellationToken cancellationToken)
+    {
+        var quietSeconds = ClampQuietSeconds(jellyfinSettings);
+        var sawRefreshStart = false;
+        DateTime? lastActivityUtc = null;
+        var sawLibraryTaskRunning = false;
+        var endedBecauseTaskIdle = false;
+        var endedBecauseLogQuiet = false;
+
+        _logger.Info(
+            $"Jellyfin refresh WARP hold starting (log mode): hold={holdSeconds}s, quiet={quietSeconds}s, max={maxHoldSeconds}s.",
+            LogTarget.All);
+
+        while (DateTime.UtcNow < hardDeadline)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            foreach (var line in tailer.ReadNewLines())
+            {
+                if (!JellyfinLogTailer.IsActivityLine(line))
+                {
+                    continue;
+                }
+
+                lastActivityUtc = DateTime.UtcNow;
+                if (JellyfinLogTailer.IsRefreshStartLine(line))
+                {
+                    if (!sawRefreshStart)
+                    {
+                        sawRefreshStart = true;
+                        _logger.Info(
+                            $"Jellyfin log: first refresh start seen — {TruncateForLog(line)}",
+                            LogTarget.All);
+                    }
+                    else
+                    {
+                        _logger.Info(
+                            $"Jellyfin log: refresh activity — {TruncateForLog(line)}",
+                            LogTarget.All);
+                    }
+                }
+                else
+                {
+                    _logger.Debug(
+                        $"Jellyfin log: metadata activity — {TruncateForLog(line)}",
+                        LogTarget.File | LogTarget.Console);
+                }
+            }
+
+            if (sawRefreshStart &&
+                lastActivityUtc.HasValue &&
+                DateTime.UtcNow - lastActivityUtc.Value >= TimeSpan.FromSeconds(quietSeconds))
+            {
+                endedBecauseLogQuiet = true;
+                _logger.Info(
+                    $"Jellyfin log quiet for {quietSeconds}s after refresh; early WARP disconnect.",
+                    LogTarget.All);
+                break;
+            }
+
+            var runningLibraryTasks = await TryGetRunningLibraryTasksAsync(cancellationToken);
+            if (runningLibraryTasks.Count > 0)
+            {
+                sawLibraryTaskRunning = true;
+                var names = string.Join(", ", runningLibraryTasks.Select(task => task.Name ?? task.Key ?? "task"));
+                _logger.Info(
+                    $"Jellyfin library task(s) still running during WARP hold: {names}. Extending until idle (max {maxHoldSeconds}s).",
+                    LogTarget.All);
+            }
+            else if (sawLibraryTaskRunning)
+            {
+                endedBecauseTaskIdle = true;
+                _logger.Info(
+                    "Jellyfin library task(s) returned to Idle during WARP hold.",
+                    LogTarget.All);
+                break;
+            }
+            else if (!sawRefreshStart && DateTime.UtcNow >= holdDeadline)
+            {
+                _logger.Info(
+                    $"Jellyfin refresh WARP hold of {holdSeconds}s elapsed with no log refresh start.",
+                    LogTarget.All);
+                break;
+            }
+
+            var remainingToHard = hardDeadline - DateTime.UtcNow;
+            if (remainingToHard <= TimeSpan.Zero)
+            {
+                break;
+            }
+
+            var delay = TimeSpan.FromMilliseconds(
+                Math.Min(LogPollInterval.TotalMilliseconds, remainingToHard.TotalMilliseconds));
+            await Task.Delay(delay, cancellationToken);
+        }
+
+        if (endedBecauseLogQuiet)
+        {
+            return "Refresh window ended (log quiet after refresh).";
+        }
+
+        if (DateTime.UtcNow >= hardDeadline && !endedBecauseTaskIdle)
+        {
+            _logger.Warning(
+                $"Jellyfin refresh WARP hold hit max {maxHoldSeconds}s; disconnecting.",
+                LogTarget.All);
+            return sawLibraryTaskRunning
+                ? $"Refresh window ended (max hold {maxHoldSeconds}s; library task still running)."
+                : $"Refresh window ended (max hold {maxHoldSeconds}s).";
+        }
+
+        return endedBecauseTaskIdle
+            ? "Refresh window ended (library task idle)."
+            : $"Refresh window ended (hold {holdSeconds}s expired).";
+    }
+
+    private async Task<string> HoldWarpTimerOnlyAsync(
+        int holdSeconds,
+        int maxHoldSeconds,
+        DateTime holdDeadline,
+        DateTime hardDeadline,
+        CancellationToken cancellationToken)
+    {
         var sawLibraryTaskRunning = false;
         var endedBecauseTaskIdle = false;
 
@@ -366,6 +551,20 @@ public sealed class JellyfinLibraryRefreshService : IJellyfinLibraryRefreshServi
         return endedBecauseTaskIdle
             ? "Refresh window ended (library task idle)."
             : $"Refresh window ended (hold {holdSeconds}s expired).";
+    }
+
+    private static int ClampQuietSeconds(JellyfinRefreshSettings jellyfinSettings) =>
+        Math.Clamp(
+            jellyfinSettings.LogQuietSecondsAfterRefresh <= 0
+                ? JellyfinRefreshSettings.DefaultLogQuietSecondsAfterRefresh
+                : jellyfinSettings.LogQuietSecondsAfterRefresh,
+            JellyfinRefreshSettings.MinLogQuietSecondsAfterRefresh,
+            JellyfinRefreshSettings.MaxLogQuietSecondsAfterRefresh);
+
+    private static string TruncateForLog(string line, int maxLength = 160)
+    {
+        var trimmed = line.Trim();
+        return trimmed.Length <= maxLength ? trimmed : trimmed[..maxLength] + "…";
     }
 
     private async Task<IReadOnlyList<JellyfinScheduledTaskInfo>> TryGetRunningLibraryTasksAsync(

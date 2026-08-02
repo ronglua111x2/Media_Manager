@@ -560,6 +560,51 @@
                                     </Border>
                                     <TextBlock Style="{StaticResource SettingsHintStyle}" Margin="0,0,0,8"
                                                Text="Owned WARP stays connected after path notify so Jellyfin LibraryMonitor/TMDB can finish. Extends if a library scan task is still running (capped)." />
+                                    <CheckBox IsChecked="{Binding AutoTrackJellyfinLogEarlyDisconnectEnabled, Mode=TwoWay}"
+                                              Margin="0,0,0,4"
+                                              Content="Early WARP disconnect via Jellyfin log" />
+                                    <TextBlock Style="{StaticResource SettingsHintStyle}" Margin="0,0,0,8"
+                                               Text="Only while WARP hold runs: tails new log lines (append-only). Invalid/empty path keeps timer-only behavior even if checked." />
+                                    <TextBlock Text="Jellyfin log path (folder or .log file)" Style="{StaticResource SettingsLabelStyle}"
+                                               IsEnabled="{Binding AutoTrackJellyfinLogEarlyDisconnectEnabled}" />
+                                    <Grid Margin="0,0,0,4" IsEnabled="{Binding AutoTrackJellyfinLogEarlyDisconnectEnabled}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBox Grid.Column="0"
+                                                 Text="{Binding AutoTrackJellyfinLogPath, UpdateSourceTrigger=PropertyChanged}"
+                                                 Margin="0,0,8,0" />
+                                        <Button Grid.Column="1"
+                                                Command="{Binding BrowseJellyfinLogPathCommand}"
+                                                Content="Browse folder"
+                                                Margin="0,0,8,0"
+                                                Style="{StaticResource MaterialDesignOutlinedButton}" />
+                                        <Button Grid.Column="2"
+                                                Command="{Binding BrowseJellyfinLogFileCommand}"
+                                                Content="Browse file"
+                                                Style="{StaticResource MaterialDesignOutlinedButton}" />
+                                    </Grid>
+                                    <TextBlock Text="Quiet seconds after last refresh/metadata log line" Style="{StaticResource SettingsLabelStyle}"
+                                               IsEnabled="{Binding AutoTrackJellyfinLogEarlyDisconnectEnabled}" />
+                                    <Border Style="{StaticResource SettingsNumericChromeStyle}" Margin="0,0,0,4"
+                                            IsEnabled="{Binding AutoTrackJellyfinLogEarlyDisconnectEnabled}">
+                                        <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
+                                                                      Value="{Binding AutoTrackJellyfinLogQuietSeconds, UpdateSourceTrigger=PropertyChanged}"
+                                                                      Minimum="10"
+                                                                      Maximum="120" />
+                                    </Border>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,4"
+                                                IsEnabled="{Binding AutoTrackJellyfinLogEarlyDisconnectEnabled}">
+                                        <Button Command="{Binding TestJellyfinLogPathCommand}"
+                                                Content="Test log path"
+                                                Style="{StaticResource MaterialDesignOutlinedButton}" />
+                                    </StackPanel>
+                                    <TextBlock Text="{Binding AutoTrackJellyfinLogPathTestStatus}"
+                                               Style="{StaticResource SettingsHintStyle}"
+                                               Margin="0,0,0,8"
+                                               TextWrapping="Wrap" />
                                     <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                                         <Button Command="{Binding TestJellyfinConnectionCommand}"
                                                 Content="Test Jellyfin"
