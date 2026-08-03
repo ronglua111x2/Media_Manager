@@ -152,6 +152,9 @@ public partial class SettingsViewModel : ViewModelBase
     private bool autoTrackEnabled = true;
 
     [ObservableProperty]
+    private bool autoTrackEnforceGlobalWeeklySchedule = true;
+
+    [ObservableProperty]
     private DayOfWeek autoTrackAnchorDay = DayOfWeek.Sunday;
 
     public IReadOnlyList<DayOfWeek> AnchorDayOptions => Enum.GetValues<DayOfWeek>();
@@ -1121,6 +1124,7 @@ public partial class SettingsViewModel : ViewModelBase
             SelectedTheme = _settingsService.Current.Ui?.Theme ?? AppTheme.Light;
             AutoTrackEnabled = _settingsService.Current.AutoTrack?.Enabled ?? true;
             var autoTrack = _settingsService.Current.AutoTrack ?? new AutoTrackSettings();
+            AutoTrackEnforceGlobalWeeklySchedule = autoTrack.EnforceGlobalWeeklySchedule;
             AutoTrackAnchorDay = autoTrack.AnchorDayOfWeek;
             AutoTrackAnchorTimeLocal = autoTrack.AnchorTimeLocal;
             AutoTrackAnchorTime = AutoTrackWeekAnchor.ToTimePickerValue(autoTrack.AnchorTimeLocal);
@@ -1415,6 +1419,7 @@ public partial class SettingsViewModel : ViewModelBase
         _settingsService.Current.AutoTrack ??= new AutoTrackSettings();
         var autoTrack = _settingsService.Current.AutoTrack;
         autoTrack.Enabled = AutoTrackEnabled;
+        autoTrack.EnforceGlobalWeeklySchedule = AutoTrackEnforceGlobalWeeklySchedule;
         autoTrack.AnchorDayOfWeek = AutoTrackAnchorDay;
         autoTrack.AnchorTimeLocal = string.IsNullOrWhiteSpace(AutoTrackAnchorTimeLocal) ? "21:00" : AutoTrackAnchorTimeLocal.Trim();
         autoTrack.TmdbCheckIntervalMinutes = Math.Clamp(AutoTrackTmdbCheckIntervalMinutes, 5, 1440);
@@ -1460,6 +1465,7 @@ public partial class SettingsViewModel : ViewModelBase
         AutoTrackJellyfinLogPath = autoTrack.Jellyfin.LogPath;
         AutoTrackJellyfinLogQuietSeconds = autoTrack.Jellyfin.LogQuietSecondsAfterRefresh;
 
+        AutoTrackEnforceGlobalWeeklySchedule = autoTrack.EnforceGlobalWeeklySchedule;
         AutoTrackAnchorDay = autoTrack.AnchorDayOfWeek;
         AutoTrackAnchorTimeLocal = autoTrack.AnchorTimeLocal;
         AutoTrackAnchorTime = AutoTrackWeekAnchor.ToTimePickerValue(autoTrack.AnchorTimeLocal);

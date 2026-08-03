@@ -11,6 +11,12 @@ public sealed class AutoTrackSettings
 
     public string AnchorTimeLocal { get; set; } = "21:00";
 
+    /// <summary>
+    /// When true, shows without a custom schedule wait for the global weekly day/time.
+    /// When false, those shows run on the TMDB check interval; custom per-show schedules still apply.
+    /// </summary>
+    public bool EnforceGlobalWeeklySchedule { get; set; } = true;
+
     public int TmdbCheckIntervalMinutes { get; set; } = 30;
 
     public int TorrentHuntIntervalMinutes { get; set; } = 60;

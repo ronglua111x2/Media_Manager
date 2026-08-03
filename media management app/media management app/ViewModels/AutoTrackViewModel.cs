@@ -103,7 +103,7 @@ public sealed partial class AutoTrackViewModel : ViewModelBase
             ? "No runs yet."
             : autoTrack.LastRunSummary;
         SchedulerStatus = autoTrack.Enabled
-            ? $"TMDB every {Math.Clamp(autoTrack.TmdbCheckIntervalMinutes, 5, 1440)}m (hunt only when pending episodes) · Reconcile poll while downloads pending every {Math.Clamp(autoTrack.ReconcileIntervalMinutes, 5, 1440)}m · Hunt schedule {autoTrack.AnchorDayOfWeek} {autoTrack.AnchorTimeLocal}"
+            ? $"TMDB every {Math.Clamp(autoTrack.TmdbCheckIntervalMinutes, 5, 1440)}m (hunt only when pending episodes) · Reconcile poll while downloads pending every {Math.Clamp(autoTrack.ReconcileIntervalMinutes, 5, 1440)}m · {(autoTrack.EnforceGlobalWeeklySchedule ? $"Hunt schedule {autoTrack.AnchorDayOfWeek} {autoTrack.AnchorTimeLocal}" : "Default weekly schedule off")}"
             : "Scheduler disabled in settings";
         TmdbRefreshesRemainingLabel = BuildTmdbRefreshesRemainingLabel(autoTrack);
 

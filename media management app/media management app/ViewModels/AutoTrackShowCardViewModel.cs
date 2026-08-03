@@ -302,6 +302,11 @@ public sealed partial class AutoTrackShowCardViewModel : ObservableObject
             return $"Schedule: {CustomAnchorDay} {time}";
         }
 
+        if (!_settings.EnforceGlobalWeeklySchedule)
+        {
+            return "Schedule: off (interval)";
+        }
+
         return $"Schedule: {_settings.AnchorDayOfWeek} {AutoTrackWeekAnchor.ParseLocalTime(_settings.AnchorTimeLocal):hh\\:mm}";
     }
 

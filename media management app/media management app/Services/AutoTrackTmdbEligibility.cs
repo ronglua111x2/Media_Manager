@@ -52,6 +52,11 @@ public static class AutoTrackTmdbEligibility
         AutoTrackSettings settings,
         DateTime nowLocal)
     {
+        if (!AutoTrackWeekAnchor.IsWeeklyScheduleEnforced(show, settings))
+        {
+            return false;
+        }
+
         if (show.AutoTrackLastTmdbRefreshLocal is null)
         {
             return false;

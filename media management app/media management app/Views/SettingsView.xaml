@@ -447,9 +447,15 @@
                                     <CheckBox IsChecked="{Binding AutoTrackEnabled, Mode=TwoWay}"
                                               Margin="0,0,0,8"
                                               Content="Enable scheduled auto-track runs" />
+                                    <CheckBox IsChecked="{Binding AutoTrackEnforceGlobalWeeklySchedule, Mode=TwoWay}"
+                                              Margin="0,0,0,4"
+                                              Content="Enforce default weekly hunt schedule" />
+                                    <TextBlock Style="{StaticResource SettingsHintStyle}" Margin="0,0,0,8"
+                                               Text="When off, shows without a custom schedule run on the TMDB check interval. Per-show custom schedules still apply." />
                                     <TextBlock Text="Default hunt schedule day" Style="{StaticResource SettingsLabelStyle}" />
                                     <ComboBox ItemsSource="{Binding AnchorDayOptions}"
                                               SelectedItem="{Binding AutoTrackAnchorDay, Mode=TwoWay}"
+                                              IsEnabled="{Binding AutoTrackEnforceGlobalWeeklySchedule}"
                                               Margin="0,0,0,8"
                                               MaxWidth="200"
                                               HorizontalAlignment="Left" />
@@ -457,6 +463,7 @@
                                     <materialDesign:TimePicker Is24Hours="True"
                                                                SelectedTimeFormat="Short"
                                                                SelectedTime="{Binding AutoTrackAnchorTime, Mode=TwoWay}"
+                                                               IsEnabled="{Binding AutoTrackEnforceGlobalWeeklySchedule}"
                                                                Foreground="{StaticResource AppBrushText}"
                                                                Margin="0,0,0,8"
                                                                MaxWidth="160"

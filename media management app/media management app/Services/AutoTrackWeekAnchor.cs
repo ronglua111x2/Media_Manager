@@ -4,6 +4,13 @@ namespace media_management_app.Services;
 
 public static class AutoTrackWeekAnchor
 {
+    public static bool HasCustomSchedule(TrackedShow show) =>
+        show.AutoTrackAnchorDayOfWeek is not null ||
+        !string.IsNullOrWhiteSpace(show.AutoTrackAnchorTimeLocal);
+
+    public static bool IsWeeklyScheduleEnforced(TrackedShow show, AutoTrackSettings settings) =>
+        HasCustomSchedule(show) || settings.EnforceGlobalWeeklySchedule;
+
     public static (DayOfWeek Day, TimeSpan Time) GetEffectiveAnchor(TrackedShow show, AutoTrackSettings settings)
     {
         var day = show.AutoTrackAnchorDayOfWeek ?? settings.AnchorDayOfWeek;
@@ -13,6 +20,11 @@ public static class AutoTrackWeekAnchor
 
     public static bool IsPastAnchorThisWeek(TrackedShow show, DateTime nowLocal, AutoTrackSettings settings)
     {
+        if (!IsWeeklyScheduleEnforced(show, settings))
+        {
+            return true;
+        }
+
         var (day, time) = GetEffectiveAnchor(show, settings);
         var anchorDateTime = GetAnchorDateTimeThisWeek(day, time, nowLocal);
         return nowLocal >= anchorDateTime;
