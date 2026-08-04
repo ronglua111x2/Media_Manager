@@ -849,6 +849,38 @@ public sealed partial class LibraryViewModel : ViewModelBase
         }
     }
 
+    [RelayCommand(CanExecute = nameof(CanResetMovie))]
+    private async Task ResetMovie(LibraryMovieDetailViewModel? movie)
+    {
+        if (movie is null)
+        {
+            return;
+        }
+
+        var confirm = System.Windows.MessageBox.Show(
+            $"Reset download/link state for {movie.Title}?\n\nThis clears all download and link data so the movie shows as Missing and can be searched again. Files still on disk are not deleted.",
+            "Reset Movie",
+            System.Windows.MessageBoxButton.OKCancel,
+            System.Windows.MessageBoxImage.Question);
+        if (confirm != System.Windows.MessageBoxResult.OK)
+        {
+            return;
+        }
+
+        try
+        {
+            StatusMessage = $"Resetting {movie.Title}...";
+            _autoTorrentLinkService.ResetMovieForRedownload(movie.Id);
+            _trackedMovieService.RefreshAvailability(movie.Id);
+            await ReloadSelectedDetailAsync();
+            StatusMessage = $"{movie.Title} reset — movie is now Missing and ready to search.";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Reset failed for {movie.Title}: {ex.Message}";
+        }
+    }
+
     [RelayCommand]
     private async Task ReconcileExistingTorrents()
     {
@@ -1505,6 +1537,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
         AddEpisodeToCartCommand.NotifyCanExecuteChanged();
         AddSeasonPackToCartCommand.NotifyCanExecuteChanged();
         LinkMovieCommand.NotifyCanExecuteChanged();
+        ResetMovieCommand.NotifyCanExecuteChanged();
         LinkEpisodeCommand.NotifyCanExecuteChanged();
         ResetEpisodeCommand.NotifyCanExecuteChanged();
         RuleLinkSeasonPackCommand.NotifyCanExecuteChanged();
@@ -1520,6 +1553,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
         AddEpisodeToCartCommand.NotifyCanExecuteChanged();
         AddSeasonPackToCartCommand.NotifyCanExecuteChanged();
         LinkMovieCommand.NotifyCanExecuteChanged();
+        ResetMovieCommand.NotifyCanExecuteChanged();
         LinkEpisodeCommand.NotifyCanExecuteChanged();
         ResetEpisodeCommand.NotifyCanExecuteChanged();
         RuleLinkSeasonPackCommand.NotifyCanExecuteChanged();
@@ -1962,6 +1996,8 @@ public sealed partial class LibraryViewModel : ViewModelBase
     private bool CanAddSeasonPackToCart(LibrarySeasonViewModel? season) => season?.CanAddPackToCart == true;
 
     private bool CanLinkMovie(LibraryMovieDetailViewModel? movie) => movie?.CanLink == true;
+
+    private bool CanResetMovie(LibraryMovieDetailViewModel? movie) => movie?.CanReset == true;
 
     private bool CanLinkEpisode(LibraryEpisodeRowViewModel? episode) => episode?.CanLink == true;
 

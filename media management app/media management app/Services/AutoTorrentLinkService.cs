@@ -406,6 +406,49 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
         return result;
     }
 
+    public AutoTorrentLinkResult ResetMovieForRedownload(long movieId)
+    {
+        var result = new AutoTorrentLinkResult();
+
+        var unlinkResult = RemoveMovieLinks(movieId);
+        result.LinkedCount += unlinkResult.LinkedCount;
+        result.SkippedCount += unlinkResult.SkippedCount;
+        result.Messages.AddRange(unlinkResult.Messages);
+
+        var movie = _databaseService.GetTrackedMovie(movieId);
+        if (movie is null)
+        {
+            result.Messages.Add("Tracked movie was not found.");
+            return result;
+        }
+
+        var providerId = movie.TmdbId.ToString();
+        var movieItems = _databaseService.GetSourceItems()
+            .Where(item =>
+                item.MediaKind == MediaKind.Movie &&
+                string.Equals(item.Provider, "tmdb", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(item.ProviderId, providerId, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        foreach (var item in movieItems)
+        {
+            _databaseService.DeleteSourceItem(item.Id);
+            result.Messages.Add($"Removed source item: {item.FileName}");
+        }
+
+        _databaseService.UpdateTrackedMovieTorrent(movieId, string.Empty, string.Empty, string.Empty, 0);
+        _databaseService.ClearTrackedMovieSelectedCandidate(movieId);
+
+        var movieOrders = _databaseService.GetTorrentCartOrders(MediaKind.Movie, movieId).ToList();
+        foreach (var order in movieOrders)
+        {
+            _databaseService.DeleteTorrentCartOrder(order.Id);
+        }
+
+        result.Messages.Add($"Reset movie '{movie.DisplayTitle}': download state cleared.");
+        return result;
+    }
+
     private async Task LinkEpisodeCoreAsync(TrackedShow show, TrackedEpisode episode, AutoTorrentLinkResult result, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(episode.TorrentHash))

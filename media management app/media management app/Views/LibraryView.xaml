@@ -1316,7 +1316,7 @@
                                                     Command="{Binding DataContext.LinkMovieCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                     CommandParameter="{Binding}"
                                                     IsEnabled="{Binding CanLink}"
-                                                    Margin="0"
+                                                    Margin="0,0,8,0"
                                                     ToolTip="{Binding LinkActionToolTip}">
                                                 <StackPanel Orientation="Horizontal">
                                                     <iconPacks:PackIconLucide Kind="{Binding LinkActionIconKind}"
@@ -1325,6 +1325,30 @@
                                                                                Margin="0,0,6,0"
                                                                                VerticalAlignment="Center" />
                                                     <TextBlock Text="{Binding LinkActionLabel}" VerticalAlignment="Center" />
+                                                </StackPanel>
+                                            </Button>
+                                            <Button Command="{Binding DataContext.ResetMovieCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    CommandParameter="{Binding}"
+                                                    IsEnabled="{Binding CanReset}"
+                                                    Margin="0"
+                                                    ToolTip="Reset download/link state so this movie shows as Missing and can be searched again">
+                                                <Button.Style>
+                                                    <Style TargetType="Button" BasedOn="{StaticResource AppOutlinedButtonStyle}">
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding CanReset}" Value="True">
+                                                                <Setter Property="Visibility" Value="Visible" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Button.Style>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <iconPacks:PackIconLucide Kind="RotateCcw"
+                                                                               Width="14"
+                                                                               Height="14"
+                                                                               Margin="0,0,6,0"
+                                                                               VerticalAlignment="Center" />
+                                                    <TextBlock Text="Reset" VerticalAlignment="Center" />
                                                 </StackPanel>
                                             </Button>
                                         </StackPanel>

@@ -169,6 +169,8 @@ public interface IDatabaseService
 
     void UpdateTrackedMovieSelectedCandidate(long movieId, EpisodeFetchCandidate candidate);
 
+    void ClearTrackedMovieSelectedCandidate(long movieId);
+
     void UpdateTrackedMoviePreferences(long movieId, string preferredQuality, string preferredAudioCodec, int minimumSeeders);
 
     void UpdateTrackedMovieRecipe(long movieId, string? recipeId);

@@ -61,6 +61,8 @@ public sealed partial class LibraryMovieDetailViewModel : ObservableObject
 
     public bool CanAddToCart => !IsAvailable && !IsInCart && !HasTorrent;
 
+    public bool CanReset => HasTorrent || IsAvailable;
+
     public bool IsLinked => !string.Equals(LibraryLinkStatus, "Not linked", StringComparison.OrdinalIgnoreCase);
 
     public bool CanLink => HasTorrent || IsLinked;
