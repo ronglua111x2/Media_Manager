@@ -12,7 +12,8 @@ namespace media_management_app.Services;
 public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
 {
     private const int SearchPollDelayMilliseconds = 1000;
-    private const int SearchTimeoutSeconds = 30;
+    private const int MinSearchTimeoutSeconds = 10;
+    private const int MaxSearchTimeoutSeconds = 300;
     private const int AddVerifyTimeoutSeconds = 20;
     private const int MaxResolverBytes = 2 * 1024 * 1024;
 
@@ -58,35 +59,76 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
 
         await LoginAsync(cancellationToken);
         int? searchId = null;
-        var deadline = DateTimeOffset.UtcNow.AddSeconds(SearchTimeoutSeconds);
+        var timeoutSeconds = Math.Clamp(request.TimeoutSeconds, MinSearchTimeoutSeconds, MaxSearchTimeoutSeconds);
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(timeoutSeconds);
+        var idleTimeoutSeconds = Math.Clamp(request.IdleTimeoutSeconds, RecipeRuntimeSettings.MinSearchIdleTimeoutSeconds, RecipeRuntimeSettings.MaxSearchIdleTimeoutSeconds);
+        var idleTimeout = idleTimeoutSeconds > 0 ? TimeSpan.FromSeconds(idleTimeoutSeconds) : (TimeSpan?)null;
         IReadOnlyList<TorrentSearchResult> latestResults = [];
         var latestStatus = "Running";
+        var mergedByUrl = new Dictionary<string, TorrentSearchResult>(StringComparer.OrdinalIgnoreCase);
+        var lastMergedCount = 0;
+        var idleDeadline = idleTimeout is null ? DateTimeOffset.MaxValue : DateTimeOffset.UtcNow.Add(idleTimeout.Value);
+        var endedBy = "timeout";
 
         try
         {
             searchId = await StartSearchAsync(request, cancellationToken);
             while (DateTimeOffset.UtcNow < deadline)
             {
-                var response = await GetSearchResultsAsync(searchId.Value, request.Limit, cancellationToken);
+                var response = await GetSearchResultsAsync(searchId.Value, request.Limit, request.Offset, cancellationToken);
                 latestResults = response.Results;
                 latestStatus = response.Status;
+                foreach (var result in response.Results)
+                {
+                    if (string.IsNullOrWhiteSpace(result.FileUrl))
+                    {
+                        continue;
+                    }
+
+                    if (!mergedByUrl.TryGetValue(result.FileUrl, out var existing) ||
+                        result.Seeders > existing.Seeders)
+                    {
+                        mergedByUrl[result.FileUrl] = result;
+                    }
+                }
+
+                if (mergedByUrl.Count > lastMergedCount)
+                {
+                    lastMergedCount = mergedByUrl.Count;
+                    if (idleTimeout is not null)
+                    {
+                        idleDeadline = DateTimeOffset.UtcNow.Add(idleTimeout.Value);
+                    }
+                }
+                else if (idleTimeout is not null && DateTimeOffset.UtcNow >= idleDeadline)
+                {
+                    endedBy = "idle-timeout";
+                    break;
+                }
 
                 if (!string.Equals(latestStatus, "Running", StringComparison.OrdinalIgnoreCase))
                 {
+                    endedBy = "status-finished";
                     break;
                 }
 
                 await Task.Delay(SearchPollDelayMilliseconds, cancellationToken);
             }
 
-            _logger.Info(
-                $"qBittorrent search completed. Query='{request.Query}', Status='{latestStatus}', Results={latestResults.Count}.",
-                LogTarget.All);
-
-            return latestResults
+            var mergedResults = mergedByUrl.Values
                 .OrderByDescending(result => result.Seeders)
                 .ThenBy(result => result.FileSize)
                 .ToList();
+            if (endedBy == "timeout" && mergedResults.Count > 0 && mergedResults.Count >= request.Limit)
+            {
+                endedBy = "max-results";
+            }
+
+            _logger.Info(
+                $"qBittorrent search completed. Query='{request.Query}', Status='{latestStatus}', Results={mergedResults.Count}, TimeoutSeconds={timeoutSeconds}, IdleTimeoutSeconds={idleTimeoutSeconds}, EndedBy='{endedBy}'.",
+                LogTarget.All);
+
+            return mergedResults;
         }
         finally
         {
@@ -507,9 +549,9 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
         return id;
     }
 
-    public async Task<SearchJobResults> GetSearchResultsAsync(int searchId, int limit, CancellationToken cancellationToken = default)
+    public async Task<SearchJobResults> GetSearchResultsAsync(int searchId, int limit, int offset = 0, CancellationToken cancellationToken = default)
     {
-        var path = $"api/v2/search/results?id={searchId}&limit={Math.Max(limit, 1)}&offset=0";
+        var path = $"api/v2/search/results?id={searchId}&limit={Math.Max(limit, 1)}&offset={Math.Max(offset, 0)}";
         using var response = await GetWithAuthRetryAsync(path, cancellationToken);
         response.EnsureSuccessStatusCode();
 
@@ -517,6 +559,7 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
         using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
         var root = document.RootElement;
         var status = GetString(root, "status") ?? "Unknown";
+        var total = GetInt(root, "total");
         var results = new List<TorrentSearchResult>();
 
         if (root.TryGetProperty("results", out var resultsElement) && resultsElement.ValueKind == JsonValueKind.Array)
@@ -545,7 +588,7 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
             }
         }
 
-        return new SearchJobResults(status, results);
+        return new SearchJobResults(status, results, total);
     }
 
     public async Task StopSearchAsync(int searchId, CancellationToken cancellationToken = default)

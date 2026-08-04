@@ -8,6 +8,7 @@ public sealed class FetchJobService : IFetchJobService
 {
     private const int SearchCapacityRetryCount = 3;
     private const int SearchCapacityRetryDelayMilliseconds = 2000;
+    private const int SearchPollDelayMilliseconds = 1000;
 
     private readonly IDatabaseService _databaseService;
     private readonly ISettingsService _settingsService;
@@ -381,7 +382,11 @@ public sealed class FetchJobService : IFetchJobService
             {
                 try
                 {
-                    results.AddRange(await _qbittorrentClient.SearchAsync(new TorrentSearchRequest { Query = query }, cancellationToken));
+                    results.AddRange(await _qbittorrentClient.SearchAsync(new TorrentSearchRequest
+                    {
+                        Query = query,
+                        TimeoutSeconds = _settingsService.Current.AutoTorrent.ParallelSearchTimeoutSeconds
+                    }, cancellationToken));
                     completedQueries++;
                     _logger.Info(
                         $"Search query succeeded {completedQueries}/{totalQueries}. Remaining={totalQueries - completedQueries}. Query='{query}'.",
@@ -442,7 +447,7 @@ public sealed class FetchJobService : IFetchJobService
         foreach (var query in plannedQueries)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var queryResults = await SearchSingleQueryAsync(query, cancellationToken);
+            var queryResults = await SearchSingleQueryAsync(recipe, query, cancellationToken);
             completedQueries++;
             _logger.Info(
                 $"Episode search query succeeded {completedQueries}/{totalQueries}. Remaining={totalQueries - completedQueries}. Query='{query}'. Results={queryResults.Count}.",
@@ -505,6 +510,8 @@ public sealed class FetchJobService : IFetchJobService
         var candidates = matchedCandidates
             .OrderByDescending(entry => entry.Match.QualityScore)
             .ThenByDescending(entry => entry.Match.AudioScore)
+            .ThenByDescending(entry => entry.Match.PreferTermsScore)
+            .ThenByDescending(entry => entry.Match.SizeScore)
             .ThenByDescending(entry => entry.Candidate.Seeders)
             .ThenByDescending(entry => entry.Match.IdentityScore)
             .ThenByDescending(entry => entry.Match.EpisodeScore)
@@ -519,13 +526,49 @@ public sealed class FetchJobService : IFetchJobService
         return new EpisodeSearchSummary(candidates, searchResults);
     }
 
-    private async Task<IReadOnlyList<TorrentSearchResult>> SearchSingleQueryAsync(string query, CancellationToken cancellationToken)
+    private async Task<IReadOnlyList<TorrentSearchResult>> SearchSingleQueryAsync(
+        SearchRecipe recipe,
+        string query,
+        CancellationToken cancellationToken)
     {
+        var searchSource = recipe.Modules.FirstOrDefault(module => module.BlockType == RecipeBlockType.SearchSource && module.IsEnabled);
+        var requestLimit = searchSource?.ResultLimit is > 0 ? searchSource.ResultLimit : 100;
+        var plugins = string.IsNullOrWhiteSpace(searchSource?.Plugins) ? "enabled" : searchSource!.Plugins;
+        var category = string.IsNullOrWhiteSpace(searchSource?.Category) ? "all" : searchSource!.Category;
+        var timeoutSeconds = RecipeRuntimeSettings.GetParallelSearchTimeoutSeconds(
+            recipe,
+            _settingsService.Current.AutoTorrent);
+        var paginationEnabled = RecipeRuntimeSettings.GetEnableSearchPagination(recipe);
+        var paginationPageSize = RecipeRuntimeSettings.GetPaginationPageSize(recipe);
+        var paginationMaxPages = RecipeRuntimeSettings.GetPaginationMaxPagesTvParallel(recipe);
+        var paginationMaxTotalResults = RecipeRuntimeSettings.GetPaginationMaxTotalResults(recipe);
+        var paginationIdleTimeoutSeconds = RecipeRuntimeSettings.GetPaginationIdleTimeoutSecondsTvParallel(recipe);
+        var searchIdleTimeoutSeconds = RecipeRuntimeSettings.GetSearchIdleTimeoutSecondsTvParallel(recipe);
         for (var attempt = 1; attempt <= SearchCapacityRetryCount; attempt++)
         {
             try
             {
-                return await _qbittorrentClient.SearchAsync(new TorrentSearchRequest { Query = query }, cancellationToken);
+                return paginationEnabled
+                    ? await SearchQueryWithPaginationAsync(
+                        query,
+                        plugins,
+                        category,
+                        timeoutSeconds,
+                        requestLimit,
+                        paginationPageSize,
+                        paginationMaxPages,
+                        paginationMaxTotalResults,
+                        paginationIdleTimeoutSeconds,
+                        cancellationToken)
+                    : await _qbittorrentClient.SearchAsync(new TorrentSearchRequest
+                    {
+                        Query = query,
+                        Plugins = plugins,
+                        Category = category,
+                        Limit = requestLimit,
+                        IdleTimeoutSeconds = searchIdleTimeoutSeconds,
+                        TimeoutSeconds = timeoutSeconds
+                    }, cancellationToken);
             }
             catch (QbittorrentSearchCapacityException) when (attempt < SearchCapacityRetryCount)
             {
@@ -538,6 +581,137 @@ public sealed class FetchJobService : IFetchJobService
         }
 
         return [];
+    }
+
+    private async Task<IReadOnlyList<TorrentSearchResult>> SearchQueryWithPaginationAsync(
+        string query,
+        string plugins,
+        string category,
+        int timeoutSeconds,
+        int requestLimit,
+        int pageSize,
+        int maxPages,
+        int maxTotalResults,
+        int idleTimeoutSeconds,
+        CancellationToken cancellationToken)
+    {
+        var effectivePageSize = Math.Clamp(pageSize, RecipeRuntimeSettings.MinPaginationPageSize, RecipeRuntimeSettings.MaxPaginationPageSize);
+        var effectiveMaxPages = Math.Clamp(maxPages, RecipeRuntimeSettings.MinPaginationMaxPages, RecipeRuntimeSettings.MaxPaginationMaxPages);
+        var effectiveMaxTotal = Math.Clamp(
+            maxTotalResults,
+            RecipeRuntimeSettings.MinPaginationMaxTotalResults,
+            RecipeRuntimeSettings.MaxPaginationMaxTotalResults);
+        var timeout = TimeSpan.FromSeconds(Math.Clamp(timeoutSeconds, 10, 300));
+        var deadline = DateTimeOffset.UtcNow.Add(timeout);
+        var idleTimeout = idleTimeoutSeconds > 0
+            ? TimeSpan.FromSeconds(Math.Clamp(idleTimeoutSeconds, RecipeRuntimeSettings.MinSearchIdleTimeoutSeconds, RecipeRuntimeSettings.MaxSearchIdleTimeoutSeconds))
+            : (TimeSpan?)null;
+        var latestStatus = "Running";
+        var pagesFetched = 0;
+        var rawRows = 0;
+        var mergedByUrl = new Dictionary<string, TorrentSearchResult>(StringComparer.OrdinalIgnoreCase);
+        var endedBy = "timeout";
+        var lastMergedCount = 0;
+        var idleDeadline = idleTimeout is null ? DateTimeOffset.MaxValue : DateTimeOffset.UtcNow.Add(idleTimeout.Value);
+        int? searchId = null;
+
+        try
+        {
+            searchId = await _qbittorrentClient.StartSearchAsync(new TorrentSearchRequest
+            {
+                Query = query,
+                Plugins = plugins,
+                Category = category
+            }, cancellationToken);
+            while (DateTimeOffset.UtcNow < deadline)
+            {
+                for (var pageIndex = 0; pageIndex < effectiveMaxPages && mergedByUrl.Count < effectiveMaxTotal; pageIndex++)
+                {
+                    var offset = pageIndex * effectivePageSize;
+                    var response = await _qbittorrentClient.GetSearchResultsAsync(
+                        searchId.Value,
+                        effectivePageSize,
+                        offset,
+                        cancellationToken);
+                    latestStatus = response.Status;
+                    pagesFetched++;
+                    rawRows += response.Results.Count;
+                    foreach (var result in response.Results)
+                    {
+                        if (string.IsNullOrWhiteSpace(result.FileUrl))
+                        {
+                            continue;
+                        }
+
+                        if (!mergedByUrl.TryGetValue(result.FileUrl, out var existing) ||
+                            result.Seeders > existing.Seeders)
+                        {
+                            mergedByUrl[result.FileUrl] = result;
+                        }
+                    }
+
+                    if (response.Results.Count < effectivePageSize)
+                    {
+                        break;
+                    }
+                }
+
+                if (mergedByUrl.Count > lastMergedCount)
+                {
+                    lastMergedCount = mergedByUrl.Count;
+                    if (idleTimeout is not null)
+                    {
+                        idleDeadline = DateTimeOffset.UtcNow.Add(idleTimeout.Value);
+                    }
+                }
+                else if (idleTimeout is not null && DateTimeOffset.UtcNow >= idleDeadline)
+                {
+                    endedBy = "idle-timeout";
+                    break;
+                }
+
+                if (!string.Equals(latestStatus, "Running", StringComparison.OrdinalIgnoreCase))
+                {
+                    endedBy = "status-finished";
+                    break;
+                }
+
+                if (mergedByUrl.Count >= effectiveMaxTotal)
+                {
+                    endedBy = "max-results";
+                    break;
+                }
+
+                await Task.Delay(SearchPollDelayMilliseconds, cancellationToken);
+            }
+        }
+        finally
+        {
+            if (searchId is not null)
+            {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    await _qbittorrentClient.StopSearchAsync(searchId.Value, CancellationToken.None);
+                }
+
+                await _qbittorrentClient.DeleteSearchAsync(searchId.Value, CancellationToken.None);
+            }
+        }
+
+        var merged = mergedByUrl.Values
+            .OrderByDescending(result => result.Seeders)
+            .ThenBy(result => result.FileSize)
+            .Take(effectiveMaxTotal)
+            .ToList();
+        if (endedBy == "timeout" && DateTimeOffset.UtcNow < deadline)
+        {
+            endedBy = "status-finished";
+        }
+
+        _logger.Info(
+            $"Fetch query pagination query='{query}' pages={pagesFetched} rawRows={rawRows} mergedRows={merged.Count} status='{latestStatus}' pageSize={effectivePageSize} maxPages={effectiveMaxPages} cap={effectiveMaxTotal} idleSeconds={idleTimeoutSeconds} endedBy='{endedBy}'.",
+            LogTarget.All);
+        return merged;
     }
 
     private bool IsUsableMovieCandidate(TorrentSearchResult result, TrackedMovie movie, string query)
@@ -805,9 +979,10 @@ public sealed class FetchJobService : IFetchJobService
         var matchedCandidates = new List<(EpisodeFetchCandidate Candidate, SnapshotMatchResult Match)>();
         var recipe = recipeOverride ?? _recipeService.GetRecipeOrDefault(show.RecipeId, MediaKind.TvEpisode);
         var scoringWeights = RecipeRuntimeSettings.GetCandidateScoringWeights(recipe);
+        var preferTerms = GetPreferTerms(recipe);
         foreach (var candidate in snapshotCandidates)
         {
-            var match = matcher.Match(show, episode, candidate, selectedQualities, titleVariants, scoringWeights);
+            var match = matcher.Match(show, episode, candidate, selectedQualities, titleVariants, scoringWeights, preferTerms);
             if (!match.IsAccepted)
             {
                 if (match.RejectReason?.Contains("plugin error", StringComparison.OrdinalIgnoreCase) == true)
@@ -849,6 +1024,8 @@ public sealed class FetchJobService : IFetchJobService
         var finalCandidates = matchedCandidates
             .OrderByDescending(entry => entry.Match.QualityScore)
             .ThenByDescending(entry => entry.Match.AudioScore)
+            .ThenByDescending(entry => entry.Match.PreferTermsScore)
+            .ThenByDescending(entry => entry.Match.SizeScore)
             .ThenByDescending(entry => entry.Candidate.Seeders)
             .ThenByDescending(entry => entry.Match.IdentityScore)
             .ThenByDescending(entry => entry.Match.EpisodeScore)
@@ -935,14 +1112,21 @@ public sealed class FetchJobService : IFetchJobService
             }
 
             var matchingSeasonCount = coveredSeasons.Count(selectedSeasons.Contains);
+            var packFilter = packRecipe.Modules.FirstOrDefault(module =>
+                module.BlockType == RecipeBlockType.CandidateFilter && module.IsEnabled);
             var scoringWeights = RecipeRuntimeSettings.GetCandidateScoringWeights(packRecipe);
             var singleSeasonBoost = coveredSeasons.Count == 1 ? scoringWeights.SingleSeasonBoost : 0;
             var extrasPriorityBoost = RecipeRuntimeSettings.GetPackExtrasPriorityScoreBoost(packRecipe, result.FileName);
             var qualityScore = TorrentQuality.GetRank(parsed.Quality);
-            var audioScore = !string.IsNullOrWhiteSpace(show.PreferredAudioCodec) &&
-                             result.FileName.Contains(show.PreferredAudioCodec, StringComparison.OrdinalIgnoreCase)
-                ? 1
-                : 0;
+            var audioScore = PreferredTermMatcher.CountMatches(result.FileName, show.PreferredAudioCodec);
+            var preferTermsScore = PreferredTermMatcher.CountMatches(
+                result.FileName,
+                GetPreferTerms(packRecipe));
+            var sizeScore = TorrentQuality.CalculateSizeScore(
+                result.FileSize,
+                packFilter?.MinimumSizeBytes,
+                packFilter?.MaximumSizeBytes,
+                scoringWeights);
 
             candidates.Add(new SeasonPackCandidate
             {
@@ -964,7 +1148,9 @@ public sealed class FetchJobService : IFetchJobService
                     result.Seeders,
                     matchingSeasonCount * scoringWeights.SeasonMatchScorePerSeason,
                     singleSeasonBoost + extrasPriorityBoost,
-                    scoringWeights),
+                    scoringWeights,
+                    preferTermsScore,
+                    sizeScore),
                 Warning = contentProfile.BuildWarningText()
             });
         }
@@ -1048,10 +1234,11 @@ public sealed class FetchJobService : IFetchJobService
         var scoringWeights = recipe is not null
             ? RecipeRuntimeSettings.GetCandidateScoringWeights(recipe)
             : CandidateScoringWeights.Default;
+        var preferTerms = GetPreferTerms(recipe);
         var matchedCandidates = new List<(EpisodeFetchCandidate Candidate, CandidateMatchResult Match)>();
         foreach (var result in searchResults)
         {
-            var match = CandidateMatcher.MatchEpisodeCandidate(show, episode, result, selectedQualities, scoringWeights);
+            var match = CandidateMatcher.MatchEpisodeCandidate(show, episode, result, selectedQualities, scoringWeights, preferTerms);
             if (!match.IsAccepted)
             {
                 var message =
@@ -1075,6 +1262,8 @@ public sealed class FetchJobService : IFetchJobService
         return matchedCandidates
             .OrderByDescending(entry => entry.Match.QualityScore)
             .ThenByDescending(entry => entry.Match.AudioScore)
+            .ThenByDescending(entry => entry.Match.PreferTermsScore)
+            .ThenByDescending(entry => entry.Match.SizeScore)
             .ThenByDescending(entry => entry.Candidate.Seeders)
             .ThenByDescending(entry => entry.Match.IdentityScore)
             .ThenByDescending(entry => entry.Match.EpisodeScore)
@@ -1083,6 +1272,18 @@ public sealed class FetchJobService : IFetchJobService
                 _settingsService.Current.AutoTorrent))
             .Select(entry => entry.Candidate)
             .ToList();
+    }
+
+    private static IReadOnlyList<string> GetPreferTerms(SearchRecipe? recipe)
+    {
+        if (recipe is null)
+        {
+            return [];
+        }
+
+        var filter = recipe.Modules.FirstOrDefault(module =>
+            module.BlockType == RecipeBlockType.CandidateFilter && module.IsEnabled);
+        return filter?.PreferTerms ?? [];
     }
 
     private static List<(EpisodeFetchCandidate Candidate, TMatch Match)> DeduplicateEpisodeCandidates<TMatch>(

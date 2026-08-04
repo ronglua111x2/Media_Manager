@@ -148,6 +148,9 @@ public sealed class SettingsService : ISettingsService
         }
         Current.AutoTorrent.MaxCandidatesPerFetch = Math.Clamp(Current.AutoTorrent.MaxCandidatesPerFetch, 1, 10);
         Current.AutoTorrent.MaxParallelSearches = Math.Clamp(Current.AutoTorrent.MaxParallelSearches, 1, 4);
+        Current.AutoTorrent.MovieSearchTimeoutSeconds = Math.Clamp(Current.AutoTorrent.MovieSearchTimeoutSeconds, 10, 300);
+        Current.AutoTorrent.ParallelSearchTimeoutSeconds = Math.Clamp(Current.AutoTorrent.ParallelSearchTimeoutSeconds, 10, 300);
+        Current.AutoTorrent.SnapshotTimeoutSeconds = Math.Clamp(Current.AutoTorrent.SnapshotTimeoutSeconds, 30, 300);
 
         if (string.IsNullOrWhiteSpace(Current.OutputLibraryFolder))
         {

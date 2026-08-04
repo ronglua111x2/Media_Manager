@@ -13,7 +13,8 @@ public sealed class SnapshotCandidateMatcher
         SnapshotCandidate candidate,
         IReadOnlyList<string> selectedQualities,
         IReadOnlyList<string> titleVariants,
-        CandidateScoringWeights weights)
+        CandidateScoringWeights weights,
+        IReadOnlyList<string>? preferTerms = null)
     {
         var result = candidate.Result;
         var parsed = candidate.Parsed;
@@ -98,18 +99,19 @@ public sealed class SnapshotCandidateMatcher
         }
 
         var qualityScore = TorrentQuality.GetRank(parsed.Quality);
-        var audioScore = !string.IsNullOrWhiteSpace(show.PreferredAudioCodec) &&
-                         result.FileName.Contains(show.PreferredAudioCodec, StringComparison.OrdinalIgnoreCase)
-            ? 1
-            : 0;
+        var audioScore = PreferredTermMatcher.CountMatches(result.FileName, show.PreferredAudioCodec);
+        var preferTermsScore = PreferredTermMatcher.CountMatches(result.FileName, preferTerms);
         var identityScore = titleMatch.Score + (parsed.ExplicitYear is not null && parsed.ExplicitYear == show.FirstAirYear ? 10 : 0);
+        var sizeScore = TorrentQuality.CalculateSizeScore(result.FileSize, weights: weights);
         var totalScore = TorrentQuality.CalculateCandidateScore(
             qualityScore,
             audioScore,
             result.Seeders,
             identityScore,
             episodeScore,
-            weights);
+            weights,
+            preferTermsScore,
+            sizeScore);
 
         return new SnapshotMatchResult
         {
@@ -118,6 +120,8 @@ public sealed class SnapshotCandidateMatcher
             EpisodeScore = episodeScore,
             QualityScore = qualityScore,
             AudioScore = audioScore,
+            PreferTermsScore = preferTermsScore,
+            SizeScore = sizeScore,
             TotalScore = totalScore
         };
     }

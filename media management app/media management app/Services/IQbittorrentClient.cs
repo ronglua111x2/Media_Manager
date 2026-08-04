@@ -10,7 +10,7 @@ public interface IQbittorrentClient
 
     Task<int> StartSearchAsync(TorrentSearchRequest request, CancellationToken cancellationToken = default);
 
-    Task<SearchJobResults> GetSearchResultsAsync(int searchId, int limit, CancellationToken cancellationToken = default);
+    Task<SearchJobResults> GetSearchResultsAsync(int searchId, int limit, int offset = 0, CancellationToken cancellationToken = default);
 
     Task StopSearchAsync(int searchId, CancellationToken cancellationToken = default);
 

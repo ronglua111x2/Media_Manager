@@ -16,6 +16,10 @@ public sealed class CandidateMatchResult
 
     public int AudioScore { get; init; }
 
+    public int PreferTermsScore { get; init; }
+
+    public int SizeScore { get; init; }
+
     public int TotalScore { get; init; }
 }
 
@@ -26,7 +30,8 @@ public static class CandidateMatcher
         TrackedEpisode episode,
         TorrentSearchResult result,
         IReadOnlyList<string> selectedQualities,
-        CandidateScoringWeights weights)
+        CandidateScoringWeights weights,
+        IReadOnlyList<string>? preferTerms = null)
     {
         if (!result.CanAdd)
         {
@@ -88,18 +93,19 @@ public static class CandidateMatcher
         }
 
         var qualityScore = TorrentQuality.GetRank(parsed.Quality);
-        var audioScore = !string.IsNullOrWhiteSpace(show.PreferredAudioCodec) &&
-                         result.FileName.Contains(show.PreferredAudioCodec, StringComparison.OrdinalIgnoreCase)
-            ? 1
-            : 0;
+        var audioScore = PreferredTermMatcher.CountMatches(result.FileName, show.PreferredAudioCodec);
+        var preferTermsScore = PreferredTermMatcher.CountMatches(result.FileName, preferTerms);
         var identityScore = titleMatch.Score + (parsed.ExplicitYear is not null && parsed.ExplicitYear == show.FirstAirYear ? 10 : 0);
+        var sizeScore = TorrentQuality.CalculateSizeScore(result.FileSize, weights: weights);
         var totalScore = TorrentQuality.CalculateCandidateScore(
             qualityScore,
             audioScore,
             result.Seeders,
             identityScore,
             episodeScore,
-            weights);
+            weights,
+            preferTermsScore,
+            sizeScore);
 
         return new CandidateMatchResult
         {
@@ -108,6 +114,8 @@ public static class CandidateMatcher
             EpisodeScore = episodeScore,
             QualityScore = qualityScore,
             AudioScore = audioScore,
+            PreferTermsScore = preferTermsScore,
+            SizeScore = sizeScore,
             TotalScore = totalScore
         };
     }

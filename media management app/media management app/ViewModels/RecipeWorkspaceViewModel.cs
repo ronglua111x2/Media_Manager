@@ -131,7 +131,7 @@ public sealed partial class RecipeWorkspaceViewModel : ViewModelBase
 
         _recipeService.SaveRecipe(SelectedRecipe);
         SelectedRecipeItem?.Refresh();
-        StatusMessage = $"Saved recipe '{SelectedRecipeName}'.";
+        StatusMessage = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] Saved recipe '{SelectedRecipeName}'.";
     }
 
     [RelayCommand(CanExecute = nameof(HasSelectedRecipe))]
@@ -227,7 +227,13 @@ public sealed partial class RecipeWorkspaceViewModel : ViewModelBase
                 continue;
             }
 
-            Modules.Add(new RecipeModuleEditorViewModel(module, recipe.TargetKind));
+            var moduleEditor = new RecipeModuleEditorViewModel(module, recipe.TargetKind);
+            if (!moduleEditor.IsApplicableToTarget)
+            {
+                continue;
+            }
+
+            Modules.Add(moduleEditor);
         }
 
         SelectedModule = selectedBlockType is not null
@@ -266,9 +272,11 @@ public sealed partial class RecipeWorkspaceViewModel : ViewModelBase
             QualityAllowList = module.QualityAllowList.ToList(),
             PreferredAudioCodec = module.PreferredAudioCodec,
             MinimumSeeders = module.MinimumSeeders,
+            MinimumSizeBytes = module.MinimumSizeBytes,
             MaximumSizeBytes = module.MaximumSizeBytes,
             IncludeTerms = module.IncludeTerms.ToList(),
             ExcludeTerms = module.ExcludeTerms.ToList(),
+            PreferTerms = module.PreferTerms.ToList(),
             PreferredReleaseGroups = module.PreferredReleaseGroups.ToList(),
             BlockedReleaseGroups = module.BlockedReleaseGroups.ToList(),
             Plugins = module.Plugins,
@@ -316,8 +324,9 @@ public sealed partial class RecipeListItemViewModel : ObservableObject
 
 public sealed partial class RecipeModuleEditorViewModel : ObservableObject
 {
-    private const string ParallelSearchMode = "Parallel episode search";
-    private const string SnapshotSearchMode = "Show snapshot search";
+    private const string MovieSearchMode = "Movie search";
+    private const string TvParallelSearchMode = "TV parallel search";
+    private const string TvSnapshotSearchMode = "TV snapshot search";
 
     private readonly RecipeModuleConfig _module;
     private readonly MediaKind _recipeTargetKind;
@@ -335,7 +344,10 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
 
     public ObservableCollection<QualityOptionViewModel> QualityOptions { get; }
 
-    public IReadOnlyList<string> SearchModeOptions { get; } = [ParallelSearchMode, SnapshotSearchMode];
+    public IReadOnlyList<string> SearchModeOptions =>
+        IsMovieTarget
+            ? [MovieSearchMode]
+            : [TvParallelSearchMode, TvSnapshotSearchMode];
 
     public IReadOnlyList<string> EpisodeNumberingModeOptions { get; } =
     [
@@ -344,6 +356,10 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
     ];
 
     public RecipeBlockType BlockType => _module.BlockType;
+
+    public bool IsMovieTarget => _recipeTargetKind == MediaKind.Movie;
+
+    public bool IsTvTarget => !IsMovieTarget;
 
     public string BlockTypeLabel => _module.BlockType switch
     {
@@ -371,16 +387,21 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
     {
         RecipeBlockType.Identity => "Aliases and title matching for the media item.",
         RecipeBlockType.QueryBuilder => "Query templates, custom queries, preferred quality, and audio tokens.",
-        RecipeBlockType.SearchSource => "Choose parallel per-episode search or show-level snapshot matching.",
-        RecipeBlockType.CandidateParser => "Candidate filename parsing is currently automatic.",
+        RecipeBlockType.SearchSource => IsMovieTarget
+            ? "Movie search source settings and timeout."
+            : "Choose TV parallel per-episode search or TV snapshot matching.",
+        RecipeBlockType.CandidateParser => IsMovieTarget
+            ? "Not used for Movie recipes."
+            : "Candidate filename parsing is currently automatic.",
         RecipeBlockType.CandidateFilter => "Quality, seeders, size, include/exclude terms, and release groups.",
         RecipeBlockType.Scoring => _recipeTargetKind == MediaKind.TvSeasonPack
-            ? "Tune ranking weights and pack-only OVA, special, and extra bonuses."
-            : "Tune ranking weights for quality, audio, seeders, and title matching.",
+            ? "Tune ranking weights, size preference, and pack-only OVA, special, and extra bonuses."
+            : "Tune ranking weights for quality, audio, size preference, seeders, and title matching.",
         _ => "Recipe module settings."
     };
 
-    public IReadOnlyList<ModuleFieldHelpItem> HelpItems => ModuleFieldHelp.GetItems(_module.BlockType);
+    public IReadOnlyList<ModuleFieldHelpItem> HelpItems =>
+        ModuleFieldHelp.GetItems(_module.BlockType, _recipeTargetKind, UseShowSnapshotSearch);
 
     public IReadOnlyList<string> ModuleSummaryLines => BuildSummary();
 
@@ -456,6 +477,12 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
         set => SetExtensionValue(RecipeRuntimeSettings.SkipDefaultTitleKey, value.ToString());
     }
 
+    public bool SanitizeQuery
+    {
+        get => GetExtensionBool(RecipeRuntimeSettings.SanitizeQueryKey, true);
+        set => SetExtensionValue(RecipeRuntimeSettings.SanitizeQueryKey, value.ToString());
+    }
+
     public string QualityAllowListText
     {
         get => ToLines(_module.QualityAllowList);
@@ -472,6 +499,23 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
     {
         get => _module.MinimumSeeders;
         set => SetModuleValue(_module.MinimumSeeders, Math.Max(0, value), next => _module.MinimumSeeders = next);
+    }
+
+    public long? MinimumSizeGb
+    {
+        get => _module.MinimumSizeBytes is null ? null : _module.MinimumSizeBytes.Value / 1024 / 1024 / 1024;
+        set
+        {
+            long? sizeBytes = value is null or <= 0 ? null : value.Value * 1024 * 1024 * 1024;
+            SetModuleValue(_module.MinimumSizeBytes, sizeBytes, next => _module.MinimumSizeBytes = next);
+        }
+    }
+
+    /// <summary>0 means no size floor (for NumericUpDown binding).</summary>
+    public int MinimumSizeGbValue
+    {
+        get => MinimumSizeGb is null or <= 0 ? 0 : (int)Math.Min(MinimumSizeGb.Value, 500);
+        set => MinimumSizeGb = value <= 0 ? null : value;
     }
 
     public long? MaximumSizeGb
@@ -495,6 +539,12 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
     {
         get => ToLines(_module.IncludeTerms);
         set => SetListValue(_module.IncludeTerms, SplitTerms(value));
+    }
+
+    public string PreferTermsText
+    {
+        get => ToLines(_module.PreferTerms);
+        set => SetListValue(_module.PreferTerms, SplitTerms(value));
     }
 
     public string ExcludeTermsText
@@ -580,27 +630,72 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
         get => GetExtensionBool(RecipeRuntimeSettings.UseShowSnapshotSearchKey, false);
         set
         {
-            SetExtensionValue(RecipeRuntimeSettings.UseShowSnapshotSearchKey, value.ToString());
+            var normalized = IsMovieTarget ? false : value;
+            SetExtensionValue(RecipeRuntimeSettings.UseShowSnapshotSearchKey, normalized.ToString());
             OnPropertyChanged(nameof(SearchMode));
+            OnPropertyChanged(nameof(SearchModeOptions));
+            OnPropertyChanged(nameof(IsMovieSearchMode));
             OnPropertyChanged(nameof(IsParallelSearchMode));
             OnPropertyChanged(nameof(IsSnapshotSearchMode));
+            OnPropertyChanged(nameof(ShowNonPaginationMovieControls));
+            OnPropertyChanged(nameof(ShowNonPaginationTvParallelControls));
+            OnPropertyChanged(nameof(ShowPaginationMovieControls));
+            OnPropertyChanged(nameof(ShowPaginationTvParallelControls));
+            OnPropertyChanged(nameof(ShowPaginationTvSnapshotControls));
         }
     }
 
     public string SearchMode
     {
-        get => UseShowSnapshotSearch ? SnapshotSearchMode : ParallelSearchMode;
-        set => UseShowSnapshotSearch = string.Equals(value, SnapshotSearchMode, StringComparison.OrdinalIgnoreCase);
+        get => IsMovieTarget
+            ? MovieSearchMode
+            : UseShowSnapshotSearch
+                ? TvSnapshotSearchMode
+                : TvParallelSearchMode;
+        set
+        {
+            if (IsMovieTarget)
+            {
+                UseShowSnapshotSearch = false;
+                return;
+            }
+
+            UseShowSnapshotSearch = string.Equals(value, TvSnapshotSearchMode, StringComparison.OrdinalIgnoreCase);
+        }
     }
 
-    public bool IsParallelSearchMode => !UseShowSnapshotSearch;
+    public bool IsMovieSearchMode => IsMovieTarget;
 
-    public bool IsSnapshotSearchMode => UseShowSnapshotSearch;
+    public bool IsParallelSearchMode => IsTvTarget && !UseShowSnapshotSearch;
+
+    public bool IsSnapshotSearchMode => IsTvTarget && UseShowSnapshotSearch;
+
+    public bool ShowNonPaginationMovieControls => IsMovieSearchMode && !EnableSearchPagination;
+
+    public bool ShowNonPaginationTvParallelControls => IsParallelSearchMode && !EnableSearchPagination;
+
+    public bool ShowPaginationMovieControls => IsMovieSearchMode && EnableSearchPagination;
+
+    public bool ShowPaginationTvParallelControls => IsParallelSearchMode && EnableSearchPagination;
+
+    public bool ShowPaginationTvSnapshotControls => IsSnapshotSearchMode && EnableSearchPagination;
 
     public int SnapshotTargetResults
     {
         get => GetExtensionInt(RecipeRuntimeSettings.SnapshotTargetResultsKey, 2000, 100, 5000);
         set => SetExtensionValue(RecipeRuntimeSettings.SnapshotTargetResultsKey, Math.Clamp(value, 100, 5000).ToString());
+    }
+
+    public int MovieSearchTimeoutSeconds
+    {
+        get => GetExtensionInt(RecipeRuntimeSettings.MovieSearchTimeoutSecondsKey, 30, 10, 300);
+        set => SetExtensionValue(RecipeRuntimeSettings.MovieSearchTimeoutSecondsKey, Math.Clamp(value, 10, 300).ToString());
+    }
+
+    public int ParallelSearchTimeoutSeconds
+    {
+        get => GetExtensionInt(RecipeRuntimeSettings.ParallelSearchTimeoutSecondsKey, 30, 10, 300);
+        set => SetExtensionValue(RecipeRuntimeSettings.ParallelSearchTimeoutSecondsKey, Math.Clamp(value, 10, 300).ToString());
     }
 
     public int SnapshotTimeoutSeconds
@@ -627,6 +722,179 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
         set => SetExtensionValue(RecipeRuntimeSettings.EnableCandidateMetadataProbeKey, value.ToString());
     }
 
+    public bool EnableCandidateDebugLog
+    {
+        get => GetExtensionBool(RecipeRuntimeSettings.EnableCandidateDebugLogKey, false);
+        set => SetExtensionValue(RecipeRuntimeSettings.EnableCandidateDebugLogKey, value.ToString());
+    }
+
+    public bool EnableSearchPagination
+    {
+        get => GetExtensionBool(RecipeRuntimeSettings.EnableSearchPaginationKey, IsMovieTarget);
+        set
+        {
+            SetExtensionValue(RecipeRuntimeSettings.EnableSearchPaginationKey, value.ToString());
+            OnPropertyChanged(nameof(IsSearchPaginationEnabled));
+            OnPropertyChanged(nameof(ShowNonPaginationMovieControls));
+            OnPropertyChanged(nameof(ShowNonPaginationTvParallelControls));
+            OnPropertyChanged(nameof(ShowPaginationMovieControls));
+            OnPropertyChanged(nameof(ShowPaginationTvParallelControls));
+            OnPropertyChanged(nameof(ShowPaginationTvSnapshotControls));
+        }
+    }
+
+    public bool IsSearchPaginationEnabled => EnableSearchPagination;
+
+    public int PaginationPageSize
+    {
+        get => GetExtensionInt(
+            RecipeRuntimeSettings.PaginationPageSizeKey,
+            RecipeRuntimeSettings.DefaultPaginationPageSize,
+            RecipeRuntimeSettings.MinPaginationPageSize,
+            RecipeRuntimeSettings.MaxPaginationPageSize);
+        set => SetExtensionValue(
+            RecipeRuntimeSettings.PaginationPageSizeKey,
+            Math.Clamp(
+                value,
+                RecipeRuntimeSettings.MinPaginationPageSize,
+                RecipeRuntimeSettings.MaxPaginationPageSize).ToString());
+    }
+
+    public int PaginationMaxPagesMovie
+    {
+        get => GetExtensionInt(
+            RecipeRuntimeSettings.PaginationMaxPagesMovieKey,
+            RecipeRuntimeSettings.DefaultPaginationMaxPagesMovie,
+            RecipeRuntimeSettings.MinPaginationMaxPages,
+            RecipeRuntimeSettings.MaxPaginationMaxPages);
+        set => SetExtensionValue(
+            RecipeRuntimeSettings.PaginationMaxPagesMovieKey,
+            Math.Clamp(
+                value,
+                RecipeRuntimeSettings.MinPaginationMaxPages,
+                RecipeRuntimeSettings.MaxPaginationMaxPages).ToString());
+    }
+
+    public int PaginationMaxPagesTvParallel
+    {
+        get => GetExtensionInt(
+            RecipeRuntimeSettings.PaginationMaxPagesTvParallelKey,
+            RecipeRuntimeSettings.DefaultPaginationMaxPagesTvParallel,
+            RecipeRuntimeSettings.MinPaginationMaxPages,
+            RecipeRuntimeSettings.MaxPaginationMaxPages);
+        set => SetExtensionValue(
+            RecipeRuntimeSettings.PaginationMaxPagesTvParallelKey,
+            Math.Clamp(
+                value,
+                RecipeRuntimeSettings.MinPaginationMaxPages,
+                RecipeRuntimeSettings.MaxPaginationMaxPages).ToString());
+    }
+
+    public int PaginationMaxPagesTvSnapshot
+    {
+        get => GetExtensionInt(
+            RecipeRuntimeSettings.PaginationMaxPagesTvSnapshotKey,
+            RecipeRuntimeSettings.DefaultPaginationMaxPagesTvSnapshot,
+            RecipeRuntimeSettings.MinPaginationMaxPages,
+            RecipeRuntimeSettings.MaxPaginationMaxPages);
+        set => SetExtensionValue(
+            RecipeRuntimeSettings.PaginationMaxPagesTvSnapshotKey,
+            Math.Clamp(
+                value,
+                RecipeRuntimeSettings.MinPaginationMaxPages,
+                RecipeRuntimeSettings.MaxPaginationMaxPages).ToString());
+    }
+
+    public int PaginationMaxTotalResults
+    {
+        get => GetExtensionInt(
+            RecipeRuntimeSettings.PaginationMaxTotalResultsKey,
+            RecipeRuntimeSettings.DefaultPaginationMaxTotalResults,
+            RecipeRuntimeSettings.MinPaginationMaxTotalResults,
+            RecipeRuntimeSettings.MaxPaginationMaxTotalResults);
+        set => SetExtensionValue(
+            RecipeRuntimeSettings.PaginationMaxTotalResultsKey,
+            Math.Clamp(
+                value,
+                RecipeRuntimeSettings.MinPaginationMaxTotalResults,
+                RecipeRuntimeSettings.MaxPaginationMaxTotalResults).ToString());
+    }
+
+    public int PaginationIdleTimeoutSecondsMovie
+    {
+        get => GetExtensionInt(
+            RecipeRuntimeSettings.PaginationIdleTimeoutSecondsMovieKey,
+            RecipeRuntimeSettings.DefaultPaginationIdleTimeoutSecondsMovie,
+            RecipeRuntimeSettings.MinSearchIdleTimeoutSeconds,
+            RecipeRuntimeSettings.MaxSearchIdleTimeoutSeconds);
+        set => SetExtensionValue(
+            RecipeRuntimeSettings.PaginationIdleTimeoutSecondsMovieKey,
+            Math.Clamp(
+                value,
+                RecipeRuntimeSettings.MinSearchIdleTimeoutSeconds,
+                RecipeRuntimeSettings.MaxSearchIdleTimeoutSeconds).ToString());
+    }
+
+    public int PaginationIdleTimeoutSecondsTvParallel
+    {
+        get => GetExtensionInt(
+            RecipeRuntimeSettings.PaginationIdleTimeoutSecondsTvParallelKey,
+            RecipeRuntimeSettings.DefaultPaginationIdleTimeoutSecondsTvParallel,
+            RecipeRuntimeSettings.MinSearchIdleTimeoutSeconds,
+            RecipeRuntimeSettings.MaxSearchIdleTimeoutSeconds);
+        set => SetExtensionValue(
+            RecipeRuntimeSettings.PaginationIdleTimeoutSecondsTvParallelKey,
+            Math.Clamp(
+                value,
+                RecipeRuntimeSettings.MinSearchIdleTimeoutSeconds,
+                RecipeRuntimeSettings.MaxSearchIdleTimeoutSeconds).ToString());
+    }
+
+    public int PaginationIdleTimeoutSecondsTvSnapshot
+    {
+        get => GetExtensionInt(
+            RecipeRuntimeSettings.PaginationIdleTimeoutSecondsTvSnapshotKey,
+            RecipeRuntimeSettings.DefaultPaginationIdleTimeoutSecondsTvSnapshot,
+            RecipeRuntimeSettings.MinSearchIdleTimeoutSeconds,
+            RecipeRuntimeSettings.MaxSearchIdleTimeoutSeconds);
+        set => SetExtensionValue(
+            RecipeRuntimeSettings.PaginationIdleTimeoutSecondsTvSnapshotKey,
+            Math.Clamp(
+                value,
+                RecipeRuntimeSettings.MinSearchIdleTimeoutSeconds,
+                RecipeRuntimeSettings.MaxSearchIdleTimeoutSeconds).ToString());
+    }
+
+    public int SearchIdleTimeoutSecondsMovie
+    {
+        get => GetExtensionInt(
+            RecipeRuntimeSettings.SearchIdleTimeoutSecondsMovieKey,
+            RecipeRuntimeSettings.DefaultSearchIdleTimeoutSecondsMovie,
+            RecipeRuntimeSettings.MinSearchIdleTimeoutSeconds,
+            RecipeRuntimeSettings.MaxSearchIdleTimeoutSeconds);
+        set => SetExtensionValue(
+            RecipeRuntimeSettings.SearchIdleTimeoutSecondsMovieKey,
+            Math.Clamp(
+                value,
+                RecipeRuntimeSettings.MinSearchIdleTimeoutSeconds,
+                RecipeRuntimeSettings.MaxSearchIdleTimeoutSeconds).ToString());
+    }
+
+    public int SearchIdleTimeoutSecondsTvParallel
+    {
+        get => GetExtensionInt(
+            RecipeRuntimeSettings.SearchIdleTimeoutSecondsTvParallelKey,
+            RecipeRuntimeSettings.DefaultSearchIdleTimeoutSecondsTvParallel,
+            RecipeRuntimeSettings.MinSearchIdleTimeoutSeconds,
+            RecipeRuntimeSettings.MaxSearchIdleTimeoutSeconds);
+        set => SetExtensionValue(
+            RecipeRuntimeSettings.SearchIdleTimeoutSecondsTvParallelKey,
+            Math.Clamp(
+                value,
+                RecipeRuntimeSettings.MinSearchIdleTimeoutSeconds,
+                RecipeRuntimeSettings.MaxSearchIdleTimeoutSeconds).ToString());
+    }
+
     public string EpisodeNumberingMode
     {
         get => RecipeRuntimeSettings.NormalizeEpisodeNumberingMode(
@@ -638,6 +906,9 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
 
     public bool ShowPackExtrasPrioritySettings =>
         _recipeTargetKind == MediaKind.TvSeasonPack && _module.BlockType == RecipeBlockType.Scoring;
+
+    public bool IsApplicableToTarget =>
+        !(_recipeTargetKind == MediaKind.Movie && _module.BlockType == RecipeBlockType.CandidateParser);
 
     public bool ShowScoringWeightSettings => _module.BlockType == RecipeBlockType.Scoring;
 
@@ -675,6 +946,20 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
     {
         get => GetScoringInt(RecipeRuntimeSettings.EpisodeWeightKey, CandidateScoringWeights.Default.EpisodeWeight, 0, 100_000);
         set => SetScoringInt(RecipeRuntimeSettings.EpisodeWeightKey, value, 0, 100_000);
+    }
+
+    public int SizeWeight
+    {
+        get => GetScoringInt(RecipeRuntimeSettings.SizeWeightKey, CandidateScoringWeights.Default.SizeWeight, 0, 10_000_000);
+        set => SetScoringInt(RecipeRuntimeSettings.SizeWeightKey, value, 0, 10_000_000);
+    }
+
+    public IReadOnlyList<string> SizePreferenceOptions => RecipeRuntimeSettings.SizePreferenceOptions;
+
+    public string SizePreference
+    {
+        get => RecipeRuntimeSettings.NormalizeSizePreferenceOption(GetExtensionValue(RecipeRuntimeSettings.SizePreferenceKey));
+        set => SetExtensionValue(RecipeRuntimeSettings.SizePreferenceKey, RecipeRuntimeSettings.NormalizeSizePreferenceOption(value));
     }
 
     public int SeasonMatchScorePerSeason
@@ -794,32 +1079,20 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
             $"Preferred audio: {DisplayOrEmpty(PreferredAudioCodec)}",
             $"Query templates: {CountLines(QueryTemplatesText)}",
             $"Custom queries: {CountLines(CustomQueriesText)}",
-            $"Skip default title: {(SkipDefaultTitle ? "Yes" : "No")}"
+            $"Skip default title: {(SkipDefaultTitle ? "Yes" : "No")}",
+            $"Sanitize query: {(SanitizeQuery ? "Yes" : "No")}"
         ],
         RecipeBlockType.SearchSource =>
-        [
-            $"Enabled: {(IsEnabled ? "Yes" : "No")}",
-            $"Mode: {SearchMode}",
-            $"Plugins: {DisplayOrEmpty(Plugins)}",
-            $"Category: {DisplayOrEmpty(Category)}",
-            $"Result limit: {ResultLimit}",
-            $"Parallel searches: {ParallelSearchCount}",
-            $"Candidates per fetch: {MaxCandidatesPerFetch}",
-            $"Deduplicate candidates: {(DeduplicateCandidates ? "On" : "Off")}",
-            $"Fuzzy dedup: {(FuzzyDeduplicate ? "On" : "Off")}{(FuzzyDeduplicate ? $", size tolerance: {FuzzyDeduplicateSizeToleranceMb} MB" : string.Empty)}",
-            $"Snapshot search: {(UseShowSnapshotSearch ? "On" : "Off")}",
-            $"Snapshot target: {SnapshotTargetResults}",
-            $"Snapshot timeout: {SnapshotTimeoutSeconds}s",
-            $"Snapshot idle timeout: {SnapshotIdleTimeoutSeconds}s{(SnapshotIdleTimeoutSeconds == 0 ? " (off)" : string.Empty)}",
-            $"Local match workers: {LocalMatchWorkers}"
-        ],
+            BuildSearchSourceSummary(),
         RecipeBlockType.CandidateFilter =>
         [
             $"Enabled: {(IsEnabled ? "Yes" : "No")}",
             $"Qualities: {SelectedQualitiesSummary}",
             $"Minimum seeders: {MinimumSeeders}",
+            $"Min size GB: {(MinimumSizeGb?.ToString() ?? "none")}",
             $"Max size GB: {(MaximumSizeGb?.ToString() ?? "none")}",
             $"Preferred audio: {DisplayOrEmpty(PreferredAudioCodec)}",
+            $"Prefer terms: {CountLines(PreferTermsText)}",
             $"Include terms: {CountLines(IncludeTermsText)}",
             $"Exclude terms: {CountLines(ExcludeTermsText)}",
             $"Preferred groups: {CountLines(PreferredReleaseGroupsText)}",
@@ -845,7 +1118,9 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
             $"Seeders weight: {SeedersWeight}",
             $"Seeders cap: {SeedersCap:N0}",
             $"Identity weight: {IdentityWeight}",
-            $"Episode-title weight: {EpisodeWeight}"
+            $"Episode-title weight: {EpisodeWeight}",
+            $"Size weight: {SizeWeight:N0}",
+            $"Size preference: {SizePreference}"
         };
         if (ShowPackExtrasPrioritySettings)
         {
@@ -855,6 +1130,79 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
             lines.Add($"Pack name-match bonus: {PackExtrasPriorityScore:N0}");
         }
 
+        return lines;
+    }
+
+    private IReadOnlyList<string> BuildSearchSourceSummary()
+    {
+        var lines = new List<string>
+        {
+            $"Enabled: {(IsEnabled ? "Yes" : "No")}",
+            $"Mode: {SearchMode}",
+            $"Candidate debug log: {(EnableCandidateDebugLog ? "On" : "Off")}",
+            $"Search pagination: {(EnableSearchPagination ? "On" : "Off")}",
+            $"Plugins: {DisplayOrEmpty(Plugins)}",
+            $"Category: {DisplayOrEmpty(Category)}",
+            $"Candidates per fetch: {MaxCandidatesPerFetch}",
+            $"Deduplicate candidates: {(DeduplicateCandidates ? "On" : "Off")}",
+            $"Fuzzy dedup: {(FuzzyDeduplicate ? "On" : "Off")}{(FuzzyDeduplicate ? $", size tolerance: {FuzzyDeduplicateSizeToleranceMb} MB" : string.Empty)}"
+        };
+
+        if (IsMovieTarget)
+        {
+            if (EnableSearchPagination)
+            {
+                lines.Add($"Pagination page size: {PaginationPageSize}");
+                lines.Add($"Pagination max pages (movie): {PaginationMaxPagesMovie}");
+                lines.Add($"Pagination max total results: {PaginationMaxTotalResults}");
+                lines.Add($"Pagination idle timeout: {PaginationIdleTimeoutSecondsMovie}s{(PaginationIdleTimeoutSecondsMovie == 0 ? " (off)" : string.Empty)}");
+                lines.Add("Result limit: hidden while pagination is on");
+            }
+            else
+            {
+                lines.Add($"Result limit: {ResultLimit}");
+                lines.Add($"Search idle timeout: {SearchIdleTimeoutSecondsMovie}s{(SearchIdleTimeoutSecondsMovie == 0 ? " (off)" : string.Empty)}");
+            }
+
+            lines.Add($"Parallel searches: {ParallelSearchCount}");
+            lines.Add($"Movie search timeout: {MovieSearchTimeoutSeconds}s");
+            return lines;
+        }
+
+        if (IsSnapshotSearchMode)
+        {
+            lines.Add("Snapshot search: On");
+            if (EnableSearchPagination)
+            {
+                lines.Add($"Pagination page size: {PaginationPageSize}");
+                lines.Add($"Pagination max pages (TV snapshot): {PaginationMaxPagesTvSnapshot}");
+                lines.Add($"Pagination max total results: {PaginationMaxTotalResults}");
+                lines.Add($"Pagination idle timeout: {PaginationIdleTimeoutSecondsTvSnapshot}s{(PaginationIdleTimeoutSecondsTvSnapshot == 0 ? " (off)" : string.Empty)}");
+            }
+
+            lines.Add($"Snapshot target: {SnapshotTargetResults}");
+            lines.Add($"Snapshot timeout: {SnapshotTimeoutSeconds}s");
+            lines.Add($"Snapshot idle timeout: {SnapshotIdleTimeoutSeconds}s{(SnapshotIdleTimeoutSeconds == 0 ? " (off)" : string.Empty)}");
+            lines.Add($"Local match workers: {LocalMatchWorkers}");
+            return lines;
+        }
+
+        lines.Add("Snapshot search: Off");
+        if (EnableSearchPagination)
+        {
+            lines.Add($"Pagination page size: {PaginationPageSize}");
+            lines.Add($"Pagination max pages (TV parallel): {PaginationMaxPagesTvParallel}");
+            lines.Add($"Pagination max total results: {PaginationMaxTotalResults}");
+            lines.Add($"Pagination idle timeout: {PaginationIdleTimeoutSecondsTvParallel}s{(PaginationIdleTimeoutSecondsTvParallel == 0 ? " (off)" : string.Empty)}");
+            lines.Add("Result limit: hidden while pagination is on");
+        }
+        else
+        {
+            lines.Add($"Result limit: {ResultLimit}");
+            lines.Add($"Search idle timeout: {SearchIdleTimeoutSecondsTvParallel}s{(SearchIdleTimeoutSecondsTvParallel == 0 ? " (off)" : string.Empty)}");
+        }
+        lines.Add($"Parallel searches: {ParallelSearchCount}");
+        lines.Add($"TV parallel search timeout: {ParallelSearchTimeoutSeconds}s");
         return lines;
     }
 
@@ -938,7 +1286,10 @@ public sealed class ModuleFieldHelpItem
 
 internal static class ModuleFieldHelp
 {
-    public static IReadOnlyList<ModuleFieldHelpItem> GetItems(RecipeBlockType blockType) =>
+    public static IReadOnlyList<ModuleFieldHelpItem> GetItems(
+        RecipeBlockType blockType,
+        MediaKind targetKind,
+        bool useShowSnapshotSearch) =>
         blockType switch
         {
             RecipeBlockType.Identity =>
@@ -951,51 +1302,50 @@ internal static class ModuleFieldHelp
             RecipeBlockType.QueryBuilder =>
             [
                 new() { FieldName = "Quality allow list", Description = "Accepted quality labels such as 1080p, 1440p, or 2160p.", OutputImpact = "Generates one search query per quality token. More qualities mean more queries and broader search coverage." },
-                new() { FieldName = "Preferred audio", Description = "Audio codec or label to prefer, e.g. DDP5.1 or Atmos.", OutputImpact = "Inserted into query templates as {audio}. Candidates containing this token receive a higher score." },
+                new() { FieldName = "Preferred audio", Description = "Comma-separated audio labels to prefer, e.g. Dolby, DV, Atmos.", OutputImpact = "Inserted into query templates as {audio}. Each matching token in a candidate name adds a scoring boost." },
                 new() { FieldName = "Query templates", Description = "Patterns sent to qBittorrent search.", OutputImpact = "Each template is expanded with title, year, season, episode, quality, and audio. More templates increase candidate discovery at the cost of more searches." },
                 new() { FieldName = "Custom queries", Description = "Extra templates appended after the generated list, one entry per line.", OutputImpact = "Useful for manual search phrases that do not fit the standard templates. Each entry is expanded like a normal template." },
-                new() { FieldName = "Skip default title", Description = "Exclude the library show or movie title from {title} expansion.", OutputImpact = "When enabled, the primary library title is skipped. Identity aliases and library alternative titles (English and romaji, when enabled) are still used for {title}." }
+                new() { FieldName = "Skip default title", Description = "Exclude the library show or movie title from {title} expansion.", OutputImpact = "When enabled, the primary library title is skipped. Identity aliases and library alternative titles (English and romaji, when enabled) are still used for {title}." },
+                new() { FieldName = "Sanitize special characters in query", Description = "Strip punctuation such as :, ,, ?, !, quotes, and parentheses from the rendered query before sending it to qBittorrent.", OutputImpact = "Keeps letters, digits, spaces, and hyphens. Prevents some search plugins that use punctuation as URL delimiters from truncating or corrupting the search. Recommended: on." }
             ],
             RecipeBlockType.SearchSource =>
-            [
-                new() { FieldName = "Plugins", Description = "Which indexer plugins to query. 'enabled' uses all active plugins.", OutputImpact = "Limits or broadens which indexers contribute candidates to the result set." },
-                new() { FieldName = "Category", Description = "qBittorrent search category filter.", OutputImpact = "Narrows results to TV, movies, or all categories depending on plugin support." },
-                new() { FieldName = "Result limit", Description = "Maximum rows returned per query.", OutputImpact = "Higher values surface more candidates but increase search time and noise." },
-                new() { FieldName = "Parallel searches", Description = "How many queries run at the same time.", OutputImpact = "Faster cart execution when set higher, but may hit qBittorrent search capacity limits." },
-                new() { FieldName = "Candidates per fetch", Description = "How many accepted candidates are kept per episode or movie fetch.", OutputImpact = "Lower values reduce noise; higher values keep more backup torrent options." },
-                new() { FieldName = "Deduplicate candidates", Description = "Remove duplicate torrent URLs before ranking, keeping the copy with the most seeders.", OutputImpact = "Frees candidate slots for distinct torrents when the same release appears from multiple indexers." },
-                new() { FieldName = "Fuzzy deduplicate", Description = "Also group candidates by normalized filename and file size bucket.", OutputImpact = "Removes near-duplicate releases that use different tracker URLs but represent the same torrent, such as the same filename with or without a (TV) suffix." },
-                new() { FieldName = "Fuzzy dedup size tolerance", Description = "File size bucket width in MB for fuzzy dedup. 0 means exact byte size only.", OutputImpact = "Larger values treat small size differences across trackers as the same release; smaller values are stricter." },
-                new() { FieldName = "Snapshot search", Description = "Use one large show-level search snapshot instead of per-episode queries.", OutputImpact = "Faster for full seasons but needs local matching workers." },
-                new() { FieldName = "Snapshot target results", Description = "How many rows to collect in the snapshot search.", OutputImpact = "Larger snapshots improve coverage but take longer to finish." },
-                new() { FieldName = "Snapshot timeout", Description = "Maximum seconds to wait for snapshot search completion.", OutputImpact = "Prevents hung searches from blocking the fetch job indefinitely." },
-                new() { FieldName = "Snapshot idle timeout", Description = "Stop snapshot polling when no new results arrive for this many seconds. Resets whenever new rows are added. 0 disables early stop.", OutputImpact = "Finishes sooner when indexers stop returning new rows, while still respecting the total snapshot timeout." },
-                new() { FieldName = "Local match workers", Description = "Parallel workers that match snapshot rows to episodes.", OutputImpact = "More workers speed up snapshot matching on large seasons." }
-            ],
+                BuildSearchSourceHelp(targetKind, useShowSnapshotSearch),
             RecipeBlockType.CandidateFilter =>
             [
                 new() { FieldName = "Quality", Description = "Allowed quality labels for accepted candidates, including 1440p when selected.", OutputImpact = "Torrents that do not match any listed quality are rejected before scoring." },
                 new() { FieldName = "Minimum seeders", Description = "Lowest seeder count still accepted.", OutputImpact = "Higher values reduce dead or slow torrents but may eliminate rare releases." },
+                new() { FieldName = "Min size GB", Description = "Optional lower size floor in gigabytes. 0 disables the floor. Unknown/missing sizes are not rejected.", OutputImpact = "Rejects tiny same-quality encodes below the floor while keeping max size as the hard ceiling." },
                 new() { FieldName = "Max size GB", Description = "Optional upper size limit in gigabytes.", OutputImpact = "Oversized packs or remuxes are rejected when set." },
-                new() { FieldName = "Preferred audio", Description = "Audio label used for scoring bonus.", OutputImpact = "Does not reject candidates, but boosts ranking when the filename contains this codec." },
+                new() { FieldName = "Preferred audio", Description = "Comma-separated audio labels used for scoring bonus, e.g. Dolby, DV.", OutputImpact = "Does not reject candidates. Each matching token adds a scoring boost (more matches = higher rank)." },
+                new() { FieldName = "Prefer terms", Description = "Custom soft-preference terms, one per line (same boost mechanic as preferred audio).", OutputImpact = "Does not reject candidates. Each matching term raises the score using the audio weight." },
                 new() { FieldName = "Include terms", Description = "Terms that must appear in the torrent name.", OutputImpact = "Useful to require WEB-DL, x265, or a specific language tag." },
                 new() { FieldName = "Exclude terms", Description = "Terms that reject a candidate immediately.", OutputImpact = "Common use: block cam, telesync, or unwanted codecs." },
                 new() { FieldName = "Preferred release groups", Description = "Groups you prefer when ranking.", OutputImpact = "Currently informational for scoring; blocked groups always reject." },
                 new() { FieldName = "Blocked release groups", Description = "Groups that are always rejected.", OutputImpact = "Any matching group name in the torrent title removes the candidate." }
             ],
             RecipeBlockType.CandidateParser =>
-            [
-                new() { FieldName = "Episode numbering", Description = "Controls whether filenames use Standard TV SxxEyy numbering or Anime absolute numbering such as One Piece - 1163.", OutputImpact = "Standard TV keeps existing behavior. Anime absolute accepts absolute episode numbers for shows that publish that way." },
-                new() { FieldName = "Probe candidate metadata", Description = "Download torrent metadata to verify episode/year coverage.", OutputImpact = "Improves accuracy for ambiguous filenames but adds extra qBittorrent requests." }
-            ],
+                targetKind == MediaKind.Movie
+                    ? [new()
+                    {
+                        FieldName = "Not used for movies",
+                        Description = "Movie recipes do not use Candidate Parser settings.",
+                        OutputImpact = "This module is hidden in Movie target to avoid confusion."
+                    }]
+                    :
+                    [
+                        new() { FieldName = "Episode numbering", Description = "Controls whether filenames use Standard TV SxxEyy numbering or Anime absolute numbering such as One Piece - 1163.", OutputImpact = "Standard TV keeps existing behavior. Anime absolute accepts absolute episode numbers for shows that publish that way." },
+                        new() { FieldName = "Probe candidate metadata", Description = "Download torrent metadata to verify episode/year coverage.", OutputImpact = "Improves accuracy for ambiguous filenames but adds extra qBittorrent requests." }
+                    ],
             RecipeBlockType.Scoring =>
             [
                 new() { FieldName = "Quality weight", Description = "Multiplier applied to the detected quality rank (2160p down to 480p).", OutputImpact = "Higher values make resolution differences dominate the final score." },
-                new() { FieldName = "Audio weight", Description = "Multiplier when the torrent name contains the preferred audio codec from the Quality module.", OutputImpact = "Raises releases that match your preferred audio without rejecting others." },
+                new() { FieldName = "Audio weight", Description = "Multiplier for preferred audio matches and Prefer terms matches from the Candidate Filter module.", OutputImpact = "Raises releases that match preferred audio and/or custom prefer terms without rejecting others." },
                 new() { FieldName = "Seeders weight", Description = "Points added per seeder, up to the cap below.", OutputImpact = "Higher values favor well-seeded torrents over marginal quality or title matches." },
                 new() { FieldName = "Seeders cap", Description = "Maximum seeder count counted toward score.", OutputImpact = "Prevents extremely large swarms from overwhelming other factors." },
                 new() { FieldName = "Identity / title-match weight", Description = "Multiplier for matched show or movie title and alias tokens.", OutputImpact = "Helps torrents with stronger title matches beat vague or abbreviated names." },
                 new() { FieldName = "Episode-title weight", Description = "Multiplier for matched episode title tokens in the filename.", OutputImpact = "Useful when multiple candidates share the same episode number but differ in embedded episode title." },
+                new() { FieldName = "Size weight", Description = "Multiplier for the size preference score (0–100). Default sits below audio and far below quality.", OutputImpact = "Adds a soft size boost without overriding quality or preferred audio." },
+                new() { FieldName = "Size preference", Description = "Prefer larger, prefer smaller, or Off. Uses Candidate Filter Min/Max size as the soft range.", OutputImpact = "Prefer larger boosts bigger files in range; prefer smaller does the inverse; Off disables size boost." },
                 new() { FieldName = "Season match score per season", Description = "Pack only. Points per selected season covered by the torrent.", OutputImpact = "Rewards packs that cover more of the seasons you selected." },
                 new() { FieldName = "Single-season boost", Description = "Pack only. Flat bonus when the torrent covers exactly one season.", OutputImpact = "Slightly prefers focused single-season packs over multi-season bundles when other factors are close." },
                 new() { FieldName = "Pack extras / OVA / special priority", Description = "Pack only. Enables bonus scoring when the torrent name mentions OVA, special, extra, OAD, or similar.", OutputImpact = "Complete bundles (season + extras) rank above season-only packs." },
@@ -1007,4 +1357,95 @@ internal static class ModuleFieldHelp
                 new() { FieldName = "Module", Description = "Recipe pipeline step.", OutputImpact = "Each enabled module contributes to how searches run, candidates are filtered, and torrents are added." }
             ]
         };
+
+    private static IReadOnlyList<ModuleFieldHelpItem> BuildSearchSourceHelp(
+        MediaKind targetKind,
+        bool useShowSnapshotSearch)
+    {
+        var items = new List<ModuleFieldHelpItem>
+        {
+            new() { FieldName = "Plugins", Description = "Which indexer plugins to query. 'enabled' uses all active plugins.", OutputImpact = "Limits or broadens which indexers contribute candidates to the result set." },
+            new() { FieldName = "Category", Description = "qBittorrent search category filter.", OutputImpact = "Narrows results to TV, movies, or all categories depending on plugin support." },
+            new() { FieldName = "Candidates per fetch", Description = "How many accepted candidates are kept after scoring.", OutputImpact = "Lower values reduce noise; higher values keep more backup options." },
+            new() { FieldName = "Deduplicate candidates", Description = "Remove duplicate torrent URLs before ranking, keeping the copy with the most seeders.", OutputImpact = "Frees candidate slots for distinct torrents when the same release appears from multiple indexers." },
+            new() { FieldName = "Fuzzy deduplicate", Description = "Also group candidates by normalized filename and file size bucket.", OutputImpact = "Removes near-duplicate releases that use different tracker URLs but represent the same torrent." },
+            new() { FieldName = "Fuzzy dedup size tolerance", Description = "File size bucket width in MB for fuzzy dedup. 0 means exact byte size only.", OutputImpact = "Larger values treat small size differences across trackers as the same release; smaller values are stricter." },
+            new() { FieldName = "Enable search pagination", Description = "Fetch qBittorrent search results in multiple pages (limit + offset) instead of only the first page.", OutputImpact = "Improves recall for late or deep results; can increase qB calls and runtime if caps are high." },
+            new() { FieldName = "Pagination page size", Description = "Rows fetched per page window from qBittorrent.", OutputImpact = "Higher page size reduces page count but can increase per-call payload." },
+            new() { FieldName = "Pagination max pages (movie)", Description = "Maximum pages fetched per movie query when pagination is enabled.", OutputImpact = "Raises movie recall with bounded runtime and API call count." },
+            new() { FieldName = "Pagination max pages (TV parallel)", Description = "Maximum pages fetched per episode query in TV parallel mode.", OutputImpact = "Controls call explosion risk in per-episode mode. Keep conservative for large queues." },
+            new() { FieldName = "Pagination max pages (TV snapshot)", Description = "Maximum pages fetched per query in TV snapshot mode.", OutputImpact = "Adds modest snapshot depth with bounded overhead." },
+            new() { FieldName = "Pagination max total results", Description = "Hard cap on merged unique rows kept per query after pagination dedup.", OutputImpact = "Prevents runaway memory and scoring cost even when indexers return large pools." },
+            new() { FieldName = "Pagination idle timeout", Description = "End the search early when merged unique results stop growing for N seconds. 0 disables this rule.", OutputImpact = "Cuts wait time once indexers stop producing new unique rows." },
+            new() { FieldName = "Result limit", Description = "Maximum rows returned per query.", OutputImpact = "Higher values surface more candidates but increase search time and noise." },
+            new() { FieldName = "Search idle timeout", Description = "Non-pagination early stop when merged unique results stop growing for N seconds. 0 disables.", OutputImpact = "Shortens long polls in non-pagination mode while keeping hard timeout as safety." },
+            new() { FieldName = "Parallel searches", Description = "How many queries run at the same time.", OutputImpact = "Faster execution when set higher, but may hit qBittorrent search capacity limits." }
+        };
+
+        if (targetKind == MediaKind.Movie)
+        {
+            items.Add(new()
+            {
+                FieldName = "Movie search timeout",
+                Description = "Maximum seconds to wait for each movie query before the app stops polling qBittorrent results.",
+                OutputImpact = "Higher timeout can capture late-arriving indexer rows; lower timeout returns faster."
+            });
+            items.Add(new()
+            {
+                FieldName = "Write candidate debug log",
+                Description = "Recipe-driven per-run debug file with accepted and rejected rows plus reasons.",
+                OutputImpact = "When enabled, each Run Cart using this recipe writes cart-debug files to the logs folder for troubleshooting."
+            });
+            return items;
+        }
+
+        items.Add(new()
+        {
+            FieldName = "TV parallel search timeout",
+            Description = "Maximum seconds to wait for each per-episode TV query in parallel search mode.",
+            OutputImpact = "Higher timeout improves coverage for slower indexers in TV parallel mode."
+        });
+        items.Add(new()
+        {
+            FieldName = "Search mode",
+            Description = "Choose TV parallel per-episode search or TV snapshot search.",
+            OutputImpact = "Snapshot mode captures one large show result set and matches locally; parallel mode searches each episode directly."
+        });
+        items.Add(new()
+        {
+            FieldName = "Write candidate debug log",
+            Description = "Recipe-driven per-run debug file with accepted and rejected rows plus reasons.",
+            OutputImpact = "When enabled, each Run Cart using this recipe writes cart-debug files to the logs folder for troubleshooting."
+        });
+
+        if (useShowSnapshotSearch)
+        {
+            items.Add(new()
+            {
+                FieldName = "Snapshot target results",
+                Description = "How many rows to collect in TV snapshot mode.",
+                OutputImpact = "Larger snapshots improve coverage but take longer to finish."
+            });
+            items.Add(new()
+            {
+                FieldName = "Snapshot timeout",
+                Description = "Maximum seconds to wait for TV snapshot search completion.",
+                OutputImpact = "Prevents hung snapshot polling from blocking the job."
+            });
+            items.Add(new()
+            {
+                FieldName = "Snapshot idle timeout",
+                Description = "Stop snapshot polling when no new results arrive for this many seconds. 0 disables early stop.",
+                OutputImpact = "Finishes sooner when indexers stop returning new rows."
+            });
+            items.Add(new()
+            {
+                FieldName = "Local match workers",
+                Description = "Parallel workers that match snapshot rows to episodes.",
+                OutputImpact = "More workers speed up matching on large season sets."
+            });
+        }
+
+        return items;
+    }
 }

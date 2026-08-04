@@ -43,11 +43,15 @@ public sealed class RecipeModuleConfig
 
     public int MinimumSeeders { get; set; }
 
+    public long? MinimumSizeBytes { get; set; }
+
     public long? MaximumSizeBytes { get; set; }
 
     public List<string> IncludeTerms { get; set; } = [];
 
     public List<string> ExcludeTerms { get; set; } = [];
+
+    public List<string> PreferTerms { get; set; } = [];
 
     public List<string> PreferredReleaseGroups { get; set; } = [];
 

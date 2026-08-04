@@ -9,5 +9,11 @@ public sealed class TorrentSearchRequest
     public string Category { get; init; } = "all";
 
     public int Limit { get; init; } = 100;
+
+    public int Offset { get; init; }
+
+    public int IdleTimeoutSeconds { get; init; }
+
+    public int TimeoutSeconds { get; init; } = 30;
 }
 

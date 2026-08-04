@@ -5,6 +5,8 @@ namespace media_management_app.Services;
 
 public sealed class AutomationFlowService : IAutomationFlowService
 {
+    private const int SearchPollDelayMilliseconds = 1000;
+
     private readonly IDatabaseService _databaseService;
     private readonly IRecipeService _recipeService;
     private readonly ISearchPlanBuilder _searchPlanBuilder;
@@ -83,6 +85,7 @@ public sealed class AutomationFlowService : IAutomationFlowService
         var evaluated = results
             .Select(result => _candidateEvaluationService.EvaluateEpisode(recipe, show, episode, result))
             .ToList();
+        TryWriteCandidateDebugLog(recipe, show.DisplayTitle, MediaKind.TvEpisode, queries, results, evaluated);
         return BuildDryRunResult(recipe, show.DisplayTitle, queries, evaluated);
     }
 
@@ -95,6 +98,7 @@ public sealed class AutomationFlowService : IAutomationFlowService
         var evaluated = results
             .Select(result => _candidateEvaluationService.EvaluateMovie(recipe, movie, result))
             .ToList();
+        TryWriteCandidateDebugLog(recipe, movie.DisplayTitle, MediaKind.Movie, queries, results, evaluated);
         return BuildDryRunResult(recipe, movie.DisplayTitle, queries, evaluated);
     }
 
@@ -107,7 +111,17 @@ public sealed class AutomationFlowService : IAutomationFlowService
         var requestLimit = searchSource?.ResultLimit is > 0 ? searchSource.ResultLimit : 100;
         var plugins = string.IsNullOrWhiteSpace(searchSource?.Plugins) ? "enabled" : searchSource!.Plugins;
         var category = string.IsNullOrWhiteSpace(searchSource?.Category) ? "all" : searchSource!.Category;
+        var autoTorrent = _settingsService.Current.AutoTorrent;
+        var timeoutSeconds = recipe.TargetKind == MediaKind.Movie
+            ? RecipeRuntimeSettings.GetMovieSearchTimeoutSeconds(recipe, autoTorrent)
+            : RecipeRuntimeSettings.GetParallelSearchTimeoutSeconds(recipe, autoTorrent);
         var parallelSearches = RecipeRuntimeSettings.GetParallelSearchCount(recipe, _settingsService.Current.AutoTorrent);
+        var paginationEnabled = RecipeRuntimeSettings.GetEnableSearchPagination(recipe);
+        var paginationPageSize = RecipeRuntimeSettings.GetPaginationPageSize(recipe);
+        var paginationMaxPages = GetPaginationMaxPages(recipe);
+        var paginationMaxTotalResults = RecipeRuntimeSettings.GetPaginationMaxTotalResults(recipe);
+        var paginationIdleTimeoutSeconds = GetPaginationIdleTimeoutSeconds(recipe);
+        var searchIdleTimeoutSeconds = GetSearchIdleTimeoutSeconds(recipe);
         var plannedQueries = queries
             .Where(query => !string.IsNullOrWhiteSpace(query))
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -116,6 +130,13 @@ public sealed class AutomationFlowService : IAutomationFlowService
         _logger.Info(
             $"Recipe search starting {totalQueries} query(ies). Recipe='{recipe.Name}': {string.Join(" | ", plannedQueries)}",
             LogTarget.All);
+        if (RecipeRuntimeSettings.GetEnableCandidateDebugLog(recipe))
+        {
+            var debugLogFolder = Path.Combine(_settingsService.Current.StateFolder, AppConstants.LogFolderName);
+            _logger.Info(
+                $"Cart debug mode is enabled for recipe '{recipe.Name}'. Candidate debug log will be written under '{debugLogFolder}' after this run.",
+                LogTarget.All);
+        }
 
         var throttler = new SemaphoreSlim(parallelSearches);
         var completedQueries = 0;
@@ -125,13 +146,27 @@ public sealed class AutomationFlowService : IAutomationFlowService
                 await throttler.WaitAsync(cancellationToken);
                 try
                 {
-                    var queryResults = await _qbittorrentClient.SearchAsync(new TorrentSearchRequest
-                    {
-                        Query = query,
-                        Plugins = plugins,
-                        Category = category,
-                        Limit = requestLimit
-                    }, cancellationToken);
+                    var queryResults = paginationEnabled
+                        ? await SearchQueryWithPaginationAsync(
+                            query,
+                            plugins,
+                            category,
+                            timeoutSeconds,
+                            requestLimit,
+                            paginationPageSize,
+                            paginationMaxPages,
+                            paginationMaxTotalResults,
+                            paginationIdleTimeoutSeconds,
+                            cancellationToken)
+                        : await _qbittorrentClient.SearchAsync(new TorrentSearchRequest
+                        {
+                            Query = query,
+                            Plugins = plugins,
+                            Category = category,
+                            Limit = requestLimit,
+                            IdleTimeoutSeconds = searchIdleTimeoutSeconds,
+                            TimeoutSeconds = timeoutSeconds
+                        }, cancellationToken);
                     var completed = Interlocked.Increment(ref completedQueries);
                     _logger.Info(
                         $"Recipe search query succeeded {completed}/{totalQueries}. Remaining={totalQueries - completed}. Query='{query}'. Results={queryResults.Count}.",
@@ -156,6 +191,226 @@ public sealed class AutomationFlowService : IAutomationFlowService
             .ToList();
     }
 
+    private int GetPaginationMaxPages(SearchRecipe recipe)
+    {
+        if (recipe.TargetKind == MediaKind.Movie)
+        {
+            return RecipeRuntimeSettings.GetPaginationMaxPagesMovie(recipe);
+        }
+
+        if (recipe.TargetKind == MediaKind.TvSeasonPack)
+        {
+            return RecipeRuntimeSettings.GetPaginationMaxPagesTvSnapshot(recipe);
+        }
+
+        return RecipeRuntimeSettings.GetUseShowSnapshotSearch(recipe, _settingsService.Current.AutoTorrent)
+            ? RecipeRuntimeSettings.GetPaginationMaxPagesTvSnapshot(recipe)
+            : RecipeRuntimeSettings.GetPaginationMaxPagesTvParallel(recipe);
+    }
+
+    private int GetPaginationIdleTimeoutSeconds(SearchRecipe recipe)
+    {
+        if (recipe.TargetKind == MediaKind.Movie)
+        {
+            return RecipeRuntimeSettings.GetPaginationIdleTimeoutSecondsMovie(recipe);
+        }
+
+        if (recipe.TargetKind == MediaKind.TvSeasonPack)
+        {
+            return RecipeRuntimeSettings.GetPaginationIdleTimeoutSecondsTvSnapshot(recipe);
+        }
+
+        return RecipeRuntimeSettings.GetUseShowSnapshotSearch(recipe, _settingsService.Current.AutoTorrent)
+            ? RecipeRuntimeSettings.GetPaginationIdleTimeoutSecondsTvSnapshot(recipe)
+            : RecipeRuntimeSettings.GetPaginationIdleTimeoutSecondsTvParallel(recipe);
+    }
+
+    private int GetSearchIdleTimeoutSeconds(SearchRecipe recipe)
+    {
+        return recipe.TargetKind == MediaKind.Movie
+            ? RecipeRuntimeSettings.GetSearchIdleTimeoutSecondsMovie(recipe)
+            : RecipeRuntimeSettings.GetSearchIdleTimeoutSecondsTvParallel(recipe);
+    }
+
+    private async Task<IReadOnlyList<TorrentSearchResult>> SearchQueryWithPaginationAsync(
+        string query,
+        string plugins,
+        string category,
+        int timeoutSeconds,
+        int requestLimit,
+        int pageSize,
+        int maxPages,
+        int maxTotalResults,
+        int idleTimeoutSeconds,
+        CancellationToken cancellationToken)
+    {
+        var effectivePageSize = Math.Clamp(pageSize, RecipeRuntimeSettings.MinPaginationPageSize, RecipeRuntimeSettings.MaxPaginationPageSize);
+        var effectiveMaxPages = Math.Clamp(maxPages, RecipeRuntimeSettings.MinPaginationMaxPages, RecipeRuntimeSettings.MaxPaginationMaxPages);
+        var effectiveMaxTotal = Math.Clamp(
+            maxTotalResults,
+            RecipeRuntimeSettings.MinPaginationMaxTotalResults,
+            RecipeRuntimeSettings.MaxPaginationMaxTotalResults);
+        var timeout = TimeSpan.FromSeconds(Math.Clamp(timeoutSeconds, 10, 300));
+        var deadline = DateTimeOffset.UtcNow.Add(timeout);
+        var idleTimeout = idleTimeoutSeconds > 0
+            ? TimeSpan.FromSeconds(Math.Clamp(idleTimeoutSeconds, RecipeRuntimeSettings.MinSearchIdleTimeoutSeconds, RecipeRuntimeSettings.MaxSearchIdleTimeoutSeconds))
+            : (TimeSpan?)null;
+        var latestStatus = "Running";
+        var pagesFetched = 0;
+        var rawRows = 0;
+        var mergedByUrl = new Dictionary<string, TorrentSearchResult>(StringComparer.OrdinalIgnoreCase);
+        var endedBy = "timeout";
+        var lastMergedCount = 0;
+        var idleDeadline = idleTimeout is null ? DateTimeOffset.MaxValue : DateTimeOffset.UtcNow.Add(idleTimeout.Value);
+        int? searchId = null;
+        // qBittorrent's search/results offset is a slice into the search job's own accumulating
+        // result buffer, not a request for the engine to crawl another page. Restarting the offset
+        // at 0 every poll cycle only re-reads what was already seen and never reaches results deeper
+        // in the buffer, so we keep advancing a cursor forward across the whole search lifetime.
+        var nextOffset = 0;
+        var latestTotal = 0;
+        var pollCycle = 0;
+        var searchStartedAt = DateTimeOffset.UtcNow;
+
+        try
+        {
+            searchId = await _qbittorrentClient.StartSearchAsync(new TorrentSearchRequest
+            {
+                Query = query,
+                Plugins = plugins,
+                Category = category
+            }, cancellationToken);
+            while (DateTimeOffset.UtcNow < deadline)
+            {
+                pollCycle++;
+                var cycleStartedMerged = mergedByUrl.Count;
+                var cycleStartedOffset = nextOffset;
+                var cycleRawRows = 0;
+                var cyclePages = 0;
+
+                // Always poll at least once per outer cycle even when nextOffset == latestTotal.
+                // qBittorrent appends new engine results to the end of the buffer; if we skip the
+                // API call after catching up, we never observe total growth and idle-timeout fires
+                // while slower engines are still writing into an unread tail.
+                for (var pagesThisCycle = 0;
+                     pagesThisCycle < effectiveMaxPages && mergedByUrl.Count < effectiveMaxTotal;
+                     pagesThisCycle++)
+                {
+                    var response = await _qbittorrentClient.GetSearchResultsAsync(
+                        searchId.Value,
+                        effectivePageSize,
+                        nextOffset,
+                        cancellationToken);
+                    latestStatus = response.Status;
+                    latestTotal = Math.Max(latestTotal, response.Total);
+                    pagesFetched++;
+                    cyclePages++;
+                    rawRows += response.Results.Count;
+                    cycleRawRows += response.Results.Count;
+                    foreach (var result in response.Results)
+                    {
+                        if (string.IsNullOrWhiteSpace(result.FileUrl))
+                        {
+                            continue;
+                        }
+
+                        if (!mergedByUrl.TryGetValue(result.FileUrl, out var existing) ||
+                            result.Seeders > existing.Seeders)
+                        {
+                            mergedByUrl[result.FileUrl] = result;
+                        }
+                    }
+
+                    if (response.Results.Count == 0)
+                    {
+                        break;
+                    }
+
+                    nextOffset += response.Results.Count;
+
+                    if (response.Results.Count < effectivePageSize)
+                    {
+                        break;
+                    }
+                }
+
+                var engineSummary = BuildEngineSummary(mergedByUrl.Values);
+                var idleRemainingSeconds = idleTimeout is null
+                    ? -1
+                    : Math.Max(0, (int)Math.Ceiling((idleDeadline - DateTimeOffset.UtcNow).TotalSeconds));
+                _logger.Info(
+                    $"Recipe search pagination cycle={pollCycle} query='{query}' elapsedSec={(DateTimeOffset.UtcNow - searchStartedAt).TotalSeconds:0.0} status='{latestStatus}' bufferTotal={latestTotal} cursor={cycleStartedOffset}->{nextOffset} pageRows={cycleRawRows} pages={cyclePages} merged={cycleStartedMerged}->{mergedByUrl.Count} idleRemainingSec={idleRemainingSeconds} engines=[{engineSummary}].",
+                    LogTarget.File);
+
+                if (mergedByUrl.Count > lastMergedCount)
+                {
+                    lastMergedCount = mergedByUrl.Count;
+                    if (idleTimeout is not null)
+                    {
+                        idleDeadline = DateTimeOffset.UtcNow.Add(idleTimeout.Value);
+                    }
+                }
+                else if (idleTimeout is not null && DateTimeOffset.UtcNow >= idleDeadline)
+                {
+                    endedBy = "idle-timeout";
+                    break;
+                }
+
+                if (mergedByUrl.Count >= effectiveMaxTotal)
+                {
+                    endedBy = "max-results";
+                    break;
+                }
+
+                if (!string.Equals(latestStatus, "Running", StringComparison.OrdinalIgnoreCase) && nextOffset >= latestTotal)
+                {
+                    // Engine(s) finished and we've drained every result they reported; nothing left to page in.
+                    endedBy = "status-finished";
+                    break;
+                }
+
+                await Task.Delay(SearchPollDelayMilliseconds, cancellationToken);
+            }
+        }
+        finally
+        {
+            if (searchId is not null)
+            {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    await _qbittorrentClient.StopSearchAsync(searchId.Value, CancellationToken.None);
+                }
+
+                await _qbittorrentClient.DeleteSearchAsync(searchId.Value, CancellationToken.None);
+            }
+        }
+
+        var merged = mergedByUrl.Values
+            .OrderByDescending(result => result.Seeders)
+            .ThenBy(result => result.FileSize)
+            .Take(effectiveMaxTotal)
+            .ToList();
+        if (endedBy == "timeout" && DateTimeOffset.UtcNow < deadline)
+        {
+            endedBy = "status-finished";
+        }
+
+        _logger.Info(
+            $"Recipe search pagination query='{query}' pages={pagesFetched} rawRows={rawRows} mergedRows={merged.Count} bufferTotal={latestTotal} cursorOffset={nextOffset} status='{latestStatus}' pageSize={effectivePageSize} maxPages={effectiveMaxPages} cap={effectiveMaxTotal} idleSeconds={idleTimeoutSeconds} endedBy='{endedBy}' engines=[{BuildEngineSummary(merged)}] pollCycles={pollCycle}.",
+            LogTarget.All);
+        return merged;
+    }
+
+    private static string BuildEngineSummary(IEnumerable<TorrentSearchResult> results)
+    {
+        return string.Join(", ",
+            results
+                .GroupBy(result => string.IsNullOrWhiteSpace(result.EngineName) ? "?" : result.EngineName, StringComparer.OrdinalIgnoreCase)
+                .OrderByDescending(group => group.Count())
+                .ThenBy(group => group.Key, StringComparer.OrdinalIgnoreCase)
+                .Select(group => $"{group.Key}:{group.Count()}"));
+    }
+
     private static RecipeDryRunResult BuildDryRunResult(
         SearchRecipe recipe,
         string title,
@@ -170,6 +425,9 @@ public sealed class AutomationFlowService : IAutomationFlowService
             AcceptedCandidates = evaluated
                 .Where(candidate => candidate.IsAccepted)
                 .OrderByDescending(candidate => candidate.TotalScore)
+                .ThenByDescending(candidate => candidate.AudioScore)
+                .ThenByDescending(candidate => candidate.PreferTermsScore)
+                .ThenByDescending(candidate => candidate.SizeScore)
                 .ToList(),
             RejectedCandidates = evaluated
                 .Where(candidate => !candidate.IsAccepted)
@@ -252,5 +510,69 @@ public sealed class AutomationFlowService : IAutomationFlowService
     private static string FirstNonEmpty(params string?[] values)
     {
         return values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim() ?? string.Empty;
+    }
+
+    private void TryWriteCandidateDebugLog(
+        SearchRecipe recipe,
+        string targetTitle,
+        MediaKind targetKind,
+        IReadOnlyList<string> queries,
+        IReadOnlyList<TorrentSearchResult> searchResults,
+        IReadOnlyList<RecipeCandidateResult> evaluated)
+    {
+        if (!RecipeRuntimeSettings.GetEnableCandidateDebugLog(recipe))
+        {
+            return;
+        }
+
+        var logSession = new CartCandidateDebugSession(
+            _settingsService.Current.StateFolder,
+            _settingsService.Current.Logs.MaxLinesPerFile);
+        logSession.WriteLine(
+            $"Media='{SanitizeForLog(targetTitle)}' Recipe='{SanitizeForLog(recipe.Name)}' RecipeId='{recipe.RecipeId}' Target='{targetKind}'");
+        logSession.WriteLine($"Queries={queries.Count} => {string.Join(" | ", queries.Select(SanitizeForLog))}");
+        var timeoutSeconds = targetKind == MediaKind.Movie
+            ? RecipeRuntimeSettings.GetMovieSearchTimeoutSeconds(recipe, _settingsService.Current.AutoTorrent)
+            : RecipeRuntimeSettings.GetParallelSearchTimeoutSeconds(recipe, _settingsService.Current.AutoTorrent);
+        logSession.WriteLine(
+            $"SearchResults={searchResults.Count} TimeoutSeconds={timeoutSeconds} Accepted={evaluated.Count(item => item.IsAccepted)} Rejected={evaluated.Count(item => !item.IsAccepted)}");
+        foreach (var summary in evaluated
+                     .Where(item => !item.IsAccepted)
+                     .GroupBy(item => item.RejectReason)
+                     .OrderByDescending(group => group.Count()))
+        {
+            logSession.WriteLine($"RejectSummary reason={summary.Key} count={summary.Count()}");
+        }
+
+        foreach (var item in evaluated)
+        {
+            var result = item.SearchResult;
+            var sizeGb = result.FileSize > 0
+                ? (result.FileSize / (1024d * 1024d * 1024d)).ToString("0.00")
+                : "unknown";
+            var verdict = item.IsAccepted ? "ACCEPT" : "REJECT";
+            var detail = item.IsAccepted ? "-" : SanitizeForLog(item.RejectDetail);
+            logSession.WriteLine(
+                $"{verdict} reason={item.RejectReason} detail='{detail}' quality='{TorrentQuality.Detect(result.FileName)}' sizeGB={sizeGb} seeders={result.Seeders} " +
+                $"Q={item.QualityScore} A={item.AudioScore} Pref={item.PreferTermsScore} Size={item.SizeScore} Total={item.TotalScore} " +
+                $"engine='{SanitizeForLog(result.EngineName)}' linkType='{result.LinkType}' name='{SanitizeForLog(result.FileName)}'");
+        }
+
+        _logger.Info($"Cart debug log: {logSession.FirstFilePath}", LogTarget.All);
+    }
+
+    private static string SanitizeForLog(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        return value
+            .Replace('\r', ' ')
+            .Replace('\n', ' ')
+            .Replace('\t', ' ')
+            .Replace("'", "''")
+            .Trim();
     }
 }

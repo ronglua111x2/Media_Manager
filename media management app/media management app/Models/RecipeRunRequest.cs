@@ -53,6 +53,10 @@ public sealed class RecipeCandidateResult
 
     public int AudioScore { get; init; }
 
+    public int PreferTermsScore { get; init; }
+
+    public int SizeScore { get; init; }
+
     public int TotalScore { get; init; }
 
     public bool IsAccepted => RejectReason == CandidateRejectReason.None;
@@ -74,5 +78,6 @@ public enum CandidateRejectReason
     MissingIncludeTerm = 8,
     ExcludedTerm = 9,
     BlockedReleaseGroup = 10,
-    SizeTooLarge = 11
+    SizeTooLarge = 11,
+    SizeTooSmall = 12
 }

@@ -261,8 +261,22 @@ public sealed class RecipeService : IRecipeService
                         [RecipeRuntimeSettings.MaxCandidatesPerFetchKey] = Math.Clamp(settings.MaxCandidatesPerFetch, 1, 10).ToString(),
                         [RecipeRuntimeSettings.UseShowSnapshotSearchKey] = settings.UseShowSnapshotSearch.ToString(),
                         [RecipeRuntimeSettings.SnapshotTargetResultsKey] = Math.Clamp(settings.SnapshotTargetResults, 100, 5000).ToString(),
+                        [RecipeRuntimeSettings.MovieSearchTimeoutSecondsKey] = Math.Clamp(settings.MovieSearchTimeoutSeconds, 10, 300).ToString(),
+                        [RecipeRuntimeSettings.ParallelSearchTimeoutSecondsKey] = Math.Clamp(settings.ParallelSearchTimeoutSeconds, 10, 300).ToString(),
                         [RecipeRuntimeSettings.SnapshotTimeoutSecondsKey] = Math.Clamp(settings.SnapshotTimeoutSeconds, 30, 300).ToString(),
-                        [RecipeRuntimeSettings.LocalMatchWorkersKey] = Math.Clamp(settings.LocalMatchWorkers, 1, 8).ToString()
+                        [RecipeRuntimeSettings.LocalMatchWorkersKey] = Math.Clamp(settings.LocalMatchWorkers, 1, 8).ToString(),
+                        [RecipeRuntimeSettings.EnableCandidateDebugLogKey] = bool.FalseString,
+                        [RecipeRuntimeSettings.EnableSearchPaginationKey] = (targetKind != MediaKind.TvEpisode).ToString(),
+                        [RecipeRuntimeSettings.PaginationPageSizeKey] = RecipeRuntimeSettings.DefaultPaginationPageSize.ToString(),
+                        [RecipeRuntimeSettings.PaginationMaxPagesMovieKey] = RecipeRuntimeSettings.DefaultPaginationMaxPagesMovie.ToString(),
+                        [RecipeRuntimeSettings.PaginationMaxPagesTvParallelKey] = RecipeRuntimeSettings.DefaultPaginationMaxPagesTvParallel.ToString(),
+                        [RecipeRuntimeSettings.PaginationMaxPagesTvSnapshotKey] = RecipeRuntimeSettings.DefaultPaginationMaxPagesTvSnapshot.ToString(),
+                        [RecipeRuntimeSettings.PaginationMaxTotalResultsKey] = RecipeRuntimeSettings.DefaultPaginationMaxTotalResults.ToString(),
+                        [RecipeRuntimeSettings.PaginationIdleTimeoutSecondsMovieKey] = RecipeRuntimeSettings.DefaultPaginationIdleTimeoutSecondsMovie.ToString(),
+                        [RecipeRuntimeSettings.PaginationIdleTimeoutSecondsTvParallelKey] = RecipeRuntimeSettings.DefaultPaginationIdleTimeoutSecondsTvParallel.ToString(),
+                        [RecipeRuntimeSettings.PaginationIdleTimeoutSecondsTvSnapshotKey] = RecipeRuntimeSettings.DefaultPaginationIdleTimeoutSecondsTvSnapshot.ToString(),
+                        [RecipeRuntimeSettings.SearchIdleTimeoutSecondsMovieKey] = RecipeRuntimeSettings.DefaultSearchIdleTimeoutSecondsMovie.ToString(),
+                        [RecipeRuntimeSettings.SearchIdleTimeoutSecondsTvParallelKey] = RecipeRuntimeSettings.DefaultSearchIdleTimeoutSecondsTvParallel.ToString()
                     }
                 },
                 new RecipeModuleConfig
@@ -345,6 +359,7 @@ public sealed class RecipeService : IRecipeService
             module.QualityAllowList ??= [];
             module.IncludeTerms ??= [];
             module.ExcludeTerms ??= [];
+            module.PreferTerms ??= [];
             module.PreferredReleaseGroups ??= [];
             module.BlockedReleaseGroups ??= [];
             module.Plugins = string.IsNullOrWhiteSpace(module.Plugins) ? "enabled" : module.Plugins.Trim();
@@ -360,6 +375,33 @@ public sealed class RecipeService : IRecipeService
                             : RecipeRuntimeSettings.StandardTvEpisodeNumbering);
             }
 
+            if (module.BlockType == RecipeBlockType.SearchSource)
+            {
+                module.ExtensionData.TryAdd(RecipeRuntimeSettings.EnableCandidateDebugLogKey, bool.FalseString);
+                module.ExtensionData[RecipeRuntimeSettings.EnableSearchPaginationKey] =
+                    RecipeRuntimeSettings.GetEnableSearchPagination(recipe).ToString();
+                module.ExtensionData[RecipeRuntimeSettings.PaginationPageSizeKey] =
+                    RecipeRuntimeSettings.GetPaginationPageSize(recipe).ToString();
+                module.ExtensionData[RecipeRuntimeSettings.PaginationMaxPagesMovieKey] =
+                    RecipeRuntimeSettings.GetPaginationMaxPagesMovie(recipe).ToString();
+                module.ExtensionData[RecipeRuntimeSettings.PaginationMaxPagesTvParallelKey] =
+                    RecipeRuntimeSettings.GetPaginationMaxPagesTvParallel(recipe).ToString();
+                module.ExtensionData[RecipeRuntimeSettings.PaginationMaxPagesTvSnapshotKey] =
+                    RecipeRuntimeSettings.GetPaginationMaxPagesTvSnapshot(recipe).ToString();
+                module.ExtensionData[RecipeRuntimeSettings.PaginationMaxTotalResultsKey] =
+                    RecipeRuntimeSettings.GetPaginationMaxTotalResults(recipe).ToString();
+                module.ExtensionData[RecipeRuntimeSettings.PaginationIdleTimeoutSecondsMovieKey] =
+                    RecipeRuntimeSettings.GetPaginationIdleTimeoutSecondsMovie(recipe).ToString();
+                module.ExtensionData[RecipeRuntimeSettings.PaginationIdleTimeoutSecondsTvParallelKey] =
+                    RecipeRuntimeSettings.GetPaginationIdleTimeoutSecondsTvParallel(recipe).ToString();
+                module.ExtensionData[RecipeRuntimeSettings.PaginationIdleTimeoutSecondsTvSnapshotKey] =
+                    RecipeRuntimeSettings.GetPaginationIdleTimeoutSecondsTvSnapshot(recipe).ToString();
+                module.ExtensionData[RecipeRuntimeSettings.SearchIdleTimeoutSecondsMovieKey] =
+                    RecipeRuntimeSettings.GetSearchIdleTimeoutSecondsMovie(recipe).ToString();
+                module.ExtensionData[RecipeRuntimeSettings.SearchIdleTimeoutSecondsTvParallelKey] =
+                    RecipeRuntimeSettings.GetSearchIdleTimeoutSecondsTvParallel(recipe).ToString();
+            }
+
             if (module.BlockType == RecipeBlockType.Scoring &&
                 recipe.TargetKind == MediaKind.TvSeasonPack)
             {
@@ -369,6 +411,17 @@ public sealed class RecipeService : IRecipeService
                 module.ExtensionData.TryAdd(
                     RecipeRuntimeSettings.PackExtrasPriorityScoreKey,
                     RecipeRuntimeSettings.DefaultPackExtrasPriorityScore.ToString());
+            }
+
+            if (module.BlockType == RecipeBlockType.Scoring)
+            {
+                module.ExtensionData.Remove(RecipeRuntimeSettings.LegacyIdealSizeGbKey);
+                module.ExtensionData.Remove(RecipeRuntimeSettings.LegacySizeBandGbKey);
+                module.ExtensionData[RecipeRuntimeSettings.SizePreferenceKey] =
+                    RecipeRuntimeSettings.NormalizeSizePreferenceOption(
+                        module.ExtensionData.TryGetValue(RecipeRuntimeSettings.SizePreferenceKey, out var sizePreference)
+                            ? sizePreference
+                            : "Prefer larger");
             }
         }
 

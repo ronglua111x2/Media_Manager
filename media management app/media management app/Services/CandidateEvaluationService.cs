@@ -49,9 +49,10 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
 
         var episodeScore = EvaluateEpisodeTitleMatch(episode.Title, parsed.EpisodeTitle);
         var audioScore = GetAudioScore(filter, result.FileName);
+        var preferTermsScore = GetPreferTermsScore(filter, result.FileName);
         var qualityScore = TorrentQuality.GetRank(parsed.Quality);
         var weights = RecipeRuntimeSettings.GetCandidateScoringWeights(recipe);
-        return Accepted(result, qualityScore, titleMatch.Score, episodeScore, audioScore, weights);
+        return Accepted(result, qualityScore, titleMatch.Score, episodeScore, audioScore, preferTermsScore, weights, filter);
     }
 
     public RecipeCandidateResult EvaluateMovie(SearchRecipe recipe, TrackedMovie movie, TorrentSearchResult result)
@@ -80,9 +81,10 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
         }
 
         var audioScore = GetAudioScore(filter, result.FileName);
+        var preferTermsScore = GetPreferTermsScore(filter, result.FileName);
         var qualityScore = TorrentQuality.GetRank(TorrentQuality.Detect(result.FileName));
         var weights = RecipeRuntimeSettings.GetCandidateScoringWeights(recipe);
-        return Accepted(result, qualityScore, titleMatch.Score, episodeScore: 0, audioScore, weights);
+        return Accepted(result, qualityScore, titleMatch.Score, episodeScore: 0, audioScore, preferTermsScore, weights, filter);
     }
 
     private static (CandidateRejectReason Reason, string Detail) GetCommonRejectReason(
@@ -109,6 +111,13 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
         if (result.Seeders < filter.MinimumSeeders)
         {
             return (CandidateRejectReason.SeedersTooLow, $"seeders below threshold {filter.MinimumSeeders}");
+        }
+
+        if (filter.MinimumSizeBytes is not null &&
+            result.FileSize > 0 &&
+            result.FileSize < filter.MinimumSizeBytes.Value)
+        {
+            return (CandidateRejectReason.SizeTooSmall, "candidate is smaller than recipe minimum size");
         }
 
         if (filter.MaximumSizeBytes is not null && result.FileSize > filter.MaximumSizeBytes.Value)
@@ -160,8 +169,15 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
         int identityScore,
         int episodeScore,
         int audioScore,
-        CandidateScoringWeights weights)
+        int preferTermsScore,
+        CandidateScoringWeights weights,
+        RecipeModuleConfig? filter)
     {
+        var sizeScore = TorrentQuality.CalculateSizeScore(
+            result.FileSize,
+            filter?.MinimumSizeBytes,
+            filter?.MaximumSizeBytes,
+            weights);
         return new RecipeCandidateResult
         {
             SearchResult = result,
@@ -169,13 +185,17 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
             IdentityScore = identityScore,
             EpisodeScore = episodeScore,
             AudioScore = audioScore,
+            PreferTermsScore = preferTermsScore,
+            SizeScore = sizeScore,
             TotalScore = TorrentQuality.CalculateCandidateScore(
                 qualityScore,
                 audioScore,
                 result.Seeders,
                 identityScore,
                 episodeScore,
-                weights)
+                weights,
+                preferTermsScore,
+                sizeScore)
         };
     }
 
@@ -249,9 +269,11 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
 
     private static int GetAudioScore(RecipeModuleConfig? filter, string fileName)
     {
-        return !string.IsNullOrWhiteSpace(filter?.PreferredAudioCodec) &&
-               fileName.Contains(filter.PreferredAudioCodec, StringComparison.OrdinalIgnoreCase)
-            ? 1
-            : 0;
+        return PreferredTermMatcher.CountMatches(fileName, filter?.PreferredAudioCodec);
+    }
+
+    private static int GetPreferTermsScore(RecipeModuleConfig? filter, string fileName)
+    {
+        return PreferredTermMatcher.CountMatches(fileName, filter?.PreferTerms);
     }
 }

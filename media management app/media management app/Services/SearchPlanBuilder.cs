@@ -1,9 +1,12 @@
+using System.Text.RegularExpressions;
 using media_management_app.Models;
 
 namespace media_management_app.Services;
 
 public sealed class SearchPlanBuilder : ISearchPlanBuilder
 {
+    private static readonly Regex NonSearchSafeCharacters = new(@"[^\p{L}\p{N}\s-]", RegexOptions.Compiled);
+
     private readonly ISearchTitleResolver _titleResolver;
 
     public SearchPlanBuilder(ISearchTitleResolver titleResolver)
@@ -40,7 +43,7 @@ public sealed class SearchPlanBuilder : ISearchPlanBuilder
             }));
         }
 
-        return NormalizeQueries(queries);
+        return NormalizeQueries(queries, RecipeRuntimeSettings.GetSanitizeQuery(queryModule));
     }
 
     public IReadOnlyList<string> BuildMovieQueries(SearchRecipe recipe, TrackedMovie movie)
@@ -68,7 +71,7 @@ public sealed class SearchPlanBuilder : ISearchPlanBuilder
             }));
         }
 
-        return NormalizeQueries(queries);
+        return NormalizeQueries(queries, RecipeRuntimeSettings.GetSanitizeQuery(queryModule));
     }
 
     public IReadOnlyList<string> BuildShowSnapshotQueries(SearchRecipe recipe, TrackedShow show)
@@ -101,7 +104,7 @@ public sealed class SearchPlanBuilder : ISearchPlanBuilder
             }));
         }
 
-        return NormalizeQueries(queries);
+        return NormalizeQueries(queries, RecipeRuntimeSettings.GetSanitizeQuery(queryModule));
     }
 
     private IReadOnlyList<string> ResolveTitles(
@@ -172,12 +175,19 @@ public sealed class SearchPlanBuilder : ISearchPlanBuilder
         return string.Join(' ', rendered.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
     }
 
-    private static IReadOnlyList<string> NormalizeQueries(IEnumerable<string> queries)
+    private static string SanitizeQuery(string query)
+    {
+        var sanitized = NonSearchSafeCharacters.Replace(query, " ");
+        return string.Join(' ', sanitized.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+    }
+
+    private static IReadOnlyList<string> NormalizeQueries(IEnumerable<string> queries, bool sanitize)
     {
         var seenKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var result = new List<string>();
 
         foreach (var query in queries
+                     .Select(query => sanitize ? SanitizeQuery(query) : query)
                      .Select(query => string.Join(' ', query.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)))
                      .Where(query => !string.IsNullOrWhiteSpace(query)))
         {

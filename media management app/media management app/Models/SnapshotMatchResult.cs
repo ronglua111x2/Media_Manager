@@ -12,6 +12,10 @@ public sealed class SnapshotMatchResult
 
     public int AudioScore { get; init; }
 
+    public int PreferTermsScore { get; init; }
+
+    public int SizeScore { get; init; }
+
     public int IdentityScore { get; init; }
 
     public int EpisodeScore { get; init; }

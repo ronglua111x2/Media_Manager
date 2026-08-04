@@ -1,5 +1,12 @@
 namespace media_management_app.Services;
 
+public enum SizePreferenceMode
+{
+    Off = 0,
+    PreferLarger = 1,
+    PreferSmaller = 2
+}
+
 public sealed record CandidateScoringWeights(
     int QualityWeight,
     int AudioWeight,
@@ -7,6 +14,8 @@ public sealed record CandidateScoringWeights(
     int SeedersCap,
     int IdentityWeight,
     int EpisodeWeight,
+    int SizeWeight,
+    SizePreferenceMode SizePreference,
     int SeasonMatchScorePerSeason,
     int SingleSeasonBoost,
     bool PackExtrasPriorityEnabled,
@@ -19,6 +28,8 @@ public sealed record CandidateScoringWeights(
         SeedersCap: 99_999,
         IdentityWeight: 10,
         EpisodeWeight: 1,
+        SizeWeight: 500_000,
+        SizePreference: SizePreferenceMode.PreferLarger,
         SeasonMatchScorePerSeason: 10,
         SingleSeasonBoost: 5000,
         PackExtrasPriorityEnabled: true,

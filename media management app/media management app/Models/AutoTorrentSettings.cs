@@ -31,6 +31,10 @@ public sealed class AutoTorrentSettings
 
     public int SnapshotTargetResults { get; set; } = 2000;
 
+    public int MovieSearchTimeoutSeconds { get; set; } = 30;
+
+    public int ParallelSearchTimeoutSeconds { get; set; } = 30;
+
     public int SnapshotTimeoutSeconds { get; set; } = 120;
 
     public int SnapshotIdleTimeoutSeconds { get; set; } = 10;

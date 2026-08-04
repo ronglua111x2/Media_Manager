@@ -121,8 +121,10 @@ public sealed class ShowSearchSnapshotService
         int? searchId = null;
         IReadOnlyList<TorrentSearchResult> latestResults = [];
         var latestStatus = "Running";
+        var mergedByUrl = new Dictionary<string, TorrentSearchResult>(StringComparer.OrdinalIgnoreCase);
         var lastResultCount = 0;
         var idleDeadline = idleTimeout is null ? DateTimeOffset.MaxValue : DateTimeOffset.UtcNow.Add(idleTimeout.Value);
+        var endedBy = "timeout";
 
         try
         {
@@ -131,14 +133,28 @@ public sealed class ShowSearchSnapshotService
             while (DateTimeOffset.UtcNow < deadline)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var response = await _qbittorrentClient.GetSearchResultsAsync(searchId.Value, limit: targetResults, cancellationToken);
+                var response = await _qbittorrentClient.GetSearchResultsAsync(searchId.Value, limit: targetResults, offset: 0, cancellationToken);
                 latestResults = response.Results;
                 latestStatus = response.Status;
-                progressService?.Report(latestResults.Count, $"Searching snapshot: {query}");
-
-                if (latestResults.Count > lastResultCount)
+                foreach (var result in response.Results)
                 {
-                    lastResultCount = latestResults.Count;
+                    if (string.IsNullOrWhiteSpace(result.FileUrl))
+                    {
+                        continue;
+                    }
+
+                    if (!mergedByUrl.TryGetValue(result.FileUrl, out var existing) ||
+                        result.Seeders > existing.Seeders)
+                    {
+                        mergedByUrl[result.FileUrl] = result;
+                    }
+                }
+
+                progressService?.Report(mergedByUrl.Count, $"Searching snapshot: {query}");
+
+                if (mergedByUrl.Count > lastResultCount)
+                {
+                    lastResultCount = mergedByUrl.Count;
                     if (idleTimeout is not null)
                     {
                         idleDeadline = DateTimeOffset.UtcNow.Add(idleTimeout.Value);
@@ -146,15 +162,19 @@ public sealed class ShowSearchSnapshotService
                 }
                 else if (idleTimeout is not null && DateTimeOffset.UtcNow >= idleDeadline)
                 {
+                    endedBy = "idle-timeout";
                     _logger.Info(
-                        $"Snapshot search idle timeout reached. Query='{query}', Results={latestResults.Count}, IdleSeconds={idleTimeout.Value.TotalSeconds:0}.",
+                        $"Snapshot search idle timeout reached. Query='{query}', Results={mergedByUrl.Count}, IdleSeconds={idleTimeout.Value.TotalSeconds:0}.",
                         LogTarget.All);
                     break;
                 }
 
                 if (!string.Equals(latestStatus, "Running", StringComparison.OrdinalIgnoreCase) ||
-                    latestResults.Count >= targetResults)
+                    mergedByUrl.Count >= targetResults)
                 {
+                    endedBy = !string.Equals(latestStatus, "Running", StringComparison.OrdinalIgnoreCase)
+                        ? "status-finished"
+                        : "max-results";
                     break;
                 }
 
@@ -162,11 +182,11 @@ public sealed class ShowSearchSnapshotService
             }
 
             _logger.Info(
-                $"Snapshot search completed. Query='{query}', Status='{latestStatus}', Results={latestResults.Count}.",
+                $"Snapshot search completed. Query='{query}', Status='{latestStatus}', Results={mergedByUrl.Count}, EndedBy='{endedBy}'.",
                 LogTarget.All);
-            progressService?.Finish($"Snapshot search finished: {query} ({latestResults.Count})");
+            progressService?.Finish($"Snapshot search finished: {query} ({mergedByUrl.Count})");
 
-            return latestResults
+            return mergedByUrl.Values
                 .OrderByDescending(result => result.Seeders)
                 .ThenBy(result => result.FileSize)
                 .ToList();
