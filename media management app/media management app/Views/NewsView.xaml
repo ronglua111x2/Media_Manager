@@ -307,10 +307,59 @@
 
             <materialDesign:Card Grid.Column="2" Style="{StaticResource PanelCardStyle}">
                 <DockPanel>
-                    <TextBlock DockPanel.Dock="Top"
-                               Text="Tracked Shows"
-                               Style="{StaticResource SectionTitleStyle}"
-                               Margin="0,0,0,10" />
+                    <Grid DockPanel.Dock="Top" Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Tracked Shows"
+                                   Style="{StaticResource SectionTitleStyle}"
+                                   VerticalAlignment="Center"
+                                   Margin="0,0,12,0" />
+                        <Border Grid.Column="2"
+                                BorderBrush="{StaticResource AppBrushBorder}"
+                                BorderThickness="1"
+                                CornerRadius="8"
+                                ClipToBounds="True"
+                                VerticalAlignment="Center"
+                                Height="36">
+                            <StackPanel Orientation="Horizontal">
+                                <Button Style="{StaticResource NewsSortSegmentButtonStyle}"
+                                        Command="{Binding SetTrackedShowViewModeCommand}"
+                                        CommandParameter="{x:Static common:NewsTrackedShowViewMode.Full}"
+                                        Tag="{Binding IsFullViewSelected}"
+                                        BorderThickness="0,0,1,0"
+                                        ToolTip="Full">
+                                    <iconPacks:PackIconLucide Kind="LayoutList" Width="18" Height="18" />
+                                </Button>
+                                <Button Style="{StaticResource NewsSortSegmentButtonStyle}"
+                                        Command="{Binding SetTrackedShowViewModeCommand}"
+                                        CommandParameter="{x:Static common:NewsTrackedShowViewMode.ScheduleOnly}"
+                                        Tag="{Binding IsScheduleOnlyViewSelected}"
+                                        BorderThickness="0,0,1,0"
+                                        ToolTip="Schedule only">
+                                    <iconPacks:PackIconLucide Kind="CalendarClock" Width="18" Height="18" />
+                                </Button>
+                                <Button Style="{StaticResource NewsSortSegmentButtonStyle}"
+                                        Command="{Binding SetTrackedShowViewModeCommand}"
+                                        CommandParameter="{x:Static common:NewsTrackedShowViewMode.AvailabilityOnly}"
+                                        Tag="{Binding IsAvailabilityOnlyViewSelected}"
+                                        BorderThickness="0,0,1,0"
+                                        ToolTip="Availability only">
+                                    <iconPacks:PackIconLucide Kind="CircleCheck" Width="18" Height="18" />
+                                </Button>
+                                <Button Style="{StaticResource NewsSortSegmentButtonStyle}"
+                                        Command="{Binding SetTrackedShowViewModeCommand}"
+                                        CommandParameter="{x:Static common:NewsTrackedShowViewMode.TitleOnly}"
+                                        Tag="{Binding IsTitleOnlyViewSelected}"
+                                        BorderThickness="0"
+                                        ToolTip="Title only">
+                                    <iconPacks:PackIconLucide Kind="Type" Width="18" Height="18" />
+                                </Button>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
                         <ItemsControl ItemsSource="{Binding TrackedShows}">
                             <ItemsControl.ItemTemplate>
@@ -319,15 +368,15 @@
                                             BorderBrush="{StaticResource AppBrushBorder}"
                                             BorderThickness="1"
                                             CornerRadius="8"
-                                            Padding="10"
+                                            Padding="{Binding DataContext.TrackedShowCardPadding, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                             Margin="0,0,0,8">
                                         <Grid>
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="Auto" />
                                                 <ColumnDefinition Width="*" />
                                             </Grid.ColumnDefinitions>
-                                            <Border Width="72"
-                                                    Height="108"
+                                            <Border Width="{Binding DataContext.TrackedShowPosterWidth, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    Height="{Binding DataContext.TrackedShowPosterHeight, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                     CornerRadius="4"
                                                     Background="{StaticResource AppBrushChipMuted}"
                                                     ClipToBounds="True">
@@ -343,10 +392,12 @@
                                                            TextTrimming="CharacterEllipsis" />
                                                 <TextBlock Text="{Binding SeriesStatusLabel}"
                                                            Style="{StaticResource MutedTextStyle}"
-                                                           Margin="0,4,0,0" />
-                                                <StackPanel Orientation="Horizontal"
-                                                            Margin="0,4,0,0"
-                                                            Visibility="{Binding HasScheduleMeta, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                           Margin="0,4,0,0"
+                                                           Visibility="{Binding DataContext.ShowSeriesStatus, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                                <StackPanel Visibility="{Binding DataContext.ShowScheduleRow, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                    <StackPanel Orientation="Horizontal"
+                                                                Margin="0,4,0,0"
+                                                                Visibility="{Binding HasScheduleMeta, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <StackPanel Orientation="Horizontal"
                                                                 Visibility="{Binding HasWeeklyAirDay, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                         <iconPacks:PackIconLucide Kind="CalendarDays"
@@ -380,8 +431,11 @@
                                                                    VerticalAlignment="Center"
                                                                    Foreground="{StaticResource AppBrushMutedText}" />
                                                     </StackPanel>
+                                                    </StackPanel>
                                                 </StackPanel>
-                                                <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                                <StackPanel Orientation="Horizontal"
+                                                            Margin="0,4,0,0"
+                                                            Visibility="{Binding DataContext.ShowAvailabilityRow, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <iconPacks:PackIconLucide Kind="Hourglass"
                                                                                Width="12"
                                                                                Height="12"

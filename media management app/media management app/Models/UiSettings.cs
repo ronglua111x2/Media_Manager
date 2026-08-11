@@ -8,6 +8,8 @@ public sealed class UiSettings
 
     public NewsEpisodeSortMode NewsEpisodeSortMode { get; set; } = NewsEpisodeSortMode.AirDateDesc;
 
+    public NewsTrackedShowViewMode NewsTrackedShowViewMode { get; set; } = NewsTrackedShowViewMode.Full;
+
     public MediaCardSortMode LibraryMediaSortMode { get; set; } = MediaCardSortMode.DateAddedDesc;
 
     public string LibraryMediaSearchQuery { get; set; } = string.Empty;

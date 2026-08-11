@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Windows;
 using System.Windows.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -37,6 +38,7 @@ public sealed partial class NewsViewModel : ViewModelBase
 
         _isRestoringUiState = true;
         NewsSortMode = _settingsService.Current.Ui?.NewsEpisodeSortMode ?? NewsEpisodeSortMode.AirDateDesc;
+        TrackedShowViewMode = _settingsService.Current.Ui?.NewsTrackedShowViewMode ?? NewsTrackedShowViewMode.Full;
         _isRestoringUiState = false;
 
         UpdateDashboard();
@@ -58,16 +60,73 @@ public sealed partial class NewsViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(IsStatusSortSelected))]
     private NewsEpisodeSortMode newsSortMode = NewsEpisodeSortMode.AirDateDesc;
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsFullViewSelected))]
+    [NotifyPropertyChangedFor(nameof(IsScheduleOnlyViewSelected))]
+    [NotifyPropertyChangedFor(nameof(IsAvailabilityOnlyViewSelected))]
+    [NotifyPropertyChangedFor(nameof(IsTitleOnlyViewSelected))]
+    [NotifyPropertyChangedFor(nameof(ShowSeriesStatus))]
+    [NotifyPropertyChangedFor(nameof(ShowScheduleRow))]
+    [NotifyPropertyChangedFor(nameof(ShowAvailabilityRow))]
+    [NotifyPropertyChangedFor(nameof(TrackedShowPosterWidth))]
+    [NotifyPropertyChangedFor(nameof(TrackedShowPosterHeight))]
+    [NotifyPropertyChangedFor(nameof(TrackedShowCardPadding))]
+    private NewsTrackedShowViewMode trackedShowViewMode = NewsTrackedShowViewMode.Full;
+
     public bool IsAirDateSortSelected => NewsSortMode == NewsEpisodeSortMode.AirDateDesc;
 
     public bool IsTrackedShowSortSelected => NewsSortMode == NewsEpisodeSortMode.TrackedShow;
 
     public bool IsStatusSortSelected => NewsSortMode == NewsEpisodeSortMode.Status;
 
+    public bool IsFullViewSelected => TrackedShowViewMode == NewsTrackedShowViewMode.Full;
+
+    public bool IsScheduleOnlyViewSelected => TrackedShowViewMode == NewsTrackedShowViewMode.ScheduleOnly;
+
+    public bool IsAvailabilityOnlyViewSelected => TrackedShowViewMode == NewsTrackedShowViewMode.AvailabilityOnly;
+
+    public bool IsTitleOnlyViewSelected => TrackedShowViewMode == NewsTrackedShowViewMode.TitleOnly;
+
+    public bool ShowSeriesStatus =>
+        TrackedShowViewMode is NewsTrackedShowViewMode.Full or NewsTrackedShowViewMode.TitleOnly;
+
+    public bool ShowScheduleRow =>
+        TrackedShowViewMode is NewsTrackedShowViewMode.Full or NewsTrackedShowViewMode.ScheduleOnly;
+
+    public bool ShowAvailabilityRow =>
+        TrackedShowViewMode is NewsTrackedShowViewMode.Full or NewsTrackedShowViewMode.AvailabilityOnly;
+
+    public double TrackedShowPosterWidth => TrackedShowViewMode switch
+    {
+        NewsTrackedShowViewMode.TitleOnly => 40,
+        NewsTrackedShowViewMode.ScheduleOnly or NewsTrackedShowViewMode.AvailabilityOnly => 56,
+        _ => 72
+    };
+
+    public double TrackedShowPosterHeight => TrackedShowViewMode switch
+    {
+        NewsTrackedShowViewMode.TitleOnly => 60,
+        NewsTrackedShowViewMode.ScheduleOnly or NewsTrackedShowViewMode.AvailabilityOnly => 84,
+        _ => 108
+    };
+
+    public Thickness TrackedShowCardPadding => TrackedShowViewMode switch
+    {
+        NewsTrackedShowViewMode.TitleOnly => new Thickness(6),
+        NewsTrackedShowViewMode.ScheduleOnly or NewsTrackedShowViewMode.AvailabilityOnly => new Thickness(8),
+        _ => new Thickness(10)
+    };
+
     [RelayCommand]
     private void SetNewsSortMode(NewsEpisodeSortMode mode)
     {
         NewsSortMode = mode;
+    }
+
+    [RelayCommand]
+    private void SetTrackedShowViewMode(NewsTrackedShowViewMode mode)
+    {
+        TrackedShowViewMode = mode;
     }
 
     partial void OnNewsSortModeChanged(NewsEpisodeSortMode value)
@@ -79,6 +138,16 @@ public sealed partial class NewsViewModel : ViewModelBase
         }
 
         PersistNewsSortMode(value);
+    }
+
+    partial void OnTrackedShowViewModeChanged(NewsTrackedShowViewMode value)
+    {
+        if (_isRestoringUiState)
+        {
+            return;
+        }
+
+        PersistTrackedShowViewMode(value);
     }
 
     [RelayCommand(CanExecute = nameof(CanOpenJellyfin))]
@@ -223,6 +292,18 @@ public sealed partial class NewsViewModel : ViewModelBase
         }
 
         ui.NewsEpisodeSortMode = mode;
+        _settingsService.Save();
+    }
+
+    private void PersistTrackedShowViewMode(NewsTrackedShowViewMode mode)
+    {
+        var ui = _settingsService.Current.Ui ??= new UiSettings();
+        if (ui.NewsTrackedShowViewMode == mode)
+        {
+            return;
+        }
+
+        ui.NewsTrackedShowViewMode = mode;
         _settingsService.Save();
     }
 
