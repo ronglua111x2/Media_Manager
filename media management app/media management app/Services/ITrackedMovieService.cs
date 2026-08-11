@@ -34,5 +34,7 @@ public interface ITrackedMovieService
 
     void UpdateWatchStatus(long movieId, Common.UserWatchStatus watchStatus);
 
+    void UpdateRating(long movieId, double? rating, string? thought);
+
     void SetAlternativeTitleExcludedFromSearch(long movieId, string title, bool excluded);
 }

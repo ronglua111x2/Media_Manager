@@ -264,6 +264,12 @@ public sealed class TrackedShowService : ITrackedShowService
         _logger.Info($"Updated watch progress for show id={showId}: {watchStatus}, episodes={watchedEpisodes}", LogTarget.All);
     }
 
+    public void UpdateRating(long showId, double? rating, string? thought)
+    {
+        _databaseService.UpdateTrackedShowRating(showId, rating, thought);
+        _logger.Info($"Updated rating/thought for show id={showId}: rating={rating?.ToString("0.0") ?? "null"}", LogTarget.All);
+    }
+
     public void SetAlternativeTitleExcludedFromSearch(long showId, string title, bool excluded)
     {
         if (string.IsNullOrWhiteSpace(title))

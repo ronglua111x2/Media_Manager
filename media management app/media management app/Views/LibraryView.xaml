@@ -1177,6 +1177,165 @@
                                         </StackPanel>
                                     </StackPanel>
 
+                                    <!-- Rating + Thought (same line; thought truncates with view-full popup) -->
+                                    <Grid Margin="0,8,0,0"
+                                          Visibility="{Binding HasSelectedMedia, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="16" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+
+                                        <StackPanel Grid.Column="0"
+                                                    Orientation="Horizontal"
+                                                    VerticalAlignment="Center">
+                                            <iconPacks:PackIconLucide Kind="Star"
+                                                                       Width="14"
+                                                                       Height="14"
+                                                                       VerticalAlignment="Center"
+                                                                       Margin="0,0,4,0"
+                                                                       Foreground="{StaticResource AppBrushWarning}" />
+                                            <TextBlock Text="Rating:"
+                                                       VerticalAlignment="Center"
+                                                       Margin="0,0,6,0"
+                                                       Foreground="{StaticResource AppBrushWarning}" />
+                                            <Button Style="{StaticResource AppCompactIconButtonStyle}"
+                                                    Width="24"
+                                                    Height="24"
+                                                    MaxWidth="24"
+                                                    MaxHeight="24"
+                                                    MinWidth="24"
+                                                    MinHeight="24"
+                                                    VerticalAlignment="Center"
+                                                    Command="{Binding DecrementRatingCommand}"
+                                                    ToolTip="Decrease rating by 0.1">
+                                                <iconPacks:PackIconLucide Kind="Minus"
+                                                                           Width="12"
+                                                                           Height="12"
+                                                                           Foreground="{StaticResource AppBrushWarning}" />
+                                            </Button>
+                                            <TextBox Width="44"
+                                                     Height="24"
+                                                     MaxHeight="24"
+                                                     Margin="4,0"
+                                                     Padding="2,0"
+                                                     VerticalAlignment="Center"
+                                                     VerticalContentAlignment="Center"
+                                                     HorizontalContentAlignment="Center"
+                                                     Foreground="{StaticResource AppBrushWarning}"
+                                                     Text="{Binding SelectedRatingText, UpdateSourceTrigger=LostFocus}"
+                                                     ToolTip="Personal rating 0.0–10.0" />
+                                            <Button Style="{StaticResource AppCompactIconButtonStyle}"
+                                                    Width="24"
+                                                    Height="24"
+                                                    MaxWidth="24"
+                                                    MaxHeight="24"
+                                                    MinWidth="24"
+                                                    MinHeight="24"
+                                                    VerticalAlignment="Center"
+                                                    Command="{Binding IncrementRatingCommand}"
+                                                    ToolTip="Increase rating by 0.1">
+                                                <iconPacks:PackIconLucide Kind="Plus"
+                                                                           Width="12"
+                                                                           Height="12"
+                                                                           Foreground="{StaticResource AppBrushWarning}" />
+                                            </Button>
+                                        </StackPanel>
+
+                                        <Grid Grid.Column="2"
+                                              VerticalAlignment="Center"
+                                              MinHeight="28">
+                                            <DockPanel VerticalAlignment="Center"
+                                                       Cursor="Hand"
+                                                       Visibility="{Binding ShowThoughtDisplay, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                                       MouseLeftButtonUp="ThoughtDisplayTextBlock_OnMouseLeftButtonUp">
+                                                <iconPacks:PackIconLucide Kind="MessageSquare"
+                                                                           DockPanel.Dock="Left"
+                                                                           Width="14"
+                                                                           Height="14"
+                                                                           VerticalAlignment="Center"
+                                                                           Margin="0,0,6,0"
+                                                                           Foreground="{StaticResource AppBrushShowAccent}" />
+                                                <TextBlock x:Name="ThoughtDisplayTextBlock"
+                                                           Text="{Binding ThoughtDisplayText}"
+                                                           Foreground="{StaticResource AppBrushShowAccent}"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           TextWrapping="NoWrap"
+                                                           VerticalAlignment="Center"
+                                                           ToolTip="Click to edit thought" />
+                                            </DockPanel>
+                                            <DockPanel Visibility="{Binding ShowThoughtEditor, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <iconPacks:PackIconLucide Kind="MessageSquare"
+                                                                           DockPanel.Dock="Left"
+                                                                           Width="14"
+                                                                           Height="14"
+                                                                           VerticalAlignment="Center"
+                                                                           Margin="0,0,6,0"
+                                                                           Foreground="{StaticResource AppBrushShowAccent}" />
+                                                <TextBox x:Name="ThoughtEditTextBox"
+                                                         Text="{Binding SelectedThought, UpdateSourceTrigger=PropertyChanged}"
+                                                         MaxLength="250"
+                                                         Margin="0"
+                                                         Padding="8,4"
+                                                         MinHeight="28"
+                                                         Height="28"
+                                                         VerticalContentAlignment="Center"
+                                                         Foreground="{StaticResource AppBrushShowAccent}"
+                                                         CaretBrush="{StaticResource AppBrushShowAccent}"
+                                                         ToolTip="Personal thought (max 250 characters)"
+                                                         LostFocus="ThoughtEditTextBox_OnLostFocus"
+                                                         KeyDown="ThoughtEditTextBox_OnKeyDown" />
+                                            </DockPanel>
+                                        </Grid>
+
+                                        <Button Grid.Column="3"
+                                                Style="{StaticResource AppCompactIconButtonStyle}"
+                                                Width="24"
+                                                Height="24"
+                                                MaxWidth="24"
+                                                MaxHeight="24"
+                                                MinWidth="24"
+                                                MinHeight="24"
+                                                Margin="6,0,0,0"
+                                                VerticalAlignment="Center"
+                                                Command="{Binding ToggleThoughtPopupCommand}"
+                                                ToolTip="View full thought">
+                                            <iconPacks:PackIconLucide Kind="Eye"
+                                                                       Width="12"
+                                                                       Height="12"
+                                                                       Foreground="{StaticResource AppBrushShowAccent}" />
+                                        </Button>
+                                        <Popup Placement="Bottom"
+                                               PlacementTarget="{Binding ElementName=ThoughtDisplayTextBlock}"
+                                               StaysOpen="False"
+                                               AllowsTransparency="True"
+                                               PopupAnimation="Fade"
+                                               IsOpen="{Binding IsThoughtPopupOpen, Mode=TwoWay}">
+                                            <Border Background="{StaticResource AppBrushSurfaceRaised}"
+                                                    BorderBrush="{StaticResource AppBrushBorder}"
+                                                    BorderThickness="1"
+                                                    CornerRadius="8"
+                                                    Padding="10"
+                                                    MinWidth="220"
+                                                    MaxWidth="420"
+                                                    MaxHeight="240">
+                                                <Border.Effect>
+                                                    <DropShadowEffect BlurRadius="12"
+                                                                      ShadowDepth="2"
+                                                                      Opacity="0.18"
+                                                                      Color="#000000" />
+                                                </Border.Effect>
+                                                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                                              HorizontalScrollBarVisibility="Disabled">
+                                                    <TextBlock Text="{Binding SelectedThought}"
+                                                               TextWrapping="Wrap"
+                                                               Style="{StaticResource MutedTextStyle}" />
+                                                </ScrollViewer>
+                                            </Border>
+                                        </Popup>
+                                    </Grid>
+
                                     <StackPanel Margin="0,8,0,0"
                                                 Visibility="{Binding IsSelectedShow, Converter={StaticResource BooleanToVisibilityConverter}}">
                                         <TextBlock Text="Alternative titles (middle-click to exclude/include)"

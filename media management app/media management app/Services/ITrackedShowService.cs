@@ -74,6 +74,8 @@ public interface ITrackedShowService
 
     void UpdateWatchProgress(long showId, Common.UserWatchStatus watchStatus, int watchedEpisodes);
 
+    void UpdateRating(long showId, double? rating, string? thought);
+
     void SetAlternativeTitleExcludedFromSearch(long showId, string title, bool excluded);
 
     IReadOnlyList<TrackedShow> GetAutoTrackedShows();

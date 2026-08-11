@@ -33,6 +33,12 @@ public sealed class TrackedMovie
 
     public UserWatchStatus WatchStatus { get; set; } = UserWatchStatus.None;
 
+    /// <summary>Personal score on a 0–10 scale (one decimal). Null = unset.</summary>
+    public double? Rating { get; set; }
+
+    /// <summary>Short personal review/thought (max 250 chars).</summary>
+    public string? Thought { get; set; }
+
     public string WatchStatusLabel => TrackedShow.FormatWatchStatusLabel(WatchStatus);
 
     public string? TorrentHash { get; set; }

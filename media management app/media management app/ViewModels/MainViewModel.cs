@@ -207,6 +207,13 @@ public partial class MainViewModel : ViewModelBase
 
     private void OnDeviceStatusChanged(object? sender, EventArgs e)
     {
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher is not null && !dispatcher.CheckAccess())
+        {
+            dispatcher.BeginInvoke(DispatcherPriority.Background, () => OnDeviceStatusChanged(sender, e));
+            return;
+        }
+
         ApplyDeviceStatus();
     }
 

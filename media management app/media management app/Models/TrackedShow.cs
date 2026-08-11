@@ -43,6 +43,12 @@ public sealed class TrackedShow
 
     public int WatchedEpisodes { get; set; }
 
+    /// <summary>Personal score on a 0–10 scale (one decimal). Null = unset.</summary>
+    public double? Rating { get; set; }
+
+    /// <summary>Short personal review/thought (max 250 chars).</summary>
+    public string? Thought { get; set; }
+
     /// <summary>TMDB planned regular-season episode total (excludes specials when populated from seasons[].episode_count).</summary>
     public int PlannedEpisodeCount { get; set; }
 

@@ -37,7 +37,13 @@ public sealed partial class LibraryViewModel : ViewModelBase
     private MediaKind? _loadedDetailMediaKind;
     private bool _suppressSeriesStatusUpdate;
     private bool _suppressWatchProgressUpdate;
+    private bool _suppressRatingThoughtUpdate;
     private int _watchProgressSuppressGeneration;
+
+    private const int ThoughtMaxLength = 250;
+    private const double RatingStep = 0.1;
+    private const double RatingMin = 0.0;
+    private const double RatingMax = 10.0;
 
     public LibraryViewModel(
         ITrackedShowService trackedShowService,
@@ -159,6 +165,18 @@ public sealed partial class LibraryViewModel : ViewModelBase
     private int selectedWatchTotalEpisodes;
 
     [ObservableProperty]
+    private double selectedRating;
+
+    [ObservableProperty]
+    private string selectedThought = string.Empty;
+
+    [ObservableProperty]
+    private bool isEditingThought;
+
+    [ObservableProperty]
+    private bool isThoughtPopupOpen;
+
+    [ObservableProperty]
     private ImageSource? selectedPosterImage;
 
     [ObservableProperty]
@@ -210,6 +228,35 @@ public sealed partial class LibraryViewModel : ViewModelBase
 
     public bool CanDecrementWatchedEpisodes =>
         IsSelectedShow && SelectedWatchedEpisodes > 0;
+
+    public bool CanIncrementRating => HasSelectedMedia && SelectedRating < RatingMax;
+
+    public bool CanDecrementRating => HasSelectedMedia && SelectedRating > RatingMin;
+
+    public string SelectedRatingText
+    {
+        get => SelectedRating.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture);
+        set
+        {
+            if (double.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var parsed)
+                || double.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.CurrentCulture, out parsed))
+            {
+                SelectedRating = ClampRating(parsed);
+                return;
+            }
+
+            OnPropertyChanged(nameof(SelectedRatingText));
+        }
+    }
+
+    public bool ShowThoughtDisplay => HasSelectedMedia && !IsEditingThought;
+
+    public bool ShowThoughtEditor => HasSelectedMedia && IsEditingThought;
+
+    public bool HasThoughtText => !string.IsNullOrWhiteSpace(SelectedThought);
+
+    public string ThoughtDisplayText =>
+        string.IsNullOrWhiteSpace(SelectedThought) ? "Add a thought..." : SelectedThought;
 
     public bool ShowStopAutoTrackButton => IsSelectedShow && SelectedShow?.IsAutoTracked == true;
 
@@ -1050,6 +1097,46 @@ public sealed partial class LibraryViewModel : ViewModelBase
         IncrementWatchedEpisodesCommand.NotifyCanExecuteChanged();
     }
 
+    partial void OnSelectedRatingChanged(double value)
+    {
+        var clamped = ClampRating(value);
+        if (Math.Abs(clamped - value) > 0.0001)
+        {
+            SelectedRating = clamped;
+            return;
+        }
+
+        OnPropertyChanged(nameof(CanIncrementRating));
+        OnPropertyChanged(nameof(CanDecrementRating));
+        OnPropertyChanged(nameof(SelectedRatingText));
+        IncrementRatingCommand.NotifyCanExecuteChanged();
+        DecrementRatingCommand.NotifyCanExecuteChanged();
+
+        if (_suppressRatingThoughtUpdate || !HasSelectedMedia)
+        {
+            return;
+        }
+
+        PersistSelectedRatingAndThought();
+    }
+
+    partial void OnSelectedThoughtChanged(string value)
+    {
+        OnPropertyChanged(nameof(HasThoughtText));
+        OnPropertyChanged(nameof(ThoughtDisplayText));
+        ToggleThoughtPopupCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnIsEditingThoughtChanged(bool value)
+    {
+        OnPropertyChanged(nameof(ShowThoughtDisplay));
+        OnPropertyChanged(nameof(ShowThoughtEditor));
+        if (value)
+        {
+            IsThoughtPopupOpen = false;
+        }
+    }
+
     partial void OnMediaSearchQueryChanged(string value)
     {
         ApplyMediaCardFilterAndSort();
@@ -1097,6 +1184,65 @@ public sealed partial class LibraryViewModel : ViewModelBase
         }
 
         PersistSelectedWatchProgress(SelectedWatchStatus, SelectedWatchedEpisodes - 1);
+    }
+
+    [RelayCommand(CanExecute = nameof(CanIncrementRating))]
+    private void IncrementRating()
+    {
+        if (!CanIncrementRating)
+        {
+            return;
+        }
+
+        SelectedRating = ClampRating(SelectedRating + RatingStep);
+    }
+
+    [RelayCommand(CanExecute = nameof(CanDecrementRating))]
+    private void DecrementRating()
+    {
+        if (!CanDecrementRating)
+        {
+            return;
+        }
+
+        SelectedRating = ClampRating(SelectedRating - RatingStep);
+    }
+
+    [RelayCommand(CanExecute = nameof(HasSelectedMedia))]
+    private void BeginEditThought()
+    {
+        if (!HasSelectedMedia)
+        {
+            return;
+        }
+
+        IsThoughtPopupOpen = false;
+        IsEditingThought = true;
+    }
+
+    [RelayCommand]
+    private void CommitThought()
+    {
+        if (!IsEditingThought)
+        {
+            return;
+        }
+
+        SelectedThought = NormalizeThought(SelectedThought);
+        IsEditingThought = false;
+        PersistSelectedRatingAndThought();
+    }
+
+    [RelayCommand(CanExecute = nameof(HasThoughtText))]
+    private void ToggleThoughtPopup()
+    {
+        if (!HasThoughtText)
+        {
+            IsThoughtPopupOpen = false;
+            return;
+        }
+
+        IsThoughtPopupOpen = !IsThoughtPopupOpen;
     }
 
     [RelayCommand(CanExecute = nameof(IsSelectedShow))]
@@ -1252,7 +1398,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
         }
 
         var confirm = System.Windows.MessageBox.Show(
-            $"Delete '{SelectedMediaCard.Title}' from library?\n\nThis removes hardlinks, seasons/episodes, and clears its cart.",
+            $"Delete '{SelectedMediaCard.Title}' from library?\n\nThis removes hardlinks, seasons/episodes, your rating/review, and clears its cart.",
             "Delete Media",
             System.Windows.MessageBoxButton.YesNo,
             System.Windows.MessageBoxImage.Warning);
@@ -1313,9 +1459,17 @@ public sealed partial class LibraryViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsSelectedShow));
         OnPropertyChanged(nameof(IsSelectedMovie));
         OnPropertyChanged(nameof(ShowStopAutoTrackButton));
+        OnPropertyChanged(nameof(CanIncrementRating));
+        OnPropertyChanged(nameof(CanDecrementRating));
+        OnPropertyChanged(nameof(ShowThoughtDisplay));
+        OnPropertyChanged(nameof(ShowThoughtEditor));
         ChangeEpisodeOrganizationCommand.NotifyCanExecuteChanged();
         SetAutoTrackCommand.NotifyCanExecuteChanged();
         StopAutoTrackCommand.NotifyCanExecuteChanged();
+        IncrementRatingCommand.NotifyCanExecuteChanged();
+        DecrementRatingCommand.NotifyCanExecuteChanged();
+        BeginEditThoughtCommand.NotifyCanExecuteChanged();
+        ToggleThoughtPopupCommand.NotifyCanExecuteChanged();
     }
 
     partial void OnMediaSortModeChanged(MediaCardSortMode value)
@@ -1468,6 +1622,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
             _loadedDetailMediaId = null;
             _loadedDetailMediaKind = null;
             SetWatchProgressUi(UserWatchStatus.None, watchedEpisodes: 0, totalEpisodes: 0);
+            SetRatingThoughtUi(rating: null, thought: null);
             return;
         }
 
@@ -1487,6 +1642,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
             SelectedShowSeriesStatus = show.SeriesStatus;
             _suppressSeriesStatusUpdate = false;
             SetWatchProgressUi(show.WatchStatus, show.WatchedEpisodes, show.WatchEpisodeTotal);
+            SetRatingThoughtUi(show.Rating, show.Thought);
             SelectedPosterImage = await _posterImageService.LoadAsync(
                 card.PosterPath,
                 card.MediaKind,
@@ -1504,6 +1660,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
 
         SelectedMovie = BuildMovieDetail(movie, sourceItems);
         SetWatchProgressUi(movie.WatchStatus, watchedEpisodes: 0, totalEpisodes: 0);
+        SetRatingThoughtUi(movie.Rating, movie.Thought);
         SelectedPosterImage = await _posterImageService.LoadAsync(
             card.PosterPath,
             card.MediaKind,
@@ -1748,6 +1905,68 @@ public sealed partial class LibraryViewModel : ViewModelBase
                 }
             },
             DispatcherPriority.Background);
+    }
+
+    private void SetRatingThoughtUi(double? rating, string? thought)
+    {
+        _suppressRatingThoughtUpdate = true;
+        IsThoughtPopupOpen = false;
+        IsEditingThought = false;
+        SelectedRating = ClampRating(rating ?? 0);
+        SelectedThought = NormalizeThought(thought);
+        OnPropertyChanged(nameof(SelectedRatingText));
+        OnPropertyChanged(nameof(CanIncrementRating));
+        OnPropertyChanged(nameof(CanDecrementRating));
+        OnPropertyChanged(nameof(ShowThoughtDisplay));
+        OnPropertyChanged(nameof(ShowThoughtEditor));
+        OnPropertyChanged(nameof(HasThoughtText));
+        OnPropertyChanged(nameof(ThoughtDisplayText));
+        IncrementRatingCommand.NotifyCanExecuteChanged();
+        DecrementRatingCommand.NotifyCanExecuteChanged();
+        BeginEditThoughtCommand.NotifyCanExecuteChanged();
+        ToggleThoughtPopupCommand.NotifyCanExecuteChanged();
+        _suppressRatingThoughtUpdate = false;
+    }
+
+    private void PersistSelectedRatingAndThought()
+    {
+        if (_suppressRatingThoughtUpdate || !HasSelectedMedia)
+        {
+            return;
+        }
+
+        var rating = ClampRating(SelectedRating);
+        var thought = NormalizeThought(SelectedThought);
+        var thoughtForDb = string.IsNullOrWhiteSpace(thought) ? null : thought;
+
+        if (SelectedShow is not null)
+        {
+            _trackedShowService.UpdateRating(SelectedShow.Id, rating, thoughtForDb);
+            StatusMessage = $"Rating/thought updated: {rating:0.0}.";
+            return;
+        }
+
+        if (SelectedMovie is not null)
+        {
+            _trackedMovieService.UpdateRating(SelectedMovie.Id, rating, thoughtForDb);
+            StatusMessage = $"Rating/thought updated: {rating:0.0}.";
+        }
+    }
+
+    private static double ClampRating(double value) =>
+        Math.Clamp(Math.Round(value, 1, MidpointRounding.AwayFromZero), RatingMin, RatingMax);
+
+    private static string NormalizeThought(string? thought)
+    {
+        if (string.IsNullOrWhiteSpace(thought))
+        {
+            return string.Empty;
+        }
+
+        var trimmed = thought.Trim();
+        return trimmed.Length <= ThoughtMaxLength
+            ? trimmed
+            : trimmed[..ThoughtMaxLength];
     }
 
     private void PersistSelectedWatchProgress(UserWatchStatus status, int watchedEpisodes)

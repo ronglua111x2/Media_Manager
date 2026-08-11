@@ -144,6 +144,8 @@ public interface IDatabaseService
 
     void UpdateTrackedShowWatchProgress(long showId, UserWatchStatus watchStatus, int watchedEpisodes);
 
+    void UpdateTrackedShowRating(long showId, double? rating, string? thought);
+
     void UpdateTrackedShowExcludedAlternativeTitles(long showId, string? excludedAlternativeTitlesJson);
 
     void UpdateTrackedShowEpisodeOrganization(long showId, string? episodeGroupId, string? episodeGroupName);
@@ -159,6 +161,8 @@ public interface IDatabaseService
     void UpdateTrackedMovieAvailability(long movieId, EpisodeAvailability availability);
 
     void UpdateTrackedMovieWatchStatus(long movieId, UserWatchStatus watchStatus);
+
+    void UpdateTrackedMovieRating(long movieId, double? rating, string? thought);
 
     void UpdateTrackedMovieTorrent(
         long movieId,

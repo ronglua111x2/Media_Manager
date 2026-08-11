@@ -693,6 +693,13 @@
                                 </Border>
                                 <Border Style="{StaticResource SettingsGuideItemStyle}">
                                     <StackPanel>
+                                        <TextBlock Text="Schedule enforcement" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="When enforced, all shows without a custom schedule follow the default anchor day/time above. When off, those shows run on the TMDB check interval instead; per-show custom schedules always still apply."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
                                         <TextBlock Text="Hunt after TMDB" Style="{StaticResource SettingsLabelStyle}" />
                                         <TextBlock Text="After each TMDB check, torrent hunt runs only for shows past their hunt schedule and past the air-date delay."
                                                    Style="{StaticResource SettingsHintStyle}" />
@@ -700,8 +707,50 @@
                                 </Border>
                                 <Border Style="{StaticResource SettingsGuideItemStyle}">
                                     <StackPanel>
+                                        <TextBlock Text="Hunt cycle limits" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Shows per hunt cycle and episodes per show per hunt cycle cap how much work one hunt pass does. Reconcile poll only runs after Auto-Track adds torrents, checking qBittorrent at this interval while downloads are still pending."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
                                         <TextBlock Text="Standalone hunt loop" Style="{StaticResource SettingsLabelStyle}" />
                                         <TextBlock Text="The standalone hunt loop only resumes shows with CandidatesFound status, independent of the TMDB schedule."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Quality filters" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Min quality, min seeders, min/max file size, and allowed qualities filter which torrent candidates Auto-Track accepts. Leave size at 0 or qualities empty to skip that filter. Force parallel search skips the single-best snapshot and searches all episodes at once."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Jellyfin path refresh" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Notifies Jellyfin's Library/Media/Updated endpoint with the new path right after Auto-Track creates or repairs a symlink. Only new paths are sent; episode-group (NFO) shows are skipped. Requires the Jellyfin base URL and API key below."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="WARP hold after notify" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="If Auto-Track owns the WARP connection, it stays connected for this many seconds after notifying Jellyfin so LibraryMonitor/TMDB metadata lookups can finish. The hold extends (capped) while a library scan task is still running."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Early WARP disconnect" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Only active during a WARP hold: tails new lines from the Jellyfin log (folder or .log file) and disconnects as soon as it goes quiet for the configured seconds, instead of waiting out the full hold. An invalid or empty log path falls back to timer-only behavior even when this is checked. Use Test log path to verify the path resolves before saving."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Test Jellyfin / Flush queue" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Test Jellyfin checks the base URL and API key can reach the server. Flush refresh queue immediately sends any path notifications still waiting to be delivered."
                                                    Style="{StaticResource SettingsHintStyle}" />
                                     </StackPanel>
                                 </Border>
@@ -1178,6 +1227,20 @@
                                 </Border>
                                 <Border Style="{StaticResource SettingsGuideItemStyle}">
                                     <StackPanel>
+                                        <TextBlock Text="Gemini AI" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Used to map season pack specials/OVAs to episodes when filenames are ambiguous. Needs an API key and is off by default. Pick a primary model plus up to 3 fallbacks; on a 429/503 response the app retries the primary once, then tries fallbacks in order."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Gemini models &amp; usage" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Refresh models pulls the current list from Google and updates the models file link above. The daily usage label tracks calls made today. Test Gemini sends a small request using the selected model/API key."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
                                         <TextBlock Text="qBittorrent Web UI" Style="{StaticResource SettingsLabelStyle}" />
                                         <TextBlock Text="The app connects through the Web UI API. Keep the URL pointed at the same host and port you open in the browser."
                                                    Style="{StaticResource SettingsHintStyle}" />
@@ -1496,6 +1559,13 @@
                                 </Border>
                                 <Border Style="{StaticResource SettingsGuideItemStyle}">
                                     <StackPanel>
+                                        <TextBlock Text="Inline icon" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Use WARP logo / Use Jellyfin logo fill the inline icon field with the same image used by real WARP·Jellyfin status toasts, so a test looks identical to the real notification."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
                                         <TextBlock Text="Troubleshooting" Style="{StaticResource SettingsLabelStyle}" />
                                         <TextBlock Text="If nothing appears, check Windows notification permissions for Media Manager and whether Focus Assist is blocking alerts."
                                                    Style="{StaticResource SettingsHintStyle}" />
@@ -1580,6 +1650,13 @@
                                     <StackPanel>
                                         <TextBlock Text="Test Connection" Style="{StaticResource SettingsLabelStyle}" />
                                         <TextBlock Text="Checks status first. If not connected, connects briefly then disconnects to verify the CLI works. Save settings to persist changes."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Connect timeout" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="How long the app waits for warp-cli to report Connected before giving up and treating the attempt as failed."
                                                    Style="{StaticResource SettingsHintStyle}" />
                                     </StackPanel>
                                 </Border>

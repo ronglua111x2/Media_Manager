@@ -159,6 +159,12 @@ public sealed class TrackedMovieService : ITrackedMovieService
         _logger.Info($"Updated watch status for movie id={movieId}: {watchStatus}", LogTarget.All);
     }
 
+    public void UpdateRating(long movieId, double? rating, string? thought)
+    {
+        _databaseService.UpdateTrackedMovieRating(movieId, rating, thought);
+        _logger.Info($"Updated rating/thought for movie id={movieId}: rating={rating?.ToString("0.0") ?? "null"}", LogTarget.All);
+    }
+
     public void SetAlternativeTitleExcludedFromSearch(long movieId, string title, bool excluded)
     {
         if (string.IsNullOrWhiteSpace(title))
