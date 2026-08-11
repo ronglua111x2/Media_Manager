@@ -27,6 +27,15 @@ public sealed class DeviceStatusSnapshot
         Detail = "Jellyfin status unknown"
     };
 
+    public DependencyStatusInfo GoogleDrive { get; init; } = new()
+    {
+        Name = "Google Drive",
+        StatusText = "unknown",
+        Detail = "Google Drive status unknown"
+    };
+
+    public bool IsBackupRunning { get; init; }
+
     public string JobStatus { get; init; } = "Idle";
 
     public bool IsJobActive { get; init; }

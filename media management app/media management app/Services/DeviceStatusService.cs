@@ -1,5 +1,6 @@
 using System.Net.Http;
 using media_management_app.Models;
+using media_management_app.Services.Backup;
 using media_management_app.ViewModels;
 
 namespace media_management_app.Services;
@@ -10,6 +11,8 @@ public sealed class DeviceStatusService : IDeviceStatusService
     private readonly IQbittorrentClient _qbittorrentClient;
     private readonly IWarpCliService _warpCliService;
     private readonly IJellyfinClient _jellyfinClient;
+    private readonly IGoogleDriveClient _googleDriveClient;
+    private readonly IBackupService _backupService;
     private readonly IOperationProgressService _progressService;
     private readonly IAppLogger _logger;
 
@@ -18,6 +21,8 @@ public sealed class DeviceStatusService : IDeviceStatusService
         IQbittorrentClient qbittorrentClient,
         IWarpCliService warpCliService,
         IJellyfinClient jellyfinClient,
+        IGoogleDriveClient googleDriveClient,
+        IBackupService backupService,
         IOperationProgressService progressService,
         IAppLogger logger)
     {
@@ -25,9 +30,12 @@ public sealed class DeviceStatusService : IDeviceStatusService
         _qbittorrentClient = qbittorrentClient;
         _warpCliService = warpCliService;
         _jellyfinClient = jellyfinClient;
+        _googleDriveClient = googleDriveClient;
+        _backupService = backupService;
         _progressService = progressService;
         _logger = logger;
         _progressService.ProgressChanged += (_, _) => RefreshJobOnly();
+        _backupService.RunStateChanged += (_, _) => RefreshBackupOnly();
     }
 
     public event EventHandler? StatusChanged;
@@ -49,6 +57,8 @@ public sealed class DeviceStatusService : IDeviceStatusService
             Qbittorrent = await qbittorrentTask,
             Warp = await warpTask,
             Jellyfin = await jellyfinTask,
+            GoogleDrive = GetGoogleDriveDependency(),
+            IsBackupRunning = _backupService.IsRunning,
             JobStatus = GetJobStatus(),
             IsJobActive = _progressService.IsActive
         };
@@ -64,8 +74,27 @@ public sealed class DeviceStatusService : IDeviceStatusService
             Qbittorrent = Current.Qbittorrent,
             Warp = Current.Warp,
             Jellyfin = Current.Jellyfin,
+            GoogleDrive = Current.GoogleDrive,
+            IsBackupRunning = Current.IsBackupRunning,
             JobStatus = GetJobStatus(),
             IsJobActive = _progressService.IsActive
+        };
+        StatusChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void RefreshBackupOnly()
+    {
+        Current = new DeviceStatusSnapshot
+        {
+            DriveStatuses = Current.DriveStatuses,
+            HasLowSpace = Current.HasLowSpace,
+            Qbittorrent = Current.Qbittorrent,
+            Warp = Current.Warp,
+            Jellyfin = Current.Jellyfin,
+            GoogleDrive = GetGoogleDriveDependency(),
+            IsBackupRunning = _backupService.IsRunning,
+            JobStatus = Current.JobStatus,
+            IsJobActive = Current.IsJobActive
         };
         StatusChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -249,6 +278,43 @@ public sealed class DeviceStatusService : IDeviceStatusService
                 Detail = $"Jellyfin unavailable: {ex.Message}"
             };
         }
+    }
+
+    private DependencyStatusInfo GetGoogleDriveDependency()
+    {
+        if (_backupService.IsRunning)
+        {
+            return new DependencyStatusInfo
+            {
+                Name = "Google Drive",
+                IsOk = true,
+                IsConfigured = true,
+                StatusText = "backing up",
+                Detail = "Backup in progress..."
+            };
+        }
+
+        if (!File.Exists(_googleDriveClient.CredentialsFilePath))
+        {
+            return new DependencyStatusInfo
+            {
+                Name = "Google Drive",
+                IsOk = false,
+                IsConfigured = false,
+                StatusText = "not configured",
+                Detail = "Google Drive credentials.json is not configured"
+            };
+        }
+
+        var connected = _googleDriveClient.HasStoredCredential;
+        return new DependencyStatusInfo
+        {
+            Name = "Google Drive",
+            IsOk = connected,
+            IsConfigured = true,
+            StatusText = connected ? "connected" : "not connected",
+            Detail = connected ? "Google Drive is connected" : "Google Drive is not connected yet"
+        };
     }
 
     private string GetJobStatus() =>

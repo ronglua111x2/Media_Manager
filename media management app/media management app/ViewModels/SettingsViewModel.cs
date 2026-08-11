@@ -7,6 +7,7 @@ using CommunityToolkit.Mvvm.Input;
 using media_management_app.Common;
 using media_management_app.Models;
 using media_management_app.Services;
+using media_management_app.Services.Backup;
 using media_management_app.Services.Gemini;
 using media_management_app.Services.Symlink;
 using WinForms = System.Windows.Forms;
@@ -31,6 +32,8 @@ public partial class SettingsViewModel : ViewModelBase
     private readonly IGeminiApiClient _geminiApiClient;
     private readonly IGeminiModelCatalogService _geminiModelCatalog;
     private readonly GeminiQuotaTracker _geminiQuotaTracker;
+    private readonly IGoogleDriveClient _googleDriveClient;
+    private readonly IBackupService _backupService;
     private readonly IAppLogger _logger;
     private bool _isLoadingSettings;
 
@@ -268,6 +271,41 @@ public partial class SettingsViewModel : ViewModelBase
     public ObservableCollection<NotificationPreferenceItemViewModel> NotificationPreferences { get; } = [];
 
     [ObservableProperty]
+    private bool backupEnabled;
+
+    [ObservableProperty]
+    private int backupDailyBackupHour = 3;
+
+    [ObservableProperty]
+    private int backupEventDebounceMinutes = 20;
+
+    [ObservableProperty]
+    private int backupDbThrottleHours = 1;
+
+    [ObservableProperty]
+    private int backupHistoryRetentionCount = 20;
+
+    [ObservableProperty]
+    private string backupMachineId = string.Empty;
+
+    [ObservableProperty]
+    private bool backupIsConnected;
+
+    [ObservableProperty]
+    private string backupConnectionStatusLabel = "Not connected";
+
+    [ObservableProperty]
+    private string backupCredentialsFilePath = string.Empty;
+
+    [ObservableProperty]
+    private string backupLastRunLabel = "Never backed up.";
+
+    public ObservableCollection<BackupHistoryItemViewModel> BackupHistory { get; } = [];
+
+    [ObservableProperty]
+    private BackupHistoryItemViewModel? selectedBackupHistoryItem;
+
+    [ObservableProperty]
     private string? selectedSourceFolder;
 
     [ObservableProperty]
@@ -298,6 +336,8 @@ public partial class SettingsViewModel : ViewModelBase
         IGeminiApiClient geminiApiClient,
         IGeminiModelCatalogService geminiModelCatalog,
         GeminiQuotaTracker geminiQuotaTracker,
+        IGoogleDriveClient googleDriveClient,
+        IBackupService backupService,
         IAppLogger logger)
     {
         _settingsService = settingsService;
@@ -316,6 +356,8 @@ public partial class SettingsViewModel : ViewModelBase
         _geminiApiClient = geminiApiClient;
         _geminiModelCatalog = geminiModelCatalog;
         _geminiQuotaTracker = geminiQuotaTracker;
+        _googleDriveClient = googleDriveClient;
+        _backupService = backupService;
         _logger = logger;
         SourceFolders = [];
         AutoTorrentDownloadFolders = [];
@@ -419,6 +461,7 @@ public partial class SettingsViewModel : ViewModelBase
         ApplyUiSettings();
         ApplySymlinkSettings();
         ApplyNotificationSettings();
+        ApplyBackupSettings();
         _settingsService.Save();
         try
         {
@@ -967,6 +1010,11 @@ public partial class SettingsViewModel : ViewModelBase
             ReloadGeminiFallbackModels();
             GeminiModelsFilePath = _geminiModelCatalog.CatalogFilePath;
         }
+        else if (value == SettingsSection.Backup)
+        {
+            RefreshBackupConnectionStatus();
+            _ = RefreshBackupHistory();
+        }
     }
 
     partial void OnSelectedGeminiModelChanged(GeminiModelOptionViewModel? value)
@@ -1161,6 +1209,15 @@ public partial class SettingsViewModel : ViewModelBase
             WarpAutoRecoverOnSsl = _settingsService.Current.Warp.AutoRecoverOnSsl;
             WarpExecutablePath = _settingsService.Current.Warp.ExecutablePath;
             WarpConnectTimeoutSeconds = _settingsService.Current.Warp.ConnectTimeoutSeconds;
+            var backup = _settingsService.Current.Backup ??= new BackupSettings();
+            BackupEnabled = backup.Enabled;
+            BackupDailyBackupHour = backup.DailyBackupHour;
+            BackupEventDebounceMinutes = backup.EventDebounceMinutes;
+            BackupDbThrottleHours = backup.DbThrottleHours;
+            BackupHistoryRetentionCount = backup.HistoryRetentionCount;
+            BackupMachineId = backup.MachineId;
+            BackupCredentialsFilePath = _googleDriveClient.CredentialsFilePath;
+            RefreshBackupLastRunLabel();
             LoadNotificationPreferences();
             AutoTorrentDownloadFolders.Clear();
             foreach (var folder in _settingsService.Current.AutoTorrent.DownloadFolders)
@@ -1188,6 +1245,7 @@ public partial class SettingsViewModel : ViewModelBase
         RefreshSymlinkPreview();
         RefreshAdministratorStatus();
         RefreshWarpCliStatus();
+        RefreshBackupConnectionStatus();
         _logger.Info($"Settings UI loaded. VisibleSourceFolders={SourceFolders.Count}, SelectedSourceFolder='{SelectedSourceFolder ?? "<none>"}'", LogTarget.All);
     }
 
@@ -1208,6 +1266,197 @@ public partial class SettingsViewModel : ViewModelBase
         WarpCliResolvedPath = _warpCliService.ResolvedExecutablePath;
         WarpCliAvailable = _warpCliService.IsAvailable;
         WarpCliAvailabilityLabel = WarpCliAvailable ? "Found" : "Not found";
+    }
+
+    private void ApplyBackupSettings()
+    {
+        var backup = _settingsService.Current.Backup ??= new BackupSettings();
+        backup.Enabled = BackupEnabled;
+        var defaultCredentialsPath = Path.Combine(
+            _settingsService.Current.StateFolder,
+            AppConstants.BackupGoogleDriveFolderName,
+            AppConstants.BackupCredentialsFileName);
+        backup.CredentialsFilePath = string.IsNullOrWhiteSpace(BackupCredentialsFilePath) ||
+            string.Equals(BackupCredentialsFilePath.Trim(), defaultCredentialsPath, StringComparison.OrdinalIgnoreCase)
+            ? null
+            : BackupCredentialsFilePath.Trim();
+        BackupCredentialsFilePath = _googleDriveClient.CredentialsFilePath;
+        backup.DailyBackupHour = Math.Clamp(
+            BackupDailyBackupHour,
+            AppConstants.MinDailyBackupHour,
+            AppConstants.MaxDailyBackupHour);
+        backup.EventDebounceMinutes = Math.Clamp(
+            BackupEventDebounceMinutes,
+            AppConstants.MinEventDebounceMinutes,
+            AppConstants.MaxEventDebounceMinutes);
+        backup.DbThrottleHours = Math.Clamp(
+            BackupDbThrottleHours,
+            AppConstants.MinDbThrottleHours,
+            AppConstants.MaxDbThrottleHours);
+        backup.HistoryRetentionCount = Math.Clamp(
+            BackupHistoryRetentionCount,
+            AppConstants.MinHistoryRetentionCount,
+            AppConstants.MaxHistoryRetentionCount);
+
+        BackupDailyBackupHour = backup.DailyBackupHour;
+        BackupEventDebounceMinutes = backup.EventDebounceMinutes;
+        BackupDbThrottleHours = backup.DbThrottleHours;
+        BackupHistoryRetentionCount = backup.HistoryRetentionCount;
+    }
+
+    private void RefreshBackupConnectionStatus()
+    {
+        BackupIsConnected = _googleDriveClient.HasStoredCredential;
+        BackupConnectionStatusLabel = BackupIsConnected ? "Connected" : "Not connected";
+    }
+
+    private void RefreshBackupLastRunLabel()
+    {
+        var backup = _settingsService.Current.Backup;
+        if (backup.LastBackupUtc is null)
+        {
+            BackupLastRunLabel = "Never backed up.";
+            return;
+        }
+
+        var when = backup.LastBackupUtc.Value.ToLocalTime().ToString("g");
+        BackupLastRunLabel = backup.LastBackupSucceeded == false
+            ? $"Last attempt {when} failed: {backup.LastBackupError}"
+            : $"Last backup succeeded {when}.";
+    }
+
+    [RelayCommand]
+    private void BrowseBackupCredentialsFile()
+    {
+        using var dialog = new WinForms.OpenFileDialog
+        {
+            Title = "Select Google OAuth client JSON",
+            Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*",
+            CheckFileExists = true
+        };
+
+        if (!string.IsNullOrWhiteSpace(BackupCredentialsFilePath) && File.Exists(BackupCredentialsFilePath))
+        {
+            dialog.InitialDirectory = Path.GetDirectoryName(BackupCredentialsFilePath);
+            dialog.FileName = Path.GetFileName(BackupCredentialsFilePath);
+        }
+
+        if (dialog.ShowDialog() != WinForms.DialogResult.OK || string.IsNullOrWhiteSpace(dialog.FileName))
+        {
+            return;
+        }
+
+        BackupCredentialsFilePath = dialog.FileName;
+    }
+
+    [RelayCommand]
+    private async Task ConnectGoogleDrive()
+    {
+        ApplyBackupSettings();
+        _settingsService.Save();
+
+        if (!File.Exists(BackupCredentialsFilePath))
+        {
+            StatusMessage = $"Google OAuth client JSON not found at {BackupCredentialsFilePath}. Browse to select the file first.";
+            return;
+        }
+
+        try
+        {
+            StatusMessage = "Opening browser to connect Google Drive...";
+            var result = await _googleDriveClient.ConnectAsync();
+            RefreshBackupConnectionStatus();
+            StatusMessage = result.Message;
+            if (!result.Succeeded)
+            {
+                _logger.Warning(result.Message, LogTarget.All);
+            }
+        }
+        catch (Exception ex)
+        {
+            RefreshBackupConnectionStatus();
+            StatusMessage = $"Google Drive connection failed: {ex.Message}";
+            _logger.Error("Google Drive connection failed.", ex, LogTarget.All);
+        }
+    }
+
+    [RelayCommand]
+    private async Task BackupNow()
+    {
+        ApplyBackupSettings();
+        _settingsService.Save();
+        try
+        {
+            StatusMessage = "Running backup...";
+            var result = await _backupService.RunBackupAsync(BackupTriggerType.Manual);
+            StatusMessage = result.Summary;
+            RefreshBackupLastRunLabel();
+            await RefreshBackupHistory();
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Backup failed: {ex.Message}";
+            _logger.Error("Manual backup failed.", ex, LogTarget.All);
+        }
+    }
+
+    [RelayCommand]
+    private async Task RefreshBackupHistory()
+    {
+        try
+        {
+            var history = await _backupService.ListHistoryAsync();
+            BackupHistory.Clear();
+            foreach (var file in history)
+            {
+                BackupHistory.Add(new BackupHistoryItemViewModel
+                {
+                    Id = file.Id,
+                    Name = file.Name,
+                    CreatedTimeUtc = file.CreatedTimeUtc
+                });
+            }
+
+            SelectedBackupHistoryItem = BackupHistory.FirstOrDefault();
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Could not load backup history: {ex.Message}";
+            _logger.Error("Failed to load backup history.", ex, LogTarget.All);
+        }
+    }
+
+    [RelayCommand]
+    private async Task RestoreSelectedBackup()
+    {
+        if (SelectedBackupHistoryItem is null)
+        {
+            StatusMessage = "Select a backup to restore first.";
+            return;
+        }
+
+        var confirmed = System.Windows.MessageBox.Show(
+            $"Restore database and recipes from '{SelectedBackupHistoryItem.DisplayLabel}'? This overwrites the current database and recipes on this machine. Settings from the backup will be saved separately for review, not applied automatically.",
+            "Confirm restore",
+            System.Windows.MessageBoxButton.YesNo,
+            System.Windows.MessageBoxImage.Warning);
+        if (confirmed != System.Windows.MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        try
+        {
+            StatusMessage = "Restoring backup...";
+            var reviewSettingsPath = await _backupService.RestoreAsync(SelectedBackupHistoryItem.Id);
+            StatusMessage = $"Restore complete. Backed-up settings saved to {reviewSettingsPath} for manual review.";
+            _databaseService.Initialize(_settingsService.Current.StateFolder);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Restore failed: {ex.Message}";
+            _logger.Error("Restore failed.", ex, LogTarget.All);
+        }
     }
 
     private void ApplyGeminiSettings()

@@ -35,4 +35,6 @@ public sealed class AppSettings
     public string? TmdbReadAccessToken { get; set; }
 
     public GeminiSettings Gemini { get; set; } = new();
+
+    public BackupSettings Backup { get; set; } = new();
 }

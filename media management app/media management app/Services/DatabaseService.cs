@@ -14,10 +14,44 @@ public sealed class DatabaseService : IDatabaseService
         _logger = logger;
     }
 
+    public string DatabaseFilePath { get; private set; } = string.Empty;
+
+    public void CreateSafeSnapshot(string destinationFilePath)
+    {
+        if (string.IsNullOrWhiteSpace(_connectionString))
+        {
+            throw new InvalidOperationException("Database has not been initialized.");
+        }
+
+        Directory.CreateDirectory(Path.GetDirectoryName(destinationFilePath) ?? ".");
+        if (File.Exists(destinationFilePath))
+        {
+            File.Delete(destinationFilePath);
+        }
+
+        // Pooling=false so Dispose() fully closes the native file handle instead of keeping it
+        // pooled, otherwise the very next read (e.g. checksum) can race with the lingering handle
+        // and fail with "file is being used by another process".
+        var destinationConnectionString = new SqliteConnectionStringBuilder
+        {
+            DataSource = destinationFilePath,
+            Pooling = false
+        }.ToString();
+
+        using var source = new SqliteConnection(_connectionString);
+        source.Open();
+        using (var destination = new SqliteConnection(destinationConnectionString))
+        {
+            destination.Open();
+            source.BackupDatabase(destination);
+        }
+    }
+
     public void Initialize(string stateFolder)
     {
         Directory.CreateDirectory(stateFolder);
         var databasePath = Path.Combine(stateFolder, "media-manager.db");
+        DatabaseFilePath = databasePath;
         _connectionString = new SqliteConnectionStringBuilder { DataSource = databasePath }.ToString();
         _logger.Info($"Initializing SQLite database at {databasePath}", LogTarget.File | LogTarget.Console);
 

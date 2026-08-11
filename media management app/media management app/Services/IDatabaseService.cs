@@ -7,6 +7,12 @@ public interface IDatabaseService
 {
     void Initialize(string stateFolder);
 
+    /// <summary>Absolute path of the SQLite database file, valid after <see cref="Initialize"/>.</summary>
+    string DatabaseFilePath { get; }
+
+    /// <summary>Writes a consistent point-in-time copy of the database to <paramref name="destinationFilePath"/> using SQLite's online backup API, safe to call while the app is actively writing to the database.</summary>
+    void CreateSafeSnapshot(string destinationFilePath);
+
     IReadOnlyList<SourceItem> GetSourceItems();
 
     void UpsertSourceItem(SourceItem item);

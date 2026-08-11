@@ -40,7 +40,19 @@ public enum SettingsSection
     TorrentStorage = 3,
     Notifications = 4,
     Warp = 5,
-    Ui = 6
+    Ui = 6,
+    Backup = 7
+}
+
+#endregion
+
+#region Backup
+
+public enum BackupTriggerType
+{
+    Daily = 0,
+    EventDriven = 1,
+    Manual = 2
 }
 
 #endregion

@@ -175,6 +175,33 @@ public sealed class SettingsService : ISettingsService
             .Select(model => model.Trim())
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
+
+        MigrateBackupSettings(Current.Backup ??= new BackupSettings());
+    }
+
+    private static void MigrateBackupSettings(BackupSettings backup)
+    {
+        if (string.IsNullOrWhiteSpace(backup.MachineId))
+        {
+            backup.MachineId = Guid.NewGuid().ToString("N");
+        }
+
+        backup.DailyBackupHour = Math.Clamp(
+            backup.DailyBackupHour,
+            AppConstants.MinDailyBackupHour,
+            AppConstants.MaxDailyBackupHour);
+        backup.EventDebounceMinutes = Math.Clamp(
+            backup.EventDebounceMinutes,
+            AppConstants.MinEventDebounceMinutes,
+            AppConstants.MaxEventDebounceMinutes);
+        backup.DbThrottleHours = Math.Clamp(
+            backup.DbThrottleHours,
+            AppConstants.MinDbThrottleHours,
+            AppConstants.MaxDbThrottleHours);
+        backup.HistoryRetentionCount = Math.Clamp(
+            backup.HistoryRetentionCount,
+            AppConstants.MinHistoryRetentionCount,
+            AppConstants.MaxHistoryRetentionCount);
     }
 
     private static void MigrateAutoTrackSettings(AutoTrackSettings autoTrack)

@@ -155,6 +155,17 @@ public partial class MainViewModel : ViewModelBase
     };
 
     [ObservableProperty]
+    private DependencyStatusInfo googleDriveDependency = new()
+    {
+        Name = "Google Drive",
+        StatusText = "checking...",
+        Detail = "Checking Google Drive status"
+    };
+
+    [ObservableProperty]
+    private bool isBackupRunning;
+
+    [ObservableProperty]
     private string jobStatus = "Idle";
 
     [ObservableProperty]
@@ -229,6 +240,8 @@ public partial class MainViewModel : ViewModelBase
         QbittorrentDependency = status.Qbittorrent;
         WarpDependency = status.Warp;
         JellyfinDependency = status.Jellyfin;
+        GoogleDriveDependency = status.GoogleDrive;
+        IsBackupRunning = status.IsBackupRunning;
         JobStatus = status.JobStatus;
         IsJobActive = status.IsJobActive;
         HasLowSpace = status.HasLowSpace;

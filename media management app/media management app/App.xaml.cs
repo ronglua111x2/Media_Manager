@@ -7,6 +7,7 @@ using Microsoft.Toolkit.Uwp.Notifications;
 using media_management_app.Common;
 using media_management_app.Models;
 using media_management_app.Services;
+using media_management_app.Services.Backup;
 using media_management_app.Services.Events;
 using media_management_app.Services.Gemini;
 using media_management_app.Services.Symlink;
@@ -64,6 +65,8 @@ public partial class App : System.Windows.Application
         autoTrackScheduler.RunCompleted += (_, result) => trayIconService.ShowAutoTrackRunCompleted(result);
         autoTrackScheduler.Start();
 
+        _serviceProvider.GetRequiredService<IBackupSchedulerService>().Start();
+
         _serviceProvider.GetRequiredService<IWindowsNotificationService>().Initialize();
         WarmupPosterCache();
 
@@ -100,6 +103,7 @@ public partial class App : System.Windows.Application
         try
         {
             _serviceProvider?.GetService<IAutoTrackSchedulerService>()?.Dispose();
+            _serviceProvider?.GetService<IBackupSchedulerService>()?.Dispose();
             _serviceProvider?.GetService<ISymlinkCoordinatorService>()?.Dispose();
             _serviceProvider?.GetService<IJellyfinLibraryRefreshService>()?.Dispose();
             _serviceProvider?.GetService<ILogCleanupService>()?.Dispose();
@@ -185,6 +189,9 @@ public partial class App : System.Windows.Application
         services.AddSingleton<IAutoTrackService, AutoTrackService>();
         services.AddSingleton<AutoTrackCandidatePolicyService>();
         services.AddSingleton<IAutoTrackSchedulerService, AutoTrackSchedulerService>();
+        services.AddSingleton<IGoogleDriveClient, GoogleDriveClient>();
+        services.AddSingleton<IBackupService, BackupService>();
+        services.AddSingleton<IBackupSchedulerService, BackupSchedulerService>();
 
         services.AddSingleton<AutoTrackViewModel>();
         services.AddSingleton<NewsViewModel>();

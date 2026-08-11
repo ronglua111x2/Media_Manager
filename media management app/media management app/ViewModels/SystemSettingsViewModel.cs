@@ -1,5 +1,6 @@
 using System.Net.Http;
 using media_management_app.Services;
+using media_management_app.Services.Backup;
 using media_management_app.Services.Gemini;
 using media_management_app.Services.Symlink;
 
@@ -24,8 +25,10 @@ public sealed class SystemSettingsViewModel : SettingsViewModel
         IGeminiApiClient geminiApiClient,
         IGeminiModelCatalogService geminiModelCatalog,
         GeminiQuotaTracker geminiQuotaTracker,
+        IGoogleDriveClient googleDriveClient,
+        IBackupService backupService,
         IAppLogger logger)
-        : base(settingsService, databaseService, libraryPathResolver, qbittorrentClient, warpCliService, windowsStartupService, trayIconService, windowsNotificationService, themeService, symlinkCoordinatorService, symlinkService, jellyfinLibraryRefreshService, httpClient, geminiApiClient, geminiModelCatalog, geminiQuotaTracker, logger)
+        : base(settingsService, databaseService, libraryPathResolver, qbittorrentClient, warpCliService, windowsStartupService, trayIconService, windowsNotificationService, themeService, symlinkCoordinatorService, symlinkService, jellyfinLibraryRefreshService, httpClient, geminiApiClient, geminiModelCatalog, geminiQuotaTracker, googleDriveClient, backupService, logger)
     {
     }
 }

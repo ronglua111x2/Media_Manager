@@ -277,6 +277,13 @@
                 </DataTrigger>
             </Style.Triggers>
         </Style>
+        <Style x:Key="BackupSettingsSectionPanelStyle" TargetType="ScrollViewer" BasedOn="{StaticResource SettingsSectionPanelBaseStyle}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding SelectedSettingsSection}" Value="{x:Static common:SettingsSection.Backup}">
+                    <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
     </UserControl.Resources>
     <!-- #endregion -->
 
@@ -340,6 +347,9 @@
                              Style="{StaticResource SettingsSectionSelectorItemStyle}" />
                 <ListBoxItem Content="UI"
                              Tag="{x:Static common:SettingsSection.Ui}"
+                             Style="{StaticResource SettingsSectionSelectorItemStyle}" />
+                <ListBoxItem Content="Backup"
+                             Tag="{x:Static common:SettingsSection.Backup}"
                              Style="{StaticResource SettingsSectionSelectorItemStyle}" />
             </ListBox>
             <!-- #endregion -->
@@ -1712,6 +1722,192 @@
                                     <StackPanel>
                                         <TextBlock Text="Theme" Style="{StaticResource SettingsLabelStyle}" />
                                         <TextBlock Text="Theme changes apply after you click Save. The selected theme is stored in settings.json and restored on the next launch."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                </ScrollViewer>
+            <!-- #endregion -->
+            <!-- #region Backup panel -->
+                <ScrollViewer Style="{StaticResource BackupSettingsSectionPanelStyle}">
+                    <Grid Margin="0,16,8,0"
+                          MaxWidth="1220"
+                          HorizontalAlignment="Left">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="24" />
+                            <ColumnDefinition Width="380" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0">
+                            <materialDesign:Card Style="{StaticResource SettingsCardStyle}">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <Border Width="8"
+                                                Height="24"
+                                                CornerRadius="4"
+                                                Background="{StaticResource AppBrushAccent}"
+                                                Margin="0,0,8,0" />
+                                        <TextBlock Text="Google Drive Backup" Style="{StaticResource SettingsSectionTitleStyle}" Margin="0" />
+                                    </StackPanel>
+                                    <CheckBox IsChecked="{Binding BackupEnabled, Mode=TwoWay}"
+                                              Margin="0,0,0,8"
+                                              Content="Enable scheduled and event-driven backups" />
+                                    <TextBlock Style="{StaticResource SettingsHintStyle}" Margin="0,0,0,8"
+                                               Text="Backs up media-manager.db, settings.json (secrets excluded), and Recipes/ to Google Drive. Posters, logs, and cache files are never backed up." />
+
+                                    <TextBlock Text="Daily safety-net backup hour (0-23, local time)" Style="{StaticResource SettingsLabelStyle}" />
+                                    <Border Style="{StaticResource SettingsNumericChromeStyle}">
+                                        <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
+                                                                      Value="{Binding BackupDailyBackupHour, UpdateSourceTrigger=PropertyChanged}"
+                                                                      Minimum="0"
+                                                                      Maximum="23" />
+                                    </Border>
+
+                                    <TextBlock Text="Event-driven debounce (minutes, for settings/recipes changes)" Style="{StaticResource SettingsLabelStyle}" />
+                                    <Border Style="{StaticResource SettingsNumericChromeStyle}">
+                                        <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
+                                                                      Value="{Binding BackupEventDebounceMinutes, UpdateSourceTrigger=PropertyChanged}"
+                                                                      Minimum="5"
+                                                                      Maximum="240" />
+                                    </Border>
+
+                                    <TextBlock Text="Database backup throttle (hours)" Style="{StaticResource SettingsLabelStyle}" />
+                                    <Border Style="{StaticResource SettingsNumericChromeStyle}">
+                                        <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
+                                                                      Value="{Binding BackupDbThrottleHours, UpdateSourceTrigger=PropertyChanged}"
+                                                                      Minimum="1"
+                                                                      Maximum="24" />
+                                    </Border>
+
+                                    <TextBlock Text="History versions to keep on Drive" Style="{StaticResource SettingsLabelStyle}" />
+                                    <Border Style="{StaticResource SettingsNumericChromeStyle}">
+                                        <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
+                                                                      Value="{Binding BackupHistoryRetentionCount, UpdateSourceTrigger=PropertyChanged}"
+                                                                      Minimum="1"
+                                                                      Maximum="200" />
+                                    </Border>
+
+                                    <TextBlock Style="{StaticResource SettingsHintStyle}" Margin="0,8,0,8">
+                                        <Run Text="This machine's backup id: " />
+                                        <Run Text="{Binding BackupMachineId, Mode=OneWay}" FontFamily="Consolas" />
+                                    </TextBlock>
+
+                                    <TextBlock Style="{StaticResource SettingsHintStyle}" Margin="0,0,0,4">
+                                        <Run Text="Google Drive status: " />
+                                        <Run Text="{Binding BackupConnectionStatusLabel, Mode=OneWay}" FontWeight="SemiBold" />
+                                    </TextBlock>
+                                    <TextBlock Text="Google OAuth client JSON (downloaded from Google Cloud Console)" Style="{StaticResource SettingsLabelStyle}" />
+                                    <Grid Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBox Grid.Column="0"
+                                                 Text="{Binding BackupCredentialsFilePath, UpdateSourceTrigger=PropertyChanged}"
+                                                 Style="{StaticResource SettingsTextBoxStyle}"
+                                                 Margin="0,0,8,0" />
+                                        <Button Grid.Column="1"
+                                                Command="{Binding BrowseBackupCredentialsFileCommand}"
+                                                Style="{StaticResource SettingsIconTextButtonStyle}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconLucide Kind="FolderOpen" Width="16" Height="16" Margin="0,0,7,0" />
+                                                <TextBlock Text="Browse" />
+                                            </StackPanel>
+                                        </Button>
+                                    </Grid>
+                                    <TextBlock Text="{Binding BackupLastRunLabel, Mode=OneWay}"
+                                               Style="{StaticResource SettingsHintStyle}"
+                                               Margin="0,0,0,12" />
+
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button Command="{Binding ConnectGoogleDriveCommand}"
+                                                Style="{StaticResource SettingsIconTextButtonStyle}"
+                                                Margin="0,0,10,0">
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconLucide Kind="CloudCog" Width="16" Height="16" Margin="0,0,7,0" />
+                                                <TextBlock Text="Connect Google Drive" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Command="{Binding BackupNowCommand}"
+                                                Style="{StaticResource SettingsIconTextButtonStyle}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconLucide Kind="CloudUpload" Width="16" Height="16" Margin="0,0,7,0" />
+                                                <TextBlock Text="Backup Now" />
+                                            </StackPanel>
+                                        </Button>
+                                    </StackPanel>
+                                </StackPanel>
+                            </materialDesign:Card>
+
+                            <materialDesign:Card Style="{StaticResource SettingsCardStyle}">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <Border Width="8"
+                                                Height="24"
+                                                CornerRadius="4"
+                                                Background="{StaticResource AppBrushWarning}"
+                                                Margin="0,0,8,0" />
+                                        <TextBlock Text="Restore" Style="{StaticResource SettingsSectionTitleStyle}" Margin="0" />
+                                    </StackPanel>
+                                    <TextBlock Style="{StaticResource SettingsHintStyle}" Margin="0,0,0,8"
+                                               Text="Restores the database and Recipes from a backup on this machine. Settings.json from the backup (secrets already excluded) is saved next to the live settings file for manual review instead of being applied automatically." />
+                                    <Button Command="{Binding RefreshBackupHistoryCommand}"
+                                            Style="{StaticResource SettingsIconTextButtonStyle}"
+                                            HorizontalAlignment="Left"
+                                            Margin="0,0,0,8">
+                                        <StackPanel Orientation="Horizontal">
+                                            <iconPacks:PackIconLucide Kind="RefreshCw" Width="16" Height="16" Margin="0,0,7,0" />
+                                            <TextBlock Text="Refresh History" />
+                                        </StackPanel>
+                                    </Button>
+                                    <ListBox ItemsSource="{Binding BackupHistory}"
+                                             SelectedItem="{Binding SelectedBackupHistoryItem, Mode=TwoWay}"
+                                             DisplayMemberPath="DisplayLabel"
+                                             Style="{StaticResource SettingsListBoxStyle}" />
+                                    <Button Command="{Binding RestoreSelectedBackupCommand}"
+                                            Style="{StaticResource SettingsIconTextButtonStyle}"
+                                            HorizontalAlignment="Left"
+                                            Margin="0,8,0,0">
+                                        <StackPanel Orientation="Horizontal">
+                                            <iconPacks:PackIconLucide Kind="History" Width="16" Height="16" Margin="0,0,7,0" />
+                                            <TextBlock Text="Restore Selected Backup" />
+                                        </StackPanel>
+                                    </Button>
+                                </StackPanel>
+                            </materialDesign:Card>
+                        </StackPanel>
+
+                        <Border Grid.Column="2" Style="{StaticResource SettingsGuidePanelStyle}">
+                            <StackPanel>
+                                <TextBlock Text="Guide" Style="{StaticResource SettingsSectionTitleStyle}" />
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="What gets backed up" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Only media-manager.db, settings.json (with API keys/passwords cleared), and Recipes/. Posters, logs, and Gemini cache files are regenerable and never included."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Scheduling" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Settings/Recipes changes trigger a backup after the debounce window with no further changes. The database is backed up at most once per throttle window since it changes continuously. A daily run acts as a safety net regardless."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Connecting Google Drive" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Browse to the OAuth client JSON you downloaded from Google Cloud Console (e.g. client_secret_....json) — no need to rename or move it. Then click Connect Google Drive to sign in. The app only requests access to files it creates (drive.file scope)."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Restoring on another machine" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Machine-specific paths and API keys/passwords are not restored automatically; re-enter them after a cross-machine restore."
                                                    Style="{StaticResource SettingsHintStyle}" />
                                     </StackPanel>
                                 </Border>

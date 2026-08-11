@@ -32,6 +32,31 @@ public static class AppConstants
 
     #endregion
 
+    #region Backup
+
+    public const string BackupGoogleDriveFolderName = "GoogleDrive";
+    public const string BackupCredentialsFileName = "credentials.json";
+    public const string BackupTokenFolderName = "token";
+    public const string BackupDriveRootFolderName = "MediaManagerBackups";
+    public const string BackupDriveHistoryFolderName = "history";
+    public const string BackupLatestFileName = "latest.zip";
+    public const string BackupManifestFileName = "manifest.json";
+    public const string BackupDatabaseEntryName = "media-manager.db";
+    public const string BackupSettingsEntryName = "settings.json";
+    public const string BackupRecipesEntryFolderName = "Recipes";
+    public const int MinDailyBackupHour = 0;
+    public const int MaxDailyBackupHour = 23;
+    public const int MinEventDebounceMinutes = 5;
+    public const int MaxEventDebounceMinutes = 240;
+    public const int MinDbThrottleHours = 1;
+    public const int MaxDbThrottleHours = 24;
+    public const int MinHistoryRetentionCount = 1;
+    public const int MaxHistoryRetentionCount = 200;
+    public static readonly TimeSpan BackupPollInterval = TimeSpan.FromMinutes(3);
+    public static readonly TimeSpan GoogleDriveConnectTimeout = TimeSpan.FromMinutes(2);
+
+    #endregion
+
     #region qBittorrent
 
     public const string QbittorrentTvShowCategory = "TV Show";
