@@ -419,11 +419,11 @@
             </Grid.RowDefinitions>
 
             <Grid Grid.Row="0" Margin="0,0,0,12">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <StackPanel Grid.Row="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,0,8">
                     <iconPacks:PackIconLucide Kind="ShoppingCart"
                                                Width="18"
                                                Height="18"
@@ -432,12 +432,13 @@
                                                VerticalAlignment="Center" />
                     <TextBlock Text="{Binding CartTitle}"
                                Style="{StaticResource SectionTitleStyle}"
-                               VerticalAlignment="Center" />
+                               VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis" />
                 </StackPanel>
-                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                <WrapPanel Grid.Row="1">
                     <Button Style="{StaticResource AppOutlinedButtonStyle}"
                             Command="{Binding ClearCartCommand}"
-                            Margin="0,0,8,0"
+                            Margin="0,0,8,8"
                             ToolTip="Clear orders in this cart">
                         <StackPanel Orientation="Horizontal">
                             <iconPacks:PackIconLucide Kind="Eraser"
@@ -450,7 +451,7 @@
                     </Button>
                     <Button Style="{StaticResource AppOutlinedButtonStyle}"
                             Command="{Binding ClearCandidatesCommand}"
-                            Margin="0,0,8,0"
+                            Margin="0,0,8,8"
                             ToolTip="Clear candidates from every order in this cart">
                         <StackPanel Orientation="Horizontal">
                             <iconPacks:PackIconLucide Kind="ListX"
@@ -463,7 +464,7 @@
                     </Button>
                     <Button Style="{StaticResource AppDangerButtonStyle}"
                             Command="{Binding StopRunCartCommand}"
-                            Margin="0,0,8,0"
+                            Margin="0,0,8,8"
                             ToolTip="Stop the current cart run, add, reconcile, or re-search operation">
                         <StackPanel Orientation="Horizontal">
                             <iconPacks:PackIconLucide Kind="Square"
@@ -477,7 +478,7 @@
                     </Button>
                     <Button Style="{StaticResource AppPrimaryButtonStyle}"
                             Command="{Binding RunCartCommand}"
-                            Margin="0,0,8,0">
+                            Margin="0,0,8,8">
                         <StackPanel Orientation="Horizontal">
                             <iconPacks:PackIconLucide Kind="Play"
                                                        Width="14"
@@ -490,7 +491,7 @@
                     </Button>
                     <Button Style="{StaticResource AppOutlinedButtonStyle}"
                             Command="{Binding AcceptAllCandidatesCommand}"
-                            Margin="0,0,8,0"
+                            Margin="0,0,8,8"
                             ToolTip="Accept the selected candidate for every order in this cart">
                         <StackPanel Orientation="Horizontal">
                             <iconPacks:PackIconLucide Kind="CheckCheck"
@@ -503,7 +504,7 @@
                     </Button>
                     <Button Style="{StaticResource AppOutlinedButtonStyle}"
                             Command="{Binding ReconcileExistingTorrentsCommand}"
-                            Margin="0,0,8,0"
+                            Margin="0,0,8,8"
                             ToolTip="Match this cart with torrents already in qBittorrent">
                         <StackPanel Orientation="Horizontal">
                             <iconPacks:PackIconLucide Kind="RefreshCw"
@@ -516,7 +517,7 @@
                     </Button>
                     <Button Style="{StaticResource AppOutlinedButtonStyle}"
                             Command="{Binding AddCartCommand}"
-                            Margin="0"
+                            Margin="0,0,0,8"
                             ToolTip="Add selected candidates to qBittorrent">
                         <StackPanel Orientation="Horizontal">
                             <iconPacks:PackIconLucide Kind="Download"
@@ -527,7 +528,7 @@
                             <TextBlock Text="Add" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
-                </StackPanel>
+                </WrapPanel>
             </Grid>
 
             <materialDesign:Card Grid.Row="1" Style="{StaticResource PanelCardStyle}">

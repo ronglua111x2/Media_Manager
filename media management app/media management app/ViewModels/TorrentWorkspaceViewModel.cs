@@ -340,11 +340,13 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
                 finalStatus = canceledCount > 0
                     ? $"Cart run stopped. Candidates={candidateCount}, Canceled={canceledCount}, Failed={failedCount}."
                     : "Cart run stopped.";
+                _logger.Info(finalStatus, LogTarget.All);
             }
         }
         catch (OperationCanceledException)
         {
             finalStatus = "Cart run stopped.";
+            _logger.Info(finalStatus, LogTarget.All);
         }
         finally
         {
@@ -368,6 +370,7 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
     {
         _operationCts?.Cancel();
         StatusMessage = "Stopping current operation...";
+        _logger.Info("Cart run stop requested by user.", LogTarget.All);
     }
 
     [RelayCommand(CanExecute = nameof(CanAddCart))]

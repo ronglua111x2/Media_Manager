@@ -85,8 +85,8 @@ public sealed partial class LibraryViewModel : ViewModelBase
 
             RefreshCartStateOnSelectedDetail();
         };
-        _torrentReconciliationService.Reconciled += (_, _) => _ = ReloadSelectedDetailAsync();
-        packLinkCoordinatorService.PackReconciled += (_, _) => _ = ReloadSelectedDetailAsync();
+        _torrentReconciliationService.Reconciled += (_, _) => RunReloadSelectedDetailOnUiThread();
+        packLinkCoordinatorService.PackReconciled += (_, _) => RunReloadSelectedDetailOnUiThread();
         lifecycleService.AppModeChanged += OnAppModeChanged;
         RestoreLibraryUiState();
         RefreshLibrary();
@@ -1544,6 +1544,18 @@ public sealed partial class LibraryViewModel : ViewModelBase
         AiLinkSeasonPackCommand.NotifyCanExecuteChanged();
         UnlinkSeasonPackCommand.NotifyCanExecuteChanged();
         CleanupSeasonPackCommand.NotifyCanExecuteChanged();
+    }
+
+    private void RunReloadSelectedDetailOnUiThread()
+    {
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher is not null && !dispatcher.CheckAccess())
+        {
+            dispatcher.BeginInvoke(DispatcherPriority.Background, RunReloadSelectedDetailOnUiThread);
+            return;
+        }
+
+        _ = ReloadSelectedDetailAsync();
     }
 
     private async Task ReloadSelectedDetailAsync()

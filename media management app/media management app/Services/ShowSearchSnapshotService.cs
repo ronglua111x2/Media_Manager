@@ -57,6 +57,8 @@ public sealed class ShowSearchSnapshotService
             $"Snapshot search starting {totalQueries} query(ies) for {show.DisplayTitle}. Recipe='{recipe.Name}': {string.Join(" | ", queries)}",
             LogTarget.All);
 
+        progressService?.Start($"Search: Query 0/{totalQueries}", 0);
+
         var combined = new List<TorrentSearchResult>();
         var completedQueries = 0;
         foreach (var query in queries)
@@ -67,9 +69,9 @@ public sealed class ShowSearchSnapshotService
                 targetResults,
                 timeoutSeconds,
                 idleTimeoutSeconds,
-                progressService,
                 cancellationToken);
             completedQueries++;
+            progressService?.Report(completedQueries, $"Search: Query {completedQueries}/{totalQueries}");
             _logger.Info(
                 $"Snapshot search query succeeded {completedQueries}/{totalQueries}. Remaining={totalQueries - completedQueries}. Query='{query}'. Results={snapshot.Count}.",
                 LogTarget.All);
@@ -104,7 +106,6 @@ public sealed class ShowSearchSnapshotService
         int targetResults,
         int timeoutSeconds,
         int idleTimeoutSeconds,
-        IOperationProgressService? progressService,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(query))
@@ -128,7 +129,6 @@ public sealed class ShowSearchSnapshotService
 
         try
         {
-            progressService?.Start($"Searching snapshot: {query}", targetResults);
             searchId = await _qbittorrentClient.StartSearchAsync(new TorrentSearchRequest { Query = query }, cancellationToken);
             while (DateTimeOffset.UtcNow < deadline)
             {
@@ -149,8 +149,6 @@ public sealed class ShowSearchSnapshotService
                         mergedByUrl[result.FileUrl] = result;
                     }
                 }
-
-                progressService?.Report(mergedByUrl.Count, $"Searching snapshot: {query}");
 
                 if (mergedByUrl.Count > lastResultCount)
                 {
@@ -184,7 +182,6 @@ public sealed class ShowSearchSnapshotService
             _logger.Info(
                 $"Snapshot search completed. Query='{query}', Status='{latestStatus}', Results={mergedByUrl.Count}, EndedBy='{endedBy}'.",
                 LogTarget.All);
-            progressService?.Finish($"Snapshot search finished: {query} ({mergedByUrl.Count})");
 
             return mergedByUrl.Values
                 .OrderByDescending(result => result.Seeders)
@@ -201,11 +198,6 @@ public sealed class ShowSearchSnapshotService
                 }
 
                 await _qbittorrentClient.DeleteSearchAsync(searchId.Value, CancellationToken.None);
-            }
-
-            if (cancellationToken.IsCancellationRequested)
-            {
-                progressService?.Finish($"Snapshot search canceled: {query}");
             }
         }
     }

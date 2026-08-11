@@ -46,7 +46,7 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
         }
 
         var version = (await response.Content.ReadAsStringAsync(cancellationToken)).Trim();
-        _logger.Info($"Connected to qBittorrent Web UI {version}.", LogTarget.All);
+        _logger.Info($"Connected to qBittorrent Web UI {version}.", LogTarget.File);
         return version;
     }
 

@@ -16,6 +16,8 @@
     <Color x:Key="AppColorWarning">#c98528</Color>
     <Color x:Key="AppColorDanger">#c84646</Color>
     <Color x:Key="AppColorDangerPressed">#b33c3c</Color>
+    <Color x:Key="AppColorWarpBrand">#e56f10</Color>
+    <Color x:Key="AppColorJellyfinBrand">#5b68d6</Color>
     <Color x:Key="AppColorShowAccent">#0f9f9a</Color>
     <Color x:Key="AppColorShowSoft">#e6f7f6</Color>
     <Color x:Key="AppColorMovieAccent">#4f7ccf</Color>
@@ -68,6 +70,8 @@
     <SolidColorBrush x:Key="AppBrushWarning" Color="{StaticResource AppColorWarning}" />
     <SolidColorBrush x:Key="AppBrushDanger" Color="{StaticResource AppColorDanger}" />
     <SolidColorBrush x:Key="AppBrushDangerPressed" Color="{StaticResource AppColorDangerPressed}" />
+    <SolidColorBrush x:Key="AppBrushWarpBrand" Color="{StaticResource AppColorWarpBrand}" />
+    <SolidColorBrush x:Key="AppBrushJellyfinBrand" Color="{StaticResource AppColorJellyfinBrand}" />
     <SolidColorBrush x:Key="AppBrushShowAccent" Color="{StaticResource AppColorShowAccent}" />
     <SolidColorBrush x:Key="AppBrushShowSoft" Color="{StaticResource AppColorShowSoft}" />
     <SolidColorBrush x:Key="AppBrushMovieAccent" Color="{StaticResource AppColorMovieAccent}" />

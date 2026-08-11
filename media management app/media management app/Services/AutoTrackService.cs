@@ -21,6 +21,7 @@ public sealed class AutoTrackService : IAutoTrackService
     private readonly IWindowsNotificationService _windowsNotificationService;
     private readonly IPosterImageService _posterImageService;
     private readonly AutoTrackCandidatePolicyService _candidatePolicyService;
+    private readonly IOperationProgressService _progressService;
     private readonly IAppLogger _logger;
     private readonly SemaphoreSlim _discoveryLock = new(1, 1);
     private readonly SemaphoreSlim _huntLock = new(1, 1);
@@ -40,6 +41,7 @@ public sealed class AutoTrackService : IAutoTrackService
         IWindowsNotificationService windowsNotificationService,
         IPosterImageService posterImageService,
         AutoTrackCandidatePolicyService candidatePolicyService,
+        IOperationProgressService progressService,
         IAppLogger logger)
     {
         _settingsService = settingsService;
@@ -55,6 +57,7 @@ public sealed class AutoTrackService : IAutoTrackService
         _windowsNotificationService = windowsNotificationService;
         _posterImageService = posterImageService;
         _candidatePolicyService = candidatePolicyService;
+        _progressService = progressService;
         _logger = logger;
     }
 
@@ -181,12 +184,22 @@ public sealed class AutoTrackService : IAutoTrackService
 
         try
         {
-            foreach (var show in shows.OrderBy(item => item.Title, StringComparer.OrdinalIgnoreCase))
+            var showList = shows.OrderBy(item => item.Title, StringComparer.OrdinalIgnoreCase).ToList();
+            _progressService.Start(
+                $"Fetching TMDB (1/{showList.Count}): {JobMessageFormat.Truncate(showList[0].DisplayTitle)}",
+                0);
+            try
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                result.ShowsProcessed++;
+                for (var showIndex = 0; showIndex < showList.Count; showIndex++)
+                {
+                    var show = showList[showIndex];
+                    cancellationToken.ThrowIfCancellationRequested();
+                    result.ShowsProcessed++;
+                    _progressService.Report(
+                        showIndex + 1,
+                        $"Fetching TMDB ({showIndex + 1}/{showList.Count}): {JobMessageFormat.Truncate(show.DisplayTitle)}");
 
-                var currentShow = _databaseService.GetTrackedShow(show.Id) ?? show;
+                    var currentShow = _databaseService.GetTrackedShow(show.Id) ?? show;
                 var episodes = _trackedShowService.GetEpisodes(currentShow.Id);
 
                 var isPastAnchorNow = AutoTrackWeekAnchor.IsPastAnchorThisWeek(currentShow, nowLocal, settings);
@@ -345,6 +358,11 @@ public sealed class AutoTrackService : IAutoTrackService
                     result.Succeeded = false;
                     _logger.Warning($"Auto-track TMDB refresh failed for '{currentShow.DisplayTitle}': {ex.Message}", LogTarget.All);
                 }
+                }
+            }
+            finally
+            {
+                _progressService.Finish("Idle");
             }
 
             // New hunts run after TMDB checks: schedule-eligible pending episodes (or all if bypassAnchor).
@@ -594,45 +612,54 @@ public sealed class AutoTrackService : IAutoTrackService
             .Where(show => pendingShowIds.Contains(show.Id))
             .ToList();
 
-        foreach (var show in shows)
+        _progressService.Start("Reconciling…", 0);
+        try
         {
-            if (!show.AutoTrackAutoReconcileAndLink)
+            foreach (var show in shows)
             {
-                continue;
-            }
-
-            cancellationToken.ThrowIfCancellationRequested();
-            result.ShowsProcessed++;
-
-            try
-            {
-                var episodes = _trackedShowService.GetEpisodes(show.Id);
-                var availableBefore = GetAvailableCheckpointEpisodeKeys(show, episodes);
-
-                await _torrentReconciliationService.ReconcileAsync(
-                    TorrentReconciliationScope.ForMedia(MediaKind.TvEpisode, show.Id),
-                    cancellationToken);
-                await LinkReadyAutoTrackEpisodesAsync(show, cancellationToken);
-
-                var sourceItems = _databaseService.GetSourceItems();
-                _trackedShowService.RefreshAvailability(show.Id, sourceItems);
-                var newlyLinked = GetNewlyAvailableCheckpointEpisodes(
-                    show,
-                    _trackedShowService.GetEpisodes(show.Id),
-                    availableBefore);
-                result.LinkedCount += newlyLinked.Count;
-
-                foreach (var episode in newlyLinked)
+                if (!show.AutoTrackAutoReconcileAndLink)
                 {
-                    NotifyHardlinkedEpisode(show, episode);
+                    continue;
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+                result.ShowsProcessed++;
+                _progressService.Report(0, $"Reconciling: {JobMessageFormat.Truncate(show.DisplayTitle)}");
+
+                try
+                {
+                    var episodes = _trackedShowService.GetEpisodes(show.Id);
+                    var availableBefore = GetAvailableCheckpointEpisodeKeys(show, episodes);
+
+                    await _torrentReconciliationService.ReconcileAsync(
+                        TorrentReconciliationScope.ForMedia(MediaKind.TvEpisode, show.Id),
+                        cancellationToken);
+                    await LinkReadyAutoTrackEpisodesAsync(show, cancellationToken);
+
+                    var sourceItems = _databaseService.GetSourceItems();
+                    _trackedShowService.RefreshAvailability(show.Id, sourceItems);
+                    var newlyLinked = GetNewlyAvailableCheckpointEpisodes(
+                        show,
+                        _trackedShowService.GetEpisodes(show.Id),
+                        availableBefore);
+                    result.LinkedCount += newlyLinked.Count;
+
+                    foreach (var episode in newlyLinked)
+                    {
+                        NotifyHardlinkedEpisode(show, episode);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    result.Failed++;
+                    result.Succeeded = false;
+                    _logger.Warning($"Auto-track reconcile failed for '{show.DisplayTitle}': {ex.Message}", LogTarget.All);
                 }
             }
-            catch (Exception ex)
-            {
-                result.Failed++;
-                result.Succeeded = false;
-                _logger.Warning($"Auto-track reconcile failed for '{show.DisplayTitle}': {ex.Message}", LogTarget.All);
-            }
+        }
+        finally
+        {
+            _progressService.Finish("Idle");
         }
 
         result.Summary = $"Reconcile: shows={result.ShowsProcessed}, linked={result.LinkedCount}.";
@@ -711,6 +738,9 @@ public sealed class AutoTrackService : IAutoTrackService
             }
 
             cancellationToken.ThrowIfCancellationRequested();
+            _progressService.Report(
+                0,
+                $"Linking S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00}: {JobMessageFormat.Truncate(show.DisplayTitle)}");
             await _autoTorrentLinkService.LinkEpisodeAsync(
                 show.Id,
                 episode.SeasonNumber,
@@ -825,6 +855,7 @@ public sealed class AutoTrackService : IAutoTrackService
             }
         }
 
+        _progressService.Start("Hunting…", 0);
         try
         {
             foreach (var (showId, entry) in pendingOrdersByShow)
@@ -832,6 +863,7 @@ public sealed class AutoTrackService : IAutoTrackService
                 cancellationToken.ThrowIfCancellationRequested();
 
                 var show = _databaseService.GetTrackedShow(showId) ?? entry.Show;
+                _progressService.Report(0, $"Hunting: {JobMessageFormat.Truncate(show.DisplayTitle)}");
                 var orders = entry.Orders
                     .Select(item => _torrentCartService.GetOrder(item.Id) ?? item)
                     .ToList();
@@ -1010,6 +1042,7 @@ public sealed class AutoTrackService : IAutoTrackService
 
                             try
                             {
+                                _progressService.Report(0, $"Adding: {JobMessageFormat.Truncate(order.Title)}");
                                 await AddOrderToClientAsync(order, savePath, cancellationToken);
                                 result.TorrentsAdded++;
                                 NotifyStage(
@@ -1062,6 +1095,7 @@ public sealed class AutoTrackService : IAutoTrackService
         }
         finally
         {
+            _progressService.Finish("Idle");
             if (warpOwnedByUs)
             {
                 var orderCount = pendingOrdersByShow.Sum(entry => entry.Value.Orders.Count);

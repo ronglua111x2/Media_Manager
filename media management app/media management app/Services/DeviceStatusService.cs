@@ -8,17 +8,23 @@ public sealed class DeviceStatusService : IDeviceStatusService
 {
     private readonly ISettingsService _settingsService;
     private readonly IQbittorrentClient _qbittorrentClient;
+    private readonly IWarpCliService _warpCliService;
+    private readonly IJellyfinClient _jellyfinClient;
     private readonly IOperationProgressService _progressService;
     private readonly IAppLogger _logger;
 
     public DeviceStatusService(
         ISettingsService settingsService,
         IQbittorrentClient qbittorrentClient,
+        IWarpCliService warpCliService,
+        IJellyfinClient jellyfinClient,
         IOperationProgressService progressService,
         IAppLogger logger)
     {
         _settingsService = settingsService;
         _qbittorrentClient = qbittorrentClient;
+        _warpCliService = warpCliService;
+        _jellyfinClient = jellyfinClient;
         _progressService = progressService;
         _logger = logger;
         _progressService.ProgressChanged += (_, _) => RefreshJobOnly();
@@ -30,28 +36,21 @@ public sealed class DeviceStatusService : IDeviceStatusService
 
     public async Task RefreshAsync(CancellationToken cancellationToken = default)
     {
-        var storage = GetStorageStatus();
-        var qbittorrentStatus = "qBittorrent: offline";
-        var isConnected = false;
-        try
-        {
-            var torrents = await _qbittorrentClient.GetTorrentsAsync(cancellationToken);
-            qbittorrentStatus = $"qBittorrent: connected ({torrents.Count} torrents)";
-            isConnected = true;
-        }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException)
-        {
-            qbittorrentStatus = $"qBittorrent: {ex.Message}";
-            _logger.Debug($"Device status qBittorrent check failed: {ex.Message}", Common.LogTarget.File | Common.LogTarget.Console);
-        }
+        var drives = GetStorageStatuses();
+        var qbittorrentTask = GetQbittorrentDependencyAsync(cancellationToken);
+        var warpTask = GetWarpDependencyAsync(cancellationToken);
+        var jellyfinTask = GetJellyfinDependencyAsync(cancellationToken);
+        await Task.WhenAll(qbittorrentTask, warpTask, jellyfinTask);
 
         Current = new DeviceStatusSnapshot
         {
-            StorageSummary = storage.Summary,
-            HasLowSpace = storage.HasLowSpace,
-            QbittorrentStatus = qbittorrentStatus,
-            IsQbittorrentConnected = isConnected,
-            JobStatus = GetJobStatus()
+            DriveStatuses = drives,
+            HasLowSpace = drives.Any(status => status.IsLowSpace),
+            Qbittorrent = await qbittorrentTask,
+            Warp = await warpTask,
+            Jellyfin = await jellyfinTask,
+            JobStatus = GetJobStatus(),
+            IsJobActive = _progressService.IsActive
         };
         StatusChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -60,37 +59,33 @@ public sealed class DeviceStatusService : IDeviceStatusService
     {
         Current = new DeviceStatusSnapshot
         {
-            StorageSummary = Current.StorageSummary,
+            DriveStatuses = Current.DriveStatuses,
             HasLowSpace = Current.HasLowSpace,
-            QbittorrentStatus = Current.QbittorrentStatus,
-            IsQbittorrentConnected = Current.IsQbittorrentConnected,
-            JobStatus = GetJobStatus()
+            Qbittorrent = Current.Qbittorrent,
+            Warp = Current.Warp,
+            Jellyfin = Current.Jellyfin,
+            JobStatus = GetJobStatus(),
+            IsJobActive = _progressService.IsActive
         };
         StatusChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    private (string Summary, bool HasLowSpace) GetStorageStatus()
+    private IReadOnlyList<StorageStatusViewModel> GetStorageStatuses()
     {
         var folders = GetKnownFolders().ToList();
         if (folders.Count == 0)
         {
-            return ("Storage: no folders configured", false);
+            return [];
         }
 
-        var statuses = folders
+        return folders
             .Select(GetDriveStatus)
             .Where(status => status is not null)
             .Select(status => status!)
             .GroupBy(status => status.DriveRoot, StringComparer.OrdinalIgnoreCase)
             .Select(group => group.OrderBy(status => status.FreeBytes).First())
+            .OrderBy(status => status.DriveRoot, StringComparer.OrdinalIgnoreCase)
             .ToList();
-        if (statuses.Count == 0)
-        {
-            return ("Storage: unavailable", false);
-        }
-
-        var lowest = statuses.OrderBy(status => status.FreeBytes).First();
-        return ($"Storage: {lowest.DriveRoot} {lowest.FreeDisplay} free ({lowest.FreePercentDisplay})", statuses.Any(status => status.IsLowSpace));
     }
 
     private StorageStatusViewModel? GetDriveStatus(string folder)
@@ -143,10 +138,119 @@ public sealed class DeviceStatusService : IDeviceStatusService
         }
     }
 
-    private string GetJobStatus()
+    private async Task<DependencyStatusInfo> GetQbittorrentDependencyAsync(CancellationToken cancellationToken)
     {
-        return _progressService.IsActive
-            ? $"Jobs: {_progressService.Message}"
-            : "Jobs: idle";
+        try
+        {
+            var version = await _qbittorrentClient.TestConnectionAsync(cancellationToken);
+            return new DependencyStatusInfo
+            {
+                Name = "qBittorrent",
+                IsOk = true,
+                IsConfigured = true,
+                StatusText = "connected",
+                Detail = string.IsNullOrWhiteSpace(version)
+                    ? "qBittorrent connected"
+                    : $"qBittorrent connected ({version})"
+            };
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException)
+        {
+            _logger.Debug($"Device status qBittorrent check failed: {ex.Message}", Common.LogTarget.File);
+            return new DependencyStatusInfo
+            {
+                Name = "qBittorrent",
+                IsOk = false,
+                IsConfigured = true,
+                StatusText = "offline",
+                Detail = $"qBittorrent offline: {ex.Message}"
+            };
+        }
     }
+
+    private async Task<DependencyStatusInfo> GetWarpDependencyAsync(CancellationToken cancellationToken)
+    {
+        if (!_warpCliService.IsAvailable)
+        {
+            return new DependencyStatusInfo
+            {
+                Name = "WARP",
+                IsOk = false,
+                IsConfigured = false,
+                StatusText = "not installed",
+                Detail = $"WARP CLI not found at {_warpCliService.ResolvedExecutablePath}"
+            };
+        }
+
+        try
+        {
+            var connected = await _warpCliService.IsConnectedAsync(cancellationToken);
+            return new DependencyStatusInfo
+            {
+                Name = "WARP",
+                IsOk = connected,
+                IsConfigured = true,
+                StatusText = connected ? "connected" : "disconnected",
+                Detail = connected ? "WARP is connected" : "WARP is disconnected"
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.Debug($"Device status WARP check failed: {ex.Message}", Common.LogTarget.File);
+            return new DependencyStatusInfo
+            {
+                Name = "WARP",
+                IsOk = false,
+                IsConfigured = true,
+                StatusText = "error",
+                Detail = $"WARP check failed: {ex.Message}"
+            };
+        }
+    }
+
+    private async Task<DependencyStatusInfo> GetJellyfinDependencyAsync(CancellationToken cancellationToken)
+    {
+        var settings = _settingsService.Current.AutoTrack?.Jellyfin;
+        if (settings is null
+            || string.IsNullOrWhiteSpace(settings.BaseUrl)
+            || string.IsNullOrWhiteSpace(settings.ApiKey))
+        {
+            return new DependencyStatusInfo
+            {
+                Name = "Jellyfin",
+                IsOk = false,
+                IsConfigured = false,
+                StatusText = "not configured",
+                Detail = "Jellyfin Base URL or API key is not configured"
+            };
+        }
+
+        try
+        {
+            var message = await _jellyfinClient.TestConnectionAsync(cancellationToken);
+            return new DependencyStatusInfo
+            {
+                Name = "Jellyfin",
+                IsOk = true,
+                IsConfigured = true,
+                StatusText = "available",
+                Detail = string.IsNullOrWhiteSpace(message) ? "Jellyfin is available" : message
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.Debug($"Device status Jellyfin check failed: {ex.Message}", Common.LogTarget.File);
+            return new DependencyStatusInfo
+            {
+                Name = "Jellyfin",
+                IsOk = false,
+                IsConfigured = true,
+                StatusText = "unavailable",
+                Detail = $"Jellyfin unavailable: {ex.Message}"
+            };
+        }
+    }
+
+    private string GetJobStatus() =>
+        _progressService.IsActive ? _progressService.Message : "Idle";
 }

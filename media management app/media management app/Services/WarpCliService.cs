@@ -160,7 +160,7 @@ public sealed class WarpCliService : IWarpCliService
         }
         catch (Exception ex)
         {
-            _logger.Warning($"WARP status check failed: {ex.Message}", LogTarget.File | LogTarget.Console);
+            _logger.Warning($"WARP status check failed: {ex.Message}", LogTarget.File);
             return false;
         }
     }
@@ -187,7 +187,7 @@ public sealed class WarpCliService : IWarpCliService
             if (e.Data is not null)
             {
                 outputBuilder.AppendLine(e.Data);
-                _logger.Debug($"[warp-cli] {e.Data}", LogTarget.File | LogTarget.Console);
+                _logger.Debug($"[warp-cli] {e.Data}", LogTarget.File);
             }
         };
         process.ErrorDataReceived += (_, e) =>
@@ -195,7 +195,7 @@ public sealed class WarpCliService : IWarpCliService
             if (e.Data is not null)
             {
                 outputBuilder.AppendLine(e.Data);
-                _logger.Debug($"[warp-cli stderr] {e.Data}", LogTarget.File | LogTarget.Console);
+                _logger.Debug($"[warp-cli stderr] {e.Data}", LogTarget.File);
             }
         };
 

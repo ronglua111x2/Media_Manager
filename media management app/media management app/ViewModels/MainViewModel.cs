@@ -128,20 +128,40 @@ public partial class MainViewModel : ViewModelBase
     [ObservableProperty]
     private string selectedWorkspaceLabel = "Find/Add";
 
-    [ObservableProperty]
-    private string storageStatus = "Storage: checking...";
+    public ObservableCollection<StorageStatusViewModel> DriveStatuses { get; } = [];
 
     [ObservableProperty]
-    private string qbittorrentStatus = "qBittorrent: checking...";
+    private DependencyStatusInfo qbittorrentDependency = new()
+    {
+        Name = "qBittorrent",
+        StatusText = "checking...",
+        Detail = "Checking qBittorrent status"
+    };
 
     [ObservableProperty]
-    private string jobStatus = "Jobs: idle";
+    private DependencyStatusInfo warpDependency = new()
+    {
+        Name = "WARP",
+        StatusText = "checking...",
+        Detail = "Checking WARP status"
+    };
+
+    [ObservableProperty]
+    private DependencyStatusInfo jellyfinDependency = new()
+    {
+        Name = "Jellyfin",
+        StatusText = "checking...",
+        Detail = "Checking Jellyfin status"
+    };
+
+    [ObservableProperty]
+    private string jobStatus = "Idle";
+
+    [ObservableProperty]
+    private bool isJobActive;
 
     [ObservableProperty]
     private bool hasLowSpace;
-
-    [ObservableProperty]
-    private bool isQbittorrentConnected;
 
     [ObservableProperty]
     private bool isSidebarCollapsed = true;
@@ -193,11 +213,18 @@ public partial class MainViewModel : ViewModelBase
     private void ApplyDeviceStatus()
     {
         var status = _deviceStatusService.Current;
-        StorageStatus = status.StorageSummary;
-        QbittorrentStatus = status.QbittorrentStatus;
+        DriveStatuses.Clear();
+        foreach (var drive in status.DriveStatuses)
+        {
+            DriveStatuses.Add(drive);
+        }
+
+        QbittorrentDependency = status.Qbittorrent;
+        WarpDependency = status.Warp;
+        JellyfinDependency = status.Jellyfin;
         JobStatus = status.JobStatus;
+        IsJobActive = status.IsJobActive;
         HasLowSpace = status.HasLowSpace;
-        IsQbittorrentConnected = status.IsQbittorrentConnected;
     }
 
     private void OnAppModeChanged(object? sender, AppMode mode)

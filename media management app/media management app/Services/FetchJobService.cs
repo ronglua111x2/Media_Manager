@@ -140,9 +140,17 @@ public sealed class FetchJobService : IFetchJobService
             $"Cart episode run for {show.DisplayTitle}. Recipe='{recipe.Name}', Mode='{mode}', Orders={targetEpisodes.Count}.",
             LogTarget.All);
 
-        return useSnapshot
-            ? await FetchEpisodeCandidatesSnapshotAsync(show, targetEpisodes, recipe, statusChanged, cancellationToken)
-            : await FetchEpisodeCandidatesParallelAsync(show, targetEpisodes, recipe, statusChanged, cancellationToken, options?.MaxParallelWorkers);
+        _progressService.Start("Search: preparing…", 0);
+        try
+        {
+            return useSnapshot
+                ? await FetchEpisodeCandidatesSnapshotAsync(show, targetEpisodes, recipe, statusChanged, cancellationToken)
+                : await FetchEpisodeCandidatesParallelAsync(show, targetEpisodes, recipe, statusChanged, cancellationToken, options?.MaxParallelWorkers);
+        }
+        finally
+        {
+            _progressService.Finish("Idle");
+        }
     }
 
     public async Task FetchSeasonPacksAsync(long showId, IReadOnlyList<int> seasonNumbers, CancellationToken cancellationToken = default, int? maxCandidatesOverride = null)
@@ -162,30 +170,39 @@ public sealed class FetchJobService : IFetchJobService
             throw new InvalidOperationException("Select at least one pack-mode season.");
         }
 
-        var packRecipe = _recipeService.GetRecipeOrDefault(show.PackRecipeId, MediaKind.TvSeasonPack);
-        var snapshotResults = await _snapshotService.CaptureSnapshotAsync(
-            show,
-            _progressService,
-            cancellationToken,
-            MediaKind.TvSeasonPack);
-        var candidates = await MapSeasonPackCandidatesAsync(
-            show,
-            selectedSeasons,
-            snapshotResults,
-            packRecipe,
-            maxCandidatesOverride,
-            cancellationToken);
-        lock (_gate)
+        _progressService.Start("Search: preparing…", 0);
+        try
         {
-            foreach (var seasonNumber in selectedSeasons)
+            var packRecipe = _recipeService.GetRecipeOrDefault(show.PackRecipeId, MediaKind.TvSeasonPack);
+            var snapshotResults = await _snapshotService.CaptureSnapshotAsync(
+                show,
+                _progressService,
+                cancellationToken,
+                MediaKind.TvSeasonPack);
+            _progressService.Report(0, "Filtering results...");
+            var candidates = await MapSeasonPackCandidatesAsync(
+                show,
+                selectedSeasons,
+                snapshotResults,
+                packRecipe,
+                maxCandidatesOverride,
+                cancellationToken);
+            lock (_gate)
             {
-                _packCandidatesBySeason[(showId, seasonNumber)] = candidates
-                    .Where(candidate => candidate.CoveredSeasons.Contains(seasonNumber))
-                    .ToList();
+                foreach (var seasonNumber in selectedSeasons)
+                {
+                    _packCandidatesBySeason[(showId, seasonNumber)] = candidates
+                        .Where(candidate => candidate.CoveredSeasons.Contains(seasonNumber))
+                        .ToList();
+                }
             }
-        }
 
-        _logger.Info($"Fetched season pack candidates for {show.DisplayTitle}. Seasons={string.Join(",", selectedSeasons)}, Candidates={candidates.Count}.", LogTarget.All);
+            _logger.Info($"Fetched season pack candidates for {show.DisplayTitle}. Seasons={string.Join(",", selectedSeasons)}, Candidates={candidates.Count}.", LogTarget.All);
+        }
+        finally
+        {
+            _progressService.Finish("Idle");
+        }
     }
 
     private void ClearEpisodeCandidateCache(IReadOnlyList<TrackedEpisode> targetEpisodes)
@@ -286,6 +303,7 @@ public sealed class FetchJobService : IFetchJobService
             LogTarget.All);
 
         var snapshotResults = await _snapshotService.CaptureSnapshotAsync(show, _progressService, cancellationToken);
+        _progressService.Report(0, "Filtering results...");
         var usesAnimeAbsolute = RecipeRuntimeSettings.UsesAnimeAbsoluteEpisodeNumbering(recipe);
         var snapshotCandidates = snapshotResults
             .Select(result => new SnapshotCandidate
@@ -449,6 +467,7 @@ public sealed class FetchJobService : IFetchJobService
             cancellationToken.ThrowIfCancellationRequested();
             var queryResults = await SearchSingleQueryAsync(recipe, query, cancellationToken);
             completedQueries++;
+            _progressService.Report(completedQueries, $"Search: Query {completedQueries}/{totalQueries}");
             _logger.Info(
                 $"Episode search query succeeded {completedQueries}/{totalQueries}. Remaining={totalQueries - completedQueries}. Query='{query}'. Results={queryResults.Count}.",
                 LogTarget.All);

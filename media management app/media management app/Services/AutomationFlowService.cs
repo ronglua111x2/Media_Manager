@@ -15,6 +15,7 @@ public sealed class AutomationFlowService : IAutomationFlowService
     private readonly ITrackedShowService _trackedShowService;
     private readonly ITrackedMovieService _trackedMovieService;
     private readonly ISettingsService _settingsService;
+    private readonly IOperationProgressService _progressService;
     private readonly IAppLogger _logger;
 
     public AutomationFlowService(
@@ -26,6 +27,7 @@ public sealed class AutomationFlowService : IAutomationFlowService
         ITrackedShowService trackedShowService,
         ITrackedMovieService trackedMovieService,
         ISettingsService settingsService,
+        IOperationProgressService progressService,
         IAppLogger logger)
     {
         _databaseService = databaseService;
@@ -36,6 +38,7 @@ public sealed class AutomationFlowService : IAutomationFlowService
         _trackedShowService = trackedShowService;
         _trackedMovieService = trackedMovieService;
         _settingsService = settingsService;
+        _progressService = progressService;
         _logger = logger;
     }
 
@@ -78,28 +81,46 @@ public sealed class AutomationFlowService : IAutomationFlowService
 
     private async Task<RecipeDryRunResult> DryRunEpisodeAsync(RecipeRunRequest request, CancellationToken cancellationToken)
     {
-        var (show, episode) = GetEpisode(request);
-        var recipe = _recipeService.GetRecipeOrDefault(request.RecipeId ?? show.RecipeId, MediaKind.TvEpisode);
-        var queries = _searchPlanBuilder.BuildEpisodeQueries(recipe, show, episode);
-        var results = await SearchAsync(recipe, queries, cancellationToken);
-        var evaluated = results
-            .Select(result => _candidateEvaluationService.EvaluateEpisode(recipe, show, episode, result))
-            .ToList();
-        TryWriteCandidateDebugLog(recipe, show.DisplayTitle, MediaKind.TvEpisode, queries, results, evaluated);
-        return BuildDryRunResult(recipe, show.DisplayTitle, queries, evaluated);
+        _progressService.Start("Search: preparing…", 0);
+        try
+        {
+            var (show, episode) = GetEpisode(request);
+            var recipe = _recipeService.GetRecipeOrDefault(request.RecipeId ?? show.RecipeId, MediaKind.TvEpisode);
+            var queries = _searchPlanBuilder.BuildEpisodeQueries(recipe, show, episode);
+            var results = await SearchAsync(recipe, queries, cancellationToken);
+            _progressService.Report(0, "Filtering results...");
+            var evaluated = results
+                .Select(result => _candidateEvaluationService.EvaluateEpisode(recipe, show, episode, result))
+                .ToList();
+            TryWriteCandidateDebugLog(recipe, show.DisplayTitle, MediaKind.TvEpisode, queries, results, evaluated);
+            return BuildDryRunResult(recipe, show.DisplayTitle, queries, evaluated);
+        }
+        finally
+        {
+            _progressService.Finish("Idle");
+        }
     }
 
     private async Task<RecipeDryRunResult> DryRunMovieAsync(RecipeRunRequest request, CancellationToken cancellationToken)
     {
-        var movie = GetMovie(request);
-        var recipe = _recipeService.GetRecipeOrDefault(request.RecipeId ?? movie.RecipeId, MediaKind.Movie);
-        var queries = _searchPlanBuilder.BuildMovieQueries(recipe, movie);
-        var results = await SearchAsync(recipe, queries, cancellationToken);
-        var evaluated = results
-            .Select(result => _candidateEvaluationService.EvaluateMovie(recipe, movie, result))
-            .ToList();
-        TryWriteCandidateDebugLog(recipe, movie.DisplayTitle, MediaKind.Movie, queries, results, evaluated);
-        return BuildDryRunResult(recipe, movie.DisplayTitle, queries, evaluated);
+        _progressService.Start("Search: preparing…", 0);
+        try
+        {
+            var movie = GetMovie(request);
+            var recipe = _recipeService.GetRecipeOrDefault(request.RecipeId ?? movie.RecipeId, MediaKind.Movie);
+            var queries = _searchPlanBuilder.BuildMovieQueries(recipe, movie);
+            var results = await SearchAsync(recipe, queries, cancellationToken);
+            _progressService.Report(0, "Filtering results...");
+            var evaluated = results
+                .Select(result => _candidateEvaluationService.EvaluateMovie(recipe, movie, result))
+                .ToList();
+            TryWriteCandidateDebugLog(recipe, movie.DisplayTitle, MediaKind.Movie, queries, results, evaluated);
+            return BuildDryRunResult(recipe, movie.DisplayTitle, queries, evaluated);
+        }
+        finally
+        {
+            _progressService.Finish("Idle");
+        }
     }
 
     private async Task<IReadOnlyList<TorrentSearchResult>> SearchAsync(
@@ -168,6 +189,7 @@ public sealed class AutomationFlowService : IAutomationFlowService
                             TimeoutSeconds = timeoutSeconds
                         }, cancellationToken);
                     var completed = Interlocked.Increment(ref completedQueries);
+                    _progressService.Report(completed, $"Search: Query {completed}/{totalQueries}");
                     _logger.Info(
                         $"Recipe search query succeeded {completed}/{totalQueries}. Remaining={totalQueries - completed}. Query='{query}'. Results={queryResults.Count}.",
                         LogTarget.All);

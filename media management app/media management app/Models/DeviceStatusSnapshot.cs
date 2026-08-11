@@ -1,14 +1,35 @@
+using media_management_app.ViewModels;
+
 namespace media_management_app.Models;
 
 public sealed class DeviceStatusSnapshot
 {
-    public string StorageSummary { get; init; } = "Storage: not configured";
+    public IReadOnlyList<StorageStatusViewModel> DriveStatuses { get; init; } = [];
 
-    public string QbittorrentStatus { get; init; } = "qBittorrent: unknown";
+    public DependencyStatusInfo Qbittorrent { get; init; } = new()
+    {
+        Name = "qBittorrent",
+        StatusText = "unknown",
+        Detail = "qBittorrent status unknown"
+    };
 
-    public string JobStatus { get; init; } = "Jobs: idle";
+    public DependencyStatusInfo Warp { get; init; } = new()
+    {
+        Name = "WARP",
+        StatusText = "unknown",
+        Detail = "WARP status unknown"
+    };
+
+    public DependencyStatusInfo Jellyfin { get; init; } = new()
+    {
+        Name = "Jellyfin",
+        StatusText = "unknown",
+        Detail = "Jellyfin status unknown"
+    };
+
+    public string JobStatus { get; init; } = "Idle";
+
+    public bool IsJobActive { get; init; }
 
     public bool HasLowSpace { get; init; }
-
-    public bool IsQbittorrentConnected { get; init; }
 }

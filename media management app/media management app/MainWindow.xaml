@@ -356,60 +356,265 @@
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
 
-                    <Button Grid.Column="0"
-                            Command="{Binding OpenConsoleCommand}"
-                            MinHeight="30"
-                            Padding="12,5"
-                            Margin="0"
-                            ToolTip="Open console log">
-                        <StackPanel Orientation="Horizontal">
+                    <StackPanel Grid.Column="0"
+                                Orientation="Horizontal"
+                                VerticalAlignment="Center">
+                        <Button Command="{Binding OpenConsoleCommand}"
+                                MinHeight="30"
+                                Padding="8,5"
+                                Margin="0"
+                                ToolTip="Open console log">
                             <iconPacks:PackIconLucide Kind="Terminal"
                                                        Width="16"
                                                        Height="16"
-                                                       Foreground="{StaticResource AppBrushText}"
-                                                       Margin="0,0,7,0" />
-                            <TextBlock Text="Console Log"
+                                                       Foreground="{StaticResource AppBrushText}" />
+                        </Button>
+                    </StackPanel>
+
+                    <Border Grid.Column="1"
+                            Style="{StaticResource StatusPillStyle}"
+                            Width="250"
+                            Margin="8,3,8,3"
+                            HorizontalAlignment="Left"
+                            VerticalAlignment="Center">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <iconPacks:PackIconLucide Kind="Activity"
+                                                       Width="15"
+                                                       Height="15"
+                                                       VerticalAlignment="Center"
+                                                       Margin="0,0,6,0">
+                                <iconPacks:PackIconLucide.Style>
+                                    <Style TargetType="iconPacks:PackIconLucide">
+                                        <Setter Property="Foreground" Value="{StaticResource AppBrushMutedText}" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsJobActive}" Value="True">
+                                                <Setter Property="Foreground" Value="{StaticResource AppBrushAccent}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </iconPacks:PackIconLucide.Style>
+                            </iconPacks:PackIconLucide>
+                            <TextBlock Grid.Column="1"
+                                       Text="{Binding JobStatus}"
+                                       TextTrimming="CharacterEllipsis"
+                                       TextWrapping="NoWrap"
                                        VerticalAlignment="Center" />
-                        </StackPanel>
-                    </Button>
+                        </Grid>
+                    </Border>
 
                     <WrapPanel Grid.Column="2"
                                HorizontalAlignment="Right"
                                VerticalAlignment="Center">
+                        <ItemsControl ItemsSource="{Binding DriveStatuses}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Style="{StaticResource StatusPillStyle}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <Ellipse Width="8"
+                                                     Height="8"
+                                                     VerticalAlignment="Center"
+                                                     Margin="0,0,7,0">
+                                                <Ellipse.Style>
+                                                    <Style TargetType="Ellipse">
+                                                        <Setter Property="Fill" Value="{StaticResource AppBrushAccent}" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsLowSpace}" Value="True">
+                                                                <Setter Property="Fill" Value="{StaticResource AppBrushWarning}" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Ellipse.Style>
+                                            </Ellipse>
+                                            <iconPacks:PackIconLucide Kind="HardDrive"
+                                                                       Width="14"
+                                                                       Height="14"
+                                                                       Foreground="{StaticResource AppBrushText}"
+                                                                       VerticalAlignment="Center"
+                                                                       Margin="0,0,6,0" />
+                                            <TextBlock Text="{Binding DriveLetterDisplay}"
+                                                       Foreground="{StaticResource AppBrushMutedText}"
+                                                       VerticalAlignment="Center"
+                                                       Margin="0,0,6,0" />
+                                            <TextBlock Text="{Binding StatsDisplay}"
+                                                       VerticalAlignment="Center"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       MaxWidth="280">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Foreground" Value="{StaticResource AppBrushAccent}" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsLowSpace}" Value="True">
+                                                                <Setter Property="Foreground" Value="{StaticResource AppBrushWarning}" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
                         <Border Style="{StaticResource StatusPillStyle}">
                             <StackPanel Orientation="Horizontal">
                                 <Ellipse Width="8"
                                          Height="8"
-                                         Fill="{StaticResource AppBrushAccent}"
                                          VerticalAlignment="Center"
-                                         Margin="0,0,7,0" />
-                                <TextBlock Text="{Binding StorageStatus}"
+                                         Margin="0,0,7,0">
+                                    <Ellipse.Style>
+                                        <Style TargetType="Ellipse">
+                                            <Setter Property="Fill" Value="{StaticResource AppBrushDanger}" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding QbittorrentDependency.IsConfigured}" Value="False">
+                                                    <Setter Property="Fill" Value="{StaticResource AppBrushMutedText}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding QbittorrentDependency.IsOk}" Value="True">
+                                                    <Setter Property="Fill" Value="{StaticResource AppBrushAccent}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Ellipse.Style>
+                                </Ellipse>
+                                <iconPacks:PackIconLucide Kind="Download"
+                                                           Width="14"
+                                                           Height="14"
+                                                           Foreground="{StaticResource AppBrushText}"
+                                                           VerticalAlignment="Center"
+                                                           Margin="0,0,6,0" />
+                                <TextBlock Text="qBittorrent"
+                                           Foreground="{StaticResource AppBrushMutedText}"
+                                           VerticalAlignment="Center"
+                                           Margin="0,0,6,0" />
+                                <TextBlock Text="{Binding QbittorrentDependency.StatusText}"
                                            TextTrimming="CharacterEllipsis"
-                                           MaxWidth="260" />
+                                           MaxWidth="160"
+                                           VerticalAlignment="Center">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Foreground" Value="{StaticResource AppBrushDanger}" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding QbittorrentDependency.IsConfigured}" Value="False">
+                                                    <Setter Property="Foreground" Value="{StaticResource AppBrushMutedText}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding QbittorrentDependency.IsOk}" Value="True">
+                                                    <Setter Property="Foreground" Value="{StaticResource AppBrushAccent}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
                             </StackPanel>
                         </Border>
+
                         <Border Style="{StaticResource StatusPillStyle}">
                             <StackPanel Orientation="Horizontal">
                                 <Ellipse Width="8"
                                          Height="8"
-                                         Fill="{StaticResource AppBrushAccent}"
                                          VerticalAlignment="Center"
-                                         Margin="0,0,7,0" />
-                                <TextBlock Text="{Binding QbittorrentStatus}"
+                                         Margin="0,0,7,0">
+                                    <Ellipse.Style>
+                                        <Style TargetType="Ellipse">
+                                            <Setter Property="Fill" Value="{StaticResource AppBrushDanger}" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding WarpDependency.IsConfigured}" Value="False">
+                                                    <Setter Property="Fill" Value="{StaticResource AppBrushMutedText}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding WarpDependency.IsOk}" Value="True">
+                                                    <Setter Property="Fill" Value="{StaticResource AppBrushAccent}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Ellipse.Style>
+                                </Ellipse>
+                                <iconPacks:PackIconLucide Kind="ShieldCheck"
+                                                           Width="14"
+                                                           Height="14"
+                                                           Foreground="{StaticResource AppBrushWarpBrand}"
+                                                           VerticalAlignment="Center"
+                                                           Margin="0,0,6,0" />
+                                <TextBlock Text="WARP"
+                                           Foreground="{StaticResource AppBrushWarpBrand}"
+                                           VerticalAlignment="Center"
+                                           Margin="0,0,6,0" />
+                                <TextBlock Text="{Binding WarpDependency.StatusText}"
                                            TextTrimming="CharacterEllipsis"
-                                           MaxWidth="300" />
+                                           MaxWidth="160"
+                                           VerticalAlignment="Center">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Foreground" Value="{StaticResource AppBrushDanger}" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding WarpDependency.IsConfigured}" Value="False">
+                                                    <Setter Property="Foreground" Value="{StaticResource AppBrushMutedText}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding WarpDependency.IsOk}" Value="True">
+                                                    <Setter Property="Foreground" Value="{StaticResource AppBrushAccent}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
                             </StackPanel>
                         </Border>
+
                         <Border Style="{StaticResource StatusPillStyle}">
                             <StackPanel Orientation="Horizontal">
                                 <Ellipse Width="8"
                                          Height="8"
-                                         Fill="{StaticResource AppBrushWarning}"
                                          VerticalAlignment="Center"
-                                         Margin="0,0,7,0" />
-                                <TextBlock Text="{Binding JobStatus}"
+                                         Margin="0,0,7,0">
+                                    <Ellipse.Style>
+                                        <Style TargetType="Ellipse">
+                                            <Setter Property="Fill" Value="{StaticResource AppBrushDanger}" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding JellyfinDependency.IsConfigured}" Value="False">
+                                                    <Setter Property="Fill" Value="{StaticResource AppBrushMutedText}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding JellyfinDependency.IsOk}" Value="True">
+                                                    <Setter Property="Fill" Value="{StaticResource AppBrushAccent}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Ellipse.Style>
+                                </Ellipse>
+                                <iconPacks:PackIconLucide Kind="Clapperboard"
+                                                           Width="14"
+                                                           Height="14"
+                                                           Foreground="{StaticResource AppBrushJellyfinBrand}"
+                                                           VerticalAlignment="Center"
+                                                           Margin="0,0,6,0" />
+                                <TextBlock Text="Jellyfin"
+                                           Foreground="{StaticResource AppBrushJellyfinBrand}"
+                                           VerticalAlignment="Center"
+                                           Margin="0,0,6,0" />
+                                <TextBlock Text="{Binding JellyfinDependency.StatusText}"
                                            TextTrimming="CharacterEllipsis"
-                                           MaxWidth="300" />
+                                           MaxWidth="160"
+                                           VerticalAlignment="Center">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Foreground" Value="{StaticResource AppBrushDanger}" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding JellyfinDependency.IsConfigured}" Value="False">
+                                                    <Setter Property="Foreground" Value="{StaticResource AppBrushMutedText}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding JellyfinDependency.IsOk}" Value="True">
+                                                    <Setter Property="Foreground" Value="{StaticResource AppBrushAccent}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
                             </StackPanel>
                         </Border>
                     </WrapPanel>

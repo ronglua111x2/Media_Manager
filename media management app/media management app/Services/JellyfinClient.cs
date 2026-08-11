@@ -45,7 +45,7 @@ public sealed class JellyfinClient : IJellyfinClient, IDisposable
         var summary = string.IsNullOrWhiteSpace(serverName)
             ? (version ?? "OK")
             : $"{serverName} ({version ?? "unknown"})";
-        _logger.Info($"Connected to Jellyfin {summary}.", LogTarget.All);
+        _logger.Info($"Connected to Jellyfin {summary}.", LogTarget.File);
         return summary;
     }
 

@@ -10,6 +10,20 @@ public sealed class StorageStatusViewModel
 
     public long FreeBytes { get; init; }
 
+    public string DriveLetterDisplay
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(DriveRoot))
+            {
+                return "?";
+            }
+
+            var trimmed = DriveRoot.TrimEnd('\\', '/');
+            return string.IsNullOrWhiteSpace(trimmed) ? DriveRoot : trimmed;
+        }
+    }
+
     public string TotalDisplay => FormatSize(TotalBytes);
 
     public string FreeDisplay => FormatSize(FreeBytes);
@@ -17,6 +31,9 @@ public sealed class StorageStatusViewModel
     public string UsedDisplay => FormatSize(Math.Max(0, TotalBytes - FreeBytes));
 
     public string FreePercentDisplay => TotalBytes <= 0 ? string.Empty : $"{(double)FreeBytes / TotalBytes:P0}";
+
+    public string StatsDisplay =>
+        $"{FreeDisplay} free ({FreePercentDisplay})";
 
     public bool IsLowSpace => TotalBytes > 0 && (double)FreeBytes / TotalBytes < 0.10;
 
