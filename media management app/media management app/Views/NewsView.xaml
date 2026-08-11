@@ -5,6 +5,8 @@
              xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
              xmlns:common="clr-namespace:media_management_app.Common">
     <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
+
         <Style x:Key="MutedTextStyle" TargetType="TextBlock">
             <Setter Property="Foreground" Value="{StaticResource AppBrushMutedText}" />
             <Setter Property="FontSize" Value="12" />
@@ -75,9 +77,19 @@
                 </Grid.ColumnDefinitions>
                 <StackPanel VerticalAlignment="Center">
                     <TextBlock Text="News" Style="{StaticResource SectionTitleStyle}" />
-                    <TextBlock Text="New episodes from tracked shows this week"
-                               Style="{StaticResource MutedTextStyle}"
-                               Margin="0,4,0,0" />
+                    <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                        <iconPacks:PackIconLucide Kind="Sun"
+                                                   Width="18"
+                                                   Height="18"
+                                                   Margin="0,0,8,0"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="{StaticResource AppBrushAccent}" />
+                        <TextBlock Text="{Binding TodaySummary}"
+                                   VerticalAlignment="Center"
+                                   FontSize="16"
+                                   FontWeight="SemiBold"
+                                   Foreground="{StaticResource AppBrushText}" />
+                    </StackPanel>
                 </StackPanel>
                 <Button Grid.Column="1"
                         Style="{StaticResource AppPrimaryButtonStyle}"
@@ -112,7 +124,7 @@
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <TextBlock Text="New This Week"
+                        <TextBlock Text="{Binding NewThisWeekTitle}"
                                    Style="{StaticResource SectionTitleStyle}"
                                    VerticalAlignment="Center"
                                    Margin="0,0,12,0" />
@@ -332,10 +344,85 @@
                                                 <TextBlock Text="{Binding SeriesStatusLabel}"
                                                            Style="{StaticResource MutedTextStyle}"
                                                            Margin="0,4,0,0" />
-                                                <TextBlock Text="{Binding PendingLabel}"
-                                                           Foreground="{StaticResource AppBrushAccent}"
-                                                           FontSize="12"
-                                                           Margin="0,4,0,0" />
+                                                <StackPanel Orientation="Horizontal"
+                                                            Margin="0,4,0,0"
+                                                            Visibility="{Binding HasScheduleMeta, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                    <StackPanel Orientation="Horizontal"
+                                                                Visibility="{Binding HasWeeklyAirDay, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                        <iconPacks:PackIconLucide Kind="CalendarDays"
+                                                                                   Width="11"
+                                                                                   Height="11"
+                                                                                   Margin="0,0,4,0"
+                                                                                   VerticalAlignment="Center"
+                                                                                   Foreground="{StaticResource AppBrushAccent}" />
+                                                        <TextBlock Text="{Binding WeeklyAirDayLabel}"
+                                                                   FontSize="11"
+                                                                   FontWeight="SemiBold"
+                                                                   VerticalAlignment="Center"
+                                                                   Foreground="{StaticResource AppBrushAccent}" />
+                                                        <TextBlock Text=" - "
+                                                                   FontSize="11"
+                                                                   VerticalAlignment="Center"
+                                                                   Foreground="{StaticResource AppBrushMutedText}"
+                                                                   Visibility="{Binding HasAnchorLabel, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                                    </StackPanel>
+                                                    <StackPanel Orientation="Horizontal"
+                                                                Visibility="{Binding HasAnchorLabel, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                        <iconPacks:PackIconLucide Kind="Clock"
+                                                                                   Width="11"
+                                                                                   Height="11"
+                                                                                   Margin="0,0,4,0"
+                                                                                   VerticalAlignment="Center"
+                                                                                   Foreground="{StaticResource AppBrushMutedText}"
+                                                                                   Opacity="0.9" />
+                                                        <TextBlock Text="{Binding AnchorLabel}"
+                                                                   FontSize="11"
+                                                                   VerticalAlignment="Center"
+                                                                   Foreground="{StaticResource AppBrushMutedText}" />
+                                                    </StackPanel>
+                                                </StackPanel>
+                                                <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                                    <iconPacks:PackIconLucide Kind="Hourglass"
+                                                                               Width="12"
+                                                                               Height="12"
+                                                                               Margin="0,0,5,0"
+                                                                               VerticalAlignment="Center"
+                                                                               Foreground="{StaticResource AppBrushShowAccent}"
+                                                                               Visibility="{Binding IsNotAired, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                                    <iconPacks:PackIconLucide Kind="CircleCheck"
+                                                                               Width="12"
+                                                                               Height="12"
+                                                                               Margin="0,0,5,0"
+                                                                               VerticalAlignment="Center"
+                                                                               Foreground="{StaticResource AppBrushAccent}"
+                                                                               Visibility="{Binding IsUpToDate, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                                    <iconPacks:PackIconLucide Kind="ListTodo"
+                                                                               Width="12"
+                                                                               Height="12"
+                                                                               Margin="0,0,5,0"
+                                                                               VerticalAlignment="Center"
+                                                                               Foreground="{StaticResource AppBrushWarning}"
+                                                                               Visibility="{Binding HasPendingEpisodes, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                                    <TextBlock Text="{Binding PendingLabel}"
+                                                               FontSize="12"
+                                                               VerticalAlignment="Center">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock">
+                                                                <Setter Property="Foreground" Value="{StaticResource AppBrushAccent}" />
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsNotAired}" Value="True">
+                                                                        <Setter Property="Foreground" Value="{StaticResource AppBrushShowAccent}" />
+                                                                        <Setter Property="FontWeight" Value="SemiBold" />
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding HasPendingEpisodes}" Value="True">
+                                                                        <Setter Property="Foreground" Value="{StaticResource AppBrushWarning}" />
+                                                                        <Setter Property="FontWeight" Value="SemiBold" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
+                                                </StackPanel>
                                             </StackPanel>
                                         </Grid>
                                     </Border>

@@ -47,6 +47,12 @@ public sealed partial class NewsViewModel : ViewModelBase
     public ObservableCollection<NewsEpisodeCardViewModel> NewEpisodesThisWeek { get; } = [];
 
     [ObservableProperty]
+    private string todaySummary = string.Empty;
+
+    [ObservableProperty]
+    private string newThisWeekTitle = "New This Week";
+
+    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsAirDateSortSelected))]
     [NotifyPropertyChangedFor(nameof(IsTrackedShowSortSelected))]
     [NotifyPropertyChangedFor(nameof(IsStatusSortSelected))]
@@ -108,8 +114,11 @@ public sealed partial class NewsViewModel : ViewModelBase
         _weekEpisodeSource.Clear();
         NewEpisodesThisWeek.Clear();
 
+        TodaySummary = $"Today is {AppTimeZone.FormatLongDate(AppTimeZone.Now)}";
+
         var shows = _trackedShowService.GetAutoTrackedShows();
-        var weekStart = DateTime.UtcNow.Date.AddDays(-7);
+        var autoTrackSettings = _settingsService.Current.AutoTrack ?? new AutoTrackSettings();
+        var weekStart = AppTimeZone.Today.AddDays(-7);
         var stillKeepSet = new List<(int ShowTmdbId, int Season, int Episode)>();
 
         foreach (var show in shows)
@@ -121,12 +130,23 @@ public sealed partial class NewsViewModel : ViewModelBase
 
             var episodes = _trackedShowService.GetEpisodes(show.Id);
             var pending = CountPendingEpisodes(show, episodes);
+            var isNotAired = IsShowNotYetAired(
+                episodes,
+                show.AutoTrackFromSeason.Value,
+                show.AutoTrackFromEpisode.Value);
+            var airDay = ShowWeeklyAirDay.Infer(
+                episodes,
+                show.AutoTrackFromSeason,
+                show.AutoTrackFromEpisode);
             var card = new NewsShowCardViewModel(
                 show.Id,
                 show.DisplayTitle,
                 show.PosterPath,
                 show.SeriesStatusLabel,
-                pending);
+                pending,
+                ShowWeeklyAirDay.FormatLabel(airDay),
+                AutoTrackWeekAnchor.FormatEffectiveAnchor(show, autoTrackSettings),
+                isNotAired);
             TrackedShows.Add(card);
             _ = LoadShowPosterAsync(card, show);
 
@@ -159,6 +179,11 @@ public sealed partial class NewsViewModel : ViewModelBase
         {
             NewEpisodesThisWeek.Add(card);
         }
+
+        var count = NewEpisodesThisWeek.Count;
+        NewThisWeekTitle = count > 0
+            ? $"New This Week ({count})"
+            : "New This Week";
     }
 
     private static IEnumerable<NewsEpisodeCardViewModel> SortWeekEpisodes(
@@ -210,7 +235,7 @@ public sealed partial class NewsViewModel : ViewModelBase
             return 0;
         }
 
-        var today = DateTime.Now.Date;
+        var today = AppTimeZone.Today;
 
         return episodes
             .Where(episode => IsAtOrAfterCheckpoint(
@@ -223,6 +248,26 @@ public sealed partial class NewsViewModel : ViewModelBase
                 string.IsNullOrWhiteSpace(episode.TorrentHash) &&
                 !_torrentCartService.TryGetAutoTrackHuntBlockingEpisodeOrder(episode.Id, out _) &&
                 !_torrentCartService.HasActiveManualEpisodeOrder(episode.Id));
+    }
+
+    private static bool IsShowNotYetAired(
+        IReadOnlyList<TrackedEpisode> episodes,
+        int fromSeason,
+        int fromEpisode)
+    {
+        var today = AppTimeZone.Today;
+        var tracked = episodes
+            .Where(episode => episode.SeasonNumber != AppConstants.SpecialsSeasonNumber)
+            .Where(episode => IsAtOrAfterCheckpoint(episode, fromSeason, fromEpisode))
+            .ToList();
+
+        if (tracked.Count == 0)
+        {
+            return true;
+        }
+
+        return tracked.All(episode =>
+            episode.AirDate is null || episode.AirDate.Value.Date > today);
     }
 
     private static bool IsAtOrAfterCheckpoint(TrackedEpisode episode, int fromSeason, int fromEpisode)
