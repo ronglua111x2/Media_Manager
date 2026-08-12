@@ -38,16 +38,91 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
 
     public async Task<string> TestConnectionAsync(CancellationToken cancellationToken = default)
     {
-        await LoginAsync(cancellationToken);
-        using var response = await _httpClient.GetAsync(CreateUri("api/v2/app/version"), cancellationToken);
-        if (!response.IsSuccessStatusCode)
+        var probe = await ProbeWebUiAsync(cancellationToken);
+        if (!probe.IsOk)
         {
-            throw new InvalidOperationException($"qBittorrent connection test failed: {(int)response.StatusCode} {response.ReasonPhrase}");
+            throw new InvalidOperationException(probe.Detail ?? $"qBittorrent connection test failed: {probe.Status}");
         }
 
-        var version = (await response.Content.ReadAsStringAsync(cancellationToken)).Trim();
-        _logger.Info($"Connected to qBittorrent Web UI {version}.", LogTarget.File);
-        return version;
+        return probe.Version ?? string.Empty;
+    }
+
+    public async Task<QbittorrentWebUiProbeResult> ProbeWebUiAsync(CancellationToken cancellationToken = default)
+    {
+        Uri baseUri;
+        try
+        {
+            baseUri = GetBaseUri();
+        }
+        catch (InvalidOperationException ex)
+        {
+            return QbittorrentWebUiProbeResult.InvalidUrl(ex.Message);
+        }
+
+        // Any HTTP response from /app/version means the WebUI is bound (even 401/403).
+        try
+        {
+            using var versionResponse = await _httpClient.GetAsync(
+                new Uri(baseUri, "api/v2/app/version"),
+                cancellationToken);
+
+            if (IsAuthenticationFailure(versionResponse.StatusCode))
+            {
+                // Bound but needs auth — try login for a clearer Ok vs AuthFailed.
+            }
+            else if (versionResponse.IsSuccessStatusCode)
+            {
+                // May succeed without login on some setups; still verify login when credentials exist.
+            }
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or OperationCanceledException)
+        {
+            if (cancellationToken.IsCancellationRequested && ex is OperationCanceledException)
+            {
+                throw;
+            }
+
+            return QbittorrentWebUiProbeResult.Unreachable(
+                $"qBittorrent WebUI unreachable: {ex.Message}");
+        }
+
+        try
+        {
+            await LoginAsync(cancellationToken, force: true);
+            using var response = await _httpClient.GetAsync(CreateUri("api/v2/app/version"), cancellationToken);
+            if (IsAuthenticationFailure(response.StatusCode))
+            {
+                return QbittorrentWebUiProbeResult.AuthFailed(
+                    $"qBittorrent WebUI auth failed: {(int)response.StatusCode} {response.ReasonPhrase}");
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                // Bound (got HTTP) but not healthy enough to use — treat as auth/config, not restart.
+                return QbittorrentWebUiProbeResult.AuthFailed(
+                    $"qBittorrent WebUI returned {(int)response.StatusCode} {response.ReasonPhrase}");
+            }
+
+            var version = (await response.Content.ReadAsStringAsync(cancellationToken)).Trim();
+            _logger.Info($"Connected to qBittorrent Web UI {version}.", LogTarget.File);
+            return QbittorrentWebUiProbeResult.Ok(version);
+        }
+        catch (InvalidOperationException ex) when (
+            ex.Message.Contains("login failed", StringComparison.OrdinalIgnoreCase) ||
+            ex.Message.Contains("authentication failed", StringComparison.OrdinalIgnoreCase))
+        {
+            return QbittorrentWebUiProbeResult.AuthFailed(ex.Message);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or OperationCanceledException)
+        {
+            if (cancellationToken.IsCancellationRequested && ex is OperationCanceledException)
+            {
+                throw;
+            }
+
+            return QbittorrentWebUiProbeResult.Unreachable(
+                $"qBittorrent WebUI unreachable: {ex.Message}");
+        }
     }
 
     public async Task<IReadOnlyList<TorrentSearchResult>> SearchAsync(TorrentSearchRequest request, CancellationToken cancellationToken = default)

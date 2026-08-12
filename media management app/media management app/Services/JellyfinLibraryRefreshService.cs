@@ -147,7 +147,23 @@ public sealed class JellyfinLibraryRefreshService : IJellyfinLibraryRefreshServi
             _pendingPaths.Clear();
         }
 
-        await FlushPathsAsync(paths, cancellationToken);
+        var requeued = await FlushPathsAsync(paths, cancellationToken);
+        if (requeued)
+        {
+            lock (_queueLock)
+            {
+                foreach (var path in paths)
+                {
+                    _pendingPaths.Add(path);
+                }
+
+                ScheduleDebounceLocked();
+            }
+
+            _logger.Warning(
+                $"Jellyfin refresh: kept {paths.Count} path(s) queued for retry (server unreachable or notify failed).",
+                LogTarget.All);
+        }
     }
 
     public Task<string> TestConnectionAsync(CancellationToken cancellationToken = default)
@@ -212,19 +228,21 @@ public sealed class JellyfinLibraryRefreshService : IJellyfinLibraryRefreshServi
         _debounceCts = null;
     }
 
-    private async Task FlushPathsAsync(IReadOnlyList<string> paths, CancellationToken cancellationToken)
+    /// <returns>True when paths should be put back on the pending queue.</returns>
+    private async Task<bool> FlushPathsAsync(IReadOnlyList<string> paths, CancellationToken cancellationToken)
     {
         if (!IsFeatureConfigured(out var jellyfinSettings))
         {
             _logger.Info(
                 $"Jellyfin refresh skipped {paths.Count} path(s): feature disabled or not configured.",
                 LogTarget.All);
-            return;
+            return false;
         }
 
         await _flushGate.WaitAsync(cancellationToken);
         var warpOwnedByUs = false;
         var heldOwnedWarp = false;
+        var notifySucceeded = false;
         var refreshWindowMessage = "Hold expired.";
         try
         {
@@ -238,6 +256,7 @@ public sealed class JellyfinLibraryRefreshService : IJellyfinLibraryRefreshServi
                 cancellationToken);
 
             await _jellyfinClient.ReportMediaUpdatedAsync(paths, cancellationToken);
+            notifySucceeded = true;
 
             _windowsNotificationService.TryShow(new WindowsNotificationRequest
             {
@@ -257,11 +276,32 @@ public sealed class JellyfinLibraryRefreshService : IJellyfinLibraryRefreshServi
                     "Jellyfin refresh: WARP not owned by this flush; skipping post-notify hold.",
                     LogTarget.All);
             }
+
+            return false;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (!notifySucceeded && IsTransientJellyfinFailure(ex))
+        {
+            _logger.Warning(
+                $"Jellyfin refresh flush deferred for {paths.Count} path(s): {ex.Message}",
+                LogTarget.All);
+            return true;
+        }
+        catch (Exception ex) when (!notifySucceeded)
+        {
+            _logger.Error($"Jellyfin refresh flush failed for {paths.Count} path(s); re-queueing.", ex, LogTarget.All);
+            return true;
         }
         catch (Exception ex)
         {
-            _logger.Error($"Jellyfin refresh flush failed for {paths.Count} path(s).", ex, LogTarget.All);
-            throw;
+            // Notify already succeeded; do not re-queue. Log hold/post-notify failures only.
+            _logger.Warning(
+                $"Jellyfin refresh post-notify step failed after paths were accepted: {ex.Message}",
+                LogTarget.All);
+            return false;
         }
         finally
         {
@@ -290,6 +330,19 @@ public sealed class JellyfinLibraryRefreshService : IJellyfinLibraryRefreshServi
 
             _flushGate.Release();
         }
+    }
+
+    private static bool IsTransientJellyfinFailure(Exception ex)
+    {
+        for (var current = ex; current is not null; current = current.InnerException)
+        {
+            if (current is HttpRequestException or TaskCanceledException or TimeoutException or IOException)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private async Task<string> HoldWarpForJellyfinAsync(

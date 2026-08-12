@@ -6,6 +6,12 @@ public interface IQbittorrentClient
 {
     Task<string> TestConnectionAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Lightweight WebUI probe that distinguishes unreachable (bind-fail / timeout)
+    /// from auth failure and invalid URL. Does not restart the process.
+    /// </summary>
+    Task<QbittorrentWebUiProbeResult> ProbeWebUiAsync(CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<TorrentSearchResult>> SearchAsync(TorrentSearchRequest request, CancellationToken cancellationToken = default);
 
     Task<int> StartSearchAsync(TorrentSearchRequest request, CancellationToken cancellationToken = default);

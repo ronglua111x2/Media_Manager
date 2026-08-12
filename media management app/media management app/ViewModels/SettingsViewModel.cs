@@ -122,6 +122,28 @@ public partial class SettingsViewModel : ViewModelBase
     private string? qbittorrentPassword;
 
     [ObservableProperty]
+    private bool qbittorrentProcessRestartEnabled;
+
+    [ObservableProperty]
+    private string qbittorrentProcessRestartExecutablePath = QbittorrentProcessRestartSettings.DefaultExecutablePath;
+
+    [ObservableProperty]
+    private int qbittorrentProcessRestartGracefulShutdownSeconds =
+        QbittorrentProcessRestartSettings.DefaultGracefulShutdownSeconds;
+
+    [ObservableProperty]
+    private int qbittorrentProcessRestartCooldownMinutes =
+        QbittorrentProcessRestartSettings.DefaultCooldownMinutes;
+
+    [ObservableProperty]
+    private int qbittorrentProcessRestartMaxRestartsPerHour =
+        QbittorrentProcessRestartSettings.DefaultMaxRestartsPerHour;
+
+    [ObservableProperty]
+    private int qbittorrentProcessRestartWebUiReadyTimeoutSeconds =
+        QbittorrentProcessRestartSettings.DefaultWebUiReadyTimeoutSeconds;
+
+    [ObservableProperty]
     private string autoTorrentDownloadFolder = string.Empty;
 
     [ObservableProperty]
@@ -218,6 +240,12 @@ public partial class SettingsViewModel : ViewModelBase
 
     [ObservableProperty]
     private string? autoTrackJellyfinApiKey;
+
+    [ObservableProperty]
+    private bool isJellyfinApiKeyVisible;
+
+    [ObservableProperty]
+    private string autoTrackJellyfinApiKeyMasked = string.Empty;
 
     [ObservableProperty]
     private int autoTrackJellyfinWarpHoldSeconds = JellyfinRefreshSettings.DefaultWarpHoldSecondsAfterNotify;
@@ -1009,6 +1037,7 @@ public partial class SettingsViewModel : ViewModelBase
             ReloadGeminiModelOptions();
             ReloadGeminiFallbackModels();
             GeminiModelsFilePath = _geminiModelCatalog.CatalogFilePath;
+            RefreshWarpCliStatus();
         }
         else if (value == SettingsSection.Backup)
         {
@@ -1160,6 +1189,16 @@ public partial class SettingsViewModel : ViewModelBase
             QbittorrentWebUiUrl = _settingsService.Current.AutoTorrent.QbittorrentWebUiUrl;
             QbittorrentUsername = _settingsService.Current.AutoTorrent.Username;
             QbittorrentPassword = _settingsService.Current.AutoTorrent.Password;
+            var processRestart = _settingsService.Current.AutoTorrent.ProcessRestart
+                                 ?? new QbittorrentProcessRestartSettings();
+            QbittorrentProcessRestartEnabled = processRestart.Enabled;
+            QbittorrentProcessRestartExecutablePath = string.IsNullOrWhiteSpace(processRestart.ExecutablePath)
+                ? QbittorrentProcessRestartSettings.DefaultExecutablePath
+                : processRestart.ExecutablePath;
+            QbittorrentProcessRestartGracefulShutdownSeconds = processRestart.GracefulShutdownSeconds;
+            QbittorrentProcessRestartCooldownMinutes = processRestart.CooldownMinutes;
+            QbittorrentProcessRestartMaxRestartsPerHour = processRestart.MaxRestartsPerHour;
+            QbittorrentProcessRestartWebUiReadyTimeoutSeconds = processRestart.WebUiReadyTimeoutSeconds;
             AutoTorrentDownloadFolder = _settingsService.Current.AutoTorrent.DownloadFolder ?? string.Empty;
             AutoTorrentTvShowCategoryName = _settingsService.Current.AutoTorrent.TvShowCategoryName;
             AutoTorrentMovieCategoryName = _settingsService.Current.AutoTorrent.MovieCategoryName;
@@ -1596,6 +1635,34 @@ public partial class SettingsViewModel : ViewModelBase
             ? AppConstants.QbittorrentMovieCategory
             : AutoTorrentMovieCategoryName.Trim();
         _settingsService.Current.AutoTorrent.AutoLinkCompletedDownloads = AutoLinkCompletedDownloads;
+
+        var processRestart = _settingsService.Current.AutoTorrent.ProcessRestart ??= new QbittorrentProcessRestartSettings();
+        processRestart.Enabled = QbittorrentProcessRestartEnabled;
+        processRestart.ExecutablePath = string.IsNullOrWhiteSpace(QbittorrentProcessRestartExecutablePath)
+            ? QbittorrentProcessRestartSettings.DefaultExecutablePath
+            : QbittorrentProcessRestartExecutablePath.Trim();
+        processRestart.GracefulShutdownSeconds = Math.Clamp(
+            QbittorrentProcessRestartGracefulShutdownSeconds,
+            QbittorrentProcessRestartSettings.MinGracefulShutdownSeconds,
+            QbittorrentProcessRestartSettings.MaxGracefulShutdownSeconds);
+        processRestart.CooldownMinutes = Math.Clamp(
+            QbittorrentProcessRestartCooldownMinutes,
+            QbittorrentProcessRestartSettings.MinCooldownMinutes,
+            QbittorrentProcessRestartSettings.MaxCooldownMinutes);
+        processRestart.MaxRestartsPerHour = Math.Clamp(
+            QbittorrentProcessRestartMaxRestartsPerHour,
+            QbittorrentProcessRestartSettings.MinMaxRestartsPerHour,
+            QbittorrentProcessRestartSettings.MaxMaxRestartsPerHour);
+        processRestart.WebUiReadyTimeoutSeconds = Math.Clamp(
+            QbittorrentProcessRestartWebUiReadyTimeoutSeconds,
+            QbittorrentProcessRestartSettings.MinWebUiReadyTimeoutSeconds,
+            QbittorrentProcessRestartSettings.MaxWebUiReadyTimeoutSeconds);
+
+        QbittorrentProcessRestartGracefulShutdownSeconds = processRestart.GracefulShutdownSeconds;
+        QbittorrentProcessRestartCooldownMinutes = processRestart.CooldownMinutes;
+        QbittorrentProcessRestartMaxRestartsPerHour = processRestart.MaxRestartsPerHour;
+        QbittorrentProcessRestartWebUiReadyTimeoutSeconds = processRestart.WebUiReadyTimeoutSeconds;
+        QbittorrentProcessRestartExecutablePath = processRestart.ExecutablePath;
     }
 
     private void ApplyLogSettings()
@@ -1811,6 +1878,107 @@ public partial class SettingsViewModel : ViewModelBase
     }
 
     [RelayCommand]
+    private void BrowseQbittorrentExecutablePath()
+    {
+        using var dialog = new WinForms.OpenFileDialog
+        {
+            Title = "Select qbittorrent.exe",
+            Filter = "qBittorrent (qbittorrent.exe)|qbittorrent.exe|Executable (*.exe)|*.exe|All files (*.*)|*.*",
+            CheckFileExists = true,
+            Multiselect = false
+        };
+
+        if (!string.IsNullOrWhiteSpace(QbittorrentProcessRestartExecutablePath))
+        {
+            try
+            {
+                if (File.Exists(QbittorrentProcessRestartExecutablePath))
+                {
+                    dialog.InitialDirectory = Path.GetDirectoryName(QbittorrentProcessRestartExecutablePath);
+                    dialog.FileName = Path.GetFileName(QbittorrentProcessRestartExecutablePath);
+                }
+                else
+                {
+                    var directory = Path.GetDirectoryName(QbittorrentProcessRestartExecutablePath);
+                    if (!string.IsNullOrWhiteSpace(directory) && Directory.Exists(directory))
+                    {
+                        dialog.InitialDirectory = directory;
+                    }
+                }
+            }
+            catch
+            {
+                // Ignore invalid initial path.
+            }
+        }
+
+        if (dialog.ShowDialog() != WinForms.DialogResult.OK)
+        {
+            return;
+        }
+
+        QbittorrentProcessRestartExecutablePath = dialog.FileName;
+    }
+
+    [RelayCommand]
+    private void BrowseWarpExecutablePath()
+    {
+        using var dialog = new WinForms.OpenFileDialog
+        {
+            Title = "Select warp-cli.exe",
+            Filter = "warp-cli (warp-cli.exe)|warp-cli.exe|Executable (*.exe)|*.exe|All files (*.*)|*.*",
+            CheckFileExists = true,
+            Multiselect = false
+        };
+
+        if (!string.IsNullOrWhiteSpace(WarpExecutablePath))
+        {
+            try
+            {
+                if (File.Exists(WarpExecutablePath))
+                {
+                    dialog.InitialDirectory = Path.GetDirectoryName(WarpExecutablePath);
+                    dialog.FileName = Path.GetFileName(WarpExecutablePath);
+                }
+                else
+                {
+                    var directory = Path.GetDirectoryName(WarpExecutablePath);
+                    if (!string.IsNullOrWhiteSpace(directory) && Directory.Exists(directory))
+                    {
+                        dialog.InitialDirectory = directory;
+                    }
+                }
+            }
+            catch
+            {
+                // Ignore invalid initial path.
+            }
+        }
+        else if (!string.IsNullOrWhiteSpace(WarpCliResolvedPath))
+        {
+            try
+            {
+                var directory = Path.GetDirectoryName(WarpCliResolvedPath);
+                if (!string.IsNullOrWhiteSpace(directory) && Directory.Exists(directory))
+                {
+                    dialog.InitialDirectory = directory;
+                }
+            }
+            catch
+            {
+                // Ignore invalid resolved path.
+            }
+        }
+
+        if (dialog.ShowDialog() != WinForms.DialogResult.OK)
+        {
+            return;
+        }
+
+        WarpExecutablePath = dialog.FileName;
+    }
+
+    [RelayCommand]
     private void ToggleTmdbTokenVisibility()
     {
         IsTmdbTokenVisible = !IsTmdbTokenVisible;
@@ -1824,6 +1992,13 @@ public partial class SettingsViewModel : ViewModelBase
         RefreshTokenMasks();
     }
 
+    [RelayCommand]
+    private void ToggleJellyfinApiKeyVisibility()
+    {
+        IsJellyfinApiKeyVisible = !IsJellyfinApiKeyVisible;
+        RefreshTokenMasks();
+    }
+
     partial void OnTmdbReadAccessTokenChanged(string? value)
     {
         RefreshTokenMasks();
@@ -1834,10 +2009,16 @@ public partial class SettingsViewModel : ViewModelBase
         RefreshTokenMasks();
     }
 
+    partial void OnAutoTrackJellyfinApiKeyChanged(string? value)
+    {
+        RefreshTokenMasks();
+    }
+
     private void RefreshTokenMasks()
     {
         TmdbReadAccessTokenMasked = MaskSecret(TmdbReadAccessToken);
         GeminiApiKeyMasked = MaskSecret(GeminiApiKey);
+        AutoTrackJellyfinApiKeyMasked = MaskSecret(AutoTrackJellyfinApiKey);
     }
 
     private static string MaskSecret(string? value)

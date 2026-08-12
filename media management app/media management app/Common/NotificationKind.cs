@@ -11,5 +11,9 @@ public enum NotificationKind
     WarpRecovered = 6,
     WarpDisconnected = 7,
     JellyfinPathNotified = 8,
-    JellyfinRefreshWindowEnded = 9
+    JellyfinRefreshWindowEnded = 9,
+    AutoTrackHuntBlocked = 10,
+    QbittorrentRestarted = 11,
+    QbittorrentRestartFailed = 12,
+    QbittorrentPortConflict = 13
 }

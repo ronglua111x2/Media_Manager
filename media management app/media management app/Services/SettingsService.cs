@@ -152,6 +152,34 @@ public sealed class SettingsService : ISettingsService
         Current.AutoTorrent.ParallelSearchTimeoutSeconds = Math.Clamp(Current.AutoTorrent.ParallelSearchTimeoutSeconds, 10, 300);
         Current.AutoTorrent.SnapshotTimeoutSeconds = Math.Clamp(Current.AutoTorrent.SnapshotTimeoutSeconds, 30, 300);
 
+        Current.AutoTorrent.ProcessRestart ??= new QbittorrentProcessRestartSettings();
+        var restart = Current.AutoTorrent.ProcessRestart;
+        if (string.IsNullOrWhiteSpace(restart.ExecutablePath))
+        {
+            restart.ExecutablePath = QbittorrentProcessRestartSettings.DefaultExecutablePath;
+        }
+        else
+        {
+            restart.ExecutablePath = restart.ExecutablePath.Trim();
+        }
+
+        restart.GracefulShutdownSeconds = Math.Clamp(
+            restart.GracefulShutdownSeconds,
+            QbittorrentProcessRestartSettings.MinGracefulShutdownSeconds,
+            QbittorrentProcessRestartSettings.MaxGracefulShutdownSeconds);
+        restart.CooldownMinutes = Math.Clamp(
+            restart.CooldownMinutes,
+            QbittorrentProcessRestartSettings.MinCooldownMinutes,
+            QbittorrentProcessRestartSettings.MaxCooldownMinutes);
+        restart.MaxRestartsPerHour = Math.Clamp(
+            restart.MaxRestartsPerHour,
+            QbittorrentProcessRestartSettings.MinMaxRestartsPerHour,
+            QbittorrentProcessRestartSettings.MaxMaxRestartsPerHour);
+        restart.WebUiReadyTimeoutSeconds = Math.Clamp(
+            restart.WebUiReadyTimeoutSeconds,
+            QbittorrentProcessRestartSettings.MinWebUiReadyTimeoutSeconds,
+            QbittorrentProcessRestartSettings.MaxWebUiReadyTimeoutSeconds);
+
         if (string.IsNullOrWhiteSpace(Current.OutputLibraryFolder))
         {
             Current.OutputLibraryFolder = null;

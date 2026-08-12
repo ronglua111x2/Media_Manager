@@ -36,12 +36,11 @@ public enum SettingsSection
 {
     System = 0,
     Library = 1,
-    Integrations = 2,
-    TorrentStorage = 3,
-    Notifications = 4,
-    Warp = 5,
-    Ui = 6,
-    Backup = 7
+    AutoTrack = 2,
+    Integrations = 3,
+    TorrentStorage = 4,
+    Notifications = 5,
+    Backup = 6
 }
 
 #endregion

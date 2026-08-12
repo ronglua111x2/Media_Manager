@@ -49,6 +49,11 @@ public sealed class AutoTorrentSettings
 
     public bool EnableCandidateMetadataProbe { get; set; }
 
+    /// <summary>
+    /// Opt-in process recovery when WebUI is unbound but qbittorrent.exe is still running.
+    /// </summary>
+    public QbittorrentProcessRestartSettings ProcessRestart { get; set; } = new();
+
     public string GetCategoryFor(MediaKind targetKind)
     {
         return targetKind == MediaKind.Movie

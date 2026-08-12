@@ -46,7 +46,23 @@ public static class NotificationCatalog
         new(
             NotificationKind.JellyfinRefreshWindowEnded,
             "Jellyfin: refresh window ended",
-            "When the post-notify WARP hold finishes (library task idle or hold expired).")
+            "When the post-notify WARP hold finishes (library task idle or hold expired)."),
+        new(
+            NotificationKind.AutoTrackHuntBlocked,
+            "Auto-Track: hunt blocked",
+            "When a hunt aborts early because WARP or qBittorrent WebUI is unavailable."),
+        new(
+            NotificationKind.QbittorrentRestarted,
+            "qBittorrent: restarted",
+            "When opt-in process recovery restarted qbittorrent.exe after a WebUI bind failure."),
+        new(
+            NotificationKind.QbittorrentRestartFailed,
+            "qBittorrent: restart failed",
+            "When opt-in process recovery could not bring the WebUI back up."),
+        new(
+            NotificationKind.QbittorrentPortConflict,
+            "qBittorrent: port conflict",
+            "When the WebUI port is owned by a process other than qbittorrent, so recovery did not kill anything.")
     ];
 
     public static bool IsUserToggleable(NotificationKind kind) => kind != NotificationKind.Test;

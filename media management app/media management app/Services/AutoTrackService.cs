@@ -16,6 +16,7 @@ public sealed class AutoTrackService : IAutoTrackService
     private readonly IRecipeService _recipeService;
     private readonly IWarpCliService _warpCliService;
     private readonly IQbittorrentClient _qbittorrentClient;
+    private readonly IQbittorrentProcessRestartService _qbittorrentProcessRestartService;
     private readonly ITorrentReconciliationService _torrentReconciliationService;
     private readonly IAutoTorrentLinkService _autoTorrentLinkService;
     private readonly IWindowsNotificationService _windowsNotificationService;
@@ -36,6 +37,7 @@ public sealed class AutoTrackService : IAutoTrackService
         IRecipeService recipeService,
         IWarpCliService warpCliService,
         IQbittorrentClient qbittorrentClient,
+        IQbittorrentProcessRestartService qbittorrentProcessRestartService,
         ITorrentReconciliationService torrentReconciliationService,
         IAutoTorrentLinkService autoTorrentLinkService,
         IWindowsNotificationService windowsNotificationService,
@@ -52,6 +54,7 @@ public sealed class AutoTrackService : IAutoTrackService
         _recipeService = recipeService;
         _warpCliService = warpCliService;
         _qbittorrentClient = qbittorrentClient;
+        _qbittorrentProcessRestartService = qbittorrentProcessRestartService;
         _torrentReconciliationService = torrentReconciliationService;
         _autoTorrentLinkService = autoTorrentLinkService;
         _windowsNotificationService = windowsNotificationService;
@@ -504,6 +507,17 @@ public sealed class AutoTrackService : IAutoTrackService
 
         var batchSize = Math.Clamp(settings.Search.MaxShowsPerHuntCycle, 1, 20);
         var batch = huntQueue.Take(batchSize).ToList();
+
+        var preflight = await EnsureHuntPreflightAsync(cancellationToken);
+        if (!preflight.Ok)
+        {
+            result.Succeeded = false;
+            result.Summary = preflight.AbortSummary ?? "Hunt aborted: dependency preflight failed.";
+            _logger.Warning($"Auto-track torrent hunt aborted. {result.Summary}", LogTarget.All);
+            NotifyHuntBlocked(result.Summary);
+            return result;
+        }
+
         var pendingOrdersByShow = new Dictionary<long, (TrackedShow Show, List<TorrentCartOrder> Orders)>();
 
         foreach (var (show, episodesToHunt) in batch)
@@ -585,11 +599,21 @@ public sealed class AutoTrackService : IAutoTrackService
 
         if (pendingOrdersByShow.Count == 0)
         {
+            if (preflight.WarpOwned)
+            {
+                await TryDisconnectOwnedWarpAsync();
+            }
+
             result.Summary = "No hunt orders queued.";
             return result;
         }
 
-        await RunFetchAndAddPhaseAsync(pendingOrdersByShow, settings, result, cancellationToken);
+        await RunFetchAndAddPhaseAsync(
+            pendingOrdersByShow,
+            settings,
+            result,
+            preflight.WarpOwned,
+            cancellationToken);
         result.Succeeded = result.Failed == 0;
         result.Summary =
             $"Hunt: shows={result.ShowsProcessed}, queued={result.EpisodesQueued}, candidates={result.CandidatesFound}, added={result.TorrentsAdded}, failed={result.Failed}.";
@@ -611,6 +635,15 @@ public sealed class AutoTrackService : IAutoTrackService
         var shows = _trackedShowService.GetAutoTrackedShows()
             .Where(show => pendingShowIds.Contains(show.Id))
             .ToList();
+
+        var probe = await _qbittorrentProcessRestartService.ProbeAsync(cancellationToken);
+        if (!probe.IsOk)
+        {
+            result.Succeeded = false;
+            result.Summary = $"Reconcile skipped: qBittorrent WebUI unavailable ({probe.Detail}).";
+            _logger.Warning(result.Summary, LogTarget.All);
+            return result;
+        }
 
         _progressService.Start("Reconciling…", 0);
         try
@@ -821,6 +854,7 @@ public sealed class AutoTrackService : IAutoTrackService
         Dictionary<long, (TrackedShow Show, List<TorrentCartOrder> Orders)> pendingOrdersByShow,
         AutoTrackSettings settings,
         AutoTrackRunResult result,
+        bool warpOwnedByUs,
         CancellationToken cancellationToken)
     {
         var fetchOptions = new EpisodeFetchOptions
@@ -829,30 +863,19 @@ public sealed class AutoTrackService : IAutoTrackService
             MaxParallelWorkers = settings.Search.MaxParallelWorkersPerShow
         };
 
-        var warpOwnedByUs = false;
         var warpEnabled = _settingsService.Current.Warp?.Enabled ?? true;
-        if (warpEnabled && _warpCliService.IsAvailable)
+        if (warpEnabled && warpOwnedByUs)
         {
-            var timeout = TimeSpan.FromSeconds(_settingsService.Current.Warp?.ConnectTimeoutSeconds ?? 30);
-            var attempt = await _warpCliService.ConnectOwnedAsync(timeout, cancellationToken);
-            warpOwnedByUs = attempt.Owned;
-            if (!attempt.Connected)
-            {
-                _logger.Warning("Auto-track continuing without WARP (connect failed or timed out).", LogTarget.All);
-            }
-            else if (attempt.Owned)
-            {
-                var orderCount = pendingOrdersByShow.Sum(entry => entry.Value.Orders.Count);
-                _logger.Info(
-                    $"WARP connected for hunt fetch/add ({pendingOrdersByShow.Count} show(s), {orderCount} order(s)).",
-                    LogTarget.File | LogTarget.Console);
-            }
-            else
-            {
-                _logger.Info(
-                    "WARP already connected; Auto-Track hunt will reuse the existing session (not owned).",
-                    LogTarget.File | LogTarget.Console);
-            }
+            var orderCount = pendingOrdersByShow.Sum(entry => entry.Value.Orders.Count);
+            _logger.Info(
+                $"WARP owned session active for hunt fetch/add ({pendingOrdersByShow.Count} show(s), {orderCount} order(s)).",
+                LogTarget.File | LogTarget.Console);
+        }
+        else if (warpEnabled)
+        {
+            _logger.Info(
+                "WARP already connected; Auto-Track hunt will reuse the existing session (not owned).",
+                LogTarget.File | LogTarget.Console);
         }
 
         _progressService.Start("Hunting…", 0);
@@ -1186,6 +1209,105 @@ public sealed class AutoTrackService : IAutoTrackService
         autoTrack.Search ??= new AutoTrackSearchSettings();
         autoTrack.Quality ??= new AutoTrackQualityPolicy();
         return autoTrack;
+    }
+
+    private async Task<(bool Ok, string? AbortSummary, bool WarpOwned)> EnsureHuntPreflightAsync(
+        CancellationToken cancellationToken)
+    {
+        var warpOwned = false;
+        var warpEnabled = _settingsService.Current.Warp?.Enabled ?? true;
+        if (warpEnabled)
+        {
+            if (!_warpCliService.IsAvailable)
+            {
+                return (false,
+                    $"Hunt aborted: WARP is enabled but warp-cli was not found at {_warpCliService.ResolvedExecutablePath}.",
+                    false);
+            }
+
+            var timeout = TimeSpan.FromSeconds(_settingsService.Current.Warp?.ConnectTimeoutSeconds ?? 30);
+            var attempt = await _warpCliService.ConnectOwnedAsync(timeout, cancellationToken);
+            if (!attempt.Connected)
+            {
+                return (false,
+                    $"Hunt aborted: WARP connect failed or timed out after {timeout.TotalSeconds:0}s.",
+                    false);
+            }
+
+            warpOwned = attempt.Owned;
+            if (warpOwned)
+            {
+                _logger.Info("WARP connected for hunt preflight (owned session).", LogTarget.File | LogTarget.Console);
+            }
+            else
+            {
+                _logger.Info(
+                    "WARP already connected during hunt preflight (not owned).",
+                    LogTarget.File | LogTarget.Console);
+            }
+        }
+
+        try
+        {
+            var (probe, restart) = await _qbittorrentProcessRestartService.EnsureWebUiForHuntAsync(cancellationToken);
+            if (probe.IsOk)
+            {
+                if (restart?.Kind == QbittorrentRestartOutcomeKind.Succeeded)
+                {
+                    _logger.Info(
+                        $"Hunt preflight: qBittorrent WebUI recovered via process restart. {restart.Detail}",
+                        LogTarget.All);
+                }
+
+                return (true, null, warpOwned);
+            }
+
+            var detail = probe.Detail ?? probe.Status.ToString();
+            if (restart is not null &&
+                restart.Kind is not QbittorrentRestartOutcomeKind.NotAttempted and
+                    not QbittorrentRestartOutcomeKind.Succeeded)
+            {
+                detail = $"{detail} ({restart.Kind}: {restart.Detail})";
+            }
+
+            if (warpOwned)
+            {
+                await TryDisconnectOwnedWarpAsync();
+            }
+
+            return (false, $"Hunt aborted: qBittorrent WebUI unavailable — {detail}", false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            if (warpOwned)
+            {
+                await TryDisconnectOwnedWarpAsync();
+            }
+
+            return (false, $"Hunt aborted: qBittorrent preflight failed — {ex.Message}", false);
+        }
+    }
+
+    private async Task TryDisconnectOwnedWarpAsync()
+    {
+        try
+        {
+            await _warpCliService.DisconnectAsync(CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning($"WARP disconnect after failed hunt preflight: {ex.Message}", LogTarget.All);
+        }
+    }
+
+    private void NotifyHuntBlocked(string message)
+    {
+        _windowsNotificationService.TryShow(new WindowsNotificationRequest
+        {
+            Title = "Auto-Track",
+            Message = message,
+            Kind = NotificationKind.AutoTrackHuntBlocked
+        });
     }
 
     private static AutoTrackRunResult SkippedResult(string summary)
