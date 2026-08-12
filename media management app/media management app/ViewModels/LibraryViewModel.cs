@@ -1942,6 +1942,8 @@ public sealed partial class LibraryViewModel : ViewModelBase
         if (SelectedShow is not null)
         {
             _trackedShowService.UpdateRating(SelectedShow.Id, rating, thoughtForDb);
+            SelectedMediaCard?.ApplyRating(rating);
+            SyncCardInAllMedia(SelectedMediaCard);
             StatusMessage = $"Rating/thought updated: {rating:0.0}.";
             return;
         }
@@ -1949,6 +1951,8 @@ public sealed partial class LibraryViewModel : ViewModelBase
         if (SelectedMovie is not null)
         {
             _trackedMovieService.UpdateRating(SelectedMovie.Id, rating, thoughtForDb);
+            SelectedMediaCard?.ApplyRating(rating);
+            SyncCardInAllMedia(SelectedMediaCard);
             StatusMessage = $"Rating/thought updated: {rating:0.0}.";
         }
     }
@@ -2002,6 +2006,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
 
         var catalogCard = _allMediaCards.FirstOrDefault(item => item.Id == card.Id && item.MediaKind == card.MediaKind);
         catalogCard?.ApplyWatchProgress(card.WatchStatus, card.WatchedEpisodes);
+        catalogCard?.ApplyRating(card.Rating);
 
         // Re-apply filter if the card may no longer match the watch-status filter.
         if (SelectedWatchStatusFilter?.Status is not null)

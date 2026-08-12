@@ -59,13 +59,38 @@
                                    TextTrimming="CharacterEllipsis"
                                    TextWrapping="NoWrap"
                                    Visibility="{Binding HasWatchStatusLabel, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                        <TextBlock Text="{Binding WatchedProgressLabel}"
-                                   Style="{StaticResource MutedTextStyle}"
-                                   FontSize="12"
-                                   Margin="6,0,0,0"
-                                   TextTrimming="CharacterEllipsis"
-                                   TextWrapping="NoWrap"
-                                   Visibility="{Binding HasWatchedProgressLabel, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                        <StackPanel Orientation="Horizontal"
+                                    Margin="6,0,0,0"
+                                    VerticalAlignment="Center"
+                                    Visibility="{Binding HasWatchedProgressLabel, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <iconPacks:PackIconLucide Kind="Eye"
+                                                       Width="12"
+                                                       Height="12"
+                                                       Margin="0,0,3,0"
+                                                       VerticalAlignment="Center"
+                                                       Foreground="{StaticResource AppBrushMutedText}" />
+                            <TextBlock Text="{Binding WatchedProgressLabel}"
+                                       Style="{StaticResource MutedTextStyle}"
+                                       FontSize="12"
+                                       TextTrimming="CharacterEllipsis"
+                                       TextWrapping="NoWrap" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal"
+                                    Margin="8,0,0,0"
+                                    VerticalAlignment="Center"
+                                    Visibility="{Binding HasRating, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <iconPacks:PackIconLucide Kind="Star"
+                                                       Width="12"
+                                                       Height="12"
+                                                       Margin="0,0,3,0"
+                                                       VerticalAlignment="Center"
+                                                       Foreground="{StaticResource AppBrushWarning}" />
+                            <TextBlock Text="{Binding RatingLabel}"
+                                       Style="{StaticResource MutedTextStyle}"
+                                       FontSize="12"
+                                       TextTrimming="CharacterEllipsis"
+                                       TextWrapping="NoWrap" />
+                        </StackPanel>
                     </StackPanel>
 
                     <!-- Library / series row -->

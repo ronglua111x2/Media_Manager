@@ -83,7 +83,7 @@ public partial class LibraryMediaCardViewModel : ObservableObject
 
     public string WatchedProgressLabel =>
         IsShow && (WatchStatus != UserWatchStatus.None || WatchedEpisodes > 0)
-            ? $"Watched {WatchedEpisodes}/{WatchTotalCount}"
+            ? $"{WatchedEpisodes}/{WatchTotalCount}"
             : string.Empty;
 
     public bool HasWatchedProgressLabel => !string.IsNullOrWhiteSpace(WatchedProgressLabel);
@@ -95,6 +95,17 @@ public partial class LibraryMediaCardViewModel : ObservableObject
         WatchStatus = status;
         WatchedEpisodes = watched;
     }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasRating))]
+    [NotifyPropertyChangedFor(nameof(RatingLabel))]
+    private double? rating;
+
+    public bool HasRating => Rating is > 0;
+
+    public string RatingLabel => Rating?.ToString("0.0") ?? string.Empty;
+
+    public void ApplyRating(double? rating) => Rating = rating;
 
     [ObservableProperty]
     private bool isSelected;

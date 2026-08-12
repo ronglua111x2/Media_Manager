@@ -42,7 +42,8 @@ public sealed class MediaCardCatalogService : IMediaCardCatalogService
             SeriesStatusLabel = show.SeriesStatusLabel,
             OrderCount = _torrentCartService.GetOrderCount(MediaKind.TvEpisode, show.Id),
             WatchStatus = show.WatchStatus,
-            WatchedEpisodes = show.WatchedEpisodes
+            WatchedEpisodes = show.WatchedEpisodes,
+            Rating = show.Rating
         });
         var movies = _trackedMovieService.GetMovies().Select(movie => new LibraryMediaCardViewModel
         {
@@ -58,7 +59,8 @@ public sealed class MediaCardCatalogService : IMediaCardCatalogService
             Overview = movie.Overview,
             PosterPath = movie.PosterPath,
             OrderCount = _torrentCartService.GetOrderCount(MediaKind.Movie, movie.Id),
-            WatchStatus = movie.WatchStatus
+            WatchStatus = movie.WatchStatus,
+            Rating = movie.Rating
         });
 
         return shows.Concat(movies).ToList();
