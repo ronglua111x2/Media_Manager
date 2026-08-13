@@ -1119,7 +1119,8 @@
                                     <StackPanel Orientation="Horizontal"
                                                 Margin="0,8,0,0"
                                                 Visibility="{Binding HasSelectedMedia, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                        <ComboBox Width="150"
+                                        <ComboBox x:Name="WatchStatusComboBox"
+                                                  Width="150"
                                                   MinHeight="32"
                                                   Padding="8,4"
                                                   VerticalAlignment="Center"
@@ -1127,6 +1128,7 @@
                                                   SelectedValue="{Binding SelectedWatchStatus}"
                                                   SelectedValuePath="Status"
                                                   Foreground="{Binding SelectedWatchStatus, Converter={StaticResource UserWatchStatusToBrushConverter}}"
+                                                  IsVisibleChanged="WatchStatusComboBox_OnIsVisibleChanged"
                                                   ToolTip="Personal watch status">
                                             <ComboBox.ItemTemplate>
                                                 <DataTemplate>

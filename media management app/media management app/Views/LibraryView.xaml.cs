@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Threading;
 using media_management_app.ViewModels;
 
 namespace media_management_app.Views;
@@ -47,5 +48,41 @@ public partial class LibraryView : System.Windows.Controls.UserControl
 
         viewModel.CommitThoughtCommand.Execute(null);
         e.Handled = true;
+    }
+
+    private void WatchStatusComboBox_OnIsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        if (!WatchStatusComboBox.IsVisible)
+        {
+            return;
+        }
+
+        SyncWatchStatusComboBoxToViewModel();
+        Dispatcher.BeginInvoke(
+            () => SyncWatchStatusComboBoxToViewModel(),
+            DispatcherPriority.Loaded);
+    }
+
+    private void SyncWatchStatusComboBoxToViewModel()
+    {
+        if (DataContext is not LibraryViewModel vm)
+        {
+            return;
+        }
+
+        var targetIndex = -1;
+        for (var i = 0; i < vm.WatchStatusOptions.Count; i++)
+        {
+            if (vm.WatchStatusOptions[i].Status == vm.SelectedWatchStatus)
+            {
+                targetIndex = i;
+                break;
+            }
+        }
+
+        if (targetIndex >= 0 && WatchStatusComboBox.SelectedIndex != targetIndex)
+        {
+            WatchStatusComboBox.SelectedIndex = targetIndex;
+        }
     }
 }
