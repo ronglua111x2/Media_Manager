@@ -12,7 +12,8 @@ public static class PackTorrentInventoryAnalyzer
         IReadOnlySet<int>? coveredSeasons = null,
         PackAnalyzeMode mode = PackAnalyzeMode.Inspect,
         SpecialMappingResult? resolvedSpecialMappings = null,
-        IAppLogger? logger = null)
+        IAppLogger? logger = null,
+        int? ownerSeasonNumber = null)
     {
         var inventory = new PackTorrentInventory();
         var episodesByKey = episodes.ToDictionary(episode => (episode.SeasonNumber, episode.EpisodeNumber));
@@ -35,7 +36,10 @@ public static class PackTorrentInventoryAnalyzer
             .ToList();
 
         var tree = PackFolderTreeAnalyzer.Analyze(files.Select(file => file.RelativePath).ToList());
-        var seasonGroups = PackSeasonFileGrouper.Group(files, tree);
+        var seasonGroups = PromoteFlatSeasonGroups(
+            PackSeasonFileGrouper.Group(files, tree),
+            ownerSeasonNumber,
+            out var flatPromotion);
         var validEpisodesBySeason = episodes
             .Where(episode => episode.SeasonNumber > 0)
             .GroupBy(episode => episode.SeasonNumber)
@@ -93,7 +97,7 @@ public static class PackTorrentInventoryAnalyzer
 
         if (logger is not null)
         {
-            LogInspectDiagnostics(logger, files, tree, seasonGroups, inventory, mode);
+            LogInspectDiagnostics(logger, files, tree, seasonGroups, inventory, mode, flatPromotion);
         }
 
         return inventory;
@@ -105,7 +109,8 @@ public static class PackTorrentInventoryAnalyzer
         PackFolderTreeAnalysis tree,
         IReadOnlyList<PackSeasonFileGrouper.SeasonFileGroup> seasonGroups,
         PackTorrentInventory inventory,
-        PackAnalyzeMode mode)
+        PackAnalyzeMode mode,
+        FlatPromotionDiagnostics flatPromotion)
     {
         var folderSeasons = tree.FolderCoveredSeasons.Count == 0
             ? "-"
@@ -113,6 +118,13 @@ public static class PackTorrentInventoryAnalyzer
         logger.Info(
             $"Pack inspect tree: folderSeasons=[{folderSeasons}] extrasFolder={tree.HasExtrasFolder} specialsFolder={tree.HasSpecialsFolder} moviesFolder={tree.HasMoviesFolder} mode={mode}",
             LogTarget.File);
+
+        if (flatPromotion.HadFlatGroup)
+        {
+            logger.Info(
+                $"Pack inspect flat promotion: patternValid={flatPromotion.PatternValid} prefixLen={flatPromotion.PrefixLength} suffixLen={flatPromotion.SuffixLength} prefix='{flatPromotion.PrefixSample}' assignment={flatPromotion.Assignment} assignedSeasons=[{flatPromotion.AssignedSeasonsDisplay}]",
+                LogTarget.File);
+        }
 
         foreach (var group in seasonGroups)
         {
@@ -158,6 +170,132 @@ public static class PackTorrentInventoryAnalyzer
 
     private static string FormatEpisode(int? episode) =>
         episode is null ? "-" : episode.Value.ToString("00");
+
+    private sealed class FlatPromotionDiagnostics
+    {
+        public bool HadFlatGroup { get; init; }
+
+        public bool PatternValid { get; init; }
+
+        public int PrefixLength { get; init; }
+
+        public int SuffixLength { get; init; }
+
+        public string PrefixSample { get; init; } = string.Empty;
+
+        public string Assignment { get; init; } = "-";
+
+        public IReadOnlyList<int> AssignedSeasons { get; init; } = [];
+
+        public string AssignedSeasonsDisplay => AssignedSeasons.Count == 0
+            ? "-"
+            : string.Join(",", AssignedSeasons.Select(season => $"S{season:00}"));
+    }
+
+    private static IReadOnlyList<PackSeasonFileGrouper.SeasonFileGroup> PromoteFlatSeasonGroups(
+        IReadOnlyList<PackSeasonFileGrouper.SeasonFileGroup> seasonGroups,
+        int? ownerSeasonNumber,
+        out FlatPromotionDiagnostics diagnostics)
+    {
+        var flat = seasonGroups.FirstOrDefault(group => group.SeasonNumber == PackSeasonFileGrouper.FlatSeasonKey);
+        if (flat is null || flat.Files.Count == 0)
+        {
+            diagnostics = new FlatPromotionDiagnostics();
+            return seasonGroups;
+        }
+
+        var promoted = new Dictionary<int, PackSeasonFileGrouper.SeasonFileGroup>();
+        foreach (var group in seasonGroups.Where(item => item.SeasonNumber != PackSeasonFileGrouper.FlatSeasonKey))
+        {
+            promoted[group.SeasonNumber] = new PackSeasonFileGrouper.SeasonFileGroup
+            {
+                SeasonNumber = group.SeasonNumber,
+                Files = [.. group.Files]
+            };
+        }
+
+        var stems = flat.Files
+            .Select(file => PackEpisodePatternInferrer.NormalizeStem(Path.GetFileNameWithoutExtension(file.FileName)))
+            .Where(stem => !string.IsNullOrWhiteSpace(stem))
+            .ToList();
+        var pattern = PackEpisodePatternInferrer.Infer(stems);
+        var assignedSeasons = new SortedSet<int>();
+        var assignmentKinds = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        if (pattern.IsValid)
+        {
+            foreach (var file in flat.Files)
+            {
+                var stem = PackEpisodePatternInferrer.NormalizeStem(Path.GetFileNameWithoutExtension(file.FileName));
+                var prefixSeason = PackEpisodePatternInferrer.TryExtractSeasonFromPrefix(stem, pattern);
+                var season = prefixSeason is > 0 ? prefixSeason : ownerSeasonNumber;
+                if (season is not > 0)
+                {
+                    AddToGroup(promoted, PackSeasonFileGrouper.FlatSeasonKey, file);
+                    continue;
+                }
+
+                AddToGroup(promoted, season.Value, file);
+                assignedSeasons.Add(season.Value);
+                assignmentKinds.Add(prefixSeason is > 0 ? "prefix-Sxx" : "owner-fallback");
+            }
+        }
+        else if (ownerSeasonNumber is > 0)
+        {
+            foreach (var file in flat.Files)
+            {
+                AddToGroup(promoted, ownerSeasonNumber.Value, file);
+            }
+
+            assignedSeasons.Add(ownerSeasonNumber.Value);
+            assignmentKinds.Add("infer-failed-owner");
+        }
+        else
+        {
+            foreach (var file in flat.Files)
+            {
+                AddToGroup(promoted, PackSeasonFileGrouper.FlatSeasonKey, file);
+            }
+
+            assignmentKinds.Add("infer-failed");
+        }
+
+        var prefixSample = string.Empty;
+        if (pattern.IsValid && pattern.PrefixLength > 0 && stems.Count > 0)
+        {
+            var sample = stems[0];
+            prefixSample = pattern.PrefixLength <= sample.Length
+                ? sample[..pattern.PrefixLength]
+                : sample;
+        }
+
+        diagnostics = new FlatPromotionDiagnostics
+        {
+            HadFlatGroup = true,
+            PatternValid = pattern.IsValid,
+            PrefixLength = pattern.PrefixLength,
+            SuffixLength = pattern.SuffixLength,
+            PrefixSample = prefixSample,
+            Assignment = assignmentKinds.Count == 0 ? "-" : string.Join("+", assignmentKinds),
+            AssignedSeasons = assignedSeasons.ToList()
+        };
+
+        return promoted.Values.OrderBy(group => group.SeasonNumber).ToList();
+    }
+
+    private static void AddToGroup(
+        Dictionary<int, PackSeasonFileGrouper.SeasonFileGroup> groups,
+        int seasonNumber,
+        (string RelativePath, string FileName) file)
+    {
+        if (!groups.TryGetValue(seasonNumber, out var group))
+        {
+            group = new PackSeasonFileGrouper.SeasonFileGroup { SeasonNumber = seasonNumber };
+            groups[seasonNumber] = group;
+        }
+
+        group.Files.Add(file);
+    }
 
     private static HashSet<int> BuildCoveredSeasonSet(
         PackAnalyzeMode mode,

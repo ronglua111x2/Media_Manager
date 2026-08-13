@@ -535,7 +535,8 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
                 seasons,
                 coveredSeasons,
                 PackAnalyzeMode.Link,
-                regularOnlyMappings);
+                regularOnlyMappings,
+                ownerSeasonNumber: ownerSeason.SeasonNumber);
 
             regularEpisodesBySeason = PackLinkRegularEpisodeSummary.Build(
                 regularInventory,
@@ -567,7 +568,8 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             seasons,
             coveredSeasons,
             PackAnalyzeMode.Link,
-            resolvedSpecialMappings);
+            resolvedSpecialMappings,
+            ownerSeasonNumber: ownerSeason.SeasonNumber);
 
         return new SeasonPackLinkPreview
         {

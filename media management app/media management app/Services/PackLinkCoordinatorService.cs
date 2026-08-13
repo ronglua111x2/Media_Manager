@@ -124,7 +124,8 @@ public sealed class PackLinkCoordinatorService : IPackLinkCoordinatorService
                 episodes,
                 seasons,
                 mode: PackAnalyzeMode.Inspect,
-                logger: _logger);
+                logger: _logger,
+                ownerSeasonNumber: season.SeasonNumber);
 
             _databaseService.UpdateTrackedSeasonPackInspection(show.Id, season.SeasonNumber, inventory);
             _databaseService.UpdateTrackedSeasonLastPackLink(show.Id, season.SeasonNumber, torrent.Hash, DateTime.UtcNow);

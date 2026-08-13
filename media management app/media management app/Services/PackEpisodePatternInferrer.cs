@@ -9,6 +9,14 @@ public static class PackEpisodePatternInferrer
         @"(?:\s*(?:v\d+|proper|repack))(?=\s|$|\.|\[)",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    private static readonly Regex CrcHashStripRegex = new(
+        @"\s*[\[\(][0-9A-Fa-f]{8}[\]\)]",
+        RegexOptions.Compiled);
+
+    private static readonly Regex PrefixSeasonRegex = new(
+        @"\bS(?<season>\d{1,2})(?=E|\b|$)",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     private static readonly Regex StandardEpisodeRegex = new(
         @"\bS(?<season>\d{1,3})E(?<episode>\d{1,4})\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -24,7 +32,35 @@ public static class PackEpisodePatternInferrer
             return string.Empty;
         }
 
-        return ReleaseRevisionStripRegex.Replace(stem, string.Empty).Trim();
+        var normalized = ReleaseRevisionStripRegex.Replace(stem, string.Empty);
+        normalized = CrcHashStripRegex.Replace(normalized, string.Empty);
+        return Regex.Replace(normalized, @"\s{2,}", " ").Trim();
+    }
+
+    public static int? TryExtractSeasonFromPrefix(string stem, InferredEpisodePattern pattern)
+    {
+        if (!pattern.IsValid || pattern.PrefixLength <= 0 || string.IsNullOrWhiteSpace(stem))
+        {
+            return null;
+        }
+
+        if (pattern.PrefixLength > stem.Length)
+        {
+            return null;
+        }
+
+        var prefix = stem[..pattern.PrefixLength];
+        Match? lastMatch = null;
+        foreach (Match match in PrefixSeasonRegex.Matches(prefix))
+        {
+            lastMatch = match;
+        }
+
+        return lastMatch is { Success: true } &&
+               int.TryParse(lastMatch.Groups["season"].Value, out var season) &&
+               season > 0
+            ? season
+            : null;
     }
 
     public static int? TryInferEpisode(
