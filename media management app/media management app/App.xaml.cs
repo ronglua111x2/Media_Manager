@@ -163,6 +163,7 @@ public partial class App : System.Windows.Application
         services.AddSingleton<ITorrentAddDiskAssignmentService, TorrentAddDiskAssignmentService>();
         services.AddSingleton<IConsoleWindowService, ConsoleWindowService>();
         services.AddSingleton<IQbittorrentWebViewHostService, QbittorrentWebViewHostService>();
+        services.AddSingleton<IJellyfinViewerService, JellyfinViewerService>();
         services.AddSingleton<ShowSearchSnapshotService>();
         services.AddSingleton<TmdbMetadataProvider>();
         services.AddSingleton<IMetadataProvider>(provider => provider.GetRequiredService<TmdbMetadataProvider>());

@@ -163,17 +163,27 @@
                             </StackPanel>
                         </Border>
                         <Button Grid.Column="3"
-                                Style="{StaticResource AppOutlinedButtonStyle}"
                                 Command="{Binding OpenJellyfinCommand}"
                                 Padding="10,6"
-                                ToolTip="Open Jellyfin in browser">
+                                ToolTip="{Binding JellyfinButtonToolTip}">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource AppOutlinedButtonStyle}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsJellyfinViewerOpen}" Value="True">
+                                            <Setter Property="Background" Value="{StaticResource AppBrushAccent}" />
+                                            <Setter Property="BorderBrush" Value="{StaticResource AppBrushAccent}" />
+                                            <Setter Property="Foreground" Value="{StaticResource AppBrushOnAccent}" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
                             <StackPanel Orientation="Horizontal">
                                 <iconPacks:PackIconLucide Kind="Tv"
                                                            Width="14"
                                                            Height="14"
                                                            Margin="0,0,6,0"
                                                            VerticalAlignment="Center" />
-                                <TextBlock Text="Jellyfin" VerticalAlignment="Center" />
+                                <TextBlock Text="{Binding JellyfinButtonText}" VerticalAlignment="Center" />
                             </StackPanel>
                         </Button>
                     </Grid>

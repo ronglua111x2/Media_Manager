@@ -410,6 +410,9 @@
                                                                       Minimum="1"
                                                                       Maximum="3650" />
                                     </Border>
+                                    <CheckBox IsChecked="{Binding LogAutoCloseConsoleOnBackground, Mode=TwoWay}"
+                                              Margin="0,8,0,0"
+                                              Content="Auto-close console log window when the app enters background mode" />
                                 </StackPanel>
                             </materialDesign:Card>
 
@@ -478,6 +481,13 @@
                                     <StackPanel>
                                         <TextBlock Text="Log cleanup" Style="{StaticResource SettingsLabelStyle}" />
                                         <TextBlock Text="After Save, cleanup uses the retention value on the next background wakeup and deletes only old managed log files."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Console window" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="When enabled, the console log window is closed (not only hidden) after the app enters background mode — the same debounce as qBittorrent WebView release when minimized or hidden to tray."
                                                    Style="{StaticResource SettingsHintStyle}" />
                                     </StackPanel>
                                 </Border>
@@ -1401,6 +1411,12 @@
                                             <TextBlock Text="Test Jellyfin" />
                                         </StackPanel>
                                     </Button>
+                                    <CheckBox IsChecked="{Binding AutoTrackJellyfinConfirmCloseViewer, Mode=TwoWay}"
+                                              Margin="0,0,0,8"
+                                              Content="Ask before closing the Jellyfin window" />
+                                    <CheckBox IsChecked="{Binding AutoTrackJellyfinAutoCloseViewerOnBackground, Mode=TwoWay}"
+                                              Margin="0,0,0,8"
+                                              Content="Auto-close Jellyfin window when the app enters background mode" />
                                     <TextBlock Style="{StaticResource SettingsHintStyle}"
                                                Text="Path-refresh and WARP-hold settings live under Auto-Track." />
                                 </StackPanel>
@@ -1520,6 +1536,13 @@
                                     <StackPanel>
                                         <TextBlock Text="Jellyfin connection" Style="{StaticResource SettingsLabelStyle}" />
                                         <TextBlock Text="Base URL and API key used for path refresh and Test Jellyfin. Path-refresh behavior and WARP-hold options are configured under Auto-Track."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Jellyfin window" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="News Open/Show launches a standalone Jellyfin window. Ask before closing shows a Yes/No prompt on the window close button. Auto-close runs when the app enters background mode (after the existing debounce when minimized or hidden to tray) and skips that prompt."
                                                    Style="{StaticResource SettingsHintStyle}" />
                                     </StackPanel>
                                 </Border>

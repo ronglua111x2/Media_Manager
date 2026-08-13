@@ -1,5 +1,4 @@
 using System.Collections.ObjectModel;
-using System.Diagnostics;
 using System.Windows;
 using System.Windows.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -16,6 +15,7 @@ public sealed partial class NewsViewModel : ViewModelBase
     private readonly ITrackedShowService _trackedShowService;
     private readonly ITorrentCartService _torrentCartService;
     private readonly IPosterImageService _posterImageService;
+    private readonly IJellyfinViewerService _jellyfinViewerService;
     private readonly List<NewsEpisodeCardViewModel> _weekEpisodeSource = [];
     private bool _isRestoringUiState;
 
@@ -24,12 +24,21 @@ public sealed partial class NewsViewModel : ViewModelBase
         ITrackedShowService trackedShowService,
         ITorrentCartService torrentCartService,
         IAutoTrackSchedulerService autoTrackSchedulerService,
-        IPosterImageService posterImageService)
+        IPosterImageService posterImageService,
+        IJellyfinViewerService jellyfinViewerService)
     {
         _settingsService = settingsService;
         _trackedShowService = trackedShowService;
         _torrentCartService = torrentCartService;
         _posterImageService = posterImageService;
+        _jellyfinViewerService = jellyfinViewerService;
+        _jellyfinViewerService.IsOpenChanged += (_, _) =>
+        {
+            System.Windows.Application.Current.Dispatcher.Invoke(() =>
+            {
+                IsJellyfinViewerOpen = _jellyfinViewerService.IsOpen;
+            });
+        };
 
         autoTrackSchedulerService.RunCompleted += (_, _) =>
         {
@@ -150,19 +159,21 @@ public sealed partial class NewsViewModel : ViewModelBase
         PersistTrackedShowViewMode(value);
     }
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(JellyfinButtonText))]
+    [NotifyPropertyChangedFor(nameof(JellyfinButtonToolTip))]
+    private bool isJellyfinViewerOpen;
+
+    public string JellyfinButtonText => IsJellyfinViewerOpen ? "Show" : "Open";
+
+    public string JellyfinButtonToolTip => IsJellyfinViewerOpen
+        ? "Show Jellyfin window"
+        : "Open Jellyfin window";
+
     [RelayCommand(CanExecute = nameof(CanOpenJellyfin))]
     private void OpenJellyfin()
     {
-        var baseUrl = GetJellyfinBaseUrl();
-        if (string.IsNullOrWhiteSpace(baseUrl))
-        {
-            return;
-        }
-
-        Process.Start(new ProcessStartInfo(baseUrl)
-        {
-            UseShellExecute = true
-        });
+        _jellyfinViewerService.ShowOrActivate();
     }
 
     private bool CanOpenJellyfin() => !string.IsNullOrWhiteSpace(GetJellyfinBaseUrl());

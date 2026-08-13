@@ -62,26 +62,29 @@ public static class PackSeasonFileGrouper
         return groups.Values.OrderBy(group => group.SeasonNumber).ToList();
     }
 
-    public static bool IsExcludedFromEpisodeGroup(string relativePath, string fileName)
+    public static bool IsExcludedFromEpisodeGroup(string relativePath, string fileName) =>
+        GetEpisodeGroupExcludeReason(relativePath, fileName) is not null;
+
+    public static string? GetEpisodeGroupExcludeReason(string relativePath, string fileName)
     {
         if (IsUnderMoviesFolder(relativePath) ||
             fileName.Contains("movie", StringComparison.OrdinalIgnoreCase))
         {
-            return true;
+            return "movie";
         }
 
         if (IsUnderExtrasFolder(relativePath))
         {
-            return true;
+            return "extras-folder";
         }
 
         if (PackSpecialBucketDetector.IsSpecialBucketCandidate(relativePath, fileName))
         {
-            return true;
+            return "special-bucket";
         }
 
         var parsed = TorrentCandidateParser.Parse(fileName, relativePath);
-        return parsed.IsExtraContent;
+        return parsed.IsExtraContent ? "extra-content" : null;
     }
 
     private static bool IsUnderMoviesFolder(string relativePath) =>

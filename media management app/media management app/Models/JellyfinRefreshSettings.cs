@@ -41,4 +41,16 @@ public sealed class JellyfinRefreshSettings
     /// Quiet window after the last matching Jellyfin log line before early WARP disconnect.
     /// </summary>
     public int LogQuietSecondsAfterRefresh { get; set; } = DefaultLogQuietSecondsAfterRefresh;
+
+    /// <summary>
+    /// When true, closing the standalone Jellyfin viewer asks for confirmation.
+    /// Skipped for background auto-close and app shutdown.
+    /// </summary>
+    public bool ConfirmCloseViewer { get; set; } = true;
+
+    /// <summary>
+    /// When true, the standalone Jellyfin viewer closes (no confirm) when the app
+    /// enters background mode.
+    /// </summary>
+    public bool AutoCloseViewerOnBackground { get; set; } = true;
 }

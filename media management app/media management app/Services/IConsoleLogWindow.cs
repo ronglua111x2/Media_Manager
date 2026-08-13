@@ -13,4 +13,6 @@ public interface IConsoleLogWindow
     void Show();
 
     bool Activate();
+
+    void CloseForShutdown();
 }

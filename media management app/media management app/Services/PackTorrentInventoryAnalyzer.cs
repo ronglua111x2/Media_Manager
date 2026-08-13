@@ -11,7 +11,8 @@ public static class PackTorrentInventoryAnalyzer
         IReadOnlyList<TrackedSeason>? seasons = null,
         IReadOnlySet<int>? coveredSeasons = null,
         PackAnalyzeMode mode = PackAnalyzeMode.Inspect,
-        SpecialMappingResult? resolvedSpecialMappings = null)
+        SpecialMappingResult? resolvedSpecialMappings = null,
+        IAppLogger? logger = null)
     {
         var inventory = new PackTorrentInventory();
         var episodesByKey = episodes.ToDictionary(episode => (episode.SeasonNumber, episode.EpisodeNumber));
@@ -90,8 +91,73 @@ public static class PackTorrentInventoryAnalyzer
             inventory.Warnings.Add("Movies detected — add separately in Movies library.");
         }
 
+        if (logger is not null)
+        {
+            LogInspectDiagnostics(logger, files, tree, seasonGroups, inventory, mode);
+        }
+
         return inventory;
     }
+
+    private static void LogInspectDiagnostics(
+        IAppLogger logger,
+        IReadOnlyList<(string RelativePath, string FileName)> files,
+        PackFolderTreeAnalysis tree,
+        IReadOnlyList<PackSeasonFileGrouper.SeasonFileGroup> seasonGroups,
+        PackTorrentInventory inventory,
+        PackAnalyzeMode mode)
+    {
+        var folderSeasons = tree.FolderCoveredSeasons.Count == 0
+            ? "-"
+            : string.Join(",", tree.FolderCoveredSeasons.Select(season => $"S{season:00}"));
+        logger.Info(
+            $"Pack inspect tree: folderSeasons=[{folderSeasons}] extrasFolder={tree.HasExtrasFolder} specialsFolder={tree.HasSpecialsFolder} moviesFolder={tree.HasMoviesFolder} mode={mode}",
+            LogTarget.File);
+
+        foreach (var group in seasonGroups)
+        {
+            var label = group.SeasonNumber > 0 ? $"S{group.SeasonNumber:00}" : "flat/0";
+            logger.Info(
+                $"Pack inspect group {label}: {group.Files.Count} file(s)",
+                LogTarget.File);
+        }
+
+        foreach (var (relativePath, fileName) in files)
+        {
+            var parsed = TorrentCandidateParser.Parse(fileName, relativePath);
+            var pathSeasonHint = tree.PathSeasonHints.TryGetValue(relativePath, out var hint)
+                ? hint
+                : TorrentCandidateParser.TryGetSeasonHintFromPath(relativePath);
+            var owningGroup = seasonGroups.FirstOrDefault(group =>
+                group.Files.Any(file => string.Equals(file.RelativePath, relativePath, StringComparison.OrdinalIgnoreCase)));
+            var groupLabel = owningGroup is null
+                ? "ungrouped"
+                : owningGroup.SeasonNumber > 0 ? $"S{owningGroup.SeasonNumber:00}" : "flat/0";
+            var entry = inventory.Files.FirstOrDefault(file =>
+                string.Equals(file.RelativePath, relativePath, StringComparison.OrdinalIgnoreCase));
+            var excludeReason = PackSeasonFileGrouper.GetEpisodeGroupExcludeReason(relativePath, fileName) ?? "-";
+            var coveredFromName = parsed.CoveredSeasons.Count == 0
+                ? "-"
+                : string.Join(",", parsed.CoveredSeasons.Select(season => $"S{season:00}"));
+
+            logger.Info(
+                $"Pack inspect file '{fileName}' path='{relativePath}' parsedSeason={FormatSeason(parsed.SeasonNumber)} parsedEpisode={FormatEpisode(parsed.EpisodeNumber)} coveredFromName=[{coveredFromName}] pathHint={FormatSeason(pathSeasonHint)} extra={parsed.IsExtraContent} special={parsed.IsSpecialContent} exclude={excludeReason} group={groupLabel} class={entry?.Classification.ToString() ?? "-"} matched={FormatSeason(entry?.MatchedSeasonNumber)}E{FormatEpisode(entry?.MatchedEpisodeNumber)} reason='{entry?.MatchReason}'",
+                LogTarget.File);
+        }
+
+        var covered = inventory.CoveredSeasons.Count == 0
+            ? "-"
+            : string.Join(",", inventory.CoveredSeasons.Select(season => $"S{season:00}"));
+        logger.Info(
+            $"Pack inspect result: coveredSeasons=[{covered}] regular={inventory.RegularEpisodeCount} specials={inventory.MatchedSpecialCount} extras={inventory.UnmatchedExtraCount} skipped={inventory.SkippedCount} movies={inventory.MovieCount}",
+            LogTarget.File);
+    }
+
+    private static string FormatSeason(int? season) =>
+        season is null ? "-" : $"S{season.Value:00}";
+
+    private static string FormatEpisode(int? episode) =>
+        episode is null ? "-" : episode.Value.ToString("00");
 
     private static HashSet<int> BuildCoveredSeasonSet(
         PackAnalyzeMode mode,

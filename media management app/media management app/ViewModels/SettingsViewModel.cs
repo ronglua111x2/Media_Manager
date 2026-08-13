@@ -165,6 +165,9 @@ public partial class SettingsViewModel : ViewModelBase
     private int logCleanupRetentionDays = AppConstants.DefaultLogCleanupRetentionDays;
 
     [ObservableProperty]
+    private bool logAutoCloseConsoleOnBackground = true;
+
+    [ObservableProperty]
     private bool runAtStartup;
 
     [ObservableProperty]
@@ -262,6 +265,12 @@ public partial class SettingsViewModel : ViewModelBase
 
     [ObservableProperty]
     private string autoTrackJellyfinLogPathTestStatus = string.Empty;
+
+    [ObservableProperty]
+    private bool autoTrackJellyfinConfirmCloseViewer = true;
+
+    [ObservableProperty]
+    private bool autoTrackJellyfinAutoCloseViewerOnBackground = true;
 
     [ObservableProperty]
     private bool warpEnabled = true;
@@ -1205,6 +1214,7 @@ public partial class SettingsViewModel : ViewModelBase
             AutoLinkCompletedDownloads = _settingsService.Current.AutoTorrent.AutoLinkCompletedDownloads;
             LogMaxLinesPerFile = _settingsService.Current.Logs.MaxLinesPerFile;
             LogCleanupRetentionDays = _settingsService.Current.Logs.CleanupRetentionDays;
+            LogAutoCloseConsoleOnBackground = _settingsService.Current.Logs.AutoCloseConsoleOnBackground;
             RunAtStartup = _settingsService.Current.Startup.RunAtStartup;
             StartMinimized = _settingsService.Current.Startup.StartMinimized;
             CloseToTray = _settingsService.Current.Startup.CloseToTray;
@@ -1243,6 +1253,8 @@ public partial class SettingsViewModel : ViewModelBase
             AutoTrackJellyfinLogQuietSeconds = jellyfin.LogQuietSecondsAfterRefresh <= 0
                 ? JellyfinRefreshSettings.DefaultLogQuietSecondsAfterRefresh
                 : jellyfin.LogQuietSecondsAfterRefresh;
+            AutoTrackJellyfinConfirmCloseViewer = jellyfin.ConfirmCloseViewer;
+            AutoTrackJellyfinAutoCloseViewerOnBackground = jellyfin.AutoCloseViewerOnBackground;
             AutoTrackJellyfinLogPathTestStatus = string.Empty;
             WarpEnabled = _settingsService.Current.Warp.Enabled;
             WarpAutoRecoverOnSsl = _settingsService.Current.Warp.AutoRecoverOnSsl;
@@ -1678,6 +1690,7 @@ public partial class SettingsViewModel : ViewModelBase
 
         LogMaxLinesPerFile = _settingsService.Current.Logs.MaxLinesPerFile;
         LogCleanupRetentionDays = _settingsService.Current.Logs.CleanupRetentionDays;
+        _settingsService.Current.Logs.AutoCloseConsoleOnBackground = LogAutoCloseConsoleOnBackground;
     }
 
     private void ApplyStartupSettings()
@@ -1776,6 +1789,8 @@ public partial class SettingsViewModel : ViewModelBase
             AutoTrackJellyfinLogQuietSeconds,
             JellyfinRefreshSettings.MinLogQuietSecondsAfterRefresh,
             JellyfinRefreshSettings.MaxLogQuietSecondsAfterRefresh);
+        autoTrack.Jellyfin.ConfirmCloseViewer = AutoTrackJellyfinConfirmCloseViewer;
+        autoTrack.Jellyfin.AutoCloseViewerOnBackground = AutoTrackJellyfinAutoCloseViewerOnBackground;
         AutoTrackJellyfinBaseUrl = autoTrack.Jellyfin.BaseUrl;
         AutoTrackJellyfinWarpHoldSeconds = autoTrack.Jellyfin.WarpHoldSecondsAfterNotify;
         AutoTrackJellyfinLogPath = autoTrack.Jellyfin.LogPath;
