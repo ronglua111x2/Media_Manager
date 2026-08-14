@@ -122,6 +122,12 @@ public partial class SettingsViewModel : ViewModelBase
     private string? qbittorrentPassword;
 
     [ObservableProperty]
+    private bool qbittorrentConfirmCloseViewer = true;
+
+    [ObservableProperty]
+    private bool qbittorrentAutoCloseViewerOnBackground = true;
+
+    [ObservableProperty]
     private bool qbittorrentProcessRestartEnabled;
 
     [ObservableProperty]
@@ -1198,6 +1204,8 @@ public partial class SettingsViewModel : ViewModelBase
             QbittorrentWebUiUrl = _settingsService.Current.AutoTorrent.QbittorrentWebUiUrl;
             QbittorrentUsername = _settingsService.Current.AutoTorrent.Username;
             QbittorrentPassword = _settingsService.Current.AutoTorrent.Password;
+            QbittorrentConfirmCloseViewer = _settingsService.Current.AutoTorrent.ConfirmCloseViewer;
+            QbittorrentAutoCloseViewerOnBackground = _settingsService.Current.AutoTorrent.AutoCloseViewerOnBackground;
             var processRestart = _settingsService.Current.AutoTorrent.ProcessRestart
                                  ?? new QbittorrentProcessRestartSettings();
             QbittorrentProcessRestartEnabled = processRestart.Enabled;
@@ -1627,6 +1635,8 @@ public partial class SettingsViewModel : ViewModelBase
             : QbittorrentWebUiUrl.Trim();
         _settingsService.Current.AutoTorrent.Username = string.IsNullOrWhiteSpace(QbittorrentUsername) ? null : QbittorrentUsername.Trim();
         _settingsService.Current.AutoTorrent.Password = string.IsNullOrWhiteSpace(QbittorrentPassword) ? null : QbittorrentPassword;
+        _settingsService.Current.AutoTorrent.ConfirmCloseViewer = QbittorrentConfirmCloseViewer;
+        _settingsService.Current.AutoTorrent.AutoCloseViewerOnBackground = QbittorrentAutoCloseViewerOnBackground;
         _settingsService.Current.AutoTorrent.DownloadFolder = string.IsNullOrWhiteSpace(AutoTorrentDownloadFolder)
             ? null
             : AutoTorrentDownloadFolder.Trim();

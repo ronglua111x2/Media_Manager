@@ -162,8 +162,8 @@ public partial class App : System.Windows.Application
         services.AddSingleton<IDownloadFolderCatalogService, DownloadFolderCatalogService>();
         services.AddSingleton<ITorrentAddDiskAssignmentService, TorrentAddDiskAssignmentService>();
         services.AddSingleton<IConsoleWindowService, ConsoleWindowService>();
-        services.AddSingleton<IQbittorrentWebViewHostService, QbittorrentWebViewHostService>();
         services.AddSingleton<IJellyfinViewerService, JellyfinViewerService>();
+        services.AddSingleton<IQbittorrentViewerService, QbittorrentViewerService>();
         services.AddSingleton<ShowSearchSnapshotService>();
         services.AddSingleton<TmdbMetadataProvider>();
         services.AddSingleton<IMetadataProvider>(provider => provider.GetRequiredService<TmdbMetadataProvider>());
@@ -200,7 +200,6 @@ public partial class App : System.Windows.Application
         services.AddSingleton<FindAddViewModel>();
         services.AddSingleton<LibraryViewModel>();
         services.AddSingleton<TorrentWorkspaceViewModel>();
-        services.AddSingleton<QbittorrentWorkspaceViewModel>();
         services.AddSingleton<RecipeWorkspaceViewModel>();
         services.AddSingleton<SystemSettingsViewModel>();
         services.AddSingleton<MainViewModel>();

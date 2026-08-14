@@ -15,7 +15,7 @@ using WpfWindowState = System.Windows.WindowState;
 
 namespace media_management_app.Services;
 
-public sealed class JellyfinViewerService : IJellyfinViewerService
+public sealed class QbittorrentViewerService : IQbittorrentViewerService
 {
     private readonly ISettingsService _settingsService;
     private readonly IAppLogger _logger;
@@ -25,7 +25,7 @@ public sealed class JellyfinViewerService : IJellyfinViewerService
     private WebView2? _webView;
     private bool _forceClose;
 
-    public JellyfinViewerService(
+    public QbittorrentViewerService(
         ISettingsService settingsService,
         IAppLogger logger,
         IAppLifecycleService lifecycleService)
@@ -53,7 +53,7 @@ public sealed class JellyfinViewerService : IJellyfinViewerService
     {
         if (!TryGetConfiguredUri(out var uri, out var errorMessage))
         {
-            _logger.Warning($"Jellyfin viewer: {errorMessage}", LogTarget.All);
+            _logger.Warning($"qBittorrent viewer: {errorMessage}", LogTarget.All);
             return;
         }
 
@@ -71,11 +71,11 @@ public sealed class JellyfinViewerService : IJellyfinViewerService
 
         try
         {
-            _window = new WebViewerWindow("Jellyfin", PackIconLucideKind.Tv, "AppBrushJellyfinBrand");
+            _window = new WebViewerWindow("qBittorrent", PackIconLucideKind.Globe, "AppBrushAccent");
         }
         catch (Exception ex)
         {
-            _logger.Error("Failed to create Jellyfin viewer window.", ex, LogTarget.All);
+            _logger.Error("Failed to create qBittorrent viewer window.", ex, LogTarget.All);
             _window = null;
             return;
         }
@@ -120,15 +120,13 @@ public sealed class JellyfinViewerService : IJellyfinViewerService
             }
 
             _webView.CoreWebView2.NewWindowRequested += OnNewWindowRequested;
-            _webView.CoreWebView2.DownloadStarting += OnDownloadStarting;
-            _webView.CoreWebView2.ContainsFullScreenElementChanged += OnContainsFullScreenElementChanged;
             _webView.CoreWebView2.SourceChanged += OnSourceChanged;
             _webView.CoreWebView2.Navigate(uri.AbsoluteUri);
             _window.SetCurrentUrl(uri.AbsoluteUri);
         }
         catch (Exception ex)
         {
-            _logger.Error("Jellyfin viewer WebView initialization failed.", ex, LogTarget.All);
+            _logger.Error("qBittorrent viewer WebView initialization failed.", ex, LogTarget.All);
         }
     }
 
@@ -143,7 +141,7 @@ public sealed class JellyfinViewerService : IJellyfinViewerService
 
     private async Task<CoreWebView2Environment> CreateEnvironmentAsync()
     {
-        var userDataFolder = Path.Combine(_settingsService.Current.StateFolder, "WebView2", "Jellyfin");
+        var userDataFolder = Path.Combine(_settingsService.Current.StateFolder, "WebView2", "qBittorrent");
         Directory.CreateDirectory(userDataFolder);
         return await CoreWebView2Environment.CreateAsync(userDataFolder: userDataFolder);
     }
@@ -156,7 +154,7 @@ public sealed class JellyfinViewerService : IJellyfinViewerService
             return;
         }
 
-        if (IsConfiguredJellyfinUri(uri))
+        if (IsConfiguredQbittorrentUri(uri))
         {
             _webView?.CoreWebView2?.Navigate(uri.AbsoluteUri);
             return;
@@ -169,37 +167,6 @@ public sealed class JellyfinViewerService : IJellyfinViewerService
                 UseShellExecute = true
             });
         }
-    }
-
-    private void OnDownloadStarting(object? sender, CoreWebView2DownloadStartingEventArgs e)
-    {
-        // Leave default save behavior so Dashboard log/file downloads work.
-    }
-
-    private void OnContainsFullScreenElementChanged(object? sender, object e)
-    {
-        RunOnUi(() =>
-        {
-            var fullscreen = _webView?.CoreWebView2?.ContainsFullScreenElement == true;
-            _window?.SetHtmlFullscreen(fullscreen);
-        });
-    }
-
-    private void OnWindowClosing(object? sender, CancelEventArgs e)
-    {
-        if (_forceClose || IsAppShuttingDown())
-        {
-            ReleaseWebView();
-            return;
-        }
-
-        if (ShouldConfirmClose() && !UserConfirmedClose())
-        {
-            e.Cancel = true;
-            return;
-        }
-
-        ReleaseWebView();
     }
 
     private void OnReloadRequested(object? sender, EventArgs e)
@@ -217,7 +184,7 @@ public sealed class JellyfinViewerService : IJellyfinViewerService
 
         if (!TryGetConfiguredUri(out var uri, out var errorMessage))
         {
-            _logger.Warning($"Jellyfin viewer: {errorMessage}", LogTarget.All);
+            _logger.Warning($"qBittorrent viewer: {errorMessage}", LogTarget.All);
             return;
         }
 
@@ -227,6 +194,23 @@ public sealed class JellyfinViewerService : IJellyfinViewerService
     private void OnSourceChanged(object? sender, CoreWebView2SourceChangedEventArgs e)
     {
         RunOnUi(() => _window?.SetCurrentUrl(_webView?.CoreWebView2?.Source));
+    }
+
+    private void OnWindowClosing(object? sender, CancelEventArgs e)
+    {
+        if (_forceClose || IsAppShuttingDown())
+        {
+            ReleaseWebView();
+            return;
+        }
+
+        if (ShouldConfirmClose() && !UserConfirmedClose())
+        {
+            e.Cancel = true;
+            return;
+        }
+
+        ReleaseWebView();
     }
 
     private void OnWindowClosed(object? sender, EventArgs e)
@@ -250,7 +234,7 @@ public sealed class JellyfinViewerService : IJellyfinViewerService
             return;
         }
 
-        var autoClose = _settingsService.Current.AutoTrack?.Jellyfin?.AutoCloseViewerOnBackground == true;
+        var autoClose = _settingsService.Current.AutoTorrent?.AutoCloseViewerOnBackground == true;
         if (!autoClose)
         {
             return;
@@ -260,14 +244,14 @@ public sealed class JellyfinViewerService : IJellyfinViewerService
     }
 
     private bool ShouldConfirmClose()
-        => _settingsService.Current.AutoTrack?.Jellyfin?.ConfirmCloseViewer == true;
+        => _settingsService.Current.AutoTorrent?.ConfirmCloseViewer == true;
 
     private bool UserConfirmedClose()
     {
         var result = WpfMessageBox.Show(
             _window,
-            "Close the Jellyfin window?",
-            "Jellyfin",
+            "Close the qBittorrent window?",
+            "qBittorrent",
             WpfMessageBoxButton.YesNo,
             WpfMessageBoxImage.Question);
         return result == WpfMessageBoxResult.Yes;
@@ -281,21 +265,27 @@ public sealed class JellyfinViewerService : IJellyfinViewerService
 
     private bool TryGetConfiguredUri(out Uri uri, out string errorMessage)
     {
-        var configuredUrl = _settingsService.Current.AutoTrack?.Jellyfin?.BaseUrl;
+        var configuredUrl = _settingsService.Current.AutoTorrent?.QbittorrentWebUiUrl;
         if (string.IsNullOrWhiteSpace(configuredUrl)
-            || !Uri.TryCreate(configuredUrl.Trim().TrimEnd('/'), UriKind.Absolute, out var parsedUri))
+            || !Uri.TryCreate(configuredUrl.Trim(), UriKind.Absolute, out var parsedUri))
         {
             uri = new Uri("about:blank");
-            errorMessage = "Jellyfin base URL is invalid. Check Integrations settings.";
+            errorMessage = "qBittorrent Web UI URL is invalid. Check Integrations settings.";
             return false;
         }
 
-        uri = parsedUri;
+        var builder = new UriBuilder(parsedUri);
+        if (!builder.Path.EndsWith('/'))
+        {
+            builder.Path += "/";
+        }
+
+        uri = builder.Uri;
         errorMessage = string.Empty;
         return true;
     }
 
-    private bool IsConfiguredJellyfinUri(Uri uri)
+    private bool IsConfiguredQbittorrentUri(Uri uri)
     {
         if (!TryGetConfiguredUri(out var configured, out _))
         {
@@ -317,8 +307,6 @@ public sealed class JellyfinViewerService : IJellyfinViewerService
         if (_webView.CoreWebView2 is not null)
         {
             _webView.CoreWebView2.NewWindowRequested -= OnNewWindowRequested;
-            _webView.CoreWebView2.DownloadStarting -= OnDownloadStarting;
-            _webView.CoreWebView2.ContainsFullScreenElementChanged -= OnContainsFullScreenElementChanged;
             _webView.CoreWebView2.SourceChanged -= OnSourceChanged;
         }
 

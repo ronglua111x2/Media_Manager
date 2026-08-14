@@ -17,9 +17,6 @@
     <DataTemplate DataType="{x:Type vm:TorrentWorkspaceViewModel}">
         <views:TorrentWorkspaceView />
     </DataTemplate>
-    <DataTemplate DataType="{x:Type vm:QbittorrentWorkspaceViewModel}">
-        <views:QbittorrentWorkspaceView />
-    </DataTemplate>
     <DataTemplate DataType="{x:Type vm:RecipeWorkspaceViewModel}">
         <views:RecipeWorkspaceView />
     </DataTemplate>

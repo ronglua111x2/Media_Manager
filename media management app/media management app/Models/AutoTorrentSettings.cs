@@ -50,6 +50,18 @@ public sealed class AutoTorrentSettings
     public bool EnableCandidateMetadataProbe { get; set; }
 
     /// <summary>
+    /// When true, closing the standalone qBittorrent viewer asks for confirmation.
+    /// Skipped for background auto-close and app shutdown.
+    /// </summary>
+    public bool ConfirmCloseViewer { get; set; } = true;
+
+    /// <summary>
+    /// When true, the standalone qBittorrent viewer closes (no confirm) when the app
+    /// enters background mode.
+    /// </summary>
+    public bool AutoCloseViewerOnBackground { get; set; } = true;
+
+    /// <summary>
     /// Opt-in process recovery when WebUI is unbound but qbittorrent.exe is still running.
     /// </summary>
     public QbittorrentProcessRestartSettings ProcessRestart { get; set; } = new();

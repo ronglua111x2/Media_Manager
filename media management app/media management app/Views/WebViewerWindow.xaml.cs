@@ -1,10 +1,12 @@
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Shell;
+using MahApps.Metro.IconPacks;
 
 namespace media_management_app.Views;
 
-public partial class JellyfinViewerWindow : Window
+public partial class WebViewerWindow : Window
 {
     private const double NormalCornerRadius = 8;
     private static readonly Thickness NormalShellBorderThickness = new(1);
@@ -14,12 +16,25 @@ public partial class JellyfinViewerWindow : Window
     private bool _isHtmlFullscreen;
     private WindowState _stateBeforeFullscreen = WindowState.Normal;
 
-    public JellyfinViewerWindow()
+    public WebViewerWindow()
     {
         InitializeComponent();
     }
 
+    public WebViewerWindow(string title, PackIconLucideKind iconKind, string brandBrushKey)
+        : this()
+    {
+        ApplyIdentity(title, iconKind, brandBrushKey);
+    }
+
+    public event EventHandler? ReloadRequested;
+
     public System.Windows.Controls.Grid BrowserHostPanel => BrowserHost;
+
+    public void SetCurrentUrl(string? url)
+    {
+        UrlText.Text = url ?? string.Empty;
+    }
 
     public void SetHtmlFullscreen(bool fullscreen)
     {
@@ -56,9 +71,34 @@ public partial class JellyfinViewerWindow : Window
         UpdateWindowChromeForState();
     }
 
-    private void Header_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    private void ApplyIdentity(string title, PackIconLucideKind iconKind, string brandBrushKey)
+    {
+        Title = title;
+        TitleLabel.Text = title;
+        BrandIcon.Kind = iconKind;
+        if (TryFindResource(brandBrushKey) is System.Windows.Media.Brush brandBrush)
+        {
+            BrandBadge.Background = brandBrush;
+        }
+    }
+
+    private void Window_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
         if (_isHtmlFullscreen)
+        {
+            return;
+        }
+
+        if (e.Key == Key.F5 || (e.Key == Key.R && Keyboard.Modifiers == ModifierKeys.Control))
+        {
+            RaiseReloadRequested();
+            e.Handled = true;
+        }
+    }
+
+    private void Header_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (_isHtmlFullscreen || ShouldIgnoreTitleBarDrag(e.OriginalSource))
         {
             return;
         }
@@ -76,6 +116,11 @@ public partial class JellyfinViewerWindow : Window
         }
     }
 
+    private void ReloadButton_Click(object sender, RoutedEventArgs e)
+    {
+        RaiseReloadRequested();
+    }
+
     private void MinimizeButton_Click(object sender, RoutedEventArgs e)
     {
         WindowState = WindowState.Minimized;
@@ -89,6 +134,28 @@ public partial class JellyfinViewerWindow : Window
     private void CloseButton_Click(object sender, RoutedEventArgs e)
     {
         Close();
+    }
+
+    private void RaiseReloadRequested() => ReloadRequested?.Invoke(this, EventArgs.Empty);
+
+    private bool ShouldIgnoreTitleBarDrag(object originalSource)
+    {
+        if (originalSource is not DependencyObject current)
+        {
+            return false;
+        }
+
+        while (current is not null)
+        {
+            if (ReferenceEquals(current, ReloadButton))
+            {
+                return true;
+            }
+
+            current = VisualTreeHelper.GetParent(current);
+        }
+
+        return false;
     }
 
     private void ToggleMaximizedState()
