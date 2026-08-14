@@ -240,7 +240,6 @@ public sealed class JellyfinLibraryRefreshService : IJellyfinLibraryRefreshServi
         }
 
         await _flushGate.WaitAsync(cancellationToken);
-        var warpOwnedByUs = false;
         var heldOwnedWarp = false;
         var notifySucceeded = false;
         var refreshWindowMessage = "Hold expired.";
@@ -250,10 +249,7 @@ public sealed class JellyfinLibraryRefreshService : IJellyfinLibraryRefreshServi
                 $"Jellyfin refresh flush starting for {paths.Count} path(s) → {jellyfinSettings.BaseUrl}.",
                 LogTarget.All);
 
-            await EnsureTmdbReachableWithWarpAsync(
-                getWarpOwned: () => warpOwnedByUs,
-                setWarpOwned: value => warpOwnedByUs = value,
-                cancellationToken);
+            await EnsureTmdbReachableWithWarpAsync(cancellationToken);
 
             await _jellyfinClient.ReportMediaUpdatedAsync(paths, cancellationToken);
             notifySucceeded = true;
@@ -265,15 +261,29 @@ public sealed class JellyfinLibraryRefreshService : IJellyfinLibraryRefreshServi
                 Kind = NotificationKind.JellyfinPathNotified
             });
 
-            if (warpOwnedByUs)
+            if (_warpCliService.HasAutoTrackPipelineLease)
             {
-                heldOwnedWarp = true;
-                refreshWindowMessage = await HoldWarpForJellyfinAsync(jellyfinSettings, cancellationToken);
+                var timeout = TimeSpan.FromSeconds(_settingsService.Current.Warp?.ConnectTimeoutSeconds ?? 30);
+                var holdLease = await _warpCliService.AcquireAsync(
+                    WarpLeaseReason.JellyfinHold,
+                    timeout,
+                    cancellationToken);
+                if (holdLease.Connected)
+                {
+                    heldOwnedWarp = true;
+                    refreshWindowMessage = await HoldWarpForJellyfinAsync(jellyfinSettings, cancellationToken);
+                }
+                else
+                {
+                    _logger.Warning(
+                        "Jellyfin refresh: WARP hold lease could not connect; skipping post-notify hold.",
+                        LogTarget.All);
+                }
             }
             else
             {
                 _logger.Info(
-                    "Jellyfin refresh: WARP not owned by this flush; skipping post-notify hold.",
+                    "Jellyfin refresh: no Auto-Track WARP lease; skipping post-notify hold.",
                     LogTarget.All);
             }
 
@@ -305,17 +315,13 @@ public sealed class JellyfinLibraryRefreshService : IJellyfinLibraryRefreshServi
         }
         finally
         {
-            if (warpOwnedByUs)
+            try
             {
-                _logger.Info("Disconnecting WARP after Jellyfin refresh hold (owned session).", LogTarget.All);
-                try
-                {
-                    await _warpCliService.DisconnectAsync(CancellationToken.None);
-                }
-                catch (Exception ex)
-                {
-                    _logger.Warning($"WARP disconnect after Jellyfin refresh failed: {ex.Message}", LogTarget.All);
-                }
+                await _warpCliService.ReleaseAsync(WarpLeaseReason.JellyfinHold, CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"WARP Jellyfin hold lease release failed: {ex.Message}", LogTarget.All);
             }
 
             if (heldOwnedWarp)
@@ -639,10 +645,7 @@ public sealed class JellyfinLibraryRefreshService : IJellyfinLibraryRefreshServi
         }
     }
 
-    private async Task EnsureTmdbReachableWithWarpAsync(
-        Func<bool> getWarpOwned,
-        Action<bool> setWarpOwned,
-        CancellationToken cancellationToken)
+    private async Task EnsureTmdbReachableWithWarpAsync(CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(_settingsService.Current.TmdbReadAccessToken))
         {
@@ -665,29 +668,22 @@ public sealed class JellyfinLibraryRefreshService : IJellyfinLibraryRefreshServi
                 LogTarget.All);
         }
 
-        if (!getWarpOwned())
+        var timeout = TimeSpan.FromSeconds(_settingsService.Current.Warp?.ConnectTimeoutSeconds ?? 30);
+        var attempt = await _warpCliService.AcquireAsync(
+            WarpLeaseReason.JellyfinHold,
+            timeout,
+            cancellationToken);
+        if (!attempt.Connected)
         {
-            var timeout = TimeSpan.FromSeconds(_settingsService.Current.Warp?.ConnectTimeoutSeconds ?? 30);
-            var attempt = await _warpCliService.ConnectOwnedAsync(timeout, cancellationToken);
-            if (!attempt.Connected)
-            {
-                _logger.Warning(
-                    "WARP connect for Jellyfin refresh SSL recover failed or timed out.",
-                    LogTarget.All);
-                throw new InvalidOperationException("TMDB unreachable (SSL) and WARP connect failed.");
-            }
+            _logger.Warning(
+                "WARP connect for Jellyfin refresh SSL recover failed or timed out.",
+                LogTarget.All);
+            throw new InvalidOperationException("TMDB unreachable (SSL) and WARP connect failed.");
+        }
 
-            if (attempt.Owned)
-            {
-                setWarpOwned(true);
-                _logger.Info("WARP connected for Jellyfin refresh SSL recover.", LogTarget.All);
-            }
-            else
-            {
-                _logger.Info(
-                    "WARP already connected; Jellyfin refresh will leave the existing session open.",
-                    LogTarget.All);
-            }
+        if (attempt.StartedByThisAcquire)
+        {
+            _logger.Info("WARP connected for Jellyfin refresh SSL recover.", LogTarget.All);
         }
 
         _logger.Info("Retrying TMDB pre-probe with WARP before Jellyfin refresh.", LogTarget.All);

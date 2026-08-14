@@ -12,6 +12,9 @@ public partial class MainViewModel : ViewModelBase
 {
     private readonly IDeviceStatusService _deviceStatusService;
     private readonly IConsoleWindowService _consoleWindowService;
+    private readonly IWarpCliService _warpCliService;
+    private readonly ISettingsService _settingsService;
+    private readonly ShellLaunchGuard _shellLaunchGuard;
     private readonly DispatcherTimer _statusTimer;
     private readonly Dictionary<AppWorkspaceKind, ViewModelBase> _workspaceMap;
 
@@ -25,10 +28,16 @@ public partial class MainViewModel : ViewModelBase
         SystemSettingsViewModel systemSettingsViewModel,
         IDeviceStatusService deviceStatusService,
         IConsoleWindowService consoleWindowService,
+        IWarpCliService warpCliService,
+        ISettingsService settingsService,
+        IAppLogger logger,
         IAppLifecycleService lifecycleService)
     {
         _deviceStatusService = deviceStatusService;
         _consoleWindowService = consoleWindowService;
+        _warpCliService = warpCliService;
+        _settingsService = settingsService;
+        _shellLaunchGuard = new ShellLaunchGuard(logger);
         _workspaceMap = new Dictionary<AppWorkspaceKind, ViewModelBase>
         {
             [AppWorkspaceKind.AutoTrack] = autoTrackViewModel,
@@ -168,6 +177,21 @@ public partial class MainViewModel : ViewModelBase
     [ObservableProperty]
     private bool isSidebarCollapsed = true;
 
+    public string GoogleDriveBackupToolTip
+    {
+        get
+        {
+            if (!GoogleDriveDependency.IsConfigured)
+            {
+                return GoogleDriveDependency.Detail;
+            }
+
+            return string.IsNullOrWhiteSpace(GetBackupFolderId())
+                ? "Backup folder not created yet (run a backup first)."
+                : "Open backup folder in browser";
+        }
+    }
+
     [RelayCommand]
     private void Navigate(ShellNavigationItem? item)
     {
@@ -189,6 +213,147 @@ public partial class MainViewModel : ViewModelBase
     private void ToggleSidebar()
     {
         IsSidebarCollapsed = !IsSidebarCollapsed;
+    }
+
+    [RelayCommand(CanExecute = nameof(CanToggleWarp))]
+    private async Task ToggleWarp()
+    {
+        if (!_warpCliService.IsAvailable)
+        {
+            return;
+        }
+
+        if (_warpCliService.LastKnownConnected || WarpDependency.IsOk)
+        {
+            if (ShouldConfirmWarpDisconnect() && !UserConfirmedWarpDisconnect())
+            {
+                return;
+            }
+
+            await _warpCliService.ForceDisconnectAsync();
+        }
+        else
+        {
+            var timeout = TimeSpan.FromSeconds(
+                Math.Clamp(_settingsService.Current.Warp?.ConnectTimeoutSeconds ?? 30, 5, 120));
+            await _warpCliService.AcquireAsync(WarpLeaseReason.User, timeout);
+        }
+
+        _deviceStatusService.RefreshWarpOnly();
+    }
+
+    private bool CanToggleWarp() =>
+        WarpDependency.IsConfigured && _warpCliService.IsAvailable && !_warpCliService.InFlight;
+
+    private bool ShouldConfirmWarpDisconnect() =>
+        (_settingsService.Current.Warp?.ConfirmDisconnectDuringAutoTrack ?? true) &&
+        _warpCliService.HasAutoTrackPipelineLease;
+
+    private static bool UserConfirmedWarpDisconnect()
+    {
+        var result = System.Windows.MessageBox.Show(
+            "Auto-Track turned WARP on for a job that is still running. Disconnecting may break TMDB recover, torrent hunt, or Jellyfin refresh. Disconnect anyway?",
+            "WARP",
+            System.Windows.MessageBoxButton.YesNo,
+            System.Windows.MessageBoxImage.Warning,
+            System.Windows.MessageBoxResult.No);
+        return result == System.Windows.MessageBoxResult.Yes;
+    }
+
+    [RelayCommand]
+    private void OpenDriveFolder(StorageStatusViewModel? status)
+    {
+        if (status is null)
+        {
+            return;
+        }
+
+        var folder = ResolveTorrentFolder(status.DriveRoot);
+        if (string.IsNullOrWhiteSpace(folder))
+        {
+            return;
+        }
+
+        _shellLaunchGuard.TryLaunch(folder, requireExistingDirectory: true);
+    }
+
+    [RelayCommand(CanExecute = nameof(CanOpenGoogleDriveBackup))]
+    private void OpenGoogleDriveBackup()
+    {
+        var folderId = GetBackupFolderId();
+        if (string.IsNullOrWhiteSpace(folderId))
+        {
+            return;
+        }
+
+        _shellLaunchGuard.TryLaunch($"{AppConstants.GoogleDriveFolderUrlPrefix}{folderId}");
+    }
+
+    private bool CanOpenGoogleDriveBackup() =>
+        GoogleDriveDependency.IsConfigured && !string.IsNullOrWhiteSpace(GetBackupFolderId());
+
+    private string? GetBackupFolderId()
+    {
+        var backup = _settingsService.Current.Backup;
+        if (backup is null)
+        {
+            return null;
+        }
+
+        if (!string.IsNullOrWhiteSpace(backup.DriveHistoryFolderId))
+        {
+            return backup.DriveHistoryFolderId.Trim();
+        }
+
+        if (!string.IsNullOrWhiteSpace(backup.DriveMachineFolderId))
+        {
+            return backup.DriveMachineFolderId.Trim();
+        }
+
+        return string.IsNullOrWhiteSpace(backup.DriveRootFolderId)
+            ? null
+            : backup.DriveRootFolderId.Trim();
+    }
+
+    private string? ResolveTorrentFolder(string driveRoot)
+    {
+        if (string.IsNullOrWhiteSpace(driveRoot))
+        {
+            return null;
+        }
+
+        var torrent = _settingsService.Current.AutoTorrent;
+        foreach (var folder in EnumerateTorrentDownloadFolders(torrent))
+        {
+            var root = Path.GetPathRoot(folder);
+            if (string.Equals(root, driveRoot, StringComparison.OrdinalIgnoreCase))
+            {
+                return folder;
+            }
+        }
+
+        return null;
+    }
+
+    private static IEnumerable<string> EnumerateTorrentDownloadFolders(AutoTorrentSettings? torrent)
+    {
+        if (torrent is null)
+        {
+            yield break;
+        }
+
+        if (!string.IsNullOrWhiteSpace(torrent.DownloadFolder))
+        {
+            yield return torrent.DownloadFolder.Trim();
+        }
+
+        foreach (var folder in torrent.DownloadFolders)
+        {
+            if (!string.IsNullOrWhiteSpace(folder))
+            {
+                yield return folder.Trim();
+            }
+        }
     }
 
     private void NavigateTo(AppWorkspaceKind workspace)
@@ -225,7 +390,14 @@ public partial class MainViewModel : ViewModelBase
         DriveStatuses.Clear();
         foreach (var drive in status.DriveStatuses)
         {
-            DriveStatuses.Add(drive);
+            DriveStatuses.Add(new StorageStatusViewModel
+            {
+                DriveRoot = drive.DriveRoot,
+                Folder = drive.Folder,
+                OpenFolderPath = ResolveTorrentFolder(drive.DriveRoot),
+                TotalBytes = drive.TotalBytes,
+                FreeBytes = drive.FreeBytes
+            });
         }
 
         QbittorrentDependency = status.Qbittorrent;
@@ -236,6 +408,9 @@ public partial class MainViewModel : ViewModelBase
         JobStatus = status.JobStatus;
         IsJobActive = status.IsJobActive;
         HasLowSpace = status.HasLowSpace;
+        ToggleWarpCommand.NotifyCanExecuteChanged();
+        OpenGoogleDriveBackupCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(GoogleDriveBackupToolTip));
     }
 
     private void OnAppModeChanged(object? sender, AppMode mode)

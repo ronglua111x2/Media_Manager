@@ -36,17 +36,44 @@ public sealed class DeviceStatusService : IDeviceStatusService
         _logger = logger;
         _progressService.ProgressChanged += (_, _) => RefreshJobOnly();
         _backupService.RunStateChanged += (_, _) => RefreshBackupOnly();
+        _warpCliService.ConnectionChanged += OnWarpConnectionChanged;
     }
 
     public event EventHandler? StatusChanged;
 
     public DeviceStatusSnapshot Current { get; private set; } = new();
 
-    public async Task RefreshAsync(CancellationToken cancellationToken = default)
+    public Task RefreshAsync(CancellationToken cancellationToken = default)
+    {
+        return RefreshCoreAsync(probeWarpCli: true, cancellationToken);
+    }
+
+    public void RefreshWarpOnly()
+    {
+        Current = new DeviceStatusSnapshot
+        {
+            DriveStatuses = Current.DriveStatuses,
+            HasLowSpace = Current.HasLowSpace,
+            Qbittorrent = Current.Qbittorrent,
+            Warp = BuildWarpStatusFromCache(),
+            Jellyfin = Current.Jellyfin,
+            GoogleDrive = Current.GoogleDrive,
+            IsBackupRunning = Current.IsBackupRunning,
+            JobStatus = Current.JobStatus,
+            IsJobActive = Current.IsJobActive
+        };
+        StatusChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void OnWarpConnectionChanged(object? sender, WarpConnectionChangedEventArgs e) => RefreshWarpOnly();
+
+    private async Task RefreshCoreAsync(bool probeWarpCli, CancellationToken cancellationToken)
     {
         var drives = GetStorageStatuses();
         var qbittorrentTask = GetQbittorrentDependencyAsync(cancellationToken);
-        var warpTask = GetWarpDependencyAsync(cancellationToken);
+        var warpTask = probeWarpCli
+            ? GetWarpDependencyAsync(cancellationToken)
+            : Task.FromResult(BuildWarpStatusFromCache());
         var jellyfinTask = GetJellyfinDependencyAsync(cancellationToken);
         await Task.WhenAll(qbittorrentTask, warpTask, jellyfinTask);
 
@@ -201,27 +228,13 @@ public sealed class DeviceStatusService : IDeviceStatusService
     {
         if (!_warpCliService.IsAvailable)
         {
-            return new DependencyStatusInfo
-            {
-                Name = "WARP",
-                IsOk = false,
-                IsConfigured = false,
-                StatusText = "not installed",
-                Detail = $"WARP CLI not found at {_warpCliService.ResolvedExecutablePath}"
-            };
+            return BuildWarpNotInstalled();
         }
 
         try
         {
-            var connected = await _warpCliService.IsConnectedAsync(cancellationToken);
-            return new DependencyStatusInfo
-            {
-                Name = "WARP",
-                IsOk = connected,
-                IsConfigured = true,
-                StatusText = connected ? "connected" : "disconnected",
-                Detail = connected ? "WARP is connected" : "WARP is disconnected"
-            };
+            await _warpCliService.IsConnectedAsync(cancellationToken);
+            return BuildWarpStatusFromCache();
         }
         catch (Exception ex)
         {
@@ -236,6 +249,60 @@ public sealed class DeviceStatusService : IDeviceStatusService
             };
         }
     }
+
+    private DependencyStatusInfo BuildWarpStatusFromCache()
+    {
+        if (!_warpCliService.IsAvailable)
+        {
+            return BuildWarpNotInstalled();
+        }
+
+        if (_warpCliService.InFlight)
+        {
+            var connecting = !_warpCliService.LastKnownConnected;
+            return new DependencyStatusInfo
+            {
+                Name = "WARP",
+                IsOk = _warpCliService.LastKnownConnected,
+                IsConfigured = true,
+                StatusText = connecting ? "connecting" : "disconnecting",
+                Detail = connecting ? "Connecting…" : "Disconnecting…"
+            };
+        }
+
+        var connected = _warpCliService.LastKnownConnected;
+        var leaseText = WarpLeaseReasonText.Describe(_warpCliService.ActiveLeases);
+        string detail;
+        if (connected)
+        {
+            detail = string.IsNullOrEmpty(leaseText)
+                ? "Connected. Click to disconnect."
+                : $"Connected ({leaseText}). Click to disconnect.";
+        }
+        else
+        {
+            detail = "Disconnected. Click to connect.";
+        }
+
+        return new DependencyStatusInfo
+        {
+            Name = "WARP",
+            IsOk = connected,
+            IsConfigured = true,
+            StatusText = connected ? "connected" : "disconnected",
+            Detail = detail
+        };
+    }
+
+    private DependencyStatusInfo BuildWarpNotInstalled() =>
+        new()
+        {
+            Name = "WARP",
+            IsOk = false,
+            IsConfigured = false,
+            StatusText = "not installed",
+            Detail = $"WARP CLI not found at {_warpCliService.ResolvedExecutablePath}"
+        };
 
     private async Task<DependencyStatusInfo> GetJellyfinDependencyAsync(CancellationToken cancellationToken)
     {

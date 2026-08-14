@@ -18,6 +18,9 @@ public static class AppConstants
     public const string DefaultWarpCliPath =
         @"C:\Program Files\Cloudflare\Cloudflare WARP\warp-cli.exe";
 
+    public const string DefaultWarpLogDirectory =
+        @"C:\ProgramData\Cloudflare\Cloudflare WARP\log";
+
     public const string WindowsStartupRegistryValueName = "MediaManager";
 
     public const string StartupTaskName = @"MediaManager\AutoStart";
@@ -39,6 +42,7 @@ public static class AppConstants
     public const string BackupTokenFolderName = "token";
     public const string BackupDriveRootFolderName = "MediaManagerBackups";
     public const string BackupDriveHistoryFolderName = "history";
+    public const string GoogleDriveFolderUrlPrefix = "https://drive.google.com/drive/folders/";
     public const string BackupLatestFileName = "latest.zip";
     public const string BackupManifestFileName = "manifest.json";
     public const string BackupDatabaseEntryName = "media-manager.db";

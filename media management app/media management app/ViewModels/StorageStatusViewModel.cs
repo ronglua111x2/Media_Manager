@@ -6,6 +6,12 @@ public sealed class StorageStatusViewModel
 
     public string Folder { get; init; } = string.Empty;
 
+    /// <summary>Torrent download folder on this drive, when one is configured.</summary>
+    public string? OpenFolderPath { get; init; }
+
+    public string OpenToolTip =>
+        string.IsNullOrWhiteSpace(OpenFolderPath) ? StatsDisplay : $"Open {OpenFolderPath}";
+
     public long TotalBytes { get; init; }
 
     public long FreeBytes { get; init; }

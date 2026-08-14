@@ -15,4 +15,10 @@ public sealed class WarpSettings
     /// Does not apply to Library or other non-auto-track TMDB calls.
     /// </summary>
     public bool AutoRecoverOnSsl { get; set; } = true;
+
+    /// <summary>
+    /// When true, the status pill asks before disconnecting WARP if Auto-Track
+    /// currently holds a pipeline lease (TMDB recover, hunt, or Jellyfin hold).
+    /// </summary>
+    public bool ConfirmDisconnectDuringAutoTrack { get; set; } = true;
 }

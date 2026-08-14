@@ -9,4 +9,6 @@ public interface IDeviceStatusService
     DeviceStatusSnapshot Current { get; }
 
     Task RefreshAsync(CancellationToken cancellationToken = default);
+
+    void RefreshWarpOnly();
 }

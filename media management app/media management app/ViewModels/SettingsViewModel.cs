@@ -285,6 +285,9 @@ public partial class SettingsViewModel : ViewModelBase
     private bool warpAutoRecoverOnSsl = true;
 
     [ObservableProperty]
+    private bool warpConfirmDisconnectDuringAutoTrack = true;
+
+    [ObservableProperty]
     private string? warpExecutablePath;
 
     [ObservableProperty]
@@ -787,15 +790,16 @@ public partial class SettingsViewModel : ViewModelBase
             }
 
             StatusMessage = "Testing WARP connection...";
-            var connected = await _warpCliService.ConnectAsync(TimeSpan.FromSeconds(WarpConnectTimeoutSeconds));
-            if (!connected)
+            var timeout = TimeSpan.FromSeconds(WarpConnectTimeoutSeconds);
+            var attempt = await _warpCliService.AcquireAsync(WarpLeaseReason.SettingsTest, timeout);
+            if (!attempt.Connected)
             {
                 StatusMessage = $"WARP connect test failed or timed out after {WarpConnectTimeoutSeconds}s.";
                 _logger.Warning(StatusMessage, LogTarget.All);
                 return;
             }
 
-            await _warpCliService.DisconnectAsync();
+            await _warpCliService.ReleaseAsync(WarpLeaseReason.SettingsTest);
             StatusMessage = "WARP connect test succeeded (disconnected after test). Save settings to persist changes.";
             _logger.Info(StatusMessage, LogTarget.All);
         }
@@ -803,6 +807,13 @@ public partial class SettingsViewModel : ViewModelBase
         {
             StatusMessage = ex.Message;
             _logger.Error($"WARP connection test failed: {ex.Message}", ex, LogTarget.All);
+            try
+            {
+                await _warpCliService.ReleaseAsync(WarpLeaseReason.SettingsTest);
+            }
+            catch
+            {
+            }
         }
     }
 
@@ -1266,6 +1277,7 @@ public partial class SettingsViewModel : ViewModelBase
             AutoTrackJellyfinLogPathTestStatus = string.Empty;
             WarpEnabled = _settingsService.Current.Warp.Enabled;
             WarpAutoRecoverOnSsl = _settingsService.Current.Warp.AutoRecoverOnSsl;
+            WarpConfirmDisconnectDuringAutoTrack = _settingsService.Current.Warp.ConfirmDisconnectDuringAutoTrack;
             WarpExecutablePath = _settingsService.Current.Warp.ExecutablePath;
             WarpConnectTimeoutSeconds = _settingsService.Current.Warp.ConnectTimeoutSeconds;
             var backup = _settingsService.Current.Backup ??= new BackupSettings();
@@ -1313,6 +1325,7 @@ public partial class SettingsViewModel : ViewModelBase
         _settingsService.Current.Warp ??= new WarpSettings();
         _settingsService.Current.Warp.Enabled = WarpEnabled;
         _settingsService.Current.Warp.AutoRecoverOnSsl = WarpAutoRecoverOnSsl;
+        _settingsService.Current.Warp.ConfirmDisconnectDuringAutoTrack = WarpConfirmDisconnectDuringAutoTrack;
         _settingsService.Current.Warp.ExecutablePath = string.IsNullOrWhiteSpace(WarpExecutablePath)
             ? null
             : WarpExecutablePath.Trim();

@@ -1447,6 +1447,11 @@
                                               Content="Auto-recover with WARP on SSL/TLS errors (Auto-Track only)" />
                                     <TextBlock Style="{StaticResource SettingsHintStyle}" Margin="0,0,0,8"
                                                Text="If an Auto-Track TMDB refresh fails with SSL/TLS, connect WARP, retry, keep WARP for the rest of that cycle, then disconnect. Does not affect Library TMDB." />
+                                    <CheckBox IsChecked="{Binding WarpConfirmDisconnectDuringAutoTrack, Mode=TwoWay}"
+                                              Margin="0,0,0,4"
+                                              Content="Ask before disconnecting WARP while Auto-Track is using it" />
+                                    <TextBlock Style="{StaticResource SettingsHintStyle}" Margin="0,0,0,8"
+                                               Text="When Auto-Track turned WARP on for TMDB recover, torrent hunt, or Jellyfin hold, the status pill asks before disconnecting. Turn off to disconnect immediately." />
                                     <TextBlock Text="Executable path (optional override)" Style="{StaticResource SettingsLabelStyle}" />
                                     <DockPanel LastChildFill="True">
                                         <Button DockPanel.Dock="Right"
@@ -1563,7 +1568,14 @@
                                 <Border Style="{StaticResource SettingsGuideItemStyle}">
                                     <StackPanel>
                                         <TextBlock Text="Cloudflare WARP" Style="{StaticResource SettingsLabelStyle}" />
-                                        <TextBlock Text="Requires the Cloudflare WARP desktop client installed on Windows. The app uses warp-cli.exe to connect before Auto-Track hunt fetch/add and disconnect after torrents are added. Optionally, Auto-Track TMDB can self-recover on SSL/TLS by connecting WARP for that cycle then disconnecting. Library TMDB is unaffected. If WARP is already connected, the app leaves that session open unless Auto-Track owned the connect."
+                                        <TextBlock Text="Requires the Cloudflare WARP desktop client installed on Windows. The app uses warp-cli.exe to connect before Auto-Track hunt fetch/add and disconnect after torrents are added. Optionally, Auto-Track TMDB can self-recover on SSL/TLS by connecting WARP for that cycle then disconnecting. Library TMDB is unaffected. If WARP is already connected, the app leaves that session open unless Auto-Track owned the connect. The status pill toggles connect/disconnect."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Ask before disconnecting" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="When Auto-Track turned WARP on for TMDB recover, torrent hunt, or Jellyfin hold, clicking the status pill asks before disconnecting. Turn off to disconnect immediately."
                                                    Style="{StaticResource SettingsHintStyle}" />
                                     </StackPanel>
                                 </Border>

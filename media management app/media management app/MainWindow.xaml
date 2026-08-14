@@ -146,6 +146,42 @@
             <Setter Property="Margin" Value="8,3,0,3" />
         </Style>
 
+        <ControlTemplate x:Key="StatusPillButtonTemplate" TargetType="Button">
+            <Border x:Name="Root"
+                    Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}"
+                    CornerRadius="6"
+                    Padding="{TemplateBinding Padding}"
+                    SnapsToDevicePixels="True">
+                <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                  VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+            </Border>
+        </ControlTemplate>
+
+        <Style x:Key="StatusPillButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="{StaticResource AppBrushSurfaceRaised}" />
+            <Setter Property="BorderBrush" Value="{StaticResource AppBrushBorder}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="10,5" />
+            <Setter Property="Margin" Value="8,3,0,3" />
+            <Setter Property="MinHeight" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Template" Value="{StaticResource StatusPillButtonTemplate}" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{StaticResource AppBrushAccentSoft}" />
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Opacity" Value="0.45" />
+                    <Setter Property="Cursor" Value="Arrow" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
         <Style x:Key="SidebarToggleOpenIconStyle" TargetType="iconPacks:PackIconLucide" BasedOn="{StaticResource AppIconStyle}">
             <Setter Property="Kind" Value="PanelRightOpen" />
             <Style.Triggers>
@@ -417,7 +453,10 @@
                             </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <Border Style="{StaticResource StatusPillStyle}">
+                                    <Button Style="{StaticResource StatusPillButtonStyle}"
+                                            Command="{Binding DataContext.OpenDriveFolderCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                            CommandParameter="{Binding}"
+                                            ToolTip="{Binding OpenToolTip}">
                                         <StackPanel Orientation="Horizontal">
                                             <Ellipse Width="8"
                                                      Height="8"
@@ -460,7 +499,7 @@
                                                 </TextBlock.Style>
                                             </TextBlock>
                                         </StackPanel>
-                                    </Border>
+                                    </Button>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
@@ -498,7 +537,8 @@
                             </StackPanel>
                         </Border>
 
-                        <Border Style="{StaticResource StatusPillStyle}"
+                        <Button Style="{StaticResource StatusPillButtonStyle}"
+                                Command="{Binding ToggleWarpCommand}"
                                 ToolTip="{Binding WarpDependency.Detail}">
                             <StackPanel Orientation="Horizontal">
                                 <Ellipse Width="8"
@@ -529,7 +569,7 @@
                                            Foreground="{StaticResource AppBrushWarpBrand}"
                                            VerticalAlignment="Center" />
                             </StackPanel>
-                        </Border>
+                        </Button>
 
                         <Border Style="{StaticResource StatusPillStyle}"
                                 ToolTip="{Binding JellyfinDependency.Detail}">
@@ -564,8 +604,9 @@
                             </StackPanel>
                         </Border>
 
-                        <Border Style="{StaticResource StatusPillStyle}"
-                                ToolTip="{Binding GoogleDriveDependency.Detail}">
+                        <Button Style="{StaticResource StatusPillButtonStyle}"
+                                Command="{Binding OpenGoogleDriveBackupCommand}"
+                                ToolTip="{Binding GoogleDriveBackupToolTip}">
                             <StackPanel Orientation="Horizontal">
                                 <Ellipse Width="8"
                                          Height="8"
@@ -605,7 +646,7 @@
                                            Foreground="{StaticResource AppBrushMutedText}"
                                            VerticalAlignment="Center" />
                             </StackPanel>
-                        </Border>
+                        </Button>
                     </WrapPanel>
                 </Grid>
             </Border>

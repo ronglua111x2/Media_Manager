@@ -179,7 +179,6 @@ public sealed class AutoTrackService : IAutoTrackService
                 LogTarget.All);
         }
 
-        var warpOwnedByUs = false;
         var warpSettings = _settingsService.Current.Warp;
         var autoRecoverOnSsl = (warpSettings?.Enabled ?? true) &&
                                (warpSettings?.AutoRecoverOnSsl ?? true) &&
@@ -251,8 +250,6 @@ public sealed class AutoTrackService : IAutoTrackService
                     var refreshedShow = await RefreshShowWithSslWarpRecoveryAsync(
                         currentShow,
                         autoRecoverOnSsl,
-                        () => warpOwnedByUs,
-                        owned => warpOwnedByUs = owned,
                         cancellationToken);
 
                     result.TmdbRefreshed++;
@@ -377,10 +374,7 @@ public sealed class AutoTrackService : IAutoTrackService
         }
         finally
         {
-            if (warpOwnedByUs)
-            {
-                await _warpCliService.DisconnectAsync(CancellationToken.None);
-            }
+            await _warpCliService.ReleaseAsync(WarpLeaseReason.TmdbSslRecover, CancellationToken.None);
         }
 
         result.Summary =
@@ -424,8 +418,6 @@ public sealed class AutoTrackService : IAutoTrackService
     private async Task<TrackedShow> RefreshShowWithSslWarpRecoveryAsync(
         TrackedShow show,
         bool autoRecoverOnSsl,
-        Func<bool> getWarpOwned,
-        Action<bool> setWarpOwned,
         CancellationToken cancellationToken)
     {
         try
@@ -438,28 +430,22 @@ public sealed class AutoTrackService : IAutoTrackService
                 $"TMDB SSL/TLS error for '{show.DisplayTitle}': {ex.Message}. Attempting WARP self-recover.",
                 LogTarget.All);
 
-            if (!getWarpOwned())
+            var timeout = TimeSpan.FromSeconds(_settingsService.Current.Warp?.ConnectTimeoutSeconds ?? 30);
+            var attempt = await _warpCliService.AcquireAsync(
+                WarpLeaseReason.TmdbSslRecover,
+                timeout,
+                cancellationToken);
+            if (!attempt.Connected)
             {
-                var timeout = TimeSpan.FromSeconds(_settingsService.Current.Warp?.ConnectTimeoutSeconds ?? 30);
-                var attempt = await _warpCliService.ConnectOwnedAsync(timeout, cancellationToken);
-                if (!attempt.Connected)
-                {
-                    _logger.Warning(
-                        "WARP connect for SSL self-recover failed or timed out. Re-throwing original TMDB error.",
-                        LogTarget.All);
-                    throw;
-                }
+                _logger.Warning(
+                    "WARP connect for SSL self-recover failed or timed out. Re-throwing original TMDB error.",
+                    LogTarget.All);
+                throw;
+            }
 
-                if (attempt.Owned)
-                {
-                    setWarpOwned(true);
-                }
-                else
-                {
-                    _logger.Info(
-                        "WARP already connected; Auto-Track SSL recover will leave the existing session open.",
-                        LogTarget.File | LogTarget.Console);
-                }
+            if (attempt.StartedByThisAcquire)
+            {
+                _logger.Info("WARP connected for Auto-Track TMDB SSL recover.", LogTarget.File | LogTarget.Console);
             }
 
             _logger.Info($"Retrying TMDB refresh for '{show.DisplayTitle}' with WARP.", LogTarget.All);
@@ -599,9 +585,9 @@ public sealed class AutoTrackService : IAutoTrackService
 
         if (pendingOrdersByShow.Count == 0)
         {
-            if (preflight.WarpOwned)
+            if (preflight.HuntLeaseHeld)
             {
-                await TryDisconnectOwnedWarpAsync();
+                await TryReleaseHuntWarpAsync();
             }
 
             result.Summary = "No hunt orders queued.";
@@ -612,7 +598,7 @@ public sealed class AutoTrackService : IAutoTrackService
             pendingOrdersByShow,
             settings,
             result,
-            preflight.WarpOwned,
+            preflight.HuntLeaseHeld,
             cancellationToken);
         result.Succeeded = result.Failed == 0;
         result.Summary =
@@ -854,7 +840,7 @@ public sealed class AutoTrackService : IAutoTrackService
         Dictionary<long, (TrackedShow Show, List<TorrentCartOrder> Orders)> pendingOrdersByShow,
         AutoTrackSettings settings,
         AutoTrackRunResult result,
-        bool warpOwnedByUs,
+        bool huntLeaseHeld,
         CancellationToken cancellationToken)
     {
         var fetchOptions = new EpisodeFetchOptions
@@ -864,17 +850,17 @@ public sealed class AutoTrackService : IAutoTrackService
         };
 
         var warpEnabled = _settingsService.Current.Warp?.Enabled ?? true;
-        if (warpEnabled && warpOwnedByUs)
+        if (warpEnabled && huntLeaseHeld)
         {
             var orderCount = pendingOrdersByShow.Sum(entry => entry.Value.Orders.Count);
             _logger.Info(
-                $"WARP owned session active for hunt fetch/add ({pendingOrdersByShow.Count} show(s), {orderCount} order(s)).",
+                $"WARP hunt lease active for fetch/add ({pendingOrdersByShow.Count} show(s), {orderCount} order(s)).",
                 LogTarget.File | LogTarget.Console);
         }
         else if (warpEnabled)
         {
             _logger.Info(
-                "WARP already connected; Auto-Track hunt will reuse the existing session (not owned).",
+                "WARP already connected; Auto-Track hunt will reuse the existing session.",
                 LogTarget.File | LogTarget.Console);
         }
 
@@ -1119,13 +1105,13 @@ public sealed class AutoTrackService : IAutoTrackService
         finally
         {
             _progressService.Finish("Idle");
-            if (warpOwnedByUs)
+            if (huntLeaseHeld)
             {
                 var orderCount = pendingOrdersByShow.Sum(entry => entry.Value.Orders.Count);
                 _logger.Info(
-                    $"Disconnecting WARP after hunt fetch/add ({pendingOrdersByShow.Count} show(s), {orderCount} order(s)).",
+                    $"Releasing WARP hunt lease after fetch/add ({pendingOrdersByShow.Count} show(s), {orderCount} order(s)).",
                     LogTarget.File | LogTarget.Console);
-                await _warpCliService.DisconnectAsync(CancellationToken.None);
+                await TryReleaseHuntWarpAsync();
             }
         }
     }
@@ -1211,10 +1197,10 @@ public sealed class AutoTrackService : IAutoTrackService
         return autoTrack;
     }
 
-    private async Task<(bool Ok, string? AbortSummary, bool WarpOwned)> EnsureHuntPreflightAsync(
+    private async Task<(bool Ok, string? AbortSummary, bool HuntLeaseHeld)> EnsureHuntPreflightAsync(
         CancellationToken cancellationToken)
     {
-        var warpOwned = false;
+        var huntLeaseHeld = false;
         var warpEnabled = _settingsService.Current.Warp?.Enabled ?? true;
         if (warpEnabled)
         {
@@ -1226,7 +1212,10 @@ public sealed class AutoTrackService : IAutoTrackService
             }
 
             var timeout = TimeSpan.FromSeconds(_settingsService.Current.Warp?.ConnectTimeoutSeconds ?? 30);
-            var attempt = await _warpCliService.ConnectOwnedAsync(timeout, cancellationToken);
+            var attempt = await _warpCliService.AcquireAsync(
+                WarpLeaseReason.Hunt,
+                timeout,
+                cancellationToken);
             if (!attempt.Connected)
             {
                 return (false,
@@ -1234,15 +1223,15 @@ public sealed class AutoTrackService : IAutoTrackService
                     false);
             }
 
-            warpOwned = attempt.Owned;
-            if (warpOwned)
+            huntLeaseHeld = true;
+            if (attempt.StartedByThisAcquire)
             {
-                _logger.Info("WARP connected for hunt preflight (owned session).", LogTarget.File | LogTarget.Console);
+                _logger.Info("WARP connected for hunt preflight.", LogTarget.File | LogTarget.Console);
             }
             else
             {
                 _logger.Info(
-                    "WARP already connected during hunt preflight (not owned).",
+                    "WARP already connected during hunt preflight; hunt lease acquired.",
                     LogTarget.File | LogTarget.Console);
             }
         }
@@ -1259,7 +1248,7 @@ public sealed class AutoTrackService : IAutoTrackService
                         LogTarget.All);
                 }
 
-                return (true, null, warpOwned);
+                return (true, null, huntLeaseHeld);
             }
 
             var detail = probe.Detail ?? probe.Status.ToString();
@@ -1270,33 +1259,33 @@ public sealed class AutoTrackService : IAutoTrackService
                 detail = $"{detail} ({restart.Kind}: {restart.Detail})";
             }
 
-            if (warpOwned)
+            if (huntLeaseHeld)
             {
-                await TryDisconnectOwnedWarpAsync();
+                await TryReleaseHuntWarpAsync();
             }
 
             return (false, $"Hunt aborted: qBittorrent WebUI unavailable — {detail}", false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            if (warpOwned)
+            if (huntLeaseHeld)
             {
-                await TryDisconnectOwnedWarpAsync();
+                await TryReleaseHuntWarpAsync();
             }
 
             return (false, $"Hunt aborted: qBittorrent preflight failed — {ex.Message}", false);
         }
     }
 
-    private async Task TryDisconnectOwnedWarpAsync()
+    private async Task TryReleaseHuntWarpAsync()
     {
         try
         {
-            await _warpCliService.DisconnectAsync(CancellationToken.None);
+            await _warpCliService.ReleaseAsync(WarpLeaseReason.Hunt, CancellationToken.None);
         }
         catch (Exception ex)
         {
-            _logger.Warning($"WARP disconnect after failed hunt preflight: {ex.Message}", LogTarget.All);
+            _logger.Warning($"WARP hunt lease release failed: {ex.Message}", LogTarget.All);
         }
     }
 
