@@ -3,7 +3,8 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:common="clr-namespace:media_management_app.Common"
              xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
-             xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes">
+             xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+             xmlns:views="clr-namespace:media_management_app.Views">
     <!-- #region Local resources and templates -->
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
@@ -631,53 +632,115 @@
                         </StackPanel>
                     </Grid>
 
-                    <TextBox Text="{Binding MediaSearchQuery, UpdateSourceTrigger=PropertyChanged}"
-                             Margin="0,14,0,8"
-                             MinHeight="34"
-                             materialDesign:HintAssist.Hint="Search media"
-                             materialDesign:HintAssist.IsFloating="False"
-                             VerticalContentAlignment="Center" />
+                    <Grid Margin="0,14,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Grid>
+                            <TextBox Text="{Binding MediaSearchText, UpdateSourceTrigger=PropertyChanged}"
+                                     Margin="0"
+                                     MinHeight="34"
+                                     AcceptsReturn="False"
+                                     VerticalContentAlignment="Center">
+                                <TextBox.InputBindings>
+                                    <KeyBinding Key="Enter" Command="{Binding SearchMediaCommand}" />
+                                </TextBox.InputBindings>
+                                <TextBox.Style>
+                                    <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+                                        <Setter Property="Padding" Value="10,7" />
+                                        <Setter Property="Margin" Value="0" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding HasAppliedMediaSearch}" Value="True">
+                                                <Setter Property="Padding" Value="10,7,32,7" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBox.Style>
+                            </TextBox>
+                            <StackPanel Orientation="Horizontal"
+                                        Margin="10,0,10,0"
+                                        VerticalAlignment="Center"
+                                        IsHitTestVisible="False">
+                                <StackPanel.Style>
+                                    <Style TargetType="StackPanel">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding HasMediaSearchText}" Value="False">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </StackPanel.Style>
+                                <iconPacks:PackIconLucide Kind="Search"
+                                                           Width="14"
+                                                           Height="14"
+                                                           VerticalAlignment="Center"
+                                                           Foreground="{StaticResource AppBrushMutedText}" />
+                                <TextBlock Text="Search media"
+                                           Margin="8,0,0,0"
+                                           VerticalAlignment="Center"
+                                           FontSize="13"
+                                           Foreground="{StaticResource AppBrushMutedText}" />
+                            </StackPanel>
+                            <Button Style="{StaticResource AppCompactIconButtonStyle}"
+                                    Width="22"
+                                    Height="22"
+                                    Margin="0,0,6,0"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Center"
+                                    Command="{Binding ClearMediaSearchCommand}"
+                                    ToolTip="Clear search"
+                                    Visibility="{Binding HasAppliedMediaSearch, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                <iconPacks:PackIconLucide Kind="CircleX"
+                                                           Width="14"
+                                                           Height="14"
+                                                           Foreground="{StaticResource AppBrushMutedText}" />
+                            </Button>
+                        </Grid>
+                        <Button Grid.Column="1"
+                                Style="{StaticResource AppIconButtonStyle}"
+                                Margin="8,0,0,0"
+                                Command="{Binding SearchMediaCommand}"
+                                ToolTip="Search media">
+                            <iconPacks:PackIconLucide Kind="Search" Width="14" Height="14" />
+                        </Button>
+                    </Grid>
 
-                    <ComboBox ItemsSource="{Binding WatchStatusFilterOptions}"
-                              SelectedItem="{Binding SelectedWatchStatusFilter}"
-                              DisplayMemberPath="Label"
-                              Margin="0,0,0,10"
-                              MinHeight="34"
-                              Padding="8,4"
-                              ToolTip="Filter by watch status" />
+                    <views:WatchStatusFilterControl Margin="0,0,0,10" />
 
-                    <Border BorderBrush="{StaticResource AppBrushBorder}"
-                            BorderThickness="1"
-                            CornerRadius="7"
-                            ClipToBounds="True"
-                            Margin="0,0,0,12">
-                        <UniformGrid Rows="1" Columns="3">
-                            <Button Style="{StaticResource SortSegmentButtonStyle}"
-                                    Command="{Binding SetMediaSortModeCommand}"
-                                    CommandParameter="{x:Static common:MediaCardSortMode.DateAddedDesc}"
-                                    Tag="{Binding IsDateSortSelected}"
-                                    BorderThickness="0,0,1,0"
-                                    ToolTip="Sort by newest added">
-                                <iconPacks:PackIconLucide Kind="CalendarClock" Width="14" Height="14" />
-                            </Button>
-                            <Button Style="{StaticResource SortSegmentButtonStyle}"
-                                    Command="{Binding SetMediaSortModeCommand}"
-                                    CommandParameter="{x:Static common:MediaCardSortMode.TypeThenTitle}"
-                                    Tag="{Binding IsTypeSortSelected}"
-                                    BorderThickness="0,0,1,0"
-                                    ToolTip="Sort by media type">
-                                <iconPacks:PackIconLucide Kind="Tags" Width="14" Height="14" />
-                            </Button>
-                            <Button Style="{StaticResource SortSegmentButtonStyle}"
-                                    Command="{Binding SetMediaSortModeCommand}"
-                                    CommandParameter="{x:Static common:MediaCardSortMode.Title}"
-                                    Tag="{Binding IsNameSortSelected}"
-                                    BorderThickness="0"
-                                    ToolTip="Sort by title">
-                                <iconPacks:PackIconLucide Kind="ArrowDownAZ" Width="14" Height="14" />
-                            </Button>
-                        </UniformGrid>
-                    </Border>
+                    <Grid Margin="0,0,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <ComboBox ItemsSource="{Binding MediaSortFieldOptions}"
+                                  SelectedValue="{Binding MediaSortField}"
+                                  SelectedValuePath="Field"
+                                  ItemTemplate="{StaticResource MediaSortFieldItemTemplate}"
+                                  MinHeight="34"
+                                  Padding="8,4"
+                                  VerticalContentAlignment="Center"
+                                  ToolTip="Sort media cards" />
+                        <Button Grid.Column="1"
+                                Style="{StaticResource AppIconButtonStyle}"
+                                Margin="8,0,0,0"
+                                Command="{Binding ToggleMediaSortDirectionCommand}"
+                                ToolTip="{Binding MediaSortDirectionToolTip}">
+                            <iconPacks:PackIconLucide Width="14" Height="14">
+                                <iconPacks:PackIconLucide.Style>
+                                    <Style TargetType="iconPacks:PackIconLucide">
+                                        <Setter Property="Kind" Value="ArrowDownNarrowWide" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsSortAscending}" Value="True">
+                                                <Setter Property="Kind" Value="ArrowUpNarrowWide" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </iconPacks:PackIconLucide.Style>
+                            </iconPacks:PackIconLucide>
+                        </Button>
+                    </Grid>
                 </StackPanel>
 
                 <Grid>
@@ -1127,16 +1190,10 @@
                                                   ItemsSource="{Binding WatchStatusOptions}"
                                                   SelectedValue="{Binding SelectedWatchStatus}"
                                                   SelectedValuePath="Status"
+                                                  ItemTemplate="{StaticResource WatchStatusOptionItemTemplate}"
                                                   Foreground="{Binding SelectedWatchStatus, Converter={StaticResource UserWatchStatusToBrushConverter}}"
                                                   IsVisibleChanged="WatchStatusComboBox_OnIsVisibleChanged"
-                                                  ToolTip="Personal watch status">
-                                            <ComboBox.ItemTemplate>
-                                                <DataTemplate>
-                                                    <TextBlock Text="{Binding Label}"
-                                                               Foreground="{Binding Status, Converter={StaticResource UserWatchStatusToBrushConverter}}" />
-                                                </DataTemplate>
-                                            </ComboBox.ItemTemplate>
-                                        </ComboBox>
+                                                  ToolTip="Personal watch status" />
                                         <StackPanel Orientation="Horizontal"
                                                     Margin="12,0,0,0"
                                                     VerticalAlignment="Center"

@@ -5,6 +5,7 @@
                     xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes">
 
     <converters:UserWatchStatusToBrushConverter x:Key="UserWatchStatusToBrushConverter" />
+    <converters:UserWatchStatusToLucideKindConverter x:Key="UserWatchStatusToLucideKindConverter" />
 
     <Style x:Key="AppIconStyle" TargetType="iconPacks:PackIconLucide">
         <Setter Property="Width" Value="18" />
@@ -187,7 +188,7 @@
                               HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
                               VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
                               Content="{TemplateBinding SelectionBoxItem}"
-                              ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                              ContentTemplate="{TemplateBinding ItemTemplate}"
                               ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"
                               IsHitTestVisible="False" />
             <ToggleButton x:Name="DropDownToggle"

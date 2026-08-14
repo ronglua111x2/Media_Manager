@@ -2,7 +2,7 @@ using media_management_app.Common;
 
 namespace media_management_app.ViewModels;
 
-public sealed class FindAddMediaCardViewModel
+public sealed class FindAddMediaCardViewModel : IMediaCardSortable
 {
     public long Id { get; init; }
 
@@ -15,6 +15,8 @@ public sealed class FindAddMediaCardViewModel
     public int? Year { get; init; }
 
     public DateTime CreatedUtc { get; init; }
+
+    public double? Rating { get; init; }
 
     public int AvailableCount { get; init; }
 

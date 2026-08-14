@@ -63,12 +63,7 @@ public sealed partial class FindAddViewModel : ViewModelBase
 
     public ObservableCollection<SearchRecipe> RecipeOptions { get; } = [];
 
-    public IReadOnlyList<MediaCardSortMode> SortModes { get; } =
-    [
-        MediaCardSortMode.DateAddedDesc,
-        MediaCardSortMode.TypeThenTitle,
-        MediaCardSortMode.Title
-    ];
+    public IReadOnlyList<MediaCardSortFieldOption> MediaSortFieldOptions { get; } = MediaCardSortFieldOption.All;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(SearchCommand))]
@@ -82,7 +77,10 @@ public sealed partial class FindAddViewModel : ViewModelBase
     private string? selectedRecipeId;
 
     [ObservableProperty]
-    private MediaCardSortMode mediaSortMode = MediaCardSortMode.DateAddedDesc;
+    private MediaCardSortField mediaSortField = MediaCardSortField.DateAdded;
+
+    [ObservableProperty]
+    private bool isSortAscending;
 
     [ObservableProperty]
     private bool isResultDetailsCompact;
@@ -130,11 +128,7 @@ public sealed partial class FindAddViewModel : ViewModelBase
 
     public string AddButtonText => SelectedResult?.IsAlreadyAdded == true ? "Already Added" : "Add to Library";
 
-    public bool IsDateSortSelected => MediaSortMode == MediaCardSortMode.DateAddedDesc;
-
-    public bool IsTypeSortSelected => MediaSortMode == MediaCardSortMode.TypeThenTitle;
-
-    public bool IsNameSortSelected => MediaSortMode == MediaCardSortMode.Title;
+    public string MediaSortDirectionToolTip => MediaCardSort.GetDirectionToolTip(MediaSortField, IsSortAscending);
 
     public string NameSortIndicator => GetSortIndicator(SearchResultSortColumn.Name);
 
@@ -342,7 +336,8 @@ public sealed partial class FindAddViewModel : ViewModelBase
             Year = show.FirstAirYear,
             CreatedUtc = show.CreatedUtc,
             AvailableCount = show.AvailableEpisodes,
-            TotalCount = show.TotalEpisodes
+            TotalCount = show.TotalEpisodes,
+            Rating = show.Rating
         });
         var movies = _trackedMovieService.GetMovies().Select(movie => new FindAddMediaCardViewModel
         {
@@ -353,7 +348,8 @@ public sealed partial class FindAddViewModel : ViewModelBase
             Year = movie.ReleaseYear,
             CreatedUtc = movie.CreatedUtc,
             AvailableCount = movie.Availability == EpisodeAvailability.Available ? 1 : 0,
-            TotalCount = 1
+            TotalCount = 1,
+            Rating = movie.Rating
         });
 
         _allMediaCards = shows.Concat(movies).ToList();
@@ -361,9 +357,9 @@ public sealed partial class FindAddViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private void SetMediaSortMode(MediaCardSortMode mode)
+    private void ToggleMediaSortDirection()
     {
-        MediaSortMode = mode;
+        IsSortAscending = !IsSortAscending;
     }
 
     [RelayCommand]
@@ -430,12 +426,17 @@ public sealed partial class FindAddViewModel : ViewModelBase
         }
     }
 
-    partial void OnMediaSortModeChanged(MediaCardSortMode value)
+    partial void OnMediaSortFieldChanged(MediaCardSortField value)
+    {
+        IsSortAscending = MediaCardSort.DefaultIsAscending(value);
+        ApplyMediaCardSort();
+        OnPropertyChanged(nameof(MediaSortDirectionToolTip));
+    }
+
+    partial void OnIsSortAscendingChanged(bool value)
     {
         ApplyMediaCardSort();
-        OnPropertyChanged(nameof(IsDateSortSelected));
-        OnPropertyChanged(nameof(IsTypeSortSelected));
-        OnPropertyChanged(nameof(IsNameSortSelected));
+        OnPropertyChanged(nameof(MediaSortDirectionToolTip));
     }
 
     private void OnRecipesChanged(object? sender, EventArgs e)
@@ -632,14 +633,7 @@ public sealed partial class FindAddViewModel : ViewModelBase
 
     private void ApplyMediaCardSort()
     {
-        var sorted = MediaSortMode switch
-        {
-            MediaCardSortMode.TypeThenTitle => _allMediaCards
-                .OrderBy(card => card.MediaKind)
-                .ThenBy(card => card.Title),
-            MediaCardSortMode.Title => _allMediaCards.OrderBy(card => card.Title),
-            _ => _allMediaCards.OrderByDescending(card => card.CreatedUtc)
-        };
+        var sorted = MediaCardSort.Apply(_allMediaCards, MediaSortField, IsSortAscending);
 
         ExistingMediaCards.Clear();
         foreach (var card in sorted)

@@ -5,7 +5,7 @@ using media_management_app.Models;
 
 namespace media_management_app.ViewModels;
 
-public partial class LibraryMediaCardViewModel : ObservableObject
+public partial class LibraryMediaCardViewModel : ObservableObject, IMediaCardSortable
 {
     public long Id { get; init; }
 

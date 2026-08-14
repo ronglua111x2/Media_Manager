@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Windows.Media;
@@ -94,12 +95,14 @@ public sealed partial class LibraryViewModel : ViewModelBase
         _torrentReconciliationService.Reconciled += (_, _) => RunReloadSelectedDetailOnUiThread();
         packLinkCoordinatorService.PackReconciled += (_, _) => RunReloadSelectedDetailOnUiThread();
         lifecycleService.AppModeChanged += OnAppModeChanged;
+        SubscribeWatchStatusFilterOptions();
         RestoreLibraryUiState();
         RefreshLibrary();
         StatusMessage = "Select a media card to view details.";
     }
 
     private bool _isRestoringLibraryUiState;
+    private bool _suppressWatchStatusFilterApply;
     private long? _pendingRestoreMediaId;
     private MediaKind? _pendingRestoreMediaKind;
 
@@ -115,12 +118,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
 
     public ObservableCollection<MediaImportGroupViewModel> IgnoredImportGroups { get; } = [];
 
-    public IReadOnlyList<MediaCardSortMode> SortModes { get; } =
-    [
-        MediaCardSortMode.DateAddedDesc,
-        MediaCardSortMode.TypeThenTitle,
-        MediaCardSortMode.Title
-    ];
+    public IReadOnlyList<MediaCardSortFieldOption> MediaSortFieldOptions { get; } = MediaCardSortFieldOption.All;
 
     public IReadOnlyList<WatchStatusOption> WatchStatusOptions { get; } =
     [
@@ -132,16 +130,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
         new() { Status = UserWatchStatus.PlanToWatch, Label = "Plan to Watch" }
     ];
 
-    public IReadOnlyList<WatchStatusFilterOption> WatchStatusFilterOptions { get; } =
-    [
-        new() { Status = null, Label = "All statuses" },
-        new() { Status = UserWatchStatus.None, Label = "Unset" },
-        new() { Status = UserWatchStatus.Watching, Label = "Watching" },
-        new() { Status = UserWatchStatus.Completed, Label = "Completed" },
-        new() { Status = UserWatchStatus.OnHold, Label = "On-Hold" },
-        new() { Status = UserWatchStatus.Dropped, Label = "Dropped" },
-        new() { Status = UserWatchStatus.PlanToWatch, Label = "Plan to Watch" }
-    ];
+    public IReadOnlyList<WatchStatusFilterOption> WatchStatusFilterOptions { get; } = WatchStatusFilterOption.CreateAll();
 
     [ObservableProperty]
     private LibraryMediaCardViewModel? selectedMediaCard;
@@ -180,13 +169,16 @@ public sealed partial class LibraryViewModel : ViewModelBase
     private ImageSource? selectedPosterImage;
 
     [ObservableProperty]
-    private MediaCardSortMode mediaSortMode = MediaCardSortMode.DateAddedDesc;
+    private MediaCardSortField mediaSortField = MediaCardSortField.DateAdded;
+
+    [ObservableProperty]
+    private bool isSortAscending;
 
     [ObservableProperty]
     private string mediaSearchQuery = string.Empty;
 
     [ObservableProperty]
-    private WatchStatusFilterOption? selectedWatchStatusFilter;
+    private string mediaSearchText = string.Empty;
 
     [ObservableProperty]
     private string statusMessage = string.Empty;
@@ -260,11 +252,26 @@ public sealed partial class LibraryViewModel : ViewModelBase
 
     public bool ShowStopAutoTrackButton => IsSelectedShow && SelectedShow?.IsAutoTracked == true;
 
-    public bool IsDateSortSelected => MediaSortMode == MediaCardSortMode.DateAddedDesc;
+    public bool HasMediaSearchText => !string.IsNullOrEmpty(MediaSearchText);
 
-    public bool IsTypeSortSelected => MediaSortMode == MediaCardSortMode.TypeThenTitle;
+    public bool HasAppliedMediaSearch => !string.IsNullOrWhiteSpace(MediaSearchQuery);
 
-    public bool IsNameSortSelected => MediaSortMode == MediaCardSortMode.Title;
+    public string MediaSortDirectionToolTip => MediaCardSort.GetDirectionToolTip(MediaSortField, IsSortAscending);
+
+    public string WatchStatusFilterLabel => WatchStatusFilterOption.GetSummaryLabel(WatchStatusFilterOptions);
+
+    public UserWatchStatus WatchStatusFilterLabelStatus
+    {
+        get
+        {
+            var selected = WatchStatusFilterOption.GetSelectedStatuses(WatchStatusFilterOptions);
+            return selected.Count == 1 ? selected[0] : UserWatchStatus.None;
+        }
+    }
+
+    public bool HasSelectedWatchStatusFilter => WatchStatusFilterOption.HasSelection(WatchStatusFilterOptions);
+
+    private bool CanClearWatchStatusFilter() => HasSelectedWatchStatusFilter;
 
     public string SelectedShowSeriesStatusLabel => SelectedShowSeriesStatus switch
     {
@@ -446,9 +453,48 @@ public sealed partial class LibraryViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private void SetMediaSortMode(MediaCardSortMode mode)
+    private void SearchMedia()
     {
-        MediaSortMode = mode;
+        MediaSearchText = (MediaSearchText ?? string.Empty).Trim();
+        MediaSearchQuery = MediaSearchText;
+    }
+
+    [RelayCommand(CanExecute = nameof(CanClearMediaSearch))]
+    private void ClearMediaSearch()
+    {
+        MediaSearchText = string.Empty;
+        MediaSearchQuery = string.Empty;
+    }
+
+    private bool CanClearMediaSearch() => HasAppliedMediaSearch;
+
+    [RelayCommand]
+    private void ToggleMediaSortDirection()
+    {
+        IsSortAscending = !IsSortAscending;
+    }
+
+    [RelayCommand(CanExecute = nameof(CanClearWatchStatusFilter))]
+    private void ClearWatchStatusFilter()
+    {
+        if (!CanClearWatchStatusFilter())
+        {
+            return;
+        }
+
+        _suppressWatchStatusFilterApply = true;
+        try
+        {
+            WatchStatusFilterOption.ClearAll(WatchStatusFilterOptions);
+        }
+        finally
+        {
+            _suppressWatchStatusFilterApply = false;
+        }
+
+        NotifyWatchStatusFilterPresentationChanged();
+        ApplyMediaCardFilterAndSort();
+        PersistLibraryUiState();
     }
 
     [RelayCommand]
@@ -1137,19 +1183,18 @@ public sealed partial class LibraryViewModel : ViewModelBase
         }
     }
 
+    partial void OnMediaSearchTextChanged(string value)
+    {
+        OnPropertyChanged(nameof(HasMediaSearchText));
+    }
+
     partial void OnMediaSearchQueryChanged(string value)
     {
         ApplyMediaCardFilterAndSort();
         OnPropertyChanged(nameof(HasMedia));
         OnPropertyChanged(nameof(HasNoFilterMatches));
-        PersistLibraryUiState();
-    }
-
-    partial void OnSelectedWatchStatusFilterChanged(WatchStatusFilterOption? value)
-    {
-        ApplyMediaCardFilterAndSort();
-        OnPropertyChanged(nameof(HasMedia));
-        OnPropertyChanged(nameof(HasNoFilterMatches));
+        OnPropertyChanged(nameof(HasAppliedMediaSearch));
+        ClearMediaSearchCommand.NotifyCanExecuteChanged();
         PersistLibraryUiState();
     }
 
@@ -1472,13 +1517,56 @@ public sealed partial class LibraryViewModel : ViewModelBase
         ToggleThoughtPopupCommand.NotifyCanExecuteChanged();
     }
 
-    partial void OnMediaSortModeChanged(MediaCardSortMode value)
+    partial void OnMediaSortFieldChanged(MediaCardSortField value)
+    {
+        if (!_isRestoringLibraryUiState)
+        {
+            IsSortAscending = MediaCardSort.DefaultIsAscending(value);
+        }
+
+        ApplyMediaCardFilterAndSort();
+        OnPropertyChanged(nameof(MediaSortDirectionToolTip));
+        PersistLibraryUiState();
+    }
+
+    partial void OnIsSortAscendingChanged(bool value)
     {
         ApplyMediaCardFilterAndSort();
-        OnPropertyChanged(nameof(IsDateSortSelected));
-        OnPropertyChanged(nameof(IsTypeSortSelected));
-        OnPropertyChanged(nameof(IsNameSortSelected));
+        OnPropertyChanged(nameof(MediaSortDirectionToolTip));
         PersistLibraryUiState();
+    }
+
+    private void SubscribeWatchStatusFilterOptions()
+    {
+        foreach (var option in WatchStatusFilterOptions)
+        {
+            option.PropertyChanged += OnWatchStatusFilterOptionChanged;
+        }
+    }
+
+    private void OnWatchStatusFilterOptionChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(WatchStatusFilterOption.IsSelected))
+        {
+            return;
+        }
+
+        NotifyWatchStatusFilterPresentationChanged();
+        if (_isRestoringLibraryUiState || _suppressWatchStatusFilterApply)
+        {
+            return;
+        }
+
+        ApplyMediaCardFilterAndSort();
+        PersistLibraryUiState();
+    }
+
+    private void NotifyWatchStatusFilterPresentationChanged()
+    {
+        OnPropertyChanged(nameof(WatchStatusFilterLabel));
+        OnPropertyChanged(nameof(WatchStatusFilterLabelStatus));
+        OnPropertyChanged(nameof(HasSelectedWatchStatusFilter));
+        ClearWatchStatusFilterCommand.NotifyCanExecuteChanged();
     }
 
     private void RestoreLibraryUiState()
@@ -1487,10 +1575,21 @@ public sealed partial class LibraryViewModel : ViewModelBase
         try
         {
             var ui = _settingsService.Current.Ui ?? new UiSettings();
-            MediaSortMode = ui.LibraryMediaSortMode;
+            MediaCardSort.Restore(
+                ui.LibraryMediaSortField,
+                ui.LibraryMediaSortAscending,
+                ui.LibraryMediaSortMode,
+                out var field,
+                out var ascending);
+            MediaSortField = field;
+            IsSortAscending = ascending;
             MediaSearchQuery = ui.LibraryMediaSearchQuery ?? string.Empty;
-            SelectedWatchStatusFilter = WatchStatusFilterOptions.FirstOrDefault(option =>
-                option.Status == ui.LibraryWatchStatusFilter) ?? WatchStatusFilterOptions[0];
+            MediaSearchText = MediaSearchQuery;
+            WatchStatusFilterOption.ApplySaved(
+                WatchStatusFilterOptions,
+                ui.LibraryWatchStatusFilters,
+                ui.LibraryWatchStatusFilter);
+            NotifyWatchStatusFilterPresentationChanged();
             _pendingRestoreMediaId = ui.LibrarySelectedMediaId;
             _pendingRestoreMediaKind = ui.LibrarySelectedMediaKind;
         }
@@ -1529,21 +1628,25 @@ public sealed partial class LibraryViewModel : ViewModelBase
 
         var ui = _settingsService.Current.Ui ??= new UiSettings();
         var search = MediaSearchQuery ?? string.Empty;
-        var filter = SelectedWatchStatusFilter?.Status;
+        var filters = WatchStatusFilterOption.GetSelectedStatuses(WatchStatusFilterOptions);
         var selectedId = SelectedMediaCard?.Id;
         var selectedKind = SelectedMediaCard?.MediaKind;
-        if (ui.LibraryMediaSortMode == MediaSortMode &&
+        if (ui.LibraryMediaSortField == MediaSortField &&
+            ui.LibraryMediaSortAscending == IsSortAscending &&
             string.Equals(ui.LibraryMediaSearchQuery, search, StringComparison.Ordinal) &&
-            ui.LibraryWatchStatusFilter == filter &&
+            ui.LibraryWatchStatusFilters is not null &&
+            ui.LibraryWatchStatusFilters.SequenceEqual(filters) &&
             ui.LibrarySelectedMediaId == selectedId &&
             ui.LibrarySelectedMediaKind == selectedKind)
         {
             return;
         }
 
-        ui.LibraryMediaSortMode = MediaSortMode;
+        ui.LibraryMediaSortField = MediaSortField;
+        ui.LibraryMediaSortAscending = IsSortAscending;
         ui.LibraryMediaSearchQuery = search;
-        ui.LibraryWatchStatusFilter = filter;
+        ui.LibraryWatchStatusFilters = filters;
+        ui.LibraryWatchStatusFilter = filters.Count == 1 ? filters[0] : null;
         ui.LibrarySelectedMediaId = selectedId;
         ui.LibrarySelectedMediaKind = selectedKind;
         _settingsService.Save();
@@ -1842,19 +1945,13 @@ public sealed partial class LibraryViewModel : ViewModelBase
                 card.Title.Contains(query, StringComparison.OrdinalIgnoreCase));
         }
 
-        if (SelectedWatchStatusFilter?.Status is { } statusFilter)
+        var selectedStatuses = WatchStatusFilterOption.GetSelectedStatuses(WatchStatusFilterOptions);
+        if (selectedStatuses.Count > 0)
         {
-            filtered = filtered.Where(card => card.WatchStatus == statusFilter);
+            filtered = filtered.Where(card => selectedStatuses.Contains(card.WatchStatus));
         }
 
-        var sorted = MediaSortMode switch
-        {
-            MediaCardSortMode.TypeThenTitle => filtered
-                .OrderBy(card => card.MediaKind)
-                .ThenBy(card => card.Title),
-            MediaCardSortMode.Title => filtered.OrderBy(card => card.Title),
-            _ => filtered.OrderByDescending(card => card.CreatedUtc)
-        };
+        var sorted = MediaCardSort.Apply(filtered, MediaSortField, IsSortAscending);
 
         var selectedId = SelectedMediaCard?.Id;
         var selectedKind = SelectedMediaCard?.MediaKind;
@@ -1944,6 +2041,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
             _trackedShowService.UpdateRating(SelectedShow.Id, rating, thoughtForDb);
             SelectedMediaCard?.ApplyRating(rating);
             SyncCardInAllMedia(SelectedMediaCard);
+            ApplyMediaCardFilterAndSort();
             StatusMessage = $"Rating/thought updated: {rating:0.0}.";
             return;
         }
@@ -1953,6 +2051,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
             _trackedMovieService.UpdateRating(SelectedMovie.Id, rating, thoughtForDb);
             SelectedMediaCard?.ApplyRating(rating);
             SyncCardInAllMedia(SelectedMediaCard);
+            ApplyMediaCardFilterAndSort();
             StatusMessage = $"Rating/thought updated: {rating:0.0}.";
         }
     }
@@ -2008,8 +2107,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
         catalogCard?.ApplyWatchProgress(card.WatchStatus, card.WatchedEpisodes);
         catalogCard?.ApplyRating(card.Rating);
 
-        // Re-apply filter if the card may no longer match the watch-status filter.
-        if (SelectedWatchStatusFilter?.Status is not null)
+        if (WatchStatusFilterOption.GetSelectedStatuses(WatchStatusFilterOptions).Count > 0)
         {
             ApplyMediaCardFilterAndSort();
         }

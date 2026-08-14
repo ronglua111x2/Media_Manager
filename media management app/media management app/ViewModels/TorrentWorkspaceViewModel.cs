@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Threading;
@@ -34,6 +35,7 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
     private IReadOnlyList<LibraryMediaCardViewModel> _allMediaCards = [];
     private bool _isLoadingRecipeAssignment;
     private bool _isRestoringTorrentUiState;
+    private bool _suppressWatchStatusFilterApply;
     private long? _pendingRestoreMediaId;
     private MediaKind? _pendingRestoreMediaKind;
     private CancellationTokenSource? _operationCts;
@@ -88,6 +90,7 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         _packLinkCoordinatorService.PackReconciled += (_, _) => RefreshOrdersFromReconcile();
         _recipeService.RecipesChanged += (_, _) => LoadRecipeAssignment(SelectedMediaCard);
         lifecycleService.AppModeChanged += OnAppModeChanged;
+        SubscribeWatchStatusFilterOptions();
         RestoreTorrentUiState();
         LoadWorkspaceCards();
         OpenQbittorrentCommand.NotifyCanExecuteChanged();
@@ -104,16 +107,9 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
 
     public ObservableCollection<SearchRecipe> MovieRecipeOptions { get; } = [];
 
-    public IReadOnlyList<WatchStatusFilterOption> WatchStatusFilterOptions { get; } =
-    [
-        new() { Status = null, Label = "All statuses" },
-        new() { Status = UserWatchStatus.None, Label = "Unset" },
-        new() { Status = UserWatchStatus.Watching, Label = "Watching" },
-        new() { Status = UserWatchStatus.Completed, Label = "Completed" },
-        new() { Status = UserWatchStatus.OnHold, Label = "On-Hold" },
-        new() { Status = UserWatchStatus.Dropped, Label = "Dropped" },
-        new() { Status = UserWatchStatus.PlanToWatch, Label = "Plan to Watch" }
-    ];
+    public IReadOnlyList<WatchStatusFilterOption> WatchStatusFilterOptions { get; } = WatchStatusFilterOption.CreateAll();
+
+    public IReadOnlyList<MediaCardSortFieldOption> MediaSortFieldOptions { get; } = MediaCardSortFieldOption.All;
 
     [ObservableProperty]
     private LibraryMediaCardViewModel? selectedMediaCard;
@@ -122,13 +118,16 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
     private ImageSource? selectedPosterImage;
 
     [ObservableProperty]
-    private MediaCardSortMode mediaSortMode = MediaCardSortMode.DateAddedDesc;
+    private MediaCardSortField mediaSortField = MediaCardSortField.DateAdded;
+
+    [ObservableProperty]
+    private bool isSortAscending;
 
     [ObservableProperty]
     private string mediaSearchQuery = string.Empty;
 
     [ObservableProperty]
-    private WatchStatusFilterOption? selectedWatchStatusFilter;
+    private string mediaSearchText = string.Empty;
 
     [ObservableProperty]
     private string statusMessage = string.Empty;
@@ -167,11 +166,26 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
 
     public bool HasCandidatesInCart => Orders.Any(order => order.HasCandidates);
 
-    public bool IsDateSortSelected => MediaSortMode == MediaCardSortMode.DateAddedDesc;
+    public bool HasMediaSearchText => !string.IsNullOrEmpty(MediaSearchText);
 
-    public bool IsTypeSortSelected => MediaSortMode == MediaCardSortMode.TypeThenTitle;
+    public bool HasAppliedMediaSearch => !string.IsNullOrWhiteSpace(MediaSearchQuery);
 
-    public bool IsNameSortSelected => MediaSortMode == MediaCardSortMode.Title;
+    public string MediaSortDirectionToolTip => MediaCardSort.GetDirectionToolTip(MediaSortField, IsSortAscending);
+
+    public string WatchStatusFilterLabel => WatchStatusFilterOption.GetSummaryLabel(WatchStatusFilterOptions);
+
+    public UserWatchStatus WatchStatusFilterLabelStatus
+    {
+        get
+        {
+            var selected = WatchStatusFilterOption.GetSelectedStatuses(WatchStatusFilterOptions);
+            return selected.Count == 1 ? selected[0] : UserWatchStatus.None;
+        }
+    }
+
+    public bool HasSelectedWatchStatusFilter => WatchStatusFilterOption.HasSelection(WatchStatusFilterOptions);
+
+    private bool CanClearWatchStatusFilter() => HasSelectedWatchStatusFilter;
 
     public string CartTitle => SelectedMediaCard is null
         ? "Cart"
@@ -247,9 +261,48 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private void SetMediaSortMode(MediaCardSortMode mode)
+    private void SearchMedia()
     {
-        MediaSortMode = mode;
+        MediaSearchText = (MediaSearchText ?? string.Empty).Trim();
+        MediaSearchQuery = MediaSearchText;
+    }
+
+    [RelayCommand(CanExecute = nameof(CanClearMediaSearch))]
+    private void ClearMediaSearch()
+    {
+        MediaSearchText = string.Empty;
+        MediaSearchQuery = string.Empty;
+    }
+
+    private bool CanClearMediaSearch() => HasAppliedMediaSearch;
+
+    [RelayCommand]
+    private void ToggleMediaSortDirection()
+    {
+        IsSortAscending = !IsSortAscending;
+    }
+
+    [RelayCommand(CanExecute = nameof(CanClearWatchStatusFilter))]
+    private void ClearWatchStatusFilter()
+    {
+        if (!CanClearWatchStatusFilter())
+        {
+            return;
+        }
+
+        _suppressWatchStatusFilterApply = true;
+        try
+        {
+            WatchStatusFilterOption.ClearAll(WatchStatusFilterOptions);
+        }
+        finally
+        {
+            _suppressWatchStatusFilterApply = false;
+        }
+
+        NotifyWatchStatusFilterPresentationChanged();
+        ApplyMediaCardFilterAndSort();
+        PersistTorrentUiState();
     }
 
     [RelayCommand]
@@ -911,28 +964,37 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         StatusMessage = $"Movie recipe set to {GetRecipeName(value, MediaKind.Movie)}.";
     }
 
+    partial void OnMediaSearchTextChanged(string value)
+    {
+        OnPropertyChanged(nameof(HasMediaSearchText));
+    }
+
     partial void OnMediaSearchQueryChanged(string value)
     {
         ApplyMediaCardFilterAndSort();
         OnPropertyChanged(nameof(HasMedia));
         OnPropertyChanged(nameof(HasNoFilterMatches));
+        OnPropertyChanged(nameof(HasAppliedMediaSearch));
+        ClearMediaSearchCommand.NotifyCanExecuteChanged();
         PersistTorrentUiState();
     }
 
-    partial void OnSelectedWatchStatusFilterChanged(WatchStatusFilterOption? value)
+    partial void OnMediaSortFieldChanged(MediaCardSortField value)
     {
+        if (!_isRestoringTorrentUiState)
+        {
+            IsSortAscending = MediaCardSort.DefaultIsAscending(value);
+        }
+
         ApplyMediaCardFilterAndSort();
-        OnPropertyChanged(nameof(HasMedia));
-        OnPropertyChanged(nameof(HasNoFilterMatches));
+        OnPropertyChanged(nameof(MediaSortDirectionToolTip));
         PersistTorrentUiState();
     }
 
-    partial void OnMediaSortModeChanged(MediaCardSortMode value)
+    partial void OnIsSortAscendingChanged(bool value)
     {
         ApplyMediaCardFilterAndSort();
-        OnPropertyChanged(nameof(IsDateSortSelected));
-        OnPropertyChanged(nameof(IsTypeSortSelected));
-        OnPropertyChanged(nameof(IsNameSortSelected));
+        OnPropertyChanged(nameof(MediaSortDirectionToolTip));
         PersistTorrentUiState();
     }
 
@@ -1670,19 +1732,13 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
                 card.Title.Contains(query, StringComparison.OrdinalIgnoreCase));
         }
 
-        if (SelectedWatchStatusFilter?.Status is { } statusFilter)
+        var selectedStatuses = WatchStatusFilterOption.GetSelectedStatuses(WatchStatusFilterOptions);
+        if (selectedStatuses.Count > 0)
         {
-            filtered = filtered.Where(card => card.WatchStatus == statusFilter);
+            filtered = filtered.Where(card => selectedStatuses.Contains(card.WatchStatus));
         }
 
-        var sorted = MediaSortMode switch
-        {
-            MediaCardSortMode.TypeThenTitle => filtered
-                .OrderBy(card => card.MediaKind)
-                .ThenBy(card => card.Title),
-            MediaCardSortMode.Title => filtered.OrderBy(card => card.Title),
-            _ => filtered.OrderByDescending(card => card.CreatedUtc)
-        };
+        var sorted = MediaCardSort.Apply(filtered, MediaSortField, IsSortAscending);
 
         var selectedId = SelectedMediaCard?.Id;
         var selectedKind = SelectedMediaCard?.MediaKind;
@@ -1705,16 +1761,60 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         OnPropertyChanged(nameof(HasNoFilterMatches));
     }
 
+    private void SubscribeWatchStatusFilterOptions()
+    {
+        foreach (var option in WatchStatusFilterOptions)
+        {
+            option.PropertyChanged += OnWatchStatusFilterOptionChanged;
+        }
+    }
+
+    private void OnWatchStatusFilterOptionChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(WatchStatusFilterOption.IsSelected))
+        {
+            return;
+        }
+
+        NotifyWatchStatusFilterPresentationChanged();
+        if (_isRestoringTorrentUiState || _suppressWatchStatusFilterApply)
+        {
+            return;
+        }
+
+        ApplyMediaCardFilterAndSort();
+        PersistTorrentUiState();
+    }
+
+    private void NotifyWatchStatusFilterPresentationChanged()
+    {
+        OnPropertyChanged(nameof(WatchStatusFilterLabel));
+        OnPropertyChanged(nameof(WatchStatusFilterLabelStatus));
+        OnPropertyChanged(nameof(HasSelectedWatchStatusFilter));
+        ClearWatchStatusFilterCommand.NotifyCanExecuteChanged();
+    }
+
     private void RestoreTorrentUiState()
     {
         _isRestoringTorrentUiState = true;
         try
         {
             var ui = _settingsService.Current.Ui ?? new UiSettings();
-            MediaSortMode = ui.TorrentMediaSortMode;
+            MediaCardSort.Restore(
+                ui.TorrentMediaSortField,
+                ui.TorrentMediaSortAscending,
+                ui.TorrentMediaSortMode,
+                out var field,
+                out var ascending);
+            MediaSortField = field;
+            IsSortAscending = ascending;
             MediaSearchQuery = ui.TorrentMediaSearchQuery ?? string.Empty;
-            SelectedWatchStatusFilter = WatchStatusFilterOptions.FirstOrDefault(option =>
-                option.Status == ui.TorrentWatchStatusFilter) ?? WatchStatusFilterOptions[0];
+            MediaSearchText = MediaSearchQuery;
+            WatchStatusFilterOption.ApplySaved(
+                WatchStatusFilterOptions,
+                ui.TorrentWatchStatusFilters,
+                ui.TorrentWatchStatusFilter);
+            NotifyWatchStatusFilterPresentationChanged();
             _pendingRestoreMediaId = ui.TorrentSelectedMediaId;
             _pendingRestoreMediaKind = ui.TorrentSelectedMediaKind;
         }
@@ -1753,21 +1853,25 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
 
         var ui = _settingsService.Current.Ui ??= new UiSettings();
         var search = MediaSearchQuery ?? string.Empty;
-        var filter = SelectedWatchStatusFilter?.Status;
+        var filters = WatchStatusFilterOption.GetSelectedStatuses(WatchStatusFilterOptions);
         var selectedId = SelectedMediaCard?.Id;
         var selectedKind = SelectedMediaCard?.MediaKind;
-        if (ui.TorrentMediaSortMode == MediaSortMode &&
+        if (ui.TorrentMediaSortField == MediaSortField &&
+            ui.TorrentMediaSortAscending == IsSortAscending &&
             string.Equals(ui.TorrentMediaSearchQuery, search, StringComparison.Ordinal) &&
-            ui.TorrentWatchStatusFilter == filter &&
+            ui.TorrentWatchStatusFilters is not null &&
+            ui.TorrentWatchStatusFilters.SequenceEqual(filters) &&
             ui.TorrentSelectedMediaId == selectedId &&
             ui.TorrentSelectedMediaKind == selectedKind)
         {
             return;
         }
 
-        ui.TorrentMediaSortMode = MediaSortMode;
+        ui.TorrentMediaSortField = MediaSortField;
+        ui.TorrentMediaSortAscending = IsSortAscending;
         ui.TorrentMediaSearchQuery = search;
-        ui.TorrentWatchStatusFilter = filter;
+        ui.TorrentWatchStatusFilters = filters;
+        ui.TorrentWatchStatusFilter = filters.Count == 1 ? filters[0] : null;
         ui.TorrentSelectedMediaId = selectedId;
         ui.TorrentSelectedMediaKind = selectedKind;
         _settingsService.Save();

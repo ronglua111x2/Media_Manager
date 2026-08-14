@@ -12,9 +12,15 @@ public sealed class UiSettings
 
     public MediaCardSortMode LibraryMediaSortMode { get; set; } = MediaCardSortMode.DateAddedDesc;
 
+    public MediaCardSortField? LibraryMediaSortField { get; set; }
+
+    public bool? LibraryMediaSortAscending { get; set; }
+
     public string LibraryMediaSearchQuery { get; set; } = string.Empty;
 
-    /// <summary>Null means "All statuses".</summary>
+    public List<UserWatchStatus>? LibraryWatchStatusFilters { get; set; }
+
+    /// <summary>Null means "All statuses". Legacy single-status filter.</summary>
     public UserWatchStatus? LibraryWatchStatusFilter { get; set; }
 
     public long? LibrarySelectedMediaId { get; set; }
@@ -23,9 +29,15 @@ public sealed class UiSettings
 
     public MediaCardSortMode TorrentMediaSortMode { get; set; } = MediaCardSortMode.DateAddedDesc;
 
+    public MediaCardSortField? TorrentMediaSortField { get; set; }
+
+    public bool? TorrentMediaSortAscending { get; set; }
+
     public string TorrentMediaSearchQuery { get; set; } = string.Empty;
 
-    /// <summary>Null means "All statuses".</summary>
+    public List<UserWatchStatus>? TorrentWatchStatusFilters { get; set; }
+
+    /// <summary>Null means "All statuses". Legacy single-status filter.</summary>
     public UserWatchStatus? TorrentWatchStatusFilter { get; set; }
 
     public long? TorrentSelectedMediaId { get; set; }

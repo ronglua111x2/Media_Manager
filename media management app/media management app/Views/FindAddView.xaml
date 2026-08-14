@@ -337,59 +337,38 @@
                         </Button>
                     </Grid>
 
-                    <Border BorderBrush="{StaticResource AppBrushBorder}"
-                            BorderThickness="1"
-                            CornerRadius="7"
-                            ClipToBounds="True"
-                            Margin="0,14,0,12">
-                        <UniformGrid Rows="1" Columns="3">
-                            <Button Style="{StaticResource SortSegmentButtonStyle}"
-                                    Command="{Binding SetMediaSortModeCommand}"
-                                    CommandParameter="{x:Static common:MediaCardSortMode.DateAddedDesc}"
-                                    Tag="{Binding IsDateSortSelected}"
-                                    BorderThickness="0,0,1,0"
-                                    ToolTip="Sort by newest added">
-                                <StackPanel Orientation="Horizontal">
-                                    <iconPacks:PackIconLucide Kind="CalendarClock"
-                                                               Width="14"
-                                                               Height="14"
-                                                               Margin="0,0,5,0"
-                                                               Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
-                                    <TextBlock Text="Date" />
-                                </StackPanel>
-                            </Button>
-                            <Button Style="{StaticResource SortSegmentButtonStyle}"
-                                    Command="{Binding SetMediaSortModeCommand}"
-                                    CommandParameter="{x:Static common:MediaCardSortMode.TypeThenTitle}"
-                                    Tag="{Binding IsTypeSortSelected}"
-                                    BorderThickness="0,0,1,0"
-                                    ToolTip="Sort by media type">
-                                <StackPanel Orientation="Horizontal">
-                                    <iconPacks:PackIconLucide Kind="Tags"
-                                                               Width="14"
-                                                               Height="14"
-                                                               Margin="0,0,5,0"
-                                                               Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
-                                    <TextBlock Text="Type" />
-                                </StackPanel>
-                            </Button>
-                            <Button Style="{StaticResource SortSegmentButtonStyle}"
-                                    Command="{Binding SetMediaSortModeCommand}"
-                                    CommandParameter="{x:Static common:MediaCardSortMode.Title}"
-                                    Tag="{Binding IsNameSortSelected}"
-                                    BorderThickness="0"
-                                    ToolTip="Sort by title">
-                                <StackPanel Orientation="Horizontal">
-                                    <iconPacks:PackIconLucide Kind="ArrowDownAZ"
-                                                               Width="14"
-                                                               Height="14"
-                                                               Margin="0,0,5,0"
-                                                               Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
-                                    <TextBlock Text="Name" />
-                                </StackPanel>
-                            </Button>
-                        </UniformGrid>
-                    </Border>
+                    <Grid Margin="0,14,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <ComboBox ItemsSource="{Binding MediaSortFieldOptions}"
+                                  SelectedValue="{Binding MediaSortField}"
+                                  SelectedValuePath="Field"
+                                  ItemTemplate="{StaticResource MediaSortFieldItemTemplate}"
+                                  MinHeight="34"
+                                  Padding="8,4"
+                                  VerticalContentAlignment="Center"
+                                  ToolTip="Sort media cards" />
+                        <Button Grid.Column="1"
+                                Style="{StaticResource AppIconButtonStyle}"
+                                Margin="8,0,0,0"
+                                Command="{Binding ToggleMediaSortDirectionCommand}"
+                                ToolTip="{Binding MediaSortDirectionToolTip}">
+                            <iconPacks:PackIconLucide Width="14" Height="14">
+                                <iconPacks:PackIconLucide.Style>
+                                    <Style TargetType="iconPacks:PackIconLucide">
+                                        <Setter Property="Kind" Value="ArrowDownNarrowWide" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsSortAscending}" Value="True">
+                                                <Setter Property="Kind" Value="ArrowUpNarrowWide" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </iconPacks:PackIconLucide.Style>
+                            </iconPacks:PackIconLucide>
+                        </Button>
+                    </Grid>
                 </StackPanel>
 
                 <TextBlock Text="No media in library yet."
