@@ -79,5 +79,6 @@ public enum CandidateRejectReason
     ExcludedTerm = 9,
     BlockedReleaseGroup = 10,
     SizeTooLarge = 11,
-    SizeTooSmall = 12
+    SizeTooSmall = 12,
+    WrongReleaseKind = 13
 }

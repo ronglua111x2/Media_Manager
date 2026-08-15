@@ -1,3 +1,4 @@
+using media_management_app.Common;
 using media_management_app.Models;
 
 namespace media_management_app.Services;
@@ -20,6 +21,13 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
         if (reject.Reason != CandidateRejectReason.None)
         {
             return Rejected(result, reject.Reason, reject.Detail);
+        }
+
+        var kind = TorrentReleaseKind.Classify(result.FileName, parsed);
+        var kindReject = TorrentReleaseKind.GetRejectReasonForTarget(MediaKind.TvEpisode, kind);
+        if (kindReject is not null)
+        {
+            return Rejected(result, CandidateRejectReason.WrongReleaseKind, kindReject);
         }
 
         if (usesAnimeAbsolute && parsed.AbsoluteEpisodeNumber is not null && parsed.SeasonNumber is null)
@@ -63,6 +71,13 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
         if (reject.Reason != CandidateRejectReason.None)
         {
             return Rejected(result, reject.Reason, reject.Detail);
+        }
+
+        var kind = TorrentReleaseKind.Classify(result.FileName, parsed);
+        var kindReject = TorrentReleaseKind.GetRejectReasonForTarget(MediaKind.Movie, kind);
+        if (kindReject is not null)
+        {
+            return Rejected(result, CandidateRejectReason.WrongReleaseKind, kindReject);
         }
 
         if (movie.ReleaseYear is not null && !result.FileName.Contains(movie.ReleaseYear.Value.ToString(), StringComparison.OrdinalIgnoreCase))

@@ -69,6 +69,10 @@ public sealed class DeviceStatusService : IDeviceStatusService
 
     private async Task RefreshCoreAsync(bool probeWarpCli, CancellationToken cancellationToken)
     {
+        _logger.Info(
+            "Dependency status check started (qBittorrent, WARP, Jellyfin).",
+            Common.LogTarget.File);
+
         var drives = GetStorageStatuses();
         var qbittorrentTask = GetQbittorrentDependencyAsync(cancellationToken);
         var warpTask = probeWarpCli
@@ -77,19 +81,54 @@ public sealed class DeviceStatusService : IDeviceStatusService
         var jellyfinTask = GetJellyfinDependencyAsync(cancellationToken);
         await Task.WhenAll(qbittorrentTask, warpTask, jellyfinTask);
 
+        var qbittorrent = await qbittorrentTask;
+        var warp = await warpTask;
+        var jellyfin = await jellyfinTask;
+
         Current = new DeviceStatusSnapshot
         {
             DriveStatuses = drives,
             HasLowSpace = drives.Any(status => status.IsLowSpace),
-            Qbittorrent = await qbittorrentTask,
-            Warp = await warpTask,
-            Jellyfin = await jellyfinTask,
+            Qbittorrent = qbittorrent,
+            Warp = warp,
+            Jellyfin = jellyfin,
             GoogleDrive = GetGoogleDriveDependency(),
             IsBackupRunning = _backupService.IsRunning,
             JobStatus = GetJobStatus(),
             IsJobActive = _progressService.IsActive
         };
+
+        _logger.Info(
+            $"Dependency status result: qBittorrent={qbittorrent.StatusText}, WARP={warp.StatusText}, Jellyfin={jellyfin.StatusText}.",
+            Common.LogTarget.File);
+        LogDependencyDetailIfNeeded(qbittorrent);
+        LogDependencyDetailIfNeeded(warp);
+        LogDependencyDetailIfNeeded(jellyfin);
+
         StatusChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void LogDependencyDetailIfNeeded(DependencyStatusInfo status)
+    {
+        if (status.IsOk)
+        {
+            return;
+        }
+
+        // Expected non-ok states (disconnected / not set up) are already in the result line.
+        var text = status.StatusText;
+        if (string.Equals(text, "disconnected", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(text, "not configured", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(text, "not installed", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(text, "connecting", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(text, "disconnecting", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        _logger.Info(
+            $"Dependency status detail: {status.Name} — {status.Detail}",
+            Common.LogTarget.File);
     }
 
     private void RefreshJobOnly()
@@ -212,7 +251,6 @@ public sealed class DeviceStatusService : IDeviceStatusService
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException)
         {
-            _logger.Debug($"Device status qBittorrent check failed: {ex.Message}", Common.LogTarget.File);
             return new DependencyStatusInfo
             {
                 Name = "qBittorrent",
@@ -238,7 +276,6 @@ public sealed class DeviceStatusService : IDeviceStatusService
         }
         catch (Exception ex)
         {
-            _logger.Debug($"Device status WARP check failed: {ex.Message}", Common.LogTarget.File);
             return new DependencyStatusInfo
             {
                 Name = "WARP",
@@ -335,7 +372,6 @@ public sealed class DeviceStatusService : IDeviceStatusService
         }
         catch (Exception ex)
         {
-            _logger.Debug($"Device status Jellyfin check failed: {ex.Message}", Common.LogTarget.File);
             return new DependencyStatusInfo
             {
                 Name = "Jellyfin",

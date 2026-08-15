@@ -1,3 +1,4 @@
+using media_management_app.Common;
 using media_management_app.Models;
 
 namespace media_management_app.Services;
@@ -44,6 +45,13 @@ public static class CandidateMatcher
         }
 
         var parsed = TorrentCandidateParser.Parse(result.FileName);
+        var kind = TorrentReleaseKind.Classify(result.FileName, parsed);
+        var kindReject = TorrentReleaseKind.GetRejectReasonForTarget(MediaKind.TvEpisode, kind);
+        if (kindReject is not null)
+        {
+            return new CandidateMatchResult { IsAccepted = false, RejectReason = kindReject };
+        }
+
         if (!IsEpisodeMatch(parsed, episode))
         {
             return new CandidateMatchResult

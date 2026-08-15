@@ -130,7 +130,12 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
             }
 
             _logger.Info($"Connecting WARP via warp-cli ({WarpLeaseReasonText.Label(reason)})...", LogTarget.All);
-            await RunCliUnlockedAsync("connect", ct);
+            var connectResult = await RunCliUnlockedAsync("connect", ct);
+            if (connectResult.ExitCode != 0)
+            {
+                LogCliOutputOnce("connect", connectResult);
+            }
+
             var connected = await WaitUntilConnectedUnlockedAsync(timeout, ct);
             if (!connected)
             {
@@ -381,9 +386,15 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
                 logAsForce ? "Force-disconnecting WARP via warp-cli..." : "Disconnecting WARP via warp-cli...",
                 LogTarget.All);
             var result = await RunCliUnlockedAsync("disconnect", ct);
-            _logger.Info(
-                $"WARP disconnect completed (exit {result.ExitCode}). Output: {result.Output.Trim()}",
-                LogTarget.File | LogTarget.Console);
+            if (result.ExitCode != 0)
+            {
+                LogCliOutputOnce("disconnect", result);
+            }
+            else
+            {
+                _logger.Info("WARP disconnect completed.", LogTarget.File | LogTarget.Console);
+            }
+
             SetLastKnown(false);
             ShowDisconnectedToast();
             RaiseChanged(logAsForce ? WarpConnectionChangeSource.User : WarpConnectionChangeSource.Cli);
@@ -407,12 +418,6 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
 
         try
         {
-            var jsonResult = await RunCliUnlockedAsync("status --json", ct);
-            if (ParseConnectedStatus(jsonResult.Output))
-            {
-                return true;
-            }
-
             var textResult = await RunCliUnlockedAsync("status", ct);
             return ParseConnectedStatus(textResult.Output);
         }
@@ -449,7 +454,6 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
             if (e.Data is not null)
             {
                 outputBuilder.AppendLine(e.Data);
-                _logger.Debug($"[warp-cli] {e.Data}", LogTarget.File);
             }
         };
         process.ErrorDataReceived += (_, e) =>
@@ -457,7 +461,6 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
             if (e.Data is not null)
             {
                 outputBuilder.AppendLine(e.Data);
-                _logger.Debug($"[warp-cli stderr] {e.Data}", LogTarget.File);
             }
         };
 
@@ -467,6 +470,22 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
         await process.WaitForExitAsync(ct);
 
         return new CliRunResult(process.ExitCode, outputBuilder.ToString());
+    }
+
+    private void LogCliOutputOnce(string operation, CliRunResult result)
+    {
+        var trimmed = result.Output.Trim();
+        if (string.IsNullOrEmpty(trimmed))
+        {
+            _logger.Warning(
+                $"WARP {operation} failed (exit {result.ExitCode}) with empty CLI output.",
+                LogTarget.File | LogTarget.Console);
+            return;
+        }
+
+        _logger.Warning(
+            $"WARP {operation} failed (exit {result.ExitCode}): {trimmed}",
+            LogTarget.File | LogTarget.Console);
     }
 
     private void AddLease(WarpLeaseReason reason)

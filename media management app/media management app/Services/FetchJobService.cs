@@ -1203,6 +1203,13 @@ public sealed class FetchJobService : IFetchJobService
             return "search plugin error row";
         }
 
+        var kind = TorrentReleaseKind.Classify(result.FileName, parsed);
+        var kindReject = TorrentReleaseKind.GetRejectReasonForTarget(MediaKind.TvSeasonPack, kind);
+        if (kindReject is not null)
+        {
+            return kindReject;
+        }
+
         if (coveredSeasons.Count == 0)
         {
             return "no explicit season coverage";

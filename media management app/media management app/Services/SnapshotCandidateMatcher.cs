@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using media_management_app.Common;
 using media_management_app.Models;
 
 namespace media_management_app.Services;
@@ -27,6 +28,13 @@ public sealed class SnapshotCandidateMatcher
         if (LooksLikePluginError(result.FileName))
         {
             return new SnapshotMatchResult { IsAccepted = false, RejectReason = "search plugin error row" };
+        }
+
+        var kind = TorrentReleaseKind.Classify(result.FileName, parsed);
+        var kindReject = TorrentReleaseKind.GetRejectReasonForTarget(MediaKind.TvEpisode, kind);
+        if (kindReject is not null)
+        {
+            return new SnapshotMatchResult { IsAccepted = false, RejectReason = kindReject };
         }
 
         if (parsed.ExplicitYear is not null && show.FirstAirYear is not null && parsed.ExplicitYear != show.FirstAirYear)

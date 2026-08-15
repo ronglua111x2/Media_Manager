@@ -44,8 +44,8 @@ public static class TorrentCandidateParser
     private static readonly Regex EpisodeRegex = new(
         @"(?<title>.*?)(?:\bS(?<season>\d{1,3})E(?<episode>\d{1,4})\b|\b(?<season2>\d{1,3})x(?<episode2>\d{1,4})\b)(?<rest>.*)$",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
-    private static readonly Regex AbsoluteEpisodeRegex = new(
-        @"^(?:\[[^\]]+\]\s*)*(?<title>.*?)(?:\bEP\s*(?<episode>\d{1,4})\b|\b(?<episode>\d{2,4})\b)(?<rest>.*)$",
+    private static readonly Regex AbsoluteDigitCandidateRegex = new(
+        @"\bEP\s*(?<episode>\d{1,4})\b|\b(?<episode>\d{2,4})\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex YearRegex = new(@"\b(19|20)\d{2}\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex YearRangeRegex = new(@"\b(?<from>(?:19|20)\d{2})\s*(?:-|to)\s*(?<to>(?:19|20)\d{2})\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -106,18 +106,14 @@ public static class TorrentCandidateParser
             season = int.TryParse(seasonText, out var seasonValue) ? seasonValue : null;
             episode = int.TryParse(episodeText, out var episodeValue) ? episodeValue : null;
         }
-        else if (allowAnimeAbsolute)
+        else if (allowAnimeAbsolute &&
+                 !TorrentReleaseKind.HasPackSignalsFromTitle(fileName) &&
+                 TryParseAbsoluteEpisode(normalized, out var absoluteShowPart, out var absoluteRest, out var absoluteValue))
         {
-            var absoluteMatch = AbsoluteEpisodeRegex.Match(normalized);
-            if (absoluteMatch.Success)
-            {
-                showPart = absoluteMatch.Groups["title"].Value;
-                rest = absoluteMatch.Groups["rest"].Value;
-                absoluteEpisode = int.TryParse(absoluteMatch.Groups["episode"].Value, out var absoluteValue)
-                    ? absoluteValue
-                    : null;
-                episode = absoluteEpisode;
-            }
+            showPart = absoluteShowPart;
+            rest = absoluteRest;
+            absoluteEpisode = absoluteValue;
+            episode = absoluteEpisode;
         }
 
         var explicitYear = ExtractYear(showPart);
@@ -148,6 +144,43 @@ public static class TorrentCandidateParser
             ReleaseSpecialIndex = specialSignals.ReleaseSpecialIndex,
             PreferEpisodeIndexMatch = specialSignals.PreferEpisodeIndexMatch
         };
+    }
+
+    private static bool TryParseAbsoluteEpisode(
+        string normalized,
+        out string showPart,
+        out string rest,
+        out int absoluteEpisode)
+    {
+        showPart = normalized;
+        rest = string.Empty;
+        absoluteEpisode = 0;
+
+        // Prefer EP N when present.
+        foreach (Match candidate in AbsoluteDigitCandidateRegex.Matches(normalized))
+        {
+            var episodeGroup = candidate.Groups["episode"];
+            if (!episodeGroup.Success ||
+                TorrentReleaseKind.IsExcludedAbsoluteEpisodeDigitMatch(normalized, episodeGroup))
+            {
+                continue;
+            }
+
+            if (!int.TryParse(episodeGroup.Value, out absoluteEpisode))
+            {
+                continue;
+            }
+
+            showPart = normalized[..candidate.Index].Trim();
+            // Strip leading group tags already handled by leaving showPart as-is after index;
+            // drop trailing release junk into rest.
+            rest = normalized[(candidate.Index + candidate.Length)..].Trim();
+            // If match was via AbsoluteEpisodeRegex-style title (optional leading [group]), keep showPart clean.
+            showPart = Regex.Replace(showPart, @"^(?:\[[^\]]+\]\s*)+", string.Empty).Trim();
+            return true;
+        }
+
+        return false;
     }
 
     private static bool DetectExtraContent(string normalizedPath, string fileName)
