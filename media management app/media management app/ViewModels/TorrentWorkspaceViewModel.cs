@@ -30,7 +30,6 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
     private readonly ITorrentAddDiskAssignmentService _torrentAddDiskAssignmentService;
     private readonly IDownloadFolderCatalogService _downloadFolderCatalogService;
     private readonly IAppLogger _logger;
-    private readonly IQbittorrentViewerService _qbittorrentViewerService;
 
     private IReadOnlyList<LibraryMediaCardViewModel> _allMediaCards = [];
     private bool _isLoadingRecipeAssignment;
@@ -57,8 +56,7 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         ITorrentAddDiskAssignmentService torrentAddDiskAssignmentService,
         IDownloadFolderCatalogService downloadFolderCatalogService,
         IAppLogger logger,
-        IAppLifecycleService lifecycleService,
-        IQbittorrentViewerService qbittorrentViewerService)
+        IAppLifecycleService lifecycleService)
     {
         _trackedShowService = trackedShowService;
         _trackedMovieService = trackedMovieService;
@@ -76,14 +74,6 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         _torrentAddDiskAssignmentService = torrentAddDiskAssignmentService;
         _downloadFolderCatalogService = downloadFolderCatalogService;
         _logger = logger;
-        _qbittorrentViewerService = qbittorrentViewerService;
-        _qbittorrentViewerService.IsOpenChanged += (_, _) =>
-        {
-            System.Windows.Application.Current.Dispatcher.Invoke(() =>
-            {
-                IsQbittorrentViewerOpen = _qbittorrentViewerService.IsOpen;
-            });
-        };
 
         _torrentCartService.CartChanged += (_, _) => OnCartChanged();
         _torrentReconciliationService.Reconciled += (_, _) => RefreshOrdersFromReconcile();
@@ -93,7 +83,6 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         SubscribeWatchStatusFilterOptions();
         RestoreTorrentUiState();
         LoadWorkspaceCards();
-        OpenQbittorrentCommand.NotifyCanExecuteChanged();
         StatusMessage = "Select a media card to view its cart.";
     }
 
@@ -191,33 +180,6 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         ? "Cart"
         : $"{SelectedMediaCard.Title}'s Cart";
 
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(QbittorrentButtonText))]
-    [NotifyPropertyChangedFor(nameof(QbittorrentButtonToolTip))]
-    private bool isQbittorrentViewerOpen;
-
-    public string QbittorrentButtonText => IsQbittorrentViewerOpen ? "Show" : "Open";
-
-    public string QbittorrentButtonToolTip => IsQbittorrentViewerOpen
-        ? "Show qBittorrent window"
-        : "Open qBittorrent window";
-
-    [RelayCommand(CanExecute = nameof(CanOpenQbittorrent))]
-    private void OpenQbittorrent()
-    {
-        _qbittorrentViewerService.ShowOrActivate();
-    }
-
-    private bool CanOpenQbittorrent() => !string.IsNullOrWhiteSpace(GetQbittorrentWebUiUrl());
-
-    private string GetQbittorrentWebUiUrl()
-    {
-        var url = _settingsService.Current.AutoTorrent?.QbittorrentWebUiUrl;
-        return string.IsNullOrWhiteSpace(url)
-            ? string.Empty
-            : url.Trim();
-    }
-
     public bool IsShowRecipePanel => SelectedMediaCard?.IsShow == true;
 
     public bool IsMovieRecipePanel => SelectedMediaCard?.MediaKind == MediaKind.Movie;
@@ -225,7 +187,6 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
     [RelayCommand]
     private void RefreshWorkspace()
     {
-        OpenQbittorrentCommand.NotifyCanExecuteChanged();
         _trackedShowService.RefreshAvailability();
         _trackedMovieService.RefreshAvailability();
         LoadWorkspaceCards();

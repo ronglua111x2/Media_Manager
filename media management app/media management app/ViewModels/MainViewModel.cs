@@ -14,6 +14,8 @@ public partial class MainViewModel : ViewModelBase
     private readonly IConsoleWindowService _consoleWindowService;
     private readonly IWarpCliService _warpCliService;
     private readonly ISettingsService _settingsService;
+    private readonly IQbittorrentViewerService _qbittorrentViewerService;
+    private readonly IJellyfinViewerService _jellyfinViewerService;
     private readonly ShellLaunchGuard _shellLaunchGuard;
     private readonly DispatcherTimer _statusTimer;
     private readonly Dictionary<AppWorkspaceKind, ViewModelBase> _workspaceMap;
@@ -30,6 +32,8 @@ public partial class MainViewModel : ViewModelBase
         IConsoleWindowService consoleWindowService,
         IWarpCliService warpCliService,
         ISettingsService settingsService,
+        IQbittorrentViewerService qbittorrentViewerService,
+        IJellyfinViewerService jellyfinViewerService,
         IAppLogger logger,
         IAppLifecycleService lifecycleService)
     {
@@ -37,6 +41,8 @@ public partial class MainViewModel : ViewModelBase
         _consoleWindowService = consoleWindowService;
         _warpCliService = warpCliService;
         _settingsService = settingsService;
+        _qbittorrentViewerService = qbittorrentViewerService;
+        _jellyfinViewerService = jellyfinViewerService;
         _shellLaunchGuard = new ShellLaunchGuard(logger);
         _workspaceMap = new Dictionary<AppWorkspaceKind, ViewModelBase>
         {
@@ -103,6 +109,10 @@ public partial class MainViewModel : ViewModelBase
         ];
 
         _deviceStatusService.StatusChanged += OnDeviceStatusChanged;
+        _qbittorrentViewerService.IsOpenChanged += OnViewerOpenChanged;
+        _jellyfinViewerService.IsOpenChanged += OnViewerOpenChanged;
+        IsQbittorrentViewerOpen = _qbittorrentViewerService.IsOpen;
+        IsJellyfinViewerOpen = _jellyfinViewerService.IsOpen;
         ApplyDeviceStatus();
         NavigateTo(AppWorkspaceKind.News);
 
@@ -163,6 +173,7 @@ public partial class MainViewModel : ViewModelBase
     };
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(GoogleDriveBackupToolTip))]
     private bool isBackupRunning;
 
     [ObservableProperty]
@@ -177,6 +188,46 @@ public partial class MainViewModel : ViewModelBase
     [ObservableProperty]
     private bool isSidebarCollapsed = true;
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(QbittorrentToolTip))]
+    private bool isQbittorrentViewerOpen;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(JellyfinToolTip))]
+    private bool isJellyfinViewerOpen;
+
+    public string QbittorrentToolTip
+    {
+        get
+        {
+            if (!QbittorrentDependency.IsConfigured)
+            {
+                return QbittorrentDependency.Detail;
+            }
+
+            var action = IsQbittorrentViewerOpen ? "Click to show." : "Click to open.";
+            return QbittorrentDependency.IsOk
+                ? $"Connected. {action}"
+                : $"Offline. {action}";
+        }
+    }
+
+    public string JellyfinToolTip
+    {
+        get
+        {
+            if (!JellyfinDependency.IsConfigured)
+            {
+                return JellyfinDependency.Detail;
+            }
+
+            var action = IsJellyfinViewerOpen ? "Click to show." : "Click to open.";
+            return JellyfinDependency.IsOk
+                ? $"Available. {action}"
+                : $"Unavailable. {action}";
+        }
+    }
+
     public string GoogleDriveBackupToolTip
     {
         get
@@ -186,9 +237,19 @@ public partial class MainViewModel : ViewModelBase
                 return GoogleDriveDependency.Detail;
             }
 
-            return string.IsNullOrWhiteSpace(GetBackupFolderId())
-                ? "Backup folder not created yet (run a backup first)."
-                : "Open backup folder in browser";
+            if (string.IsNullOrWhiteSpace(GetBackupFolderId()))
+            {
+                return "Backup folder not created yet (run a backup first).";
+            }
+
+            if (IsBackupRunning)
+            {
+                return "Backing up. Click to open backup folder in browser.";
+            }
+
+            return GoogleDriveDependency.IsOk
+                ? "Connected. Click to open backup folder in browser."
+                : "Not connected. Click to open backup folder in browser.";
         }
     }
 
@@ -277,6 +338,22 @@ public partial class MainViewModel : ViewModelBase
         _shellLaunchGuard.TryLaunch(folder, requireExistingDirectory: true);
     }
 
+    [RelayCommand(CanExecute = nameof(CanOpenQbittorrent))]
+    private void OpenQbittorrent()
+    {
+        _qbittorrentViewerService.ShowOrActivate();
+    }
+
+    private bool CanOpenQbittorrent() => !string.IsNullOrWhiteSpace(GetQbittorrentWebUiUrl());
+
+    [RelayCommand(CanExecute = nameof(CanOpenJellyfin))]
+    private void OpenJellyfin()
+    {
+        _jellyfinViewerService.ShowOrActivate();
+    }
+
+    private bool CanOpenJellyfin() => !string.IsNullOrWhiteSpace(GetJellyfinBaseUrl());
+
     [RelayCommand(CanExecute = nameof(CanOpenGoogleDriveBackup))]
     private void OpenGoogleDriveBackup()
     {
@@ -291,6 +368,22 @@ public partial class MainViewModel : ViewModelBase
 
     private bool CanOpenGoogleDriveBackup() =>
         GoogleDriveDependency.IsConfigured && !string.IsNullOrWhiteSpace(GetBackupFolderId());
+
+    private string GetQbittorrentWebUiUrl()
+    {
+        var url = _settingsService.Current.AutoTorrent?.QbittorrentWebUiUrl;
+        return string.IsNullOrWhiteSpace(url)
+            ? string.Empty
+            : url.Trim();
+    }
+
+    private string GetJellyfinBaseUrl()
+    {
+        var baseUrl = _settingsService.Current.AutoTrack?.Jellyfin?.BaseUrl;
+        return string.IsNullOrWhiteSpace(baseUrl)
+            ? string.Empty
+            : baseUrl.Trim().TrimEnd('/');
+    }
 
     private string? GetBackupFolderId()
     {
@@ -409,8 +502,25 @@ public partial class MainViewModel : ViewModelBase
         IsJobActive = status.IsJobActive;
         HasLowSpace = status.HasLowSpace;
         ToggleWarpCommand.NotifyCanExecuteChanged();
+        OpenQbittorrentCommand.NotifyCanExecuteChanged();
+        OpenJellyfinCommand.NotifyCanExecuteChanged();
         OpenGoogleDriveBackupCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(QbittorrentToolTip));
+        OnPropertyChanged(nameof(JellyfinToolTip));
         OnPropertyChanged(nameof(GoogleDriveBackupToolTip));
+    }
+
+    private void OnViewerOpenChanged(object? sender, EventArgs e)
+    {
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher is not null && !dispatcher.CheckAccess())
+        {
+            dispatcher.BeginInvoke(DispatcherPriority.Background, () => OnViewerOpenChanged(sender, e));
+            return;
+        }
+
+        IsQbittorrentViewerOpen = _qbittorrentViewerService.IsOpen;
+        IsJellyfinViewerOpen = _jellyfinViewerService.IsOpen;
     }
 
     private void OnAppModeChanged(object? sender, AppMode mode)

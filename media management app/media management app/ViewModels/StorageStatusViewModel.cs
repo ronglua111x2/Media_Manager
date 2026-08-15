@@ -10,7 +10,9 @@ public sealed class StorageStatusViewModel
     public string? OpenFolderPath { get; init; }
 
     public string OpenToolTip =>
-        string.IsNullOrWhiteSpace(OpenFolderPath) ? StatsDisplay : $"Open {OpenFolderPath}";
+        string.IsNullOrWhiteSpace(OpenFolderPath)
+            ? StatsDisplay
+            : $"{DriveLetterDisplay} {StatsDisplay}. Click to open {OpenFolderPath}.";
 
     public long TotalBytes { get; init; }
 

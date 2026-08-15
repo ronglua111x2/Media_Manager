@@ -504,8 +504,9 @@
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
 
-                        <Border Style="{StaticResource StatusPillStyle}"
-                                ToolTip="{Binding QbittorrentDependency.Detail}">
+                        <Button Style="{StaticResource StatusPillButtonStyle}"
+                                Command="{Binding OpenQbittorrentCommand}"
+                                ToolTip="{Binding QbittorrentToolTip}">
                             <StackPanel Orientation="Horizontal">
                                 <Ellipse Width="8"
                                          Height="8"
@@ -535,7 +536,7 @@
                                            Foreground="{StaticResource AppBrushMutedText}"
                                            VerticalAlignment="Center" />
                             </StackPanel>
-                        </Border>
+                        </Button>
 
                         <Button Style="{StaticResource StatusPillButtonStyle}"
                                 Command="{Binding ToggleWarpCommand}"
@@ -571,8 +572,9 @@
                             </StackPanel>
                         </Button>
 
-                        <Border Style="{StaticResource StatusPillStyle}"
-                                ToolTip="{Binding JellyfinDependency.Detail}">
+                        <Button Style="{StaticResource StatusPillButtonStyle}"
+                                Command="{Binding OpenJellyfinCommand}"
+                                ToolTip="{Binding JellyfinToolTip}">
                             <StackPanel Orientation="Horizontal">
                                 <Ellipse Width="8"
                                          Height="8"
@@ -602,7 +604,7 @@
                                            Foreground="{StaticResource AppBrushJellyfinBrand}"
                                            VerticalAlignment="Center" />
                             </StackPanel>
-                        </Border>
+                        </Button>
 
                         <Button Style="{StaticResource StatusPillButtonStyle}"
                                 Command="{Binding OpenGoogleDriveBackupCommand}"
