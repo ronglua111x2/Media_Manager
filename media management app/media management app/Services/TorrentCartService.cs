@@ -202,6 +202,8 @@ public sealed class TorrentCartService : ITorrentCartService
             _databaseService.DeleteTorrentCartOrderCandidates(existing.Id);
             ClearSelectedCandidate(existing);
             ClearTorrentState(existing);
+            existing.FailedCandidateUrls = string.Empty;
+            existing.LastFailureReason = string.Empty;
             existing.Status = TorrentOrderStatus.Draft;
             existing.StatusDetail = string.Empty;
             existing.Source = TorrentOrderSource.AutoTrack;
@@ -372,6 +374,8 @@ public sealed class TorrentCartService : ITorrentCartService
         if (selected is not null)
         {
             ApplyCandidate(order, selected);
+            order.FailedCandidateUrls = string.Empty;
+            order.LastFailureReason = string.Empty;
             order.Status = TorrentOrderStatus.CandidatesFound;
             order.StatusDetail = $"Candidate found: {selected.Name}";
             _databaseService.UpsertTorrentCartOrder(order);

@@ -1022,7 +1022,6 @@ public sealed class AutoTrackService : IAutoTrackService
                             show,
                             order,
                             savePath,
-                            allowResearch: true,
                             result,
                             cancellationToken);
                         if (!added)
@@ -1070,7 +1069,6 @@ public sealed class AutoTrackService : IAutoTrackService
         TrackedShow show,
         TorrentCartOrder order,
         string savePath,
-        bool allowResearch,
         AutoTrackRunResult result,
         CancellationToken cancellationToken)
     {
@@ -1090,21 +1088,21 @@ public sealed class AutoTrackService : IAutoTrackService
             .ToList();
         if (candidatesToTry.Count == 0)
         {
-            if (allowResearch && order.EpisodeId is not null)
-            {
-                return await TryResearchAndAddAsync(show, order, savePath, result, cancellationToken);
-            }
-
-            _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.Failed, "All candidates have already failed or are blacklisted.");
+            _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.Failed, "All candidates are blacklisted or were already attempted.");
             return false;
         }
 
-        var malwareOnlyFailures = true;
+        var attemptCount = 0;
         for (var index = 0; index < candidatesToTry.Count; index++)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
             var candidate = candidatesToTry[index];
+            attemptCount++;
+            _logger.Info(
+                $"Auto-track trying candidate {attemptCount}/{candidatesToTry.Count} for '{order.Title}': rank={candidate.Rank}, engine='{candidate.PluginName}', name='{candidate.Name}'.",
+                LogTarget.File | LogTarget.Console);
+
             if (!string.Equals(order.SelectedCandidateUrl, candidate.Url, StringComparison.Ordinal))
             {
                 SelectCandidateForRetry(order, candidate);
@@ -1149,7 +1147,6 @@ public sealed class AutoTrackService : IAutoTrackService
             }
             catch (Exception ex)
             {
-                malwareOnlyFailures = false;
                 failedCandidateUrls.Add(candidate.Url);
                 order.FailedCandidateUrls = SerializeFailedCandidateUrls(failedCandidateUrls);
                 order.LastFailureReason = ex.Message;
@@ -1161,123 +1158,11 @@ public sealed class AutoTrackService : IAutoTrackService
             }
         }
 
-        if (allowResearch && malwareOnlyFailures && order.EpisodeId is not null)
-        {
-            return await TryResearchAndAddAsync(show, order, savePath, result, cancellationToken);
-        }
+        _logger.Warning(
+            $"Auto-track exhausted all {attemptCount} candidate(s) for '{order.Title}'. Last error: {order.LastFailureReason}",
+            LogTarget.File | LogTarget.Console);
 
         return false;
-    }
-
-    private async Task<bool> TryResearchAndAddAsync(
-        TrackedShow show,
-        TorrentCartOrder order,
-        string savePath,
-        AutoTrackRunResult result,
-        CancellationToken cancellationToken)
-    {
-        if (order.EpisodeId is null)
-        {
-            return false;
-        }
-
-        _logger.Info(
-            $"All saved candidates for '{order.Title}' were malware/blacklisted. Re-searching once with blacklist filter.",
-            LogTarget.File | LogTarget.Console);
-
-        var recipe = _recipeService.GetRecipeOrDefault(show.RecipeId, MediaKind.TvEpisode);
-        var settings = GetAutoTrackSettings();
-        var fetchOptions = new EpisodeFetchOptions
-        {
-            ForceParallelEpisodeSearch = settings.Search.ForceParallelEpisodeSearch,
-            MaxParallelWorkers = settings.Search.MaxParallelWorkersPerShow
-        };
-        var refreshed = await _fetchJobService.FetchEpisodeCandidatesAsync(
-            show.Id,
-            [order.EpisodeId.Value],
-            recipe.RecipeId,
-            (_, detail) => _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.Searching, detail),
-            cancellationToken,
-            fetchOptions);
-
-        if (!refreshed.TryGetValue(order.EpisodeId.Value, out var candidates) || candidates.Count == 0)
-        {
-            _logger.Warning(
-                $"Re-search for '{order.Title}' found no non-blacklisted candidates.",
-                LogTarget.File | LogTarget.Console);
-            _torrentCartService.UpdateOrderStatus(
-                order.Id,
-                TorrentOrderStatus.Failed,
-                "Re-search found no non-blacklisted candidates.");
-            return false;
-        }
-
-        _logger.Debug(
-            $"Re-search for '{order.Title}' returned {candidates.Count} raw candidate(s).",
-            LogTarget.File);
-
-        var filtered = _candidatePolicyService.Apply(show, settings, candidates);
-        if (filtered.Count == 0)
-        {
-            _logger.Warning(
-                $"Re-search for '{order.Title}' candidates failed auto-track quality policy.",
-                LogTarget.File | LogTarget.Console);
-            _torrentCartService.UpdateOrderStatus(
-                order.Id,
-                TorrentOrderStatus.Failed,
-                "Re-search candidates failed auto-track quality policy.");
-            return false;
-        }
-
-        var failedUrls = GetFailedCandidateUrls(order);
-        var remaining = filtered
-            .Where(candidate => !string.IsNullOrWhiteSpace(candidate.FileUrl))
-            .Where(candidate => !failedUrls.Contains(candidate.FileUrl))
-            .Where(candidate => !_blacklistService.IsBlacklisted(order.MediaId, candidate.FileUrl))
-            .ToList();
-        if (remaining.Count == 0)
-        {
-            _logger.Warning(
-                $"Re-search for '{order.Title}' found no new candidates after failed-URL and blacklist filter.",
-                LogTarget.File | LogTarget.Console);
-            _torrentCartService.UpdateOrderStatus(
-                order.Id,
-                TorrentOrderStatus.Failed,
-                "Re-search found no new non-blacklisted candidates.");
-            return false;
-        }
-
-        if (remaining.Count < filtered.Count)
-        {
-            _logger.Debug(
-                $"Re-search for '{order.Title}' dropped {filtered.Count - remaining.Count} previously failed or blacklisted candidate(s); {remaining.Count} remain.",
-                LogTarget.File);
-        }
-
-        _torrentCartService.ReplaceCandidates(order.Id, ToCartCandidates(remaining));
-        _torrentCartService.AcceptSelectedCandidates(MediaKind.TvEpisode, show.Id, [order.Id]);
-
-        var approved = _torrentCartService.GetOrder(order.Id);
-        if (approved is null || approved.Status != TorrentOrderStatus.Approved)
-        {
-            _logger.Warning(
-                $"Re-search for '{order.Title}' could not approve a candidate.",
-                LogTarget.File | LogTarget.Console);
-            _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.Failed, "Re-search could not approve a candidate.");
-            return false;
-        }
-
-        _logger.Info(
-            $"Re-search for '{order.Title}' approved {remaining.Count} candidate(s); retrying add.",
-            LogTarget.File | LogTarget.Console);
-
-        return await TryAddOrderWithCandidateRetriesAsync(
-            show,
-            approved,
-            savePath,
-            allowResearch: false,
-            result,
-            cancellationToken);
     }
 
     private void SelectCandidateForRetry(TorrentCartOrder order, TorrentCartOrderCandidate candidate)
