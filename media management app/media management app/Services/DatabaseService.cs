@@ -131,6 +131,7 @@ public sealed class DatabaseService : IDatabaseService
         InitializeFetchJobs(connection);
         InitializeTorrentCartOrders(connection);
         InitializeTorrentCartOrderCandidates(connection);
+        InitializeTorrentBlacklist(connection);
         PurgeLegacyFetchJobs(connection);
         _logger.Info("SQLite database is ready", LogTarget.File | LogTarget.Ui | LogTarget.Console);
     }
@@ -2062,6 +2063,16 @@ public sealed class DatabaseService : IDatabaseService
         return command.ExecuteNonQuery();
     }
 
+    public int DeleteTorrentCartOrderCandidate(long candidateId)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM TorrentCartOrderCandidates WHERE Id = $Id;";
+        command.Parameters.AddWithValue("$Id", candidateId);
+        return command.ExecuteNonQuery();
+    }
+
     public IReadOnlyList<TorrentCartOrderCandidate> GetTorrentCartOrderCandidates(long orderId)
     {
         var candidates = new List<TorrentCartOrderCandidate>();
@@ -2988,4 +2999,259 @@ public sealed class DatabaseService : IDatabaseService
     {
         return string.Join(' ', value.Trim().ToLowerInvariant().Split(' ', StringSplitOptions.RemoveEmptyEntries));
     }
+
+    #region Torrent Blacklist Methods
+
+    private static void InitializeTorrentBlacklist(SqliteConnection connection)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            CREATE TABLE IF NOT EXISTS TorrentBlacklist (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ListingUrl TEXT NOT NULL DEFAULT '',
+                InfoHash TEXT NOT NULL DEFAULT '',
+                ShowId INTEGER NOT NULL,
+                Reason TEXT NOT NULL,
+                SuspiciousFilesJson TEXT NULL,
+                DateAddedUtc TEXT NOT NULL,
+                IsActive INTEGER NOT NULL DEFAULT 1,
+                Notes TEXT NULL
+            );
+            """;
+        command.ExecuteNonQuery();
+
+        EnsureColumn(connection, "TorrentBlacklist", "ListingUrl", "TEXT NOT NULL DEFAULT ''");
+        EnsureColumn(connection, "TorrentBlacklist", "InfoHash", "TEXT NOT NULL DEFAULT ''");
+        EnsureColumn(connection, "TorrentBlacklist", "ShowId", "INTEGER NOT NULL DEFAULT 0");
+        EnsureColumn(connection, "TorrentBlacklist", "Reason", "TEXT NOT NULL DEFAULT ''");
+        EnsureColumn(connection, "TorrentBlacklist", "SuspiciousFilesJson", "TEXT NULL");
+        EnsureColumn(connection, "TorrentBlacklist", "DateAddedUtc", "TEXT NOT NULL DEFAULT ''");
+        EnsureColumn(connection, "TorrentBlacklist", "IsActive", "INTEGER NOT NULL DEFAULT 1");
+        EnsureColumn(connection, "TorrentBlacklist", "Notes", "TEXT NULL");
+
+        // Legacy schema had TorrentHash NOT NULL without DEFAULT. Rebuild so INSERT without that
+        // column no longer fails, and copy any hash into InfoHash.
+        if (HasColumn(connection, "TorrentBlacklist", "TorrentHash"))
+        {
+            using var transaction = connection.BeginTransaction();
+
+            using (var create = connection.CreateCommand())
+            {
+                create.Transaction = transaction;
+                create.CommandText = """
+                    CREATE TABLE TorrentBlacklist_v2 (
+                        Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        ListingUrl TEXT NOT NULL DEFAULT '',
+                        InfoHash TEXT NOT NULL DEFAULT '',
+                        ShowId INTEGER NOT NULL,
+                        Reason TEXT NOT NULL,
+                        SuspiciousFilesJson TEXT NULL,
+                        DateAddedUtc TEXT NOT NULL,
+                        IsActive INTEGER NOT NULL DEFAULT 1,
+                        Notes TEXT NULL
+                    );
+                    """;
+                create.ExecuteNonQuery();
+            }
+
+            using (var copy = connection.CreateCommand())
+            {
+                copy.Transaction = transaction;
+                copy.CommandText = """
+                    INSERT INTO TorrentBlacklist_v2 (
+                        Id, ListingUrl, InfoHash, ShowId, Reason, SuspiciousFilesJson, DateAddedUtc, IsActive, Notes)
+                    SELECT
+                        Id,
+                        COALESCE(ListingUrl, ''),
+                        LOWER(COALESCE(
+                            NULLIF(TRIM(InfoHash), ''),
+                            NULLIF(TRIM(TorrentHash), ''),
+                            '')),
+                        ShowId,
+                        COALESCE(Reason, ''),
+                        SuspiciousFilesJson,
+                        COALESCE(DateAddedUtc, ''),
+                        COALESCE(IsActive, 1),
+                        Notes
+                    FROM TorrentBlacklist;
+                    """;
+                copy.ExecuteNonQuery();
+            }
+
+            using (var drop = connection.CreateCommand())
+            {
+                drop.Transaction = transaction;
+                drop.CommandText = "DROP TABLE TorrentBlacklist;";
+                drop.ExecuteNonQuery();
+            }
+
+            using (var rename = connection.CreateCommand())
+            {
+                rename.Transaction = transaction;
+                rename.CommandText = "ALTER TABLE TorrentBlacklist_v2 RENAME TO TorrentBlacklist;";
+                rename.ExecuteNonQuery();
+            }
+
+            transaction.Commit();
+        }
+    }
+
+    private static bool HasColumn(SqliteConnection connection, string tableName, string columnName)
+    {
+        using var check = connection.CreateCommand();
+        check.CommandText = $"PRAGMA table_info({tableName});";
+        using var reader = check.ExecuteReader();
+        while (reader.Read())
+        {
+            if (string.Equals(reader.GetString(1), columnName, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public IReadOnlyList<TorrentBlacklistEntry> GetTorrentBlacklist(long showId)
+    {
+        var results = new List<TorrentBlacklistEntry>();
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT Id, ListingUrl, InfoHash, ShowId, Reason, SuspiciousFilesJson, DateAddedUtc, IsActive, Notes
+            FROM TorrentBlacklist
+            WHERE ShowId = @showId AND IsActive = 1
+            ORDER BY DateAddedUtc DESC;
+            """;
+        command.Parameters.AddWithValue("@showId", showId);
+
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            results.Add(new TorrentBlacklistEntry
+            {
+                Id = reader.GetInt64(0),
+                ListingUrl = reader.IsDBNull(1) ? string.Empty : reader.GetString(1),
+                InfoHash = reader.IsDBNull(2) ? string.Empty : reader.GetString(2),
+                ShowId = reader.GetInt64(3),
+                Reason = reader.GetString(4),
+                SuspiciousFilesJson = reader.IsDBNull(5) ? null : reader.GetString(5),
+                DateAddedUtc = DateTime.Parse(reader.GetString(6), null, System.Globalization.DateTimeStyles.AssumeUniversal),
+                IsActive = reader.GetInt32(7) != 0,
+                Notes = reader.IsDBNull(8) ? null : reader.GetString(8)
+            });
+        }
+
+        return results;
+    }
+
+    public bool IsTorrentBlacklisted(long showId, string? listingUrl, string? infoHash)
+    {
+        var url = listingUrl?.Trim() ?? string.Empty;
+        var hash = infoHash?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(url) && string.IsNullOrWhiteSpace(hash))
+        {
+            return false;
+        }
+
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT(*)
+            FROM TorrentBlacklist
+            WHERE ShowId = @showId
+              AND IsActive = 1
+              AND (
+                    (@url != '' AND ListingUrl = @url COLLATE NOCASE)
+                 OR (@hash != '' AND InfoHash != '' AND InfoHash = @hash COLLATE NOCASE)
+              );
+            """;
+        command.Parameters.AddWithValue("@showId", showId);
+        command.Parameters.AddWithValue("@url", url);
+        command.Parameters.AddWithValue("@hash", hash);
+
+        var result = command.ExecuteScalar();
+        return Convert.ToInt64(result) > 0;
+    }
+
+    public void AddTorrentToBlacklist(
+        long showId,
+        string listingUrl,
+        string infoHash,
+        string reason,
+        string? suspiciousFilesJson = null,
+        string? notes = null)
+    {
+        var url = listingUrl?.Trim() ?? string.Empty;
+        var hash = infoHash?.Trim() ?? string.Empty;
+
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+
+        // Soft-deactivate the same listing URL only. Keep other URLs for the same infohash
+        // active so search-time filters still skip previously rejected HTML listings.
+        using (var deactivate = connection.CreateCommand())
+        {
+            deactivate.CommandText = """
+                UPDATE TorrentBlacklist
+                SET IsActive = 0
+                WHERE ShowId = @showId
+                  AND IsActive = 1
+                  AND @url != ''
+                  AND ListingUrl = @url COLLATE NOCASE;
+                """;
+            deactivate.Parameters.AddWithValue("@showId", showId);
+            deactivate.Parameters.AddWithValue("@url", url);
+            deactivate.ExecuteNonQuery();
+        }
+
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO TorrentBlacklist (ListingUrl, InfoHash, ShowId, Reason, SuspiciousFilesJson, DateAddedUtc, IsActive, Notes)
+            VALUES (@url, @hash, @showId, @reason, @files, @dateAdded, 1, @notes);
+            """;
+        command.Parameters.AddWithValue("@url", url);
+        command.Parameters.AddWithValue("@hash", hash);
+        command.Parameters.AddWithValue("@showId", showId);
+        command.Parameters.AddWithValue("@reason", reason);
+        command.Parameters.AddWithValue("@files", (object?)suspiciousFilesJson ?? DBNull.Value);
+        command.Parameters.AddWithValue("@dateAdded", DateTime.UtcNow.ToString("O"));
+        command.Parameters.AddWithValue("@notes", (object?)notes ?? DBNull.Value);
+        command.ExecuteNonQuery();
+    }
+
+    public void RemoveTorrentFromBlacklist(long showId, string? listingUrl, string? infoHash)
+    {
+        var url = listingUrl?.Trim() ?? string.Empty;
+        var hash = infoHash?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(url) && string.IsNullOrWhiteSpace(hash))
+        {
+            return;
+        }
+
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE TorrentBlacklist
+            SET IsActive = 0
+            WHERE ShowId = @showId
+              AND (
+                    (@url != '' AND ListingUrl = @url COLLATE NOCASE)
+                 OR (@hash != '' AND InfoHash != '' AND InfoHash = @hash COLLATE NOCASE)
+              );
+            """;
+        command.Parameters.AddWithValue("@showId", showId);
+        command.Parameters.AddWithValue("@url", url);
+        command.Parameters.AddWithValue("@hash", hash);
+        command.ExecuteNonQuery();
+    }
+
+    #endregion
 }
+

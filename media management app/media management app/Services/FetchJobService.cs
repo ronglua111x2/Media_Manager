@@ -18,6 +18,7 @@ public sealed class FetchJobService : IFetchJobService
     private readonly ICandidateEvaluationService _candidateEvaluationService;
     private readonly ISearchTitleResolver _titleResolver;
     private readonly ShowSearchSnapshotService _snapshotService;
+    private readonly ITorrentBlacklistService _blacklistService;
     private readonly IOperationProgressService _progressService;
     private readonly IAppLogger _logger;
     private readonly Dictionary<long, IReadOnlyList<EpisodeFetchCandidate>> _candidatesByEpisodeId = [];
@@ -34,6 +35,7 @@ public sealed class FetchJobService : IFetchJobService
         ICandidateEvaluationService candidateEvaluationService,
         ISearchTitleResolver titleResolver,
         ShowSearchSnapshotService snapshotService,
+        ITorrentBlacklistService blacklistService,
         IOperationProgressService progressService,
         IAppLogger logger)
     {
@@ -45,6 +47,7 @@ public sealed class FetchJobService : IFetchJobService
         _candidateEvaluationService = candidateEvaluationService;
         _titleResolver = titleResolver;
         _snapshotService = snapshotService;
+        _blacklistService = blacklistService;
         _progressService = progressService;
         _logger = logger;
     }
@@ -500,6 +503,11 @@ public sealed class FetchJobService : IFetchJobService
                     continue;
                 }
 
+                if (IsBlacklistedListing(show.Id, result, query))
+                {
+                    continue;
+                }
+
                 var candidate = ToCandidate(episode.Id, result, match.QualityScore, match.TotalScore);
                 matchedCandidates.Add((candidate, match));
             }
@@ -733,8 +741,27 @@ public sealed class FetchJobService : IFetchJobService
         return merged;
     }
 
+    private bool IsBlacklistedListing(long mediaId, TorrentSearchResult result, string? queryForLog = null)
+    {
+        if (!_blacklistService.IsBlacklisted(mediaId, result.FileUrl))
+        {
+            return false;
+        }
+
+        var queryLabel = string.IsNullOrWhiteSpace(queryForLog) ? result.FileName : queryForLog;
+        _logger.Debug(
+            $"Rejected search candidate for '{queryLabel}'. Reason='{CandidateRejectReason.Blacklisted}: listing URL or infohash blacklisted for media {mediaId}', Engine='{result.EngineName}', Name='{result.FileName}', Url='{result.FileUrl}'.",
+            LogTarget.File);
+        return true;
+    }
+
     private bool IsUsableMovieCandidate(TorrentSearchResult result, TrackedMovie movie, string query)
     {
+        if (IsBlacklistedListing(movie.Id, result, query))
+        {
+            return false;
+        }
+
         var rejectionReason = GetMovieCandidateRejectionReason(result, movie);
         if (rejectionReason is null)
         {
@@ -1026,6 +1053,11 @@ public sealed class FetchJobService : IFetchJobService
                 continue;
             }
 
+            if (IsBlacklistedListing(show.Id, candidate.Result))
+            {
+                continue;
+            }
+
             var episodeCandidate = ToCandidate(episode.Id, candidate.Result, match.QualityScore, match.TotalScore);
             matchedCandidates.Add((episodeCandidate, match));
         }
@@ -1113,6 +1145,11 @@ public sealed class FetchJobService : IFetchJobService
             if (rejectReason is not null)
             {
                 _logger.Debug($"Rejected pack candidate for '{show.DisplayTitle}'. Reason='{rejectReason}', Name='{result.FileName}', Url='{result.FileUrl}'.", LogTarget.File | LogTarget.Console);
+                continue;
+            }
+
+            if (IsBlacklistedListing(show.Id, result, show.DisplayTitle))
+            {
                 continue;
             }
 
@@ -1278,6 +1315,11 @@ public sealed class FetchJobService : IFetchJobService
                     _logger.Debug(message, LogTarget.File | LogTarget.Console);
                 }
 
+                continue;
+            }
+
+            if (IsBlacklistedListing(show.Id, result, query))
+            {
                 continue;
             }
 

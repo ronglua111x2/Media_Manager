@@ -507,6 +507,24 @@ public sealed class TrackedShowService : ITrackedShowService
         _logger.Info($"Auto-track disabled for show {showId}.", LogTarget.All);
     }
 
+    public void ResetAutoTrackWeekSatisfaction(long showId)
+    {
+        var show = _databaseService.GetTrackedShow(showId);
+        if (show is null)
+        {
+            return;
+        }
+
+        _databaseService.UpdateTrackedShowAutoTrackTmdbState(
+            showId,
+            show.AutoTrackTmdbState,
+            lastTmdbWeekKey: null,
+            lastTmdbRefreshLocal: null);
+        _logger.Info(
+            $"Auto-track week satisfaction reset for show {showId} ('{show.DisplayTitle}').",
+            LogTarget.File | LogTarget.Console);
+    }
+
     private Task CachePosterAsync(int tmdbId, string? posterPath, CancellationToken cancellationToken)
     {
         return _posterImageService.EnsureCachedAsync(MediaKind.TvEpisode, tmdbId, posterPath, cancellationToken);

@@ -1045,4 +1045,80 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
 
         public static TorrentAddSource FromTorrentBytes(byte[] bytes, string fileName, string description) => new(null, bytes, fileName, description);
     }
+
+    public async Task DeleteTorrentsAsync(IEnumerable<string> hashes, bool deleteFiles = false, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var hashList = hashes.ToList();
+            if (hashList.Count == 0)
+            {
+                return;
+            }
+
+            var hashesStr = string.Join("|", hashList);
+            using var response = await PostFormWithAuthRetryAsync("api/v2/torrents/delete", new Dictionary<string, string>
+            {
+                ["hashes"] = hashesStr,
+                ["deleteFiles"] = deleteFiles ? "true" : "false"
+            }, cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.Warning($"Failed to delete torrents from qBittorrent: {(int)response.StatusCode} {response.ReasonPhrase}", LogTarget.All);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning($"Error deleting torrents: {ex.Message}", LogTarget.All);
+        }
+    }
+
+    public async Task PauseTorrentsAsync(IEnumerable<string> hashes, CancellationToken cancellationToken = default)
+    {
+        var hashList = hashes.Where(hash => !string.IsNullOrWhiteSpace(hash)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        if (hashList.Count == 0)
+        {
+            return;
+        }
+
+        var form = new Dictionary<string, string>
+        {
+            ["hashes"] = string.Join("|", hashList)
+        };
+
+        // qBittorrent 5 uses stop; 4.x uses pause.
+        using var stopResponse = await PostFormWithAuthRetryAsync("api/v2/torrents/stop", form, cancellationToken);
+        if (stopResponse.IsSuccessStatusCode)
+        {
+            return;
+        }
+
+        using var pauseResponse = await PostFormWithAuthRetryAsync("api/v2/torrents/pause", form, cancellationToken);
+        if (!pauseResponse.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException(
+                $"Failed to pause torrents in qBittorrent: {(int)pauseResponse.StatusCode} {pauseResponse.ReasonPhrase}");
+        }
+    }
+
+    public async Task ResumeTorrentsAsync(IEnumerable<string> hashes, CancellationToken cancellationToken = default)
+    {
+        var hashList = hashes.Where(hash => !string.IsNullOrWhiteSpace(hash)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        if (hashList.Count == 0)
+        {
+            return;
+        }
+
+        using var response = await PostFormWithAuthRetryAsync("api/v2/torrents/start", new Dictionary<string, string>
+        {
+            ["hashes"] = string.Join("|", hashList)
+        }, cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException(
+                $"Failed to resume torrents in qBittorrent: {(int)response.StatusCode} {response.ReasonPhrase}");
+        }
+    }
 }

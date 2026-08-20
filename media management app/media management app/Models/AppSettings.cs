@@ -37,4 +37,6 @@ public sealed class AppSettings
     public GeminiSettings Gemini { get; set; } = new();
 
     public BackupSettings Backup { get; set; } = new();
+
+    public TorrentValidationConfig TorrentValidation { get; set; } = new();
 }

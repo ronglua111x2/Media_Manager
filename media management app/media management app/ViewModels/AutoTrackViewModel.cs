@@ -172,6 +172,22 @@ public sealed partial class AutoTrackViewModel : ViewModelBase
         RefreshDashboard();
     }
 
+    [RelayCommand]
+    private void ResetWeek(AutoTrackShowCardViewModel? card)
+    {
+        if (card is null)
+        {
+            return;
+        }
+
+        _trackedShowService.ResetAutoTrackWeekSatisfaction(card.ShowId);
+        var released = _torrentCartService.ReleaseAutoTrackHuntBlocks(card.ShowId);
+        StatusMessage = released > 0
+            ? $"Reset week for {card.Title} (cleared {released} blocking cart order(s))."
+            : $"Reset week satisfaction for {card.Title}.";
+        RefreshDashboard();
+    }
+
     private int CountPendingEpisodes(TrackedShow show, IReadOnlyList<TrackedEpisode> episodes)
     {
         if (!show.IsAutoTracked)

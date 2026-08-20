@@ -23,12 +23,13 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
     private readonly IFetchJobService _fetchJobService;
     private readonly IDatabaseService _databaseService;
     private readonly IRecipeService _recipeService;
-    private readonly IQbittorrentClient _qbittorrentClient;
     private readonly ISettingsService _settingsService;
     private readonly ITorrentReconciliationService _torrentReconciliationService;
     private readonly IPackLinkCoordinatorService _packLinkCoordinatorService;
     private readonly ITorrentAddDiskAssignmentService _torrentAddDiskAssignmentService;
     private readonly IDownloadFolderCatalogService _downloadFolderCatalogService;
+    private readonly ITorrentAddGateService _addGateService;
+    private readonly ITorrentBlacklistService _blacklistService;
     private readonly IAppLogger _logger;
 
     private IReadOnlyList<LibraryMediaCardViewModel> _allMediaCards = [];
@@ -49,12 +50,13 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         IFetchJobService fetchJobService,
         IDatabaseService databaseService,
         IRecipeService recipeService,
-        IQbittorrentClient qbittorrentClient,
         ISettingsService settingsService,
         ITorrentReconciliationService torrentReconciliationService,
         IPackLinkCoordinatorService packLinkCoordinatorService,
         ITorrentAddDiskAssignmentService torrentAddDiskAssignmentService,
         IDownloadFolderCatalogService downloadFolderCatalogService,
+        ITorrentAddGateService addGateService,
+        ITorrentBlacklistService blacklistService,
         IAppLogger logger,
         IAppLifecycleService lifecycleService)
     {
@@ -67,12 +69,13 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         _fetchJobService = fetchJobService;
         _databaseService = databaseService;
         _recipeService = recipeService;
-        _qbittorrentClient = qbittorrentClient;
         _settingsService = settingsService;
         _torrentReconciliationService = torrentReconciliationService;
         _packLinkCoordinatorService = packLinkCoordinatorService;
         _torrentAddDiskAssignmentService = torrentAddDiskAssignmentService;
         _downloadFolderCatalogService = downloadFolderCatalogService;
+        _addGateService = addGateService;
+        _blacklistService = blacklistService;
         _logger = logger;
 
         _torrentCartService.CartChanged += (_, _) => OnCartChanged();
@@ -493,6 +496,11 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
                     _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.Canceled, "Add stopped by user.");
                     break;
                 }
+                catch (MaliciousTorrentException ex)
+                {
+                    failedCount++;
+                    HandleManualMalwareReject(order, ex);
+                }
                 catch (Exception ex)
                 {
                     failedCount++;
@@ -573,6 +581,11 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         {
             _torrentCartService.UpdateOrderStatus(orderId, TorrentOrderStatus.Canceled, "Add stopped by user.");
             StatusMessage = "Retry add stopped by user.";
+        }
+        catch (MaliciousTorrentException ex)
+        {
+            HandleManualMalwareReject(order, ex);
+            StatusMessage = $"Malware rejected: {ex.Message}";
         }
         catch (Exception ex)
         {
@@ -847,6 +860,60 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         StatusMessage = "Candidate selection updated.";
     }
 
+    private async Task BlacklistCandidateAsync(long orderId, long candidateId)
+    {
+        var order = _torrentCartService.GetOrder(orderId);
+        var candidate = _torrentCartService.GetCandidates(orderId)
+            .FirstOrDefault(item => item.Id == candidateId);
+        if (order is null || candidate is null)
+        {
+            return;
+        }
+
+        var confirm = System.Windows.MessageBox.Show(
+            $"Blacklist this listing for {order.Title}?\n\n{candidate.Name}\n{candidate.Url}",
+            "Blacklist listing",
+            System.Windows.MessageBoxButton.YesNo,
+            System.Windows.MessageBoxImage.Warning);
+        if (confirm != System.Windows.MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        try
+        {
+            var infoHash = TorrentListingIdentity.TryParseInfoHashFromUrl(candidate.Url);
+            await _blacklistService.AddToBlacklistAsync(
+                order.MediaId,
+                candidate.Url,
+                infoHash,
+                "Manual reject",
+                notes: $"Manually blacklisted candidate '{candidate.Name}'");
+            _logger.Info(
+                $"Manual blacklist for '{order.Title}' candidate '{candidate.Name}'.",
+                LogTarget.File | LogTarget.Console);
+            _logger.Debug(
+                $"Manual blacklist candidate id={candidate.Id} url='{candidate.Url}' order={order.Id}.",
+                LogTarget.File);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Failed to blacklist listing: {ex.Message}";
+            _logger.Error($"Failed to manually blacklist candidate for '{order.Title}': {ex.Message}", ex, LogTarget.File | LogTarget.Console);
+            return;
+        }
+
+        _torrentCartService.RemoveCandidate(orderId, candidateId);
+        if (_torrentCartService.GetCandidates(orderId).Count == 0)
+        {
+            _torrentCartService.UpdateOrderStatus(orderId, TorrentOrderStatus.NoCandidates, "All candidates were blacklisted.");
+            StatusMessage = "Listing blacklisted. No candidates left.";
+            return;
+        }
+
+        StatusMessage = "Listing blacklisted. Pick another candidate.";
+    }
+
     private void AcceptCandidate(long orderId)
     {
         var order = _torrentCartService.GetOrder(orderId);
@@ -1066,6 +1133,7 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         };
         viewModel.CandidateSelected = SelectCandidate;
         viewModel.AcceptRequested = AcceptCandidate;
+        viewModel.BlacklistCandidateRequested = (orderId, candidateId) => _ = BlacklistCandidateAsync(orderId, candidateId);
         viewModel.RetryAddRequested = orderId => _ = RetryAddOrderAsync(orderId);
         viewModel.RetrySearchRequested = orderId => _ = RetrySearchOrderAsync(orderId);
         viewModel.ReconcilePackRequested = orderId => _ = ReconcilePackOrderAsync(orderId);
@@ -1366,7 +1434,7 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         _logger.Info(
             $"Adding torrent to qBittorrent. Order='{order.Title}', Url='{order.SelectedCandidateUrl}', SavePath='{savePath}'.",
             LogTarget.All);
-        var addedTorrent = await _qbittorrentClient.AddTorrentAsync(CreateAddTorrentRequest(order, savePath), cancellationToken);
+        var addedTorrent = await _addGateService.AddPausedValidateAndResumeAsync(order, savePath, cancellationToken);
         order.TorrentHash = addedTorrent.Hash;
         order.TorrentName = addedTorrent.Name;
         order.TorrentState = QbittorrentTorrentStateNormalizer.Normalize(addedTorrent.State, addedTorrent.IsComplete);
@@ -1413,17 +1481,38 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         _torrentCartService.SaveOrder(order);
     }
 
-    private AddTorrentRequest CreateAddTorrentRequest(TorrentCartOrder order, string savePath)
+    private void HandleManualMalwareReject(TorrentCartOrder order, MaliciousTorrentException ex)
     {
-        return new AddTorrentRequest
+        var selected = _torrentCartService.GetCandidates(order.Id)
+            .FirstOrDefault(candidate =>
+                string.Equals(candidate.Url, order.SelectedCandidateUrl, StringComparison.OrdinalIgnoreCase));
+        if (selected is not null && _torrentCartService.RemoveCandidate(order.Id, selected.Id))
         {
-            Url = order.SelectedCandidateUrl,
-            PluginName = order.SelectedCandidatePlugin,
-            SavePath = savePath,
-            Category = _settingsService.Current.AutoTorrent.GetCategoryFor(order.TargetKind),
-            Tags = "media-manager",
-            Paused = false
-        };
+            _logger.Info(
+                $"Removed malware candidate from cart for '{order.Title}'.",
+                LogTarget.File | LogTarget.Console);
+            _logger.Debug(
+                $"Removed cart candidate id={selected.Id} url='{selected.Url}' from order {order.Id}.",
+                LogTarget.File);
+        }
+
+        var remaining = _torrentCartService.GetCandidates(order.Id);
+        if (remaining.Count == 0)
+        {
+            _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.Failed, $"Malware: {ex.Message}");
+            return;
+        }
+
+        var refreshed = _torrentCartService.GetOrder(order.Id);
+        if (refreshed is null)
+        {
+            return;
+        }
+
+        refreshed.Status = TorrentOrderStatus.CandidatesFound;
+        refreshed.StatusDetail = $"Malware rejected. Pick another candidate. {ex.Message}";
+        refreshed.LastFailureReason = ex.Message;
+        _torrentCartService.SaveOrder(refreshed);
     }
 
     private string? GetSeasonDownloadFolder(long showId, int seasonNumber)

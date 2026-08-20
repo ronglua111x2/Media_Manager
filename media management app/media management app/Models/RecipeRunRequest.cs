@@ -80,5 +80,6 @@ public enum CandidateRejectReason
     BlockedReleaseGroup = 10,
     SizeTooLarge = 11,
     SizeTooSmall = 12,
-    WrongReleaseKind = 13
+    WrongReleaseKind = 13,
+    Blacklisted = 14
 }

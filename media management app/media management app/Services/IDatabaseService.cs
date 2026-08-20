@@ -199,6 +199,8 @@ public interface IDatabaseService
 
     int DeleteTorrentCartOrderCandidates(long orderId);
 
+    int DeleteTorrentCartOrderCandidate(long candidateId);
+
     IReadOnlyList<TorrentCartOrderCandidate> GetTorrentCartOrderCandidates(long orderId);
 
     void ReplaceTorrentCartOrderCandidates(long orderId, IReadOnlyList<TorrentCartOrderCandidate> candidates);
@@ -216,4 +218,22 @@ public interface IDatabaseService
     void UpdateFetchJob(FetchJob job);
 
     void DeleteFetchJob(long id);
+
+    #region Torrent Blacklist Methods
+
+    IReadOnlyList<TorrentBlacklistEntry> GetTorrentBlacklist(long showId);
+
+    bool IsTorrentBlacklisted(long showId, string? listingUrl, string? infoHash);
+
+    void AddTorrentToBlacklist(
+        long showId,
+        string listingUrl,
+        string infoHash,
+        string reason,
+        string? suspiciousFilesJson = null,
+        string? notes = null);
+
+    void RemoveTorrentFromBlacklist(long showId, string? listingUrl, string? infoHash);
+
+    #endregion
 }

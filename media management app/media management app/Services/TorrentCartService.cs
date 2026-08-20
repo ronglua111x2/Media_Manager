@@ -45,6 +45,8 @@ public interface ITorrentCartService
 
     void ReplaceCandidates(long orderId, IReadOnlyList<TorrentCartOrderCandidate> candidates);
 
+    bool RemoveCandidate(long orderId, long candidateId);
+
     void SelectCandidate(long orderId, long candidateId);
 
     void AcceptSelectedCandidate(long orderId);
@@ -52,15 +54,23 @@ public interface ITorrentCartService
     int AcceptSelectedCandidates(MediaKind mediaKind, long mediaId, IReadOnlyList<long>? orderIds = null);
 
     void UpdateOrderStatus(long orderId, TorrentOrderStatus status, string statusDetail = "");
+
+    /// <summary>
+    /// Marks stuck/blocking auto-track cart orders as Failed so pending episodes can be hunted again.
+    /// Does not touch orders that are already downloading or completed.
+    /// </summary>
+    int ReleaseAutoTrackHuntBlocks(long showId);
 }
 
 public sealed class TorrentCartService : ITorrentCartService
 {
     private readonly IDatabaseService _databaseService;
+    private readonly IAppLogger _logger;
 
-    public TorrentCartService(IDatabaseService databaseService)
+    public TorrentCartService(IDatabaseService databaseService, IAppLogger logger)
     {
         _databaseService = databaseService;
+        _logger = logger;
     }
 
     public event EventHandler? CartChanged;
@@ -370,6 +380,48 @@ public sealed class TorrentCartService : ITorrentCartService
         NotifyChanged();
     }
 
+    public bool RemoveCandidate(long orderId, long candidateId)
+    {
+        var order = _databaseService.GetTorrentCartOrder(orderId);
+        if (order is null)
+        {
+            return false;
+        }
+
+        var candidates = _databaseService.GetTorrentCartOrderCandidates(orderId);
+        var removed = candidates.FirstOrDefault(item => item.Id == candidateId);
+        if (removed is null)
+        {
+            return false;
+        }
+
+        if (_databaseService.DeleteTorrentCartOrderCandidate(candidateId) <= 0)
+        {
+            return false;
+        }
+
+        if (removed.IsSelected)
+        {
+            var next = _databaseService.GetTorrentCartOrderCandidates(orderId)
+                .OrderBy(item => item.Rank)
+                .FirstOrDefault();
+            if (next is not null)
+            {
+                _databaseService.UpdateTorrentCartOrderCandidateSelection(orderId, next.Id);
+                ApplyCandidate(order, next);
+            }
+            else
+            {
+                ClearSelectedCandidate(order);
+            }
+
+            _databaseService.UpsertTorrentCartOrder(order);
+        }
+
+        NotifyChanged();
+        return true;
+    }
+
     public void SelectCandidate(long orderId, long candidateId)
     {
         var order = _databaseService.GetTorrentCartOrder(orderId);
@@ -463,6 +515,49 @@ public sealed class TorrentCartService : ITorrentCartService
         order.StatusDetail = statusDetail;
         _databaseService.UpsertTorrentCartOrder(order);
         NotifyChanged();
+    }
+
+    public int ReleaseAutoTrackHuntBlocks(long showId)
+    {
+        var released = 0;
+        foreach (var order in _databaseService.GetTorrentCartOrders(MediaKind.TvEpisode, showId))
+        {
+            if (order.Source != TorrentOrderSource.AutoTrack)
+            {
+                continue;
+            }
+
+            // Leave live downloads alone; only clear hunt-queue blockers / stuck searches.
+            if (order.Status is not (TorrentOrderStatus.Draft
+                or TorrentOrderStatus.Searching
+                or TorrentOrderStatus.CandidatesFound
+                or TorrentOrderStatus.NoCandidates
+                or TorrentOrderStatus.Approved
+                or TorrentOrderStatus.Failed))
+            {
+                continue;
+            }
+
+            _databaseService.DeleteTorrentCartOrderCandidates(order.Id);
+            ClearSelectedCandidate(order);
+            ClearTorrentState(order);
+            order.FailedCandidateUrls = string.Empty;
+            order.LastFailureReason = string.Empty;
+            order.Status = TorrentOrderStatus.Failed;
+            order.StatusDetail = "Cleared by Reset week so hunt can run again.";
+            _databaseService.UpsertTorrentCartOrder(order);
+            released++;
+        }
+
+        if (released > 0)
+        {
+            _logger.Info(
+                $"Reset week released {released} blocking auto-track cart order(s) for show {showId}.",
+                LogTarget.File | LogTarget.Console);
+            NotifyChanged();
+        }
+
+        return released;
     }
 
     private void NotifyChanged()

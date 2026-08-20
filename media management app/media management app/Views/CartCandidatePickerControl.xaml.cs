@@ -21,6 +21,16 @@ public partial class CartCandidatePickerControl : System.Windows.Controls.UserCo
         ClosePopup();
     }
 
+    private void BlacklistButton_OnPreviewMouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        e.Handled = true;
+        if (sender is System.Windows.Controls.Button { Command: { } command } button &&
+            command.CanExecute(button.CommandParameter))
+        {
+            command.Execute(button.CommandParameter);
+        }
+    }
+
     private void ClosePopup()
     {
         PickerToggle.IsChecked = false;

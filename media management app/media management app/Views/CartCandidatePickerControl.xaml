@@ -11,58 +11,77 @@
                     CornerRadius="8"
                     Padding="10,8"
                     Margin="0,0,0,2">
-                <StackPanel>
-                    <StackPanel Orientation="Horizontal">
-                        <Border Style="{StaticResource CandidateChipStyle}" Margin="0,0,6,0">
-                            <TextBlock Text="{Binding RankLabel}" Style="{StaticResource CandidateChipTextStyle}" />
-                        </Border>
-                        <Border Style="{StaticResource CandidateChipStyle}" Margin="0,0,6,0">
-                            <TextBlock Text="{Binding QualityLabel}" Style="{StaticResource CandidateChipTextStyle}" />
-                        </Border>
-                        <TextBlock Text="{Binding StatsLine}"
-                                   Style="{StaticResource MutedTextStyle}"
-                                   VerticalAlignment="Center"
-                                   TextTrimming="CharacterEllipsis" />
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                        <StackPanel Orientation="Horizontal">
+                            <Border Style="{StaticResource CandidateChipStyle}" Margin="0,0,6,0">
+                                <TextBlock Text="{Binding RankLabel}" Style="{StaticResource CandidateChipTextStyle}" />
+                            </Border>
+                            <Border Style="{StaticResource CandidateChipStyle}" Margin="0,0,6,0">
+                                <TextBlock Text="{Binding QualityLabel}" Style="{StaticResource CandidateChipTextStyle}" />
+                            </Border>
+                            <TextBlock Text="{Binding StatsLine}"
+                                       Style="{StaticResource MutedTextStyle}"
+                                       VerticalAlignment="Center"
+                                       TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                        <TextBlock Text="{Binding Name}"
+                                   Margin="0,6,0,0"
+                                   FontSize="12"
+                                   TextTrimming="CharacterEllipsis"
+                                   MaxHeight="36"
+                                   TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding MultiSeasonWarningText}"
+                                   Foreground="{StaticResource AppBrushAccent}"
+                                   FontSize="11"
+                                   Margin="0,4,0,0"
+                                   TextWrapping="Wrap">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsMultiSeason}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <TextBlock Text="{Binding ContentProfileWarning}"
+                                   Foreground="{StaticResource AppBrushWarning}"
+                                   FontSize="11"
+                                   Margin="0,4,0,0"
+                                   TextWrapping="Wrap">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding HasContentProfileWarning}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
                     </StackPanel>
-                    <TextBlock Text="{Binding Name}"
-                               Margin="0,6,0,0"
-                               FontSize="12"
-                               TextTrimming="CharacterEllipsis"
-                               MaxHeight="36"
-                               TextWrapping="Wrap" />
-                    <TextBlock Text="{Binding MultiSeasonWarningText}"
-                               Foreground="{StaticResource AppBrushAccent}"
-                               FontSize="11"
-                               Margin="0,4,0,0"
-                               TextWrapping="Wrap">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                                <Setter Property="Visibility" Value="Collapsed" />
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsMultiSeason}" Value="True">
-                                        <Setter Property="Visibility" Value="Visible" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
-                    <TextBlock Text="{Binding ContentProfileWarning}"
-                               Foreground="{StaticResource AppBrushWarning}"
-                               FontSize="11"
-                               Margin="0,4,0,0"
-                               TextWrapping="Wrap">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                                <Setter Property="Visibility" Value="Collapsed" />
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding HasContentProfileWarning}" Value="True">
-                                        <Setter Property="Visibility" Value="Visible" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
-                </StackPanel>
+                    <Button Grid.Column="1"
+                            Style="{StaticResource AppCompactIconButtonStyle}"
+                            Margin="8,0,0,0"
+                            VerticalAlignment="Top"
+                            ToolTip="Blacklist this listing"
+                            Command="{Binding DataContext.BlacklistCandidateCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                            CommandParameter="{Binding Id}"
+                            PreviewMouseLeftButtonDown="BlacklistButton_OnPreviewMouseLeftButtonDown">
+                        <iconPacks:PackIconLucide Kind="Ban"
+                                                  Width="14"
+                                                  Height="14"
+                                                  Foreground="{StaticResource AppBrushDanger}" />
+                    </Button>
+                </Grid>
             </Border>
         </DataTemplate>
     </UserControl.Resources>

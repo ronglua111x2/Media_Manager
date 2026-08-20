@@ -28,5 +28,11 @@ public interface IQbittorrentClient
 
     Task<IReadOnlyList<TorrentContentFile>> GetTorrentFilesAsync(string hash, CancellationToken cancellationToken = default);
 
+    Task DeleteTorrentsAsync(IEnumerable<string> hashes, bool deleteFiles = false, CancellationToken cancellationToken = default);
+
+    Task PauseTorrentsAsync(IEnumerable<string> hashes, CancellationToken cancellationToken = default);
+
+    Task ResumeTorrentsAsync(IEnumerable<string> hashes, CancellationToken cancellationToken = default);
+
     Task<TorrentMetadataProbeResult> ProbeTorrentMetadataAsync(TorrentSearchResult result, CancellationToken cancellationToken = default);
 }

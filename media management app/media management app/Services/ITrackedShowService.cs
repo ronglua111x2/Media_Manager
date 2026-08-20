@@ -98,4 +98,9 @@ public interface ITrackedShowService
         bool clearOverrides);
 
     void StopAutoTrack(long showId);
+
+    /// <summary>
+    /// Clears this-week TMDB satisfaction so discovery can run again after the weekly anchor.
+    /// </summary>
+    void ResetAutoTrackWeekSatisfaction(long showId);
 }

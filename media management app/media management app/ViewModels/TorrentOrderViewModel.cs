@@ -16,6 +16,7 @@ public sealed partial class TorrentOrderViewModel : ObservableObject
     public TorrentOrderViewModel()
     {
         AcceptCommand = new RelayCommand(Accept, () => CanAccept);
+        BlacklistCandidateCommand = new RelayCommand<long>(BlacklistCandidate, _ => CanChangeCandidate);
         RetryAddCommand = new RelayCommand(RetryAdd, () => CanRetryAdd);
         RetrySearchCommand = new RelayCommand(RetrySearch, () => CanRetrySearch);
         ReconcilePackCommand = new RelayCommand(ReconcilePack, () => CanReconcilePack);
@@ -55,6 +56,8 @@ public sealed partial class TorrentOrderViewModel : ObservableObject
 
     public IRelayCommand AcceptCommand { get; }
 
+    public IRelayCommand BlacklistCandidateCommand { get; }
+
     public IRelayCommand RetryAddCommand { get; }
 
     public IRelayCommand RetrySearchCommand { get; }
@@ -62,6 +65,8 @@ public sealed partial class TorrentOrderViewModel : ObservableObject
     public IRelayCommand ReconcilePackCommand { get; }
 
     public Action<long, long>? CandidateSelected { get; set; }
+
+    public Action<long, long>? BlacklistCandidateRequested { get; set; }
 
     public Action<long>? AcceptRequested { get; set; }
 
@@ -95,6 +100,7 @@ public sealed partial class TorrentOrderViewModel : ObservableObject
                 OnPropertyChanged(nameof(CanRetryAdd));
                 OnPropertyChanged(nameof(CanRetrySearch));
                 AcceptCommand.NotifyCanExecuteChanged();
+                BlacklistCandidateCommand.NotifyCanExecuteChanged();
                 RetryAddCommand.NotifyCanExecuteChanged();
                 RetrySearchCommand.NotifyCanExecuteChanged();
                 if (!_isLoadingSelection && value is not null)
@@ -239,6 +245,7 @@ public sealed partial class TorrentOrderViewModel : ObservableObject
         OnPropertyChanged(nameof(SelectedCandidateContentProfileWarning));
         OnPropertyChanged(nameof(HasSelectedCandidateContentWarning));
         AcceptCommand.NotifyCanExecuteChanged();
+        BlacklistCandidateCommand.NotifyCanExecuteChanged();
         RetryAddCommand.NotifyCanExecuteChanged();
         RetrySearchCommand.NotifyCanExecuteChanged();
     }
@@ -246,6 +253,16 @@ public sealed partial class TorrentOrderViewModel : ObservableObject
     private void Accept()
     {
         AcceptRequested?.Invoke(Id);
+    }
+
+    private void BlacklistCandidate(long candidateId)
+    {
+        if (candidateId <= 0)
+        {
+            return;
+        }
+
+        BlacklistCandidateRequested?.Invoke(Id, candidateId);
     }
 
     private void RetryAdd()
@@ -272,6 +289,7 @@ public sealed partial class TorrentOrderViewModel : ObservableObject
         OnPropertyChanged(nameof(CanRetrySearch));
         OnPropertyChanged(nameof(CanReconcilePack));
         AcceptCommand.NotifyCanExecuteChanged();
+        BlacklistCandidateCommand.NotifyCanExecuteChanged();
         RetryAddCommand.NotifyCanExecuteChanged();
         RetrySearchCommand.NotifyCanExecuteChanged();
         ReconcilePackCommand.NotifyCanExecuteChanged();
