@@ -19,7 +19,8 @@ public sealed record CandidateScoringWeights(
     int SeasonMatchScorePerSeason,
     int SingleSeasonBoost,
     bool PackExtrasPriorityEnabled,
-    int PackExtrasPriorityScore)
+    int PackExtrasPriorityScore,
+    int EngineWeight)
 {
     public static CandidateScoringWeights Default { get; } = new(
         QualityWeight: 10_000_000,
@@ -33,5 +34,6 @@ public sealed record CandidateScoringWeights(
         SeasonMatchScorePerSeason: 10,
         SingleSeasonBoost: 5000,
         PackExtrasPriorityEnabled: true,
-        PackExtrasPriorityScore: 2500);
+        PackExtrasPriorityScore: 2500,
+        EngineWeight: RecipeRuntimeSettings.DefaultEngineWeight);
 }

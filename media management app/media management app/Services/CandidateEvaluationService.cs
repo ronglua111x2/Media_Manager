@@ -60,7 +60,8 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
         var preferTermsScore = GetPreferTermsScore(filter, result.FileName);
         var qualityScore = TorrentQuality.GetRank(parsed.Quality);
         var weights = RecipeRuntimeSettings.GetCandidateScoringWeights(recipe);
-        return Accepted(result, qualityScore, titleMatch.Score, episodeScore, audioScore, preferTermsScore, weights, filter);
+        var engineRankScore = RecipeRuntimeSettings.ResolveEngineRankScore(result.EngineName, filter);
+        return Accepted(result, qualityScore, titleMatch.Score, episodeScore, audioScore, preferTermsScore, weights, filter, engineRankScore);
     }
 
     public RecipeCandidateResult EvaluateMovie(SearchRecipe recipe, TrackedMovie movie, TorrentSearchResult result)
@@ -99,7 +100,8 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
         var preferTermsScore = GetPreferTermsScore(filter, result.FileName);
         var qualityScore = TorrentQuality.GetRank(TorrentQuality.Detect(result.FileName));
         var weights = RecipeRuntimeSettings.GetCandidateScoringWeights(recipe);
-        return Accepted(result, qualityScore, titleMatch.Score, episodeScore: 0, audioScore, preferTermsScore, weights, filter);
+        var engineRankScore = RecipeRuntimeSettings.ResolveEngineRankScore(result.EngineName, filter);
+        return Accepted(result, qualityScore, titleMatch.Score, episodeScore: 0, audioScore, preferTermsScore, weights, filter, engineRankScore);
     }
 
     private static (CandidateRejectReason Reason, string Detail) GetCommonRejectReason(
@@ -186,7 +188,8 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
         int audioScore,
         int preferTermsScore,
         CandidateScoringWeights weights,
-        RecipeModuleConfig? filter)
+        RecipeModuleConfig? filter,
+        int engineRankScore)
     {
         var sizeScore = TorrentQuality.CalculateSizeScore(
             result.FileSize,
@@ -210,7 +213,8 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
                 episodeScore,
                 weights,
                 preferTermsScore,
-                sizeScore)
+                sizeScore,
+                engineRankScore)
         };
     }
 

@@ -15,5 +15,8 @@ public sealed class TorrentSearchRequest
     public int IdleTimeoutSeconds { get; init; }
 
     public int TimeoutSeconds { get; init; } = 30;
+
+    /// <summary>When set, empty-engine diagnostics are logged after search completes.</summary>
+    public IReadOnlyList<string>? RequestedEngineNames { get; init; }
 }
 

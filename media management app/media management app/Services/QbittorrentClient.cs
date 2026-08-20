@@ -198,8 +198,17 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
                 endedBy = "max-results";
             }
 
+            if (request.RequestedEngineNames is { Count: > 0 })
+            {
+                SearchEngineDiagnostics.LogEmptyEngines(_logger, request.RequestedEngineNames, mergedResults, request.Query);
+            }
+
+            var engineSummary = request.RequestedEngineNames is { Count: > 0 }
+                ? SearchEngineDiagnostics.BuildEngineSummaryIncludingEmpty(request.RequestedEngineNames, mergedResults)
+                : SearchEngineDiagnostics.BuildEngineSummary(mergedResults);
+
             _logger.Info(
-                $"qBittorrent search completed. Query='{request.Query}', Status='{latestStatus}', Results={mergedResults.Count}, TimeoutSeconds={timeoutSeconds}, IdleTimeoutSeconds={idleTimeoutSeconds}, EndedBy='{endedBy}'.",
+                $"qBittorrent search completed. Query='{request.Query}', Status='{latestStatus}', Results={mergedResults.Count}, TimeoutSeconds={timeoutSeconds}, IdleTimeoutSeconds={idleTimeoutSeconds}, EndedBy='{endedBy}', engines=[{engineSummary}].",
                 LogTarget.All);
 
             return mergedResults;
@@ -1120,5 +1129,42 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
             throw new InvalidOperationException(
                 $"Failed to resume torrents in qBittorrent: {(int)response.StatusCode} {response.ReasonPhrase}");
         }
+    }
+
+    public async Task<IReadOnlyList<SearchPluginInfo>> GetSearchPluginsAsync(CancellationToken cancellationToken = default)
+    {
+        await LoginAsync(cancellationToken);
+        using var response = await GetWithAuthRetryAsync("api/v2/search/plugins", cancellationToken);
+        response.EnsureSuccessStatusCode();
+
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+        if (document.RootElement.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        var plugins = new List<SearchPluginInfo>();
+        foreach (var element in document.RootElement.EnumerateArray())
+        {
+            var name = GetString(element, "name");
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                continue;
+            }
+
+            plugins.Add(new SearchPluginInfo
+            {
+                Name = name.Trim(),
+                FullName = GetString(element, "fullName") ?? name.Trim(),
+                Enabled = GetBool(element, "enabled"),
+                Url = GetString(element, "url") ?? string.Empty,
+                Version = GetString(element, "version") ?? string.Empty
+            });
+        }
+
+        return plugins
+            .OrderBy(plugin => plugin.FullName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 }

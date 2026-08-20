@@ -369,7 +369,7 @@
                     </StackPanel>
 
                     <Grid DataContext="{Binding SelectedModule}"
-                          Visibility="{Binding HasSelectedModule, Converter={StaticResource BooleanToVisibilityConverter}}">
+                          Visibility="{Binding DataContext.HasSelectedModule, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource BooleanToVisibilityConverter}}">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" MinWidth="280" />
                             <ColumnDefinition Width="16" />
@@ -547,8 +547,22 @@
                                                               Margin="0,0,0,0" />
                                                 </StackPanel>
                                                 <TextBlock Text="Plugins" Style="{StaticResource RecipeLabelStyle}" />
-                                                <TextBox Text="{Binding Plugins, UpdateSourceTrigger=PropertyChanged}"
-                                                         Style="{StaticResource RecipeTextBoxStyle}" />
+                                                <Grid Margin="0,0,0,8">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBox Grid.Column="0"
+                                                             Text="{Binding PluginsSummary, Mode=OneWay}"
+                                                             IsReadOnly="True"
+                                                             Style="{StaticResource RecipeTextBoxStyle}" />
+                                                    <Button Grid.Column="1"
+                                                            Content="Choose engines..."
+                                                            Style="{StaticResource AppOutlinedButtonStyle}"
+                                                            Margin="8,0,0,0"
+                                                            Padding="12,6"
+                                                            Command="{Binding ChooseSearchEnginesCommand}" />
+                                                </Grid>
                                                 <TextBlock Text="Category" Style="{StaticResource RecipeLabelStyle}" />
                                                 <TextBox Text="{Binding Category, UpdateSourceTrigger=PropertyChanged}"
                                                          Style="{StaticResource RecipeTextBoxStyle}" />
@@ -918,6 +932,23 @@
                                                 <TextBlock Text="Prefer terms" Style="{StaticResource RecipeLabelStyle}" />
                                                 <TextBox Text="{Binding PreferTermsText, UpdateSourceTrigger=LostFocus}"
                                                          Style="{StaticResource RecipeMultilineTextBoxStyle}" />
+                                                <TextBlock Text="Preferred engines" Style="{StaticResource RecipeLabelStyle}" />
+                                                <Grid Margin="0,0,0,8">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBox Grid.Column="0"
+                                                             Text="{Binding PreferredEnginesSummary, Mode=OneWay}"
+                                                             IsReadOnly="True"
+                                                             Style="{StaticResource RecipeTextBoxStyle}" />
+                                                    <Button Grid.Column="1"
+                                                            Content="Prefer engines..."
+                                                            Style="{StaticResource AppOutlinedButtonStyle}"
+                                                            Margin="8,0,0,0"
+                                                            Padding="12,6"
+                                                            Command="{Binding ChoosePreferredEnginesCommand}" />
+                                                </Grid>
                                                 <TextBlock Text="Include terms" Style="{StaticResource RecipeLabelStyle}" />
                                                 <TextBox Text="{Binding IncludeTermsText, UpdateSourceTrigger=LostFocus}"
                                                          Style="{StaticResource RecipeMultilineTextBoxStyle}" />
@@ -1069,6 +1100,21 @@
                                                       SelectedItem="{Binding SizePreference, Mode=TwoWay}"
                                                       Margin="0,0,0,8" />
                                             <TextBlock Text="Uses Candidate Filter Min/Max size as soft range. Prefer larger boosts bigger files in range; Prefer smaller does the inverse; Off disables size boost."
+                                                       Style="{StaticResource MutedTextStyle}"
+                                                       TextWrapping="Wrap"
+                                                       Margin="0,0,0,16" />
+
+                                            <TextBlock Text="Engine weight" Style="{StaticResource RecipeLabelStyle}" />
+                                            <Slider Minimum="0" Maximum="100000000"
+                                                    LargeChange="1000000"
+                                                    Value="{Binding EngineWeight, UpdateSourceTrigger=PropertyChanged}"
+                                                    Margin="0,0,0,4" />
+                                            <Border Style="{StaticResource RecipeNumericChromeStyle}" Margin="0,0,0,12">
+                                                <materialDesign:NumericUpDown Style="{StaticResource RecipeNumericUpDownStyle}"
+                                                                              Value="{Binding EngineWeight, UpdateSourceTrigger=PropertyChanged}"
+                                                                              Minimum="0" Maximum="100000000" />
+                                            </Border>
+                                            <TextBlock Text="Multiplies the preferred-engine rank score from the Quality module. 0 disables engine preference."
                                                        Style="{StaticResource MutedTextStyle}"
                                                        TextWrapping="Wrap"
                                                        Margin="0,0,0,16" />

@@ -11,6 +11,7 @@ public sealed class ShowSearchSnapshotService
     private readonly IRecipeService _recipeService;
     private readonly ISearchPlanBuilder _searchPlanBuilder;
     private readonly IQbittorrentClient _qbittorrentClient;
+    private readonly IQbittorrentSearchPluginService _searchPluginService;
     private readonly IAppLogger _logger;
 
     public ShowSearchSnapshotService(
@@ -18,12 +19,14 @@ public sealed class ShowSearchSnapshotService
         IRecipeService recipeService,
         ISearchPlanBuilder searchPlanBuilder,
         IQbittorrentClient qbittorrentClient,
+        IQbittorrentSearchPluginService searchPluginService,
         IAppLogger logger)
     {
         _settingsService = settingsService;
         _recipeService = recipeService;
         _searchPlanBuilder = searchPlanBuilder;
         _qbittorrentClient = qbittorrentClient;
+        _searchPluginService = searchPluginService;
         _logger = logger;
     }
 
@@ -59,6 +62,16 @@ public sealed class ShowSearchSnapshotService
 
         progressService?.Start($"Search: Query 0/{totalQueries}", 0);
 
+        var searchSource = recipe.Modules.FirstOrDefault(module => module.BlockType == RecipeBlockType.SearchSource && module.IsEnabled);
+        var savedPlugins = string.IsNullOrWhiteSpace(searchSource?.Plugins) ? "enabled" : searchSource!.Plugins;
+        var livePlugins = await _searchPluginService.GetPluginsAsync(cancellationToken);
+        var resolved = _searchPluginService.ResolveForSearch(savedPlugins, livePlugins, _logger);
+        if (resolved.SkipSearch)
+        {
+            _logger.Warning($"Snapshot search skipped for {show.DisplayTitle}: no valid enabled plugins remain.", LogTarget.All);
+            return [];
+        }
+
         var combined = new List<TorrentSearchResult>();
         var completedQueries = 0;
         foreach (var query in queries)
@@ -69,6 +82,8 @@ public sealed class ShowSearchSnapshotService
                 targetResults,
                 timeoutSeconds,
                 idleTimeoutSeconds,
+                resolved.PluginsForApi,
+                resolved.RequestedNames,
                 cancellationToken);
             completedQueries++;
             progressService?.Report(completedQueries, $"Search: Query {completedQueries}/{totalQueries}");
@@ -106,6 +121,8 @@ public sealed class ShowSearchSnapshotService
         int targetResults,
         int timeoutSeconds,
         int idleTimeoutSeconds,
+        string plugins,
+        IReadOnlyList<string> requestedEngineNames,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(query))
@@ -129,7 +146,11 @@ public sealed class ShowSearchSnapshotService
 
         try
         {
-            searchId = await _qbittorrentClient.StartSearchAsync(new TorrentSearchRequest { Query = query }, cancellationToken);
+            searchId = await _qbittorrentClient.StartSearchAsync(new TorrentSearchRequest
+            {
+                Query = query,
+                Plugins = plugins
+            }, cancellationToken);
             while (DateTimeOffset.UtcNow < deadline)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -180,8 +201,9 @@ public sealed class ShowSearchSnapshotService
             }
 
             _logger.Info(
-                $"Snapshot search completed. Query='{query}', Status='{latestStatus}', Results={mergedByUrl.Count}, EndedBy='{endedBy}'.",
+                $"Snapshot search completed. Query='{query}', Status='{latestStatus}', Results={mergedByUrl.Count}, EndedBy='{endedBy}', engines=[{SearchEngineDiagnostics.BuildEngineSummaryIncludingEmpty(requestedEngineNames, mergedByUrl.Values)}].",
                 LogTarget.All);
+            SearchEngineDiagnostics.LogEmptyEngines(_logger, requestedEngineNames, mergedByUrl.Values, query);
 
             return mergedByUrl.Values
                 .OrderByDescending(result => result.Seeders)

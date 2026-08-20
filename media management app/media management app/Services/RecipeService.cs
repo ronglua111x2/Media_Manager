@@ -402,6 +402,11 @@ public sealed class RecipeService : IRecipeService
                     RecipeRuntimeSettings.GetSearchIdleTimeoutSecondsTvParallel(recipe).ToString();
             }
 
+            if (module.BlockType == RecipeBlockType.CandidateFilter)
+            {
+                RecipeRuntimeSettings.NormalizeEnginePriority(module);
+            }
+
             if (module.BlockType == RecipeBlockType.Scoring &&
                 recipe.TargetKind == MediaKind.TvSeasonPack)
             {

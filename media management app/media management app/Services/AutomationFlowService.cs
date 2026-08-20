@@ -12,6 +12,7 @@ public sealed class AutomationFlowService : IAutomationFlowService
     private readonly ISearchPlanBuilder _searchPlanBuilder;
     private readonly ICandidateEvaluationService _candidateEvaluationService;
     private readonly IQbittorrentClient _qbittorrentClient;
+    private readonly IQbittorrentSearchPluginService _searchPluginService;
     private readonly ITrackedShowService _trackedShowService;
     private readonly ITrackedMovieService _trackedMovieService;
     private readonly ISettingsService _settingsService;
@@ -24,6 +25,7 @@ public sealed class AutomationFlowService : IAutomationFlowService
         ISearchPlanBuilder searchPlanBuilder,
         ICandidateEvaluationService candidateEvaluationService,
         IQbittorrentClient qbittorrentClient,
+        IQbittorrentSearchPluginService searchPluginService,
         ITrackedShowService trackedShowService,
         ITrackedMovieService trackedMovieService,
         ISettingsService settingsService,
@@ -35,6 +37,7 @@ public sealed class AutomationFlowService : IAutomationFlowService
         _searchPlanBuilder = searchPlanBuilder;
         _candidateEvaluationService = candidateEvaluationService;
         _qbittorrentClient = qbittorrentClient;
+        _searchPluginService = searchPluginService;
         _trackedShowService = trackedShowService;
         _trackedMovieService = trackedMovieService;
         _settingsService = settingsService;
@@ -130,8 +133,18 @@ public sealed class AutomationFlowService : IAutomationFlowService
     {
         var searchSource = recipe.Modules.FirstOrDefault(module => module.BlockType == RecipeBlockType.SearchSource && module.IsEnabled);
         var requestLimit = searchSource?.ResultLimit is > 0 ? searchSource.ResultLimit : 100;
-        var plugins = string.IsNullOrWhiteSpace(searchSource?.Plugins) ? "enabled" : searchSource!.Plugins;
+        var savedPlugins = string.IsNullOrWhiteSpace(searchSource?.Plugins) ? "enabled" : searchSource!.Plugins;
         var category = string.IsNullOrWhiteSpace(searchSource?.Category) ? "all" : searchSource!.Category;
+        var livePlugins = await _searchPluginService.GetPluginsAsync(cancellationToken);
+        var resolved = _searchPluginService.ResolveForSearch(savedPlugins, livePlugins, _logger);
+        if (resolved.SkipSearch)
+        {
+            _logger.Warning($"Recipe search skipped: no valid enabled plugins remain for recipe '{recipe.Name}'.", LogTarget.All);
+            return [];
+        }
+
+        var plugins = resolved.PluginsForApi;
+        var requestedEngineNames = resolved.RequestedNames;
         var autoTorrent = _settingsService.Current.AutoTorrent;
         var timeoutSeconds = recipe.TargetKind == MediaKind.Movie
             ? RecipeRuntimeSettings.GetMovieSearchTimeoutSeconds(recipe, autoTorrent)
@@ -178,6 +191,7 @@ public sealed class AutomationFlowService : IAutomationFlowService
                             paginationMaxPages,
                             paginationMaxTotalResults,
                             paginationIdleTimeoutSeconds,
+                            requestedEngineNames,
                             cancellationToken)
                         : await _qbittorrentClient.SearchAsync(new TorrentSearchRequest
                         {
@@ -186,7 +200,8 @@ public sealed class AutomationFlowService : IAutomationFlowService
                             Category = category,
                             Limit = requestLimit,
                             IdleTimeoutSeconds = searchIdleTimeoutSeconds,
-                            TimeoutSeconds = timeoutSeconds
+                            TimeoutSeconds = timeoutSeconds,
+                            RequestedEngineNames = requestedEngineNames
                         }, cancellationToken);
                     var completed = Interlocked.Increment(ref completedQueries);
                     _progressService.Report(completed, $"Search: Query {completed}/{totalQueries}");
@@ -264,6 +279,7 @@ public sealed class AutomationFlowService : IAutomationFlowService
         int maxPages,
         int maxTotalResults,
         int idleTimeoutSeconds,
+        IReadOnlyList<string> requestedEngineNames,
         CancellationToken cancellationToken)
     {
         var effectivePageSize = Math.Clamp(pageSize, RecipeRuntimeSettings.MinPaginationPageSize, RecipeRuntimeSettings.MaxPaginationPageSize);
@@ -356,7 +372,7 @@ public sealed class AutomationFlowService : IAutomationFlowService
                     }
                 }
 
-                var engineSummary = BuildEngineSummary(mergedByUrl.Values);
+                var engineSummary = SearchEngineDiagnostics.BuildEngineSummaryIncludingEmpty(requestedEngineNames, mergedByUrl.Values);
                 var idleRemainingSeconds = idleTimeout is null
                     ? -1
                     : Math.Max(0, (int)Math.Ceiling((idleDeadline - DateTimeOffset.UtcNow).TotalSeconds));
@@ -418,19 +434,15 @@ public sealed class AutomationFlowService : IAutomationFlowService
         }
 
         _logger.Info(
-            $"Recipe search pagination query='{query}' pages={pagesFetched} rawRows={rawRows} mergedRows={merged.Count} bufferTotal={latestTotal} cursorOffset={nextOffset} status='{latestStatus}' pageSize={effectivePageSize} maxPages={effectiveMaxPages} cap={effectiveMaxTotal} idleSeconds={idleTimeoutSeconds} endedBy='{endedBy}' engines=[{BuildEngineSummary(merged)}] pollCycles={pollCycle}.",
+            $"Recipe search pagination query='{query}' pages={pagesFetched} rawRows={rawRows} mergedRows={merged.Count} bufferTotal={latestTotal} cursorOffset={nextOffset} status='{latestStatus}' pageSize={effectivePageSize} maxPages={effectiveMaxPages} cap={effectiveMaxTotal} idleSeconds={idleTimeoutSeconds} endedBy='{endedBy}' engines=[{SearchEngineDiagnostics.BuildEngineSummaryIncludingEmpty(requestedEngineNames, merged)}] pollCycles={pollCycle}.",
             LogTarget.All);
+        SearchEngineDiagnostics.LogEmptyEngines(_logger, requestedEngineNames, merged, query);
         return merged;
     }
 
     private static string BuildEngineSummary(IEnumerable<TorrentSearchResult> results)
     {
-        return string.Join(", ",
-            results
-                .GroupBy(result => string.IsNullOrWhiteSpace(result.EngineName) ? "?" : result.EngineName, StringComparer.OrdinalIgnoreCase)
-                .OrderByDescending(group => group.Count())
-                .ThenBy(group => group.Key, StringComparer.OrdinalIgnoreCase)
-                .Select(group => $"{group.Key}:{group.Count()}"));
+        return SearchEngineDiagnostics.BuildEngineSummary(results);
     }
 
     private static RecipeDryRunResult BuildDryRunResult(

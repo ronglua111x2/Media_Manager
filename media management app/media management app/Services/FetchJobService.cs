@@ -13,6 +13,7 @@ public sealed class FetchJobService : IFetchJobService
     private readonly IDatabaseService _databaseService;
     private readonly ISettingsService _settingsService;
     private readonly IQbittorrentClient _qbittorrentClient;
+    private readonly IQbittorrentSearchPluginService _searchPluginService;
     private readonly IRecipeService _recipeService;
     private readonly ISearchPlanBuilder _searchPlanBuilder;
     private readonly ICandidateEvaluationService _candidateEvaluationService;
@@ -30,6 +31,7 @@ public sealed class FetchJobService : IFetchJobService
         IDatabaseService databaseService,
         ISettingsService settingsService,
         IQbittorrentClient qbittorrentClient,
+        IQbittorrentSearchPluginService searchPluginService,
         IRecipeService recipeService,
         ISearchPlanBuilder searchPlanBuilder,
         ICandidateEvaluationService candidateEvaluationService,
@@ -42,6 +44,7 @@ public sealed class FetchJobService : IFetchJobService
         _databaseService = databaseService;
         _settingsService = settingsService;
         _qbittorrentClient = qbittorrentClient;
+        _searchPluginService = searchPluginService;
         _recipeService = recipeService;
         _searchPlanBuilder = searchPlanBuilder;
         _candidateEvaluationService = candidateEvaluationService;
@@ -560,8 +563,18 @@ public sealed class FetchJobService : IFetchJobService
     {
         var searchSource = recipe.Modules.FirstOrDefault(module => module.BlockType == RecipeBlockType.SearchSource && module.IsEnabled);
         var requestLimit = searchSource?.ResultLimit is > 0 ? searchSource.ResultLimit : 100;
-        var plugins = string.IsNullOrWhiteSpace(searchSource?.Plugins) ? "enabled" : searchSource!.Plugins;
+        var savedPlugins = string.IsNullOrWhiteSpace(searchSource?.Plugins) ? "enabled" : searchSource!.Plugins;
         var category = string.IsNullOrWhiteSpace(searchSource?.Category) ? "all" : searchSource!.Category;
+        var livePlugins = await _searchPluginService.GetPluginsAsync(cancellationToken);
+        var resolved = _searchPluginService.ResolveForSearch(savedPlugins, livePlugins, _logger);
+        if (resolved.SkipSearch)
+        {
+            _logger.Warning($"Search skipped for query '{query}': no valid enabled plugins remain.", LogTarget.All);
+            return [];
+        }
+
+        var plugins = resolved.PluginsForApi;
+        var requestedEngineNames = resolved.RequestedNames;
         var timeoutSeconds = RecipeRuntimeSettings.GetParallelSearchTimeoutSeconds(
             recipe,
             _settingsService.Current.AutoTorrent);
@@ -586,6 +599,7 @@ public sealed class FetchJobService : IFetchJobService
                         paginationMaxPages,
                         paginationMaxTotalResults,
                         paginationIdleTimeoutSeconds,
+                        requestedEngineNames,
                         cancellationToken)
                     : await _qbittorrentClient.SearchAsync(new TorrentSearchRequest
                     {
@@ -594,7 +608,8 @@ public sealed class FetchJobService : IFetchJobService
                         Category = category,
                         Limit = requestLimit,
                         IdleTimeoutSeconds = searchIdleTimeoutSeconds,
-                        TimeoutSeconds = timeoutSeconds
+                        TimeoutSeconds = timeoutSeconds,
+                        RequestedEngineNames = requestedEngineNames
                     }, cancellationToken);
             }
             catch (QbittorrentSearchCapacityException) when (attempt < SearchCapacityRetryCount)
@@ -620,6 +635,7 @@ public sealed class FetchJobService : IFetchJobService
         int maxPages,
         int maxTotalResults,
         int idleTimeoutSeconds,
+        IReadOnlyList<string> requestedEngineNames,
         CancellationToken cancellationToken)
     {
         var effectivePageSize = Math.Clamp(pageSize, RecipeRuntimeSettings.MinPaginationPageSize, RecipeRuntimeSettings.MaxPaginationPageSize);
@@ -736,8 +752,9 @@ public sealed class FetchJobService : IFetchJobService
         }
 
         _logger.Info(
-            $"Fetch query pagination query='{query}' pages={pagesFetched} rawRows={rawRows} mergedRows={merged.Count} status='{latestStatus}' pageSize={effectivePageSize} maxPages={effectiveMaxPages} cap={effectiveMaxTotal} idleSeconds={idleTimeoutSeconds} endedBy='{endedBy}'.",
+            $"Fetch query pagination query='{query}' pages={pagesFetched} rawRows={rawRows} mergedRows={merged.Count} status='{latestStatus}' pageSize={effectivePageSize} maxPages={effectiveMaxPages} cap={effectiveMaxTotal} idleSeconds={idleTimeoutSeconds} endedBy='{endedBy}' engines=[{SearchEngineDiagnostics.BuildEngineSummaryIncludingEmpty(requestedEngineNames, merged)}].",
             LogTarget.All);
+        SearchEngineDiagnostics.LogEmptyEngines(_logger, requestedEngineNames, merged, query);
         return merged;
     }
 
@@ -1183,6 +1200,7 @@ public sealed class FetchJobService : IFetchJobService
                 packFilter?.MinimumSizeBytes,
                 packFilter?.MaximumSizeBytes,
                 scoringWeights);
+            var engineRankScore = RecipeRuntimeSettings.ResolveEngineRankScore(result.EngineName, packFilter);
 
             candidates.Add(new SeasonPackCandidate
             {
@@ -1206,7 +1224,8 @@ public sealed class FetchJobService : IFetchJobService
                     singleSeasonBoost + extrasPriorityBoost,
                     scoringWeights,
                     preferTermsScore,
-                    sizeScore),
+                    sizeScore,
+                    engineRankScore),
                 Warning = contentProfile.BuildWarningText()
             });
         }

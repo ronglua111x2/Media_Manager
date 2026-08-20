@@ -104,7 +104,8 @@ public static class TorrentQuality
         int episodeScore,
         CandidateScoringWeights? weights = null,
         int preferTermsScore = 0,
-        int sizeScore = 0)
+        int sizeScore = 0,
+        int engineRankScore = 0)
     {
         weights ??= CandidateScoringWeights.Default;
         var cappedSeeders = Math.Clamp(seeders, 0, weights.SeedersCap);
@@ -114,6 +115,7 @@ public static class TorrentQuality
                sizeScore * weights.SizeWeight +
                cappedSeeders * weights.SeedersWeight +
                identityScore * weights.IdentityWeight +
-               episodeScore * weights.EpisodeWeight;
+               episodeScore * weights.EpisodeWeight +
+               engineRankScore * weights.EngineWeight;
     }
 }

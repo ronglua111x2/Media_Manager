@@ -151,6 +151,7 @@ public partial class App : System.Windows.Application
         services.AddSingleton<ISymlinkCoordinatorService, SymlinkCoordinatorService>();
         services.AddSingleton<ISourceReconciliationService, SourceReconciliationService>();
         services.AddSingleton<IQbittorrentClient, QbittorrentClient>();
+        services.AddSingleton<IQbittorrentSearchPluginService, QbittorrentSearchPluginService>();
         services.AddSingleton<IQbittorrentProcessRestartService, QbittorrentProcessRestartService>();
         services.AddSingleton<IWarpCliService, WarpCliService>();
         services.AddSingleton<IRecipeService, RecipeService>();

@@ -39,6 +39,13 @@ public static class RecipeRuntimeSettings
     public const int MinMaxLibraryAlternativeTitlesForSearch = 0;
     public const int MaxMaxLibraryAlternativeTitlesForSearch = 16;
     public const string PackExtrasPriorityScoreKey = "packExtrasPriorityScore";
+    public const string EnginePriorityModeKey = "enginePriorityMode";
+    public const string EnginePriorityKey = "enginePriority";
+    public const string PluginsLastCustomKey = "pluginsLastCustom";
+    public const string EngineWeightKey = "engineWeight";
+    public const int DefaultEngineWeight = 0;
+    public const int MinEngineWeight = 0;
+    public const int MaxEngineWeight = 100_000_000;
     public const string PackExtrasPriorityEnabledKey = "packExtrasPriorityEnabled";
     public const int DefaultPackExtrasPriorityScore = 2500;
     public const string QualityWeightKey = "qualityWeight";
@@ -254,7 +261,8 @@ public static class RecipeRuntimeSettings
             SeasonMatchScorePerSeason: GetInt(scoringModule, SeasonMatchScorePerSeasonKey, defaults.SeasonMatchScorePerSeason, 0, 10_000),
             SingleSeasonBoost: GetInt(scoringModule, SingleSeasonBoostKey, defaults.SingleSeasonBoost, 0, 100_000),
             PackExtrasPriorityEnabled: GetPackExtrasPriorityEnabled(scoringModule),
-            PackExtrasPriorityScore: GetInt(scoringModule, PackExtrasPriorityScoreKey, defaults.PackExtrasPriorityScore, 0, 50_000));
+            PackExtrasPriorityScore: GetInt(scoringModule, PackExtrasPriorityScoreKey, defaults.PackExtrasPriorityScore, 0, 50_000),
+            EngineWeight: GetInt(scoringModule, EngineWeightKey, defaults.EngineWeight, MinEngineWeight, MaxEngineWeight));
     }
 
     public static CandidateScoringWeights GetDefaultCandidateScoringWeights() => CandidateScoringWeights.Default;
@@ -282,7 +290,8 @@ public static class RecipeRuntimeSettings
         SeasonMatchScorePerSeasonKey,
         SingleSeasonBoostKey,
         PackExtrasPriorityEnabledKey,
-        PackExtrasPriorityScoreKey
+        PackExtrasPriorityScoreKey,
+        EngineWeightKey
     ];
 
     public static IReadOnlyList<string> SizePreferenceOptions { get; } =
@@ -313,6 +322,139 @@ public static class RecipeRuntimeSettings
 
     public static bool GetPackExtrasPriorityEnabled(RecipeModuleConfig? scoringModule) =>
         GetBool(scoringModule, PackExtrasPriorityEnabledKey, true);
+
+    public static EnginePrioritySettings GetEnginePriority(RecipeModuleConfig? qualityModule)
+    {
+        if (qualityModule is null)
+        {
+            return EnginePrioritySettings.Empty;
+        }
+
+        var raw = qualityModule.ExtensionData.TryGetValue(EnginePriorityKey, out var value)
+            ? value
+            : string.Empty;
+        var mode = qualityModule.ExtensionData.TryGetValue(EnginePriorityModeKey, out var modeValue) &&
+                   modeValue.Equals("ranked", StringComparison.OrdinalIgnoreCase)
+            ? EnginePriorityMode.Ranked
+            : EnginePriorityMode.Flat;
+
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return EnginePrioritySettings.Empty;
+        }
+
+        var rankGroups = raw
+            .Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(group => group
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList())
+            .Where(group => group.Count > 0)
+            .ToList();
+
+        var names = rankGroups.SelectMany(group => group).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        return new EnginePrioritySettings(mode, names, rankGroups);
+    }
+
+    public static string FormatEnginePrioritySummary(RecipeModuleConfig? qualityModule)
+    {
+        var priority = GetEnginePriority(qualityModule);
+        if (priority.Names.Count == 0)
+        {
+            return "None";
+        }
+
+        if (priority.Mode == EnginePriorityMode.Flat)
+        {
+            return string.Join(", ", priority.Names);
+        }
+
+        return string.Join(" > ", priority.RankGroups.Select(group => string.Join(" = ", group)));
+    }
+
+    public static void NormalizeEnginePriority(RecipeModuleConfig qualityModule)
+    {
+        var priority = GetEnginePriority(qualityModule);
+        if (priority.Names.Count == 0)
+        {
+            qualityModule.ExtensionData.Remove(EnginePriorityKey);
+            qualityModule.ExtensionData.Remove(EnginePriorityModeKey);
+            return;
+        }
+
+        qualityModule.ExtensionData[EnginePriorityModeKey] =
+            priority.Mode == EnginePriorityMode.Ranked ? "ranked" : "flat";
+        qualityModule.ExtensionData[EnginePriorityKey] = string.Join("|",
+            priority.RankGroups.Select(group => string.Join(",", group)));
+    }
+
+    public static IReadOnlyList<string> GetPluginsLastCustom(RecipeModuleConfig? searchModule)
+    {
+        if (searchModule?.ExtensionData.TryGetValue(PluginsLastCustomKey, out var value) != true ||
+            string.IsNullOrWhiteSpace(value))
+        {
+            return [];
+        }
+
+        return NormalizePluginNameList(value);
+    }
+
+    public static void SetPluginsLastCustom(RecipeModuleConfig searchModule, IReadOnlyList<string> names)
+    {
+        var normalized = NormalizePluginNameList(names);
+        if (normalized.Count == 0)
+        {
+            searchModule.ExtensionData.Remove(PluginsLastCustomKey);
+            return;
+        }
+
+        searchModule.ExtensionData[PluginsLastCustomKey] = string.Join("|", normalized);
+    }
+
+    private static List<string> NormalizePluginNameList(string raw) =>
+        raw.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    private static List<string> NormalizePluginNameList(IReadOnlyList<string> names) =>
+        names.Where(name => !string.IsNullOrWhiteSpace(name))
+            .Select(name => name.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    public static int ResolveEngineRankScore(string? engineName, RecipeModuleConfig? qualityModule)
+    {
+        if (qualityModule is null || string.IsNullOrWhiteSpace(engineName))
+        {
+            return 0;
+        }
+
+        var priority = GetEnginePriority(qualityModule);
+        if (priority.Names.Count == 0)
+        {
+            return 0;
+        }
+
+        if (!priority.Names.Contains(engineName, StringComparer.OrdinalIgnoreCase))
+        {
+            return 0;
+        }
+
+        if (priority.Mode == EnginePriorityMode.Flat)
+        {
+            return 1;
+        }
+
+        for (var index = 0; index < priority.RankGroups.Count; index++)
+        {
+            if (priority.RankGroups[index].Contains(engineName, StringComparer.OrdinalIgnoreCase))
+            {
+                return priority.RankGroups.Count - index;
+            }
+        }
+
+        return 0;
+    }
 
     public static RecipeModuleConfig? GetScoringModule(SearchRecipe recipe) =>
         recipe.Modules.FirstOrDefault(module =>

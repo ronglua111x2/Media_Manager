@@ -10,10 +10,12 @@ namespace media_management_app.ViewModels;
 public sealed partial class RecipeWorkspaceViewModel : ViewModelBase
 {
     private readonly IRecipeService _recipeService;
+    private readonly IQbittorrentSearchPluginService _searchPluginService;
 
-    public RecipeWorkspaceViewModel(IRecipeService recipeService)
+    public RecipeWorkspaceViewModel(IRecipeService recipeService, IQbittorrentSearchPluginService searchPluginService)
     {
         _recipeService = recipeService;
+        _searchPluginService = searchPluginService;
         ReloadRecipes();
     }
 
@@ -227,7 +229,7 @@ public sealed partial class RecipeWorkspaceViewModel : ViewModelBase
                 continue;
             }
 
-            var moduleEditor = new RecipeModuleEditorViewModel(module, recipe.TargetKind);
+            var moduleEditor = new RecipeModuleEditorViewModel(module, recipe.TargetKind, _searchPluginService);
             if (!moduleEditor.IsApplicableToTarget)
             {
                 continue;
@@ -330,11 +332,16 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
 
     private readonly RecipeModuleConfig _module;
     private readonly MediaKind _recipeTargetKind;
+    private readonly IQbittorrentSearchPluginService _searchPluginService;
 
-    public RecipeModuleEditorViewModel(RecipeModuleConfig module, MediaKind recipeTargetKind = MediaKind.TvEpisode)
+    public RecipeModuleEditorViewModel(
+        RecipeModuleConfig module,
+        MediaKind recipeTargetKind = MediaKind.TvEpisode,
+        IQbittorrentSearchPluginService? searchPluginService = null)
     {
         _module = module;
         _recipeTargetKind = recipeTargetKind;
+        _searchPluginService = searchPluginService ?? throw new ArgumentNullException(nameof(searchPluginService));
         QualityOptions = new ObservableCollection<QualityOptionViewModel>(
             TorrentQuality.AllQualities.Select(label => new QualityOptionViewModel(
                 label,
@@ -569,6 +576,121 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
     {
         get => _module.Plugins;
         set => SetModuleValue(_module.Plugins, value, next => _module.Plugins = next);
+    }
+
+    public bool UsesAllEnabledPlugins =>
+        string.IsNullOrWhiteSpace(Plugins) || Plugins.Equals("enabled", StringComparison.OrdinalIgnoreCase);
+
+    public string PluginsSummary =>
+        UsesAllEnabledPlugins
+            ? "All enabled plugins"
+            : string.Join(", ", Plugins.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+
+    public string PreferredEnginesSummary => RecipeRuntimeSettings.FormatEnginePrioritySummary(_module);
+
+    public bool ShowEngineSearchPicker => _module.BlockType == RecipeBlockType.SearchSource;
+
+    public bool ShowEngineQualityPicker => _module.BlockType == RecipeBlockType.CandidateFilter;
+
+    public bool ShowEngineWeightSettings => _module.BlockType == RecipeBlockType.Scoring;
+
+    public int EngineWeight
+    {
+        get => GetScoringInt(RecipeRuntimeSettings.EngineWeightKey, CandidateScoringWeights.Default.EngineWeight, RecipeRuntimeSettings.MinEngineWeight, RecipeRuntimeSettings.MaxEngineWeight);
+        set => SetScoringInt(RecipeRuntimeSettings.EngineWeightKey, value, RecipeRuntimeSettings.MinEngineWeight, RecipeRuntimeSettings.MaxEngineWeight);
+    }
+
+    [RelayCommand(CanExecute = nameof(ShowEngineSearchPicker))]
+    private async Task ChooseSearchEnginesAsync()
+    {
+        var (plugins, isStale) = await LoadPluginsForPickerAsync();
+        var lastCustom = RecipeRuntimeSettings.GetPluginsLastCustom(_module);
+        var selected = UsesAllEnabledPlugins
+            ? []
+            : Plugins.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+
+        var dialog = new Views.EnginePickerDialog(
+            EnginePickerMode.Search,
+            plugins,
+            UsesAllEnabledPlugins,
+            selected,
+            EnginePriorityMode.Flat,
+            [],
+            isStale,
+            lastCustom)
+        {
+            Owner = System.Windows.Application.Current.MainWindow
+        };
+
+        if (dialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        Plugins = dialog.ResultUseAllEnabled
+            ? "enabled"
+            : string.Join("|", dialog.ResultSelectedNames);
+        RecipeRuntimeSettings.SetPluginsLastCustom(_module, dialog.ResultLastCustomNames);
+        NotifyStateChanged();
+    }
+
+    [RelayCommand(CanExecute = nameof(ShowEngineQualityPicker))]
+    private async Task ChoosePreferredEnginesAsync()
+    {
+        var (plugins, isStale) = await LoadPluginsForPickerAsync();
+        var priority = RecipeRuntimeSettings.GetEnginePriority(_module);
+        var dialog = new Views.EnginePickerDialog(
+            EnginePickerMode.Quality,
+            plugins,
+            useAllEnabled: false,
+            priority.Names,
+            priority.Mode,
+            priority.RankGroups,
+            isStale)
+        {
+            Owner = System.Windows.Application.Current.MainWindow
+        };
+
+        if (dialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        if (dialog.ResultRankGroups.Count == 0)
+        {
+            _module.ExtensionData.Remove(RecipeRuntimeSettings.EnginePriorityKey);
+            _module.ExtensionData.Remove(RecipeRuntimeSettings.EnginePriorityModeKey);
+        }
+        else
+        {
+            _module.ExtensionData[RecipeRuntimeSettings.EnginePriorityModeKey] =
+                dialog.ResultPriorityMode == EnginePriorityMode.Ranked ? "ranked" : "flat";
+            _module.ExtensionData[RecipeRuntimeSettings.EnginePriorityKey] = string.Join("|",
+                dialog.ResultRankGroups.Select(group => string.Join(",", group)));
+        }
+
+        NotifyStateChanged();
+    }
+
+    private async Task<(IReadOnlyList<SearchPluginInfo> Plugins, bool IsStale)> LoadPluginsForPickerAsync()
+    {
+        try
+        {
+            var plugins = await _searchPluginService.GetPluginsAsync(forceRefresh: true);
+            return (plugins, false);
+        }
+        catch
+        {
+            try
+            {
+                var cached = await _searchPluginService.GetPluginsAsync(forceRefresh: false);
+                return (cached, cached.Count > 0);
+            }
+            catch
+            {
+                return ([], true);
+            }
+        }
     }
 
     public string Category
@@ -1093,6 +1215,7 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
             $"Max size GB: {(MaximumSizeGb?.ToString() ?? "none")}",
             $"Preferred audio: {DisplayOrEmpty(PreferredAudioCodec)}",
             $"Prefer terms: {CountLines(PreferTermsText)}",
+            $"Preferred engines: {PreferredEnginesSummary}",
             $"Include terms: {CountLines(IncludeTermsText)}",
             $"Exclude terms: {CountLines(ExcludeTermsText)}",
             $"Preferred groups: {CountLines(PreferredReleaseGroupsText)}",
@@ -1120,7 +1243,8 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
             $"Identity weight: {IdentityWeight}",
             $"Episode-title weight: {EpisodeWeight}",
             $"Size weight: {SizeWeight:N0}",
-            $"Size preference: {SizePreference}"
+            $"Size preference: {SizePreference}",
+            $"Engine weight: {EngineWeight:N0}"
         };
         if (ShowPackExtrasPrioritySettings)
         {
@@ -1141,7 +1265,7 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
             $"Mode: {SearchMode}",
             $"Candidate debug log: {(EnableCandidateDebugLog ? "On" : "Off")}",
             $"Search pagination: {(EnableSearchPagination ? "On" : "Off")}",
-            $"Plugins: {DisplayOrEmpty(Plugins)}",
+            $"Plugins: {PluginsSummary}",
             $"Category: {DisplayOrEmpty(Category)}",
             $"Candidates per fetch: {MaxCandidatesPerFetch}",
             $"Deduplicate candidates: {(DeduplicateCandidates ? "On" : "Off")}",
@@ -1318,6 +1442,7 @@ internal static class ModuleFieldHelp
                 new() { FieldName = "Max size GB", Description = "Optional upper size limit in gigabytes.", OutputImpact = "Oversized packs or remuxes are rejected when set." },
                 new() { FieldName = "Preferred audio", Description = "Comma-separated audio labels used for scoring bonus, e.g. Dolby, DV.", OutputImpact = "Does not reject candidates. Each matching token adds a scoring boost (more matches = higher rank)." },
                 new() { FieldName = "Prefer terms", Description = "Custom soft-preference terms, one per line (same boost mechanic as preferred audio).", OutputImpact = "Does not reject candidates. Each matching term raises the score using the audio weight." },
+                new() { FieldName = "Preferred engines", Description = "Search plugins to prefer when ranking candidates. Flat gives equal rank; ranked applies stronger boosts to higher ranks.", OutputImpact = "Does not limit which engines are searched. Only affects score when Engine weight in Scoring is above 0." },
                 new() { FieldName = "Include terms", Description = "Terms that must appear in the torrent name.", OutputImpact = "Useful to require WEB-DL, x265, or a specific language tag." },
                 new() { FieldName = "Exclude terms", Description = "Terms that reject a candidate immediately.", OutputImpact = "Common use: block cam, telesync, or unwanted codecs." },
                 new() { FieldName = "Preferred release groups", Description = "Groups you prefer when ranking.", OutputImpact = "Currently informational for scoring; blocked groups always reject." },
@@ -1346,6 +1471,7 @@ internal static class ModuleFieldHelp
                 new() { FieldName = "Episode-title weight", Description = "Multiplier for matched episode title tokens in the filename.", OutputImpact = "Useful when multiple candidates share the same episode number but differ in embedded episode title." },
                 new() { FieldName = "Size weight", Description = "Multiplier for the size preference score (0–100). Default sits below audio and far below quality.", OutputImpact = "Adds a soft size boost without overriding quality or preferred audio." },
                 new() { FieldName = "Size preference", Description = "Prefer larger, prefer smaller, or Off. Uses Candidate Filter Min/Max size as the soft range.", OutputImpact = "Prefer larger boosts bigger files in range; prefer smaller does the inverse; Off disables size boost." },
+                new() { FieldName = "Engine weight", Description = "Multiplier for the preferred-engine rank score from Quality (0–100,000,000). Default 0 disables.", OutputImpact = "Higher values let preferred indexers outrank quality or seeders. Ranked Quality engines receive larger rank scores." },
                 new() { FieldName = "Season match score per season", Description = "Pack only. Points per selected season covered by the torrent.", OutputImpact = "Rewards packs that cover more of the seasons you selected." },
                 new() { FieldName = "Single-season boost", Description = "Pack only. Flat bonus when the torrent covers exactly one season.", OutputImpact = "Slightly prefers focused single-season packs over multi-season bundles when other factors are close." },
                 new() { FieldName = "Pack extras / OVA / special priority", Description = "Pack only. Enables bonus scoring when the torrent name mentions OVA, special, extra, OAD, or similar.", OutputImpact = "Complete bundles (season + extras) rank above season-only packs." },
@@ -1364,7 +1490,7 @@ internal static class ModuleFieldHelp
     {
         var items = new List<ModuleFieldHelpItem>
         {
-            new() { FieldName = "Plugins", Description = "Which indexer plugins to query. 'enabled' uses all active plugins.", OutputImpact = "Limits or broadens which indexers contribute candidates to the result set." },
+            new() { FieldName = "Plugins", Description = "Which qBittorrent search plugins to query. Choose engines opens a live list from WebUI; disabled or missing plugins are skipped at hunt time.", OutputImpact = "Limits which indexers contribute candidates. Does not affect Quality preferred-engine scoring." },
             new() { FieldName = "Category", Description = "qBittorrent search category filter.", OutputImpact = "Narrows results to TV, movies, or all categories depending on plugin support." },
             new() { FieldName = "Candidates per fetch", Description = "How many accepted candidates are kept after scoring.", OutputImpact = "Lower values reduce noise; higher values keep more backup options." },
             new() { FieldName = "Deduplicate candidates", Description = "Remove duplicate torrent URLs before ranking, keeping the copy with the most seeders.", OutputImpact = "Frees candidate slots for distinct torrents when the same release appears from multiple indexers." },

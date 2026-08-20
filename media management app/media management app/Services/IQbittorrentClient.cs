@@ -35,4 +35,6 @@ public interface IQbittorrentClient
     Task ResumeTorrentsAsync(IEnumerable<string> hashes, CancellationToken cancellationToken = default);
 
     Task<TorrentMetadataProbeResult> ProbeTorrentMetadataAsync(TorrentSearchResult result, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<SearchPluginInfo>> GetSearchPluginsAsync(CancellationToken cancellationToken = default);
 }
