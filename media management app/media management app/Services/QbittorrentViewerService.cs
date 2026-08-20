@@ -39,9 +39,9 @@ public sealed class QbittorrentViewerService : IQbittorrentViewerService
 
     public event EventHandler? IsOpenChanged;
 
-    public void ShowOrActivate()
+    public void ShowOrActivate(object? chromeDataContext = null)
     {
-        RunOnUi(ShowOrActivateCore);
+        RunOnUi(() => ShowOrActivateCore(chromeDataContext));
     }
 
     public void Close(bool skipConfirm = false)
@@ -49,7 +49,7 @@ public sealed class QbittorrentViewerService : IQbittorrentViewerService
         RunOnUi(() => CloseCore(skipConfirm));
     }
 
-    private void ShowOrActivateCore()
+    private void ShowOrActivateCore(object? chromeDataContext)
     {
         if (!TryGetConfiguredUri(out var uri, out var errorMessage))
         {
@@ -71,7 +71,10 @@ public sealed class QbittorrentViewerService : IQbittorrentViewerService
 
         try
         {
-            _window = new WebViewerWindow("qBittorrent", PackIconLucideKind.Globe, "AppBrushAccent");
+            _window = new WebViewerWindow("qBittorrent", PackIconLucideKind.Globe, "AppBrushAccent")
+            {
+                DataContext = chromeDataContext
+            };
         }
         catch (Exception ex)
         {

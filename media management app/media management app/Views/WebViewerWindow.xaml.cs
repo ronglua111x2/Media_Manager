@@ -147,7 +147,8 @@ public partial class WebViewerWindow : Window
 
         while (current is not null)
         {
-            if (ReferenceEquals(current, ReloadButton))
+            if (ReferenceEquals(current, ReloadButton) ||
+                ReferenceEquals(current, WarpStatusPill))
             {
                 return true;
             }

@@ -341,7 +341,7 @@ public partial class MainViewModel : ViewModelBase
     [RelayCommand(CanExecute = nameof(CanOpenQbittorrent))]
     private void OpenQbittorrent()
     {
-        _qbittorrentViewerService.ShowOrActivate();
+        _qbittorrentViewerService.ShowOrActivate(this);
     }
 
     private bool CanOpenQbittorrent() => !string.IsNullOrWhiteSpace(GetQbittorrentWebUiUrl());
@@ -349,7 +349,7 @@ public partial class MainViewModel : ViewModelBase
     [RelayCommand(CanExecute = nameof(CanOpenJellyfin))]
     private void OpenJellyfin()
     {
-        _jellyfinViewerService.ShowOrActivate();
+        _jellyfinViewerService.ShowOrActivate(this);
     }
 
     private bool CanOpenJellyfin() => !string.IsNullOrWhiteSpace(GetJellyfinBaseUrl());

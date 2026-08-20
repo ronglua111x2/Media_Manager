@@ -4,6 +4,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
+        xmlns:controls="clr-namespace:media_management_app.Views.Controls"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         mc:Ignorable="d"
         Title="Media Manager"
@@ -144,42 +145,6 @@
             <Setter Property="CornerRadius" Value="6" />
             <Setter Property="Padding" Value="10,5" />
             <Setter Property="Margin" Value="8,3,0,3" />
-        </Style>
-
-        <ControlTemplate x:Key="StatusPillButtonTemplate" TargetType="Button">
-            <Border x:Name="Root"
-                    Background="{TemplateBinding Background}"
-                    BorderBrush="{TemplateBinding BorderBrush}"
-                    BorderThickness="{TemplateBinding BorderThickness}"
-                    CornerRadius="6"
-                    Padding="{TemplateBinding Padding}"
-                    SnapsToDevicePixels="True">
-                <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
-                                  VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
-            </Border>
-        </ControlTemplate>
-
-        <Style x:Key="StatusPillButtonStyle" TargetType="Button">
-            <Setter Property="Background" Value="{StaticResource AppBrushSurfaceRaised}" />
-            <Setter Property="BorderBrush" Value="{StaticResource AppBrushBorder}" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="Padding" Value="10,5" />
-            <Setter Property="Margin" Value="8,3,0,3" />
-            <Setter Property="MinHeight" Value="0" />
-            <Setter Property="Cursor" Value="Hand" />
-            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
-            <Setter Property="HorizontalContentAlignment" Value="Center" />
-            <Setter Property="VerticalContentAlignment" Value="Center" />
-            <Setter Property="Template" Value="{StaticResource StatusPillButtonTemplate}" />
-            <Style.Triggers>
-                <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="{StaticResource AppBrushAccentSoft}" />
-                </Trigger>
-                <Trigger Property="IsEnabled" Value="False">
-                    <Setter Property="Opacity" Value="0.45" />
-                    <Setter Property="Cursor" Value="Arrow" />
-                </Trigger>
-            </Style.Triggers>
         </Style>
 
         <Style x:Key="SidebarToggleOpenIconStyle" TargetType="iconPacks:PackIconLucide" BasedOn="{StaticResource AppIconStyle}">
@@ -538,39 +503,7 @@
                             </StackPanel>
                         </Button>
 
-                        <Button Style="{StaticResource StatusPillButtonStyle}"
-                                Command="{Binding ToggleWarpCommand}"
-                                ToolTip="{Binding WarpDependency.Detail}">
-                            <StackPanel Orientation="Horizontal">
-                                <Ellipse Width="8"
-                                         Height="8"
-                                         VerticalAlignment="Center"
-                                         Margin="0,0,7,0">
-                                    <Ellipse.Style>
-                                        <Style TargetType="Ellipse">
-                                            <Setter Property="Fill" Value="{StaticResource AppBrushDanger}" />
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding WarpDependency.IsConfigured}" Value="False">
-                                                    <Setter Property="Fill" Value="{StaticResource AppBrushMutedText}" />
-                                                </DataTrigger>
-                                                <DataTrigger Binding="{Binding WarpDependency.IsOk}" Value="True">
-                                                    <Setter Property="Fill" Value="{StaticResource AppBrushAccent}" />
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </Ellipse.Style>
-                                </Ellipse>
-                                <iconPacks:PackIconLucide Kind="ShieldCheck"
-                                                           Width="14"
-                                                           Height="14"
-                                                           Foreground="{StaticResource AppBrushWarpBrand}"
-                                                           VerticalAlignment="Center"
-                                                           Margin="0,0,6,0" />
-                                <TextBlock Text="WARP"
-                                           Foreground="{StaticResource AppBrushWarpBrand}"
-                                           VerticalAlignment="Center" />
-                            </StackPanel>
-                        </Button>
+                        <controls:WarpStatusPill />
 
                         <Button Style="{StaticResource StatusPillButtonStyle}"
                                 Command="{Binding OpenJellyfinCommand}"

@@ -6,7 +6,7 @@ public interface IQbittorrentViewerService
 
     event EventHandler? IsOpenChanged;
 
-    void ShowOrActivate();
+    void ShowOrActivate(object? chromeDataContext = null);
 
     void Close(bool skipConfirm = false);
 }
