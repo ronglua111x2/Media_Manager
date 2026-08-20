@@ -34,9 +34,9 @@ public sealed class TorrentValidationConfig
     public bool CheckExtensionObfuscation { get; set; } = true;
 
     /// <summary>
-    /// Max seconds to wait for torrent file list after paused add.
+    /// Max seconds to wait for torrent file list after add (while the torrent is running).
     /// </summary>
-    public int ValidationTimeoutSeconds { get; set; } = 30;
+    public int ValidationTimeoutSeconds { get; set; } = 90;
 
     public IEnumerable<string> GetAllDangerousExtensions()
     {

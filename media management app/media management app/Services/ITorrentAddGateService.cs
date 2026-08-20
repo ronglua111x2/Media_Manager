@@ -6,9 +6,10 @@ namespace media_management_app.Services;
 public interface ITorrentAddGateService
 {
     /// <summary>
-    /// Adds the selected candidate paused, waits for the file list, validates malware/payload,
-    /// then resumes on pass. Throws <see cref="MaliciousTorrentException"/> after delete+blacklist.
-    /// Empty file list deletes without blacklisting.
+    /// Adds the selected candidate while running, waits for the file list, validates malware/payload,
+    /// then returns. Throws <see cref="MaliciousTorrentException"/> after delete+blacklist.
+    /// Empty file list deletes without blacklisting. When content validation is disabled,
+    /// returns immediately after add (plus infohash blacklist check).
     /// </summary>
     Task<AddedTorrentResult> AddPausedValidateAndResumeAsync(
         TorrentCartOrder order,
@@ -57,7 +58,7 @@ public sealed class TorrentAddGateService : ITorrentAddGateService
         }
 
         _logger.Info(
-            $"Paused add for validation: '{order.Title}' candidate '{order.SelectedCandidateName}'.",
+            $"Add with validation: '{order.Title}' candidate '{order.SelectedCandidateName}'.",
             LogTarget.File | LogTarget.Console);
 
         var addedTorrent = await _qbittorrentClient.AddTorrentAsync(
@@ -68,15 +69,12 @@ public sealed class TorrentAddGateService : ITorrentAddGateService
                 SavePath = savePath,
                 Category = _settingsService.Current.AutoTorrent.GetCategoryFor(order.TargetKind),
                 Tags = "media-manager",
-                Paused = true
+                Paused = false
             },
             cancellationToken);
 
-        // Search-plugin download ignores the paused flag — pause immediately either way.
-        await _qbittorrentClient.PauseTorrentsAsync([addedTorrent.Hash], cancellationToken);
-
         _logger.Debug(
-            $"Paused torrent added for '{order.Title}'. Hash={addedTorrent.Hash}, Name='{addedTorrent.Name}'.",
+            $"Torrent added for '{order.Title}'. Hash={addedTorrent.Hash}, Name='{addedTorrent.Name}'.",
             LogTarget.File);
 
         if (_blacklistService.IsBlacklisted(order.MediaId, order.SelectedCandidateUrl, addedTorrent.Hash))
@@ -111,6 +109,15 @@ public sealed class TorrentAddGateService : ITorrentAddGateService
             throw new MaliciousTorrentException("Listing matches a blacklisted infohash.");
         }
 
+        var validationEnabled = _settingsService.Current.TorrentValidation?.EnableContentValidation ?? true;
+        if (!validationEnabled)
+        {
+            _logger.Info(
+                $"Content validation skipped for '{order.Title}' (hash={addedTorrent.Hash}).",
+                LogTarget.File | LogTarget.Console);
+            return await GetLiveTorrentAsync(addedTorrent, cancellationToken);
+        }
+
         var files = await WaitForTorrentFilesAsync(addedTorrent.Hash, cancellationToken);
         if (files.Count == 0)
         {
@@ -126,9 +133,9 @@ public sealed class TorrentAddGateService : ITorrentAddGateService
                 $"Torrent metadata timed out with empty file list (hash={addedTorrent.Hash}).");
         }
 
-        _logger.Debug(
+        _logger.Info(
             $"Torrent file list ready for '{order.Title}' hash={addedTorrent.Hash}: {files.Count} file(s).",
-            LogTarget.File);
+            LogTarget.File | LogTarget.Console);
 
         var isPack = order.EpisodeId is null && order.TargetKind != MediaKind.Movie;
         var listingName = FirstNonEmpty(addedTorrent.Name, order.SelectedCandidateName, order.Title);
@@ -178,14 +185,11 @@ public sealed class TorrentAddGateService : ITorrentAddGateService
             throw new MaliciousTorrentException(validation.Summary);
         }
 
-        await _qbittorrentClient.ResumeTorrentsAsync([addedTorrent.Hash], cancellationToken);
         _logger.Info(
-            $"Validation passed for '{order.Title}' — resumed download (hash={addedTorrent.Hash}).",
+            $"Validation passed for '{order.Title}' — download continues (hash={addedTorrent.Hash}).",
             LogTarget.File | LogTarget.Console);
 
-        var live = (await _qbittorrentClient.GetTorrentsAsync(cancellationToken))
-            .FirstOrDefault(torrent => string.Equals(torrent.Hash, addedTorrent.Hash, StringComparison.OrdinalIgnoreCase));
-        return live ?? addedTorrent;
+        return await GetLiveTorrentAsync(addedTorrent, cancellationToken);
     }
 
     private async Task<IReadOnlyList<TorrentContentFile>> WaitForTorrentFilesAsync(
@@ -193,7 +197,7 @@ public sealed class TorrentAddGateService : ITorrentAddGateService
         CancellationToken cancellationToken)
     {
         var timeoutSeconds = Math.Clamp(
-            _settingsService.Current.TorrentValidation?.ValidationTimeoutSeconds ?? 30,
+            _settingsService.Current.TorrentValidation?.ValidationTimeoutSeconds ?? 90,
             5,
             120);
         var deadline = DateTime.UtcNow.AddSeconds(timeoutSeconds);
@@ -211,6 +215,15 @@ public sealed class TorrentAddGateService : ITorrentAddGateService
         }
 
         return await _qbittorrentClient.GetTorrentFilesAsync(torrentHash, cancellationToken);
+    }
+
+    private async Task<AddedTorrentResult> GetLiveTorrentAsync(
+        AddedTorrentResult addedTorrent,
+        CancellationToken cancellationToken)
+    {
+        var live = (await _qbittorrentClient.GetTorrentsAsync(cancellationToken))
+            .FirstOrDefault(torrent => string.Equals(torrent.Hash, addedTorrent.Hash, StringComparison.OrdinalIgnoreCase));
+        return live ?? addedTorrent;
     }
 
     private static string FirstNonEmpty(params string?[] values)
