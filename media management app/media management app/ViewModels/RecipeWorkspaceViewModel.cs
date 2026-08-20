@@ -752,10 +752,15 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
         get => GetExtensionBool(RecipeRuntimeSettings.UseShowSnapshotSearchKey, false);
         set
         {
+            var current = GetExtensionBool(RecipeRuntimeSettings.UseShowSnapshotSearchKey, false);
             var normalized = IsMovieTarget ? false : value;
+            if (current == normalized)
+            {
+                return;
+            }
+
             SetExtensionValue(RecipeRuntimeSettings.UseShowSnapshotSearchKey, normalized.ToString());
             OnPropertyChanged(nameof(SearchMode));
-            OnPropertyChanged(nameof(SearchModeOptions));
             OnPropertyChanged(nameof(IsMovieSearchMode));
             OnPropertyChanged(nameof(IsParallelSearchMode));
             OnPropertyChanged(nameof(IsSnapshotSearchMode));
@@ -776,6 +781,16 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
                 : TvParallelSearchMode;
         set
         {
+            var current = IsMovieTarget
+                ? MovieSearchMode
+                : UseShowSnapshotSearch
+                    ? TvSnapshotSearchMode
+                    : TvParallelSearchMode;
+            if (string.Equals(value, current, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
             if (IsMovieTarget)
             {
                 UseShowSnapshotSearch = false;
@@ -1361,6 +1376,13 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
 
     private void SetExtensionValue(string key, string value)
     {
+        var existing = GetExtensionValue(key);
+        var next = string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+        if (string.Equals(existing, next, StringComparison.Ordinal))
+        {
+            return;
+        }
+
         if (string.IsNullOrWhiteSpace(value))
         {
             if (_module.ExtensionData.Remove(key))
