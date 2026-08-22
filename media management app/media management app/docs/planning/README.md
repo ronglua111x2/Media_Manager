@@ -1,0 +1,62 @@
+# Planning Documents
+
+Pre-implementation planning for **High priority** technical debt identified in [IMPROVEMENTS.md](../IMPROVEMENTS.md). These docs explain the problem, current code behavior, risks, and resolution options — **no code changes** until you pick an approach and schedule work.
+
+**Branch context:** `auto-torrent` (commit `631c3d7`)
+
+---
+
+## Start here
+
+**[00-integrated-roadmap.md](./00-integrated-roadmap.md)** — How the four High-priority items connect, a phased timeline (not big-bang), and whether each item is an industry / desktop-app standard.
+
+**[05-sprint-timeline.md](./05-sprint-timeline.md)** — Locked decisions, sprint-by-sprint goals (~22 weeks part-time), test gates, migration milestones, and unit test matrix. **Start here when scheduling work.**
+
+**[06-ai-execution-guide.md](./06-ai-execution-guide.md)** — **How to execute** the sprint plan with AI: compressed 3–4 week calendar, prompt templates, pre-merge checklist, Sprint 0 start steps, and per-sprint playbook.
+
+---
+
+## High Priority Items
+
+| # | Topic | Document | Summary |
+|---|--------|----------|---------|
+| 1 | Database migration versioning | [01-database-migration-versioning.md](./01-database-migration-versioning.md) | SQLite schema evolves via ~127 `EnsureColumn` calls and ad-hoc rebuilds in `DatabaseService.cs` with no version table; `FetchJobs` rows are deleted every startup. Planning covers migration runner options and removing the blunt purge. |
+| 2 | Unit tests for critical paths | [02-unit-tests-critical-paths.md](./02-unit-tests-critical-paths.md) | No test project exists; torrent parsing, scoring, search plans, pack mapping, and content validation are untested regex/logic-heavy code on the Auto-Track and cart pipeline. Planning covers xUnit setup, fixture strategy, and Core extraction tradeoffs. |
+| 3 | Split large ViewModels/services | [03-split-large-viewmodels-services.md](./03-split-large-viewmodels-services.md) | `SettingsViewModel` (~2k lines), `LibraryViewModel` (~2.4k), and `AutoTrackService` (~1.5k) combine many features in single types; settings UI already has 7 sections but one VM. Planning maps split candidates and partial vs sub-VM vs service extraction options. |
+| 4 | Transient vs singleton ViewModels | [04-transient-vs-singleton-viewmodels.md](./04-transient-vs-singleton-viewmodels.md) | All seven workspace VMs are DI singletons; navigation swaps `CurrentView` with no refresh hooks, so long sessions can show stale grids while retaining poster/search memory. Planning compares navigation-aware refresh vs transient recreation vs hybrid coordinators. |
+| 5 | Sprint timeline (execution schedule) | [05-sprint-timeline.md](./05-sprint-timeline.md) | Turns the integrated roadmap into 11 sprints (Sprint 0–10): Core extraction, migration runner, test matrix, navigation hooks, then Settings → AutoTrack → Library → DB/Torrent splits with per-sprint DoD and checklists. |
+| 6 | AI execution guide | [06-ai-execution-guide.md](./06-ai-execution-guide.md) | Practical playbook for AI-assisted delivery: mindset shift vs 22-week estimate, session workflow, copy-paste prompts per sprint, branch strategy, risks, and compressed timeline. |
+
+---
+
+## Suggested order of work
+
+See **[00-integrated-roadmap.md](./00-integrated-roadmap.md)** for the dependency map and **[05-sprint-timeline.md](./05-sprint-timeline.md)** for week-by-week execution.
+
+Short version:
+
+1. **Foundation (parallel):** tests bootstrap ([02](./02-unit-tests-critical-paths.md)) + migration quick win ([01](./01-database-migration-versioning.md))
+2. **Hardening:** full migrations + expand tests
+3. **Navigation hooks** ([04](./04-transient-vs-singleton-viewmodels.md) Option A) — before big splits
+4. **Splits** ([03](./03-split-large-viewmodels-services.md)) — Settings → AutoTrack → Library
+5. **Transient VMs** (optional) — only if hooks are not enough
+
+You do **not** need to implement all four as one release.
+
+---
+
+## Related documentation
+
+| Doc | Relevance |
+|-----|-----------|
+| [IMPROVEMENTS.md](../IMPROVEMENTS.md) | Source evaluation and full suggestion list (Medium/Lower items not planned here) |
+| [FEATURES.md](../FEATURES.md) | Feature catalog, DB tables, pack linking appendix |
+| [AI_CONTEXT.md](../AI_CONTEXT.md) | Machine-readable modules, DI registry, migration notes |
+| [STATE_FOLDER.md](../STATE_FOLDER.md) | `media-manager.db`, FetchJobs purge, OAuth paths |
+| [APP_OVERVIEW.md](../APP_OVERVIEW.md) | Architecture and data model overview |
+
+---
+
+## Out of scope (this folder)
+
+Medium and Lower priority items from IMPROVEMENTS (unified error UX, recipe validation on save, CI/CD, etc.) are not covered here unless promoted to High priority.

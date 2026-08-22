@@ -1,0 +1,527 @@
+# Media Manager — AI Context Reference
+
+Structured, machine-readable reference for AI assistants working on this codebase.
+
+```yaml
+meta:
+  app_name: Media Manager
+  platform: Windows Desktop
+  framework: WPF .NET 8
+  language: C#
+  database: SQLite
+  branch: auto-torrent
+  commit: 631c3d74621669389c5ac31a5ef27eb55c808646
+  commit_message: remove add paused and added polling validation after torrent add
+  root_namespace: media_management_app
+  project_file: media management app.csproj
+  default_state_folder: D:\MediaManagerState
+  default_db: "{StateFolder}/media-manager.db"
+  default_settings: "{StateFolder}/settings.json"
+```
+
+---
+
+## Workspaces
+
+```yaml
+workspaces:
+  - kind: News
+    enum_value: 7
+    view: Views/NewsView.xaml
+    viewmodel: ViewModels/NewsViewModel.cs
+    default_startup: true
+  - kind: AutoTrack
+    enum_value: 0
+    view: Views/AutoTrackView.xaml
+    viewmodel: ViewModels/AutoTrackViewModel.cs
+  - kind: FindAdd
+    enum_value: 1
+    view: Views/FindAddView.xaml
+    viewmodel: ViewModels/FindAddViewModel.cs
+  - kind: Library
+    enum_value: 2
+    view: Views/LibraryView.xaml
+    viewmodel: ViewModels/LibraryViewModel.cs
+  - kind: Torrent
+    enum_value: 3
+    view: Views/TorrentWorkspaceView.xaml
+    viewmodel: ViewModels/TorrentWorkspaceViewModel.cs
+  - kind: Recipe
+    enum_value: 5
+    view: Views/RecipeWorkspaceView.xaml
+    viewmodel: ViewModels/RecipeWorkspaceViewModel.cs
+  - kind: SystemSettings
+    enum_value: 6
+    view: Views/SystemSettingsView.xaml
+    viewmodel: ViewModels/SystemSettingsViewModel.cs
+shell:
+  main_window: MainWindow.xaml
+  main_viewmodel: ViewModels/MainViewModel.cs
+  view_templates: Resources/ViewTemplates.xaml
+  navigation_command: NavigateCommand
+```
+
+---
+
+## Database Entities
+
+```yaml
+tables:
+  SourceItems:
+    purpose: Scanned/imported media files from source folders
+    key_columns: [FilePath, MediaKind, State, LinkedPath, SymlinkPath, AutoTorrentTorrentHash]
+    enums: [MediaKind, ParserPattern, ItemState, AutoTorrentLinkKind]
+  SeriesMappings:
+    purpose: Parsed title to TMDB provider mapping cache
+    unique: [NormalizedParsedTitle, ParserPattern]
+  TrackedShows:
+    purpose: TMDB TV series tracking and auto-track config
+    key_columns: [TmdbId, RecipeId, PackRecipeId, AutoTrackFromSeason, AutoTrackFromEpisode]
+  TrackedSeasons:
+    purpose: Per-season pack/episode mode and pack torrent state
+    fk: ShowId -> TrackedShows CASCADE
+    unique: [ShowId, SeasonNumber]
+  TrackedEpisodes:
+    purpose: Episode availability and torrent/candidate state
+    fk: ShowId -> TrackedShows CASCADE
+    unique: [ShowId, SeasonNumber, EpisodeNumber]
+  TrackedMovies:
+    purpose: TMDB movie tracking
+    key_columns: [TmdbId, RecipeId, TorrentHash]
+  FetchJobs:
+    purpose: Legacy fetch job table (schema kept; rows purged on every init)
+    purge: DatabaseService.PurgeLegacyFetchJobs on init
+  TorrentCartOrders:
+    purpose: Torrent acquisition cart orders
+    key_columns: [TargetKind, MediaId, Status, Source]
+    enums: [TorrentOrderStatus, TorrentOrderSource]
+  TorrentCartOrderCandidates:
+    purpose: Ranked search candidates per cart order
+    fk: OrderId -> TorrentCartOrders
+  TorrentBlacklist:
+    purpose: Rejected torrent URLs/hashes per show
+    key_columns: [ListingUrl, InfoHash, ShowId, IsActive]
+
+migration_strategy:
+  type: additive_alter_table
+  version_table: false
+  init_file: Services/DatabaseService.cs
+  methods: [CREATE TABLE IF NOT EXISTS, EnsureColumn, table_rebuild]
+```
+
+---
+
+## Service Registry (DI Singletons)
+
+```yaml
+bootstrap: App.xaml.cs::ConfigureServices
+
+core:
+  - ISettingsService -> SettingsService
+  - IDatabaseService -> DatabaseService
+  - IAppLogger -> AppLogger
+  - IThemeService -> ThemeService
+  - IOperationProgressService -> OperationProgressService
+  - IAppLifecycleService -> AppLifecycleService
+  - ITrayIconService -> TrayIconService
+  - IWindowsNotificationService -> WindowsNotificationService
+  - ILogCleanupService -> LogCleanupService
+  - IDeviceStatusService -> DeviceStatusService
+
+library:
+  - IScannerService -> ScannerService
+  - IParserService -> ParserService
+  - ILibraryPathResolver -> LibraryPathResolver
+  - IHardlinkService -> HardlinkService
+  - ISymlinkService -> SymlinkService
+  - ISymlinkSyncService -> SymlinkSyncService
+  - ISymlinkCoordinatorService -> SymlinkCoordinatorService
+  - INfoWriterService -> NfoWriterService
+  - ISourceReconciliationService -> SourceReconciliationService
+  - ILibraryManagementService -> LibraryManagementService
+  - IMediaImportService -> MediaImportService
+  - IMediaCardCatalogService -> MediaCardCatalogService
+  - ILibraryLinkEventHub -> LibraryLinkEventHub
+
+tmdb:
+  - IMetadataProvider -> TmdbMetadataProvider
+  - ITmdbShowCatalogService -> TmdbMetadataProvider
+  - ITmdbMovieCatalogService -> TmdbMetadataProvider
+  - ITrackedShowService -> TrackedShowService
+  - ITrackedMovieService -> TrackedMovieService
+  - IMediaMetadataSyncService -> MediaMetadataSyncService
+  - IPosterImageService -> PosterImageService
+
+torrent:
+  - IQbittorrentClient -> QbittorrentClient
+  - IQbittorrentSearchPluginService -> QbittorrentSearchPluginService
+  - IQbittorrentProcessRestartService -> QbittorrentProcessRestartService
+  - IRecipeService -> RecipeService
+  - ISearchPlanBuilder -> SearchPlanBuilder
+  - ISearchTitleResolver -> SearchTitleResolver
+  - ICandidateEvaluationService -> CandidateEvaluationService
+  - IFetchJobService -> FetchJobService
+  - ShowSearchSnapshotService -> ShowSearchSnapshotService
+  - ITorrentCartService -> TorrentCartService
+  - ITorrentAddGateService -> TorrentAddGateService
+  - ITorrentContentValidationService -> TorrentContentValidationService
+  - ITorrentCleanupService -> TorrentCleanupService
+  - ITorrentBlacklistService -> TorrentBlacklistService
+  - ITorrentReconciliationService -> TorrentReconciliationService
+  - ITorrentAddDiskAssignmentService -> TorrentAddDiskAssignmentService
+  - IDownloadFolderCatalogService -> DownloadFolderCatalogService
+  - IAutomationFlowService -> AutomationFlowService
+  - IAutoTorrentLinkService -> AutoTorrentLinkService
+  - IPackLinkCoordinatorService -> PackLinkCoordinatorService
+
+autotrack:
+  - IAutoTrackService -> AutoTrackService
+  - AutoTrackCandidatePolicyService -> AutoTrackCandidatePolicyService
+  - IAutoTrackSchedulerService -> AutoTrackSchedulerService
+
+integrations:
+  - IJellyfinClient -> JellyfinClient
+  - IJellyfinLibraryRefreshService -> JellyfinLibraryRefreshService
+  - IJellyfinViewerService -> JellyfinViewerService
+  - IQbittorrentViewerService -> QbittorrentViewerService
+  - IWarpCliService -> WarpCliService
+  - IGeminiApiClient -> GeminiApiClient
+  - IGeminiModelCatalogService -> GeminiModelCatalogService
+  - IGeminiLinkConfirmationService -> GeminiLinkConfirmationService
+  - ISpecialMappingOrchestrator -> SpecialMappingOrchestrator
+
+backup:
+  - IGoogleDriveClient -> GoogleDriveClient
+  - IBackupService -> BackupService
+  - IBackupSchedulerService -> BackupSchedulerService
+
+ui_services:
+  - IConsoleWindowService -> ConsoleWindowService
+  - IWindowsStartupService -> WindowsStartupService
+```
+
+---
+
+## Key Flows
+
+### Auto-Track Pipeline
+
+```yaml
+flow: autotrack
+scheduler: Services/AutoTrackSchedulerService.cs
+executor: Services/AutoTrackService.cs
+phases:
+  - name: tmdb_discovery
+    method: RunTmdbDiscoveryAsync
+    lock: _discoveryLock
+    actions: [refresh shows, detect new episodes, enforce daily budget, weekly anchor]
+  - name: torrent_hunt
+    method: RunTorrentHuntAsync
+    lock: _huntLock
+    actions: [search qbit, score candidates, create cart orders, add torrents via gate]
+    dependencies: [IWarpCliService, IQbittorrentProcessRestartService, ITorrentAddGateService]
+  - name: background_reconcile
+    method: RunBackgroundReconcileAsync
+    lock: _reconcileLock
+    actions: [sync torrent state, hardlink, pack link, release hunt blocks]
+triggers:
+  - timer intervals from AutoTrackSettings
+  - manual Run Now from AutoTrackViewModel
+  - RequestReconcileAfterAdds after successful torrent adds
+events:
+  - AutoTrackSchedulerService.RunCompleted -> tray notification, News refresh
+tmdb_eligibility:
+  service: Services/AutoTrackTmdbEligibility.cs
+  should_refresh: [is_auto_tracked, past_anchor, not_satisfied_this_week, not_finished_complete, not_fully_caught_up_finished]
+  pending_hunt: [at_or_after_checkpoint, air_date_plus_delay, missing, no_hash, no_active_cart]
+  tmdb_states: [Active=0, DormantCaughtUp=1, FinishedComplete=2]
+  weekly_air_day: Services/ShowWeeklyAirDay.cs
+    method: strict_plurality_of_last_12_episodes_utc_plus_7
+  anchor: Services/AutoTrackWeekAnchor.cs
+    week_starts: Sunday
+```
+
+### Torrent Cart Acquisition
+
+```yaml
+flow: torrent_cart
+entry_points:
+  - LibraryViewModel (AddEpisodeToCart, AddSeasonPackToCart, AddMovieToCart)
+  - AutoTrackService (auto-created orders)
+  - TorrentWorkspaceViewModel (RunCart, AddCart)
+services:
+  search: FetchJobService, ShowSearchSnapshotService
+  evaluate: CandidateEvaluationService, CandidateMatcher
+  persist: TorrentCartService
+  add: TorrentAddGateService -> QbittorrentClient
+  reconcile: TorrentReconciliationService
+order_status_enum: TorrentOrderStatus
+  values: [Draft, Searching, CandidateSelected, Adding, Downloading, Completed, Failed, Canceled, ...]
+```
+
+### Torrent Add Gate (Safety)
+
+```yaml
+flow: torrent_add_gate
+service: Services/ITorrentAddGateService.cs (TorrentAddGateService)
+commit_631c3d7: "remove add paused and added polling validation after torrent add"
+steps:
+  1: Blacklist check (listing URL)
+  2: Add torrent RUNNING (Paused=false) via QbittorrentClient
+  3: Infohash blacklist check -> delete if matched
+  4: If EnableContentValidation=false -> return immediately
+  5: Poll GetTorrentFilesAsync every 1s until files or timeout
+  6: Empty file list -> delete, throw (no blacklist)
+  7: Validate via TorrentContentValidationService (isPack inferred from order)
+  8a: Return live torrent if valid (download continues)
+  8b: Blacklist + delete if malicious (MaliciousTorrentException)
+config: Models/TorrentValidationConfig.cs
+  ValidationTimeoutSeconds: default 90 (code), clamp 5-120
+  note: settings.json may still show 30 until user saves settings
+```
+
+### Library Linking
+
+```yaml
+flow: library_link
+service: Services/AutoTorrentLinkService.cs
+types:
+  episode: LinkEpisodeAsync -> HardlinkService -> NfoWriterService
+  season_pack: LinkSeasonPackAsync -> SpecialMappingOrchestrator (optional Gemini)
+  movie: LinkMovieAsync
+  show_bulk: LinkShowAsync
+symlink: SymlinkSyncService (via SymlinkCoordinatorService)
+jellyfin: JellyfinLibraryRefreshService.EnqueueFromSourceItem
+events: LibraryLinkEventHub.PublishHardlinkCreated
+```
+
+### Backup
+
+```yaml
+flow: backup
+service: Services/Backup/BackupService.cs
+scheduler: Services/Backup/BackupSchedulerService.cs
+triggers: [Daily, EventDriven, Manual]
+contents:
+  - database snapshot (DatabaseService.CreateSafeSnapshot)
+  - settings.json (secrets redacted via BackupSettingsRedactor)
+  - recipes folder
+  - manifest with checksums
+destination: Google Drive (IGoogleDriveClient)
+oauth:
+  credentials: "{StateFolder}/GoogleDrive/credentials.json or Backup.CredentialsFilePath"
+  token_store: "{StateFolder}/GoogleDrive/token/"
+  scope: DriveService.Scope.DriveFile
+  user_id: media-manager
+  doc: docs/STATE_FOLDER.md#google-drive-oauth
+```
+
+---
+
+## Settings Schema
+
+```yaml
+settings_file: settings.json
+root_model: Models/AppSettings.cs
+loader: Services/SettingsService.cs
+
+sections:
+  StateFolder: string
+  AutoTorrent: Models/AutoTorrentSettings
+  Warp: Models/WarpSettings
+  AutoTrack: Models/AutoTrackSettings
+  Logs: Models/LogSettings
+  Startup: Models/AppStartupSettings
+  Ui: Models/UiSettings
+  Notifications: Models/NotificationSettings
+  SourceFolders: list<string>
+  LibraryRootMode: LibraryRootMode
+  DefaultLibraryFolderName: string
+  DriveLibraryRoots: dict
+  Symlink: Models/SymlinkSettings
+  TmdbReadAccessToken: string
+  Gemini: Models/GeminiSettings
+  Backup: Models/BackupSettings
+  TorrentValidation: Models/TorrentValidationConfig
+
+settings_sections_ui:
+  enum: SettingsSection
+  values: [System, Library, AutoTrack, Integrations, TorrentStorage, Notifications, Backup]
+```
+
+---
+
+## Enums (Critical)
+
+```yaml
+enums_file: Common/AppEnums.cs
+key_enums:
+  MediaKind: [Unknown, TvEpisode, Movie, TvSeasonPack]
+  TorrentOrderStatus: [Draft, Searching, CandidateSelected, Adding, Downloading, Completed, Failed, Canceled, ...]
+  TorrentOrderSource: [Manual, AutoTrack]
+  UserWatchStatus: [None, Watching, Completed, OnHold, Dropped, PlanToWatch]
+  SeasonManagementMode: [Episode, Pack]
+  EpisodeAvailability: [Missing, Available]
+  ShowSeriesStatus: [Unknown, Ongoing, Finished]
+  AutoTorrentLinkKind: [Episode, SeasonPack, Movie]
+  AppWorkspaceKind: [AutoTrack=0, FindAdd=1, Library=2, Torrent=3, Recipe=5, SystemSettings=6, News=7]
+  NotificationKind: see Common/NotificationCatalog.cs
+  AppTheme: [Light, Dark]
+```
+
+---
+
+## External APIs
+
+```yaml
+integrations:
+  qbittorrent:
+    client: Services/QbittorrentClient.cs
+    config: AutoTorrentSettings (WebUiUrl, credentials, DownloadFolders)
+    features: [search, add, pause, resume, delete, file list, plugins]
+  jellyfin:
+    client: Services/JellyfinClient.cs
+    config: JellyfinRefreshSettings (BaseUrl, ApiKey)
+    features: [connection test, path notify, scheduled tasks]
+  tmdb:
+    provider: Services/TmdbMetadataProvider.cs
+    config: AppSettings.TmdbReadAccessToken
+  gemini:
+    client: Services/Gemini/GeminiApiClient.cs
+    config: GeminiSettings
+    use_case: special episode mapping in season packs
+  warp:
+    service: Services/WarpCliService.cs
+    config: WarpSettings
+    use_case: SSL recovery during torrent hunt
+  google_drive:
+    client: Services/Backup/GoogleDriveClient.cs
+    config: BackupSettings
+    packages: [Google.Apis.Drive.v3, Google.Apis.Auth]
+```
+
+---
+
+## File Index (High-Value)
+
+```yaml
+entry_points:
+  - App.xaml.cs
+  - MainWindow.xaml
+  - MainWindow.xaml.cs
+
+orchestration:
+  - ViewModels/MainViewModel.cs
+  - ViewModels/LibraryViewModel.cs
+  - ViewModels/TorrentWorkspaceViewModel.cs
+  - ViewModels/AutoTrackViewModel.cs
+  - ViewModels/SettingsViewModel.cs
+  - Services/AutoTrackService.cs
+  - Services/AutoTrackSchedulerService.cs
+  - Services/TorrentCartService.cs
+  - Services/FetchJobService.cs
+
+data:
+  - Services/DatabaseService.cs
+  - Services/IDatabaseService.cs
+  - Models/AppSettings.cs
+
+safety:
+  - Services/TorrentAddGateService.cs
+  - Services/TorrentContentValidationService.cs
+  - Services/TorrentBlacklistService.cs
+  - Common/MaliciousTorrentException.cs
+
+linking:
+  - Services/AutoTorrentLinkService.cs
+  - Services/HardlinkService.cs
+  - Services/Symlink/SymlinkCoordinatorService.cs
+  - Services/PackLinkCoordinatorService.cs
+  - Services/SpecialMappingOrchestrator.cs (Services/Gemini/)
+
+recipes:
+  - Services/RecipeService.cs
+  - Services/SearchPlanBuilder.cs
+  - Services/CandidateEvaluationService.cs
+  - Services/QbittorrentSearchPluginService.cs
+
+ui_templates:
+  - Resources/ViewTemplates.xaml
+  - Resources/AppStyles.xaml
+  - Resources/WorkspaceSharedTemplates.xaml
+```
+
+---
+
+## Startup Sequence
+
+```yaml
+startup_order:
+  1: Single instance mutex check
+  2: DI container build (ConfigureServices)
+  3: SettingsService.Load()
+  4: Gemini model catalog reload + normalize
+  5: ThemeService.Apply()
+  6: DatabaseService.Initialize(stateFolder)
+    side_effect: PurgeLegacyFetchJobs deletes all FetchJobs rows
+  7: LogCleanupService.Start()
+  8: SymlinkCoordinatorService.Start()
+  9: AutoTrackSchedulerService.Start()
+  10: BackupSchedulerService.Start()
+  11: WindowsNotificationService.Initialize()
+  12: Poster cache warmup (background task)
+  13: MainWindow show (normal, minimized, or toast-activated)
+  14: TrayIconService.Initialize (if configured)
+
+shutdown_order:
+  - AutoTrackSchedulerService.Dispose
+  - BackupSchedulerService.Dispose
+  - SymlinkCoordinatorService.Dispose
+  - JellyfinLibraryRefreshService.Dispose
+  - LogCleanupService.Dispose
+  - TrayIconService.Dispose
+  - Release single instance mutex
+```
+
+---
+
+## Build
+
+```yaml
+build:
+  tool: MSBuild
+  platform: x64
+  tfm: net8.0-windows10.0.17763.0
+  project: media management app.csproj
+  command: msbuild "media management app.csproj" /p:Platform=x64
+  publish: single-file self-contained win-x64
+  third_party: ThirdParty/Sonarr.Parser/MediaManager.Sonarr.Parser.csproj
+```
+
+---
+
+## Known Gaps / Unclear Areas
+
+```yaml
+gaps:
+  - pack_episode_resolver: Skip reasons in PackEpisodeResolver not fully documented
+  - gemini_prompts: Special-mapping prompt text in Services/Gemini/ not extracted
+resolved_docs:
+  - recipe_json_schema: docs/RECIPE_SCHEMA.md
+  - state_folder: docs/STATE_FOLDER.md
+  - pack_link_heuristics: docs/FEATURES.md Appendix A
+  - autotrack_eligibility: docs/FEATURES.md section 3.7
+  - fetch_jobs_purge: docs/STATE_FOLDER.md
+  - google_drive_oauth: docs/STATE_FOLDER.md
+  - commit_631c3d7: docs/FEATURES.md section 10.6, torrent_add_gate above
+```
+
+---
+
+## Related Human Docs
+
+- [APP_OVERVIEW.md](./APP_OVERVIEW.md) — narrative overview
+- [FEATURES.md](./FEATURES.md) — exhaustive feature list
+- [IMPROVEMENTS.md](./IMPROVEMENTS.md) — evaluation and suggestions
+- [STATE_FOLDER.md](./STATE_FOLDER.md) — state folder, OAuth, FetchJobs purge
+- [RECIPE_SCHEMA.md](./RECIPE_SCHEMA.md) — recipe `.rcp` JSON schema
