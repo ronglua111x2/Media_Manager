@@ -191,7 +191,7 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
         RecipeModuleConfig? filter,
         int engineRankScore)
     {
-        var sizeScore = TorrentQuality.CalculateSizeScore(
+        var sizeScore = TorrentQualityScoring.CalculateSizeScore(
             result.FileSize,
             filter?.MinimumSizeBytes,
             filter?.MaximumSizeBytes,
@@ -205,7 +205,7 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
             AudioScore = audioScore,
             PreferTermsScore = preferTermsScore,
             SizeScore = sizeScore,
-            TotalScore = TorrentQuality.CalculateCandidateScore(
+            TotalScore = TorrentQualityScoring.CalculateCandidateScore(
                 qualityScore,
                 audioScore,
                 result.Seeders,

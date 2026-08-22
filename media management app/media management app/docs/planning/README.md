@@ -1,8 +1,10 @@
 # Planning Documents
 
-Pre-implementation planning for **High priority** technical debt identified in [IMPROVEMENTS.md](../IMPROVEMENTS.md). These docs explain the problem, current code behavior, risks, and resolution options — **no code changes** until you pick an approach and schedule work.
+Pre-implementation planning for **High priority** technical debt identified in [IMPROVEMENTS.md](../IMPROVEMENTS.md). Sprint 0–1 complete on **`auto-torrent`**; Sprint 2 is next.
 
-**Branch context:** `auto-torrent` (commit `631c3d7`)
+**Branch context:** `auto-torrent` (Sprint 1 tagged `four-pillars-sprint-01`)
+
+**Before every new sprint:** [06 §2.0 — git check + Plan Mode local plan](./06-ai-execution-guide.md#20-mandatory-pre-sprint-workflow-git--plan-mode)
 
 ---
 
@@ -12,7 +14,9 @@ Pre-implementation planning for **High priority** technical debt identified in [
 
 **[05-sprint-timeline.md](./05-sprint-timeline.md)** — Locked decisions, sprint-by-sprint goals (~22 weeks part-time), test gates, migration milestones, and unit test matrix. **Start here when scheduling work.**
 
-**[06-ai-execution-guide.md](./06-ai-execution-guide.md)** — **How to execute** the sprint plan with AI: compressed 3–4 week calendar, prompt templates, pre-merge checklist, Sprint 0 start steps, and per-sprint playbook.
+**[06-ai-execution-guide.md](./06-ai-execution-guide.md)** — **How to execute** the sprint plan with AI: **git check before code**, **Plan Mode → local plan doc** before Agent Mode, compressed calendar, prompt templates, pre-merge checklist, and per-sprint playbook.
+
+**[sprint-plans/](./sprint-plans/)** — Per-sprint local plans created in Plan Mode (template in README).
 
 ---
 

@@ -2,7 +2,7 @@
 
 **Audience:** Solo developer using Cursor (or similar AI coding agents)  
 **Companion docs:** [05-sprint-timeline.md](./05-sprint-timeline.md) — sprint goals, DoD, test gates (source of truth); [BUILD.md](../BUILD.md) — **canonical build/test commands** (x64 merge gate)  
-**Status:** Planning — use this doc to *execute* the timeline, not to change locked decisions
+**Status:** Active — Sprint 0–1 complete; use §2.0 workflow before Sprint 2+
 
 ---
 
@@ -36,8 +36,80 @@ With **AI-generated code + you as reviewer/architect**, the bottleneck moves fro
 
 ## 2. How to work with AI on this initiative
 
+### 2.0 Mandatory pre-sprint workflow (git + Plan Mode)
+
+**Do this before every new sprint — and before any AI writes code.**
+
+#### Step A — Git check (always first)
+
+Run and read output **before** opening Agent Mode or approving a large diff:
+
+```bash
+cd "d:/VScode/Misc/Media_Manager"
+git status -sb
+git branch --show-current
+git log --oneline -5
+# Compare canonical branch vs remote:
+git rev-list --left-right --count auto-torrent...origin/auto-torrent
+git rev-list --left-right --count auto-torrent...origin/main
+```
+
+| Check | Action if wrong |
+| ----- | ---------------- |
+| On **`auto-torrent`** (canonical dev branch) | `git checkout auto-torrent` — do **not** implement on stale `origin/main` |
+| Working tree clean or intentionally stashed | Stash/commit before switching sprints |
+| Sprint 0 docs merged if starting S1+ | `git merge main --ff-only` only when bringing planning commits forward |
+| No surprise untracked files in diff | Remove or `.gitignore` before merge |
+
+**Rule:** If git state is unclear, stop and fix branch/checkout **before** coding. Wrong-branch work was the root cause of Debug build confusion (Core DLL path / missing `MediaKind`).
+
+#### Step B — Plan Mode → local plan doc (every new sprint)
+
+**Do not** start a new sprint directly in **Agent Mode** with a one-shot “implement Sprint N” prompt.
+
+1. Switch Cursor to **Plan Mode** (not Agent Mode).
+2. Attach `@docs/planning/05-sprint-timeline.md` (target sprint §4) and related docs from §2.2.
+3. Produce a **local plan document** before implementation:
+
+   **Path:** `docs/planning/sprint-plans/sprint-NN-local-plan.md`  
+   **Example:** `docs/planning/sprint-plans/sprint-02-local-plan.md`
+
+4. Local plan must include (minimum):
+   - Git baseline (branch, commit hash, clean/dirty)
+   - Scope IN / OUT copied from 05
+   - Definition of Done checklist copied verbatim
+   - File move list or touch list (from grep / schema-inventory)
+   - Test gate commands from [BUILD.md](../BUILD.md)
+   - Risks and rollback one-liner
+
+5. **Review and edit** the local plan yourself (5–10 min).
+6. Only then open **Agent Mode** with:  
+   `Implement from @docs/planning/sprint-plans/sprint-NN-local-plan.md`  
+   plus `@docs/planning/05-sprint-timeline.md` for the sprint section.
+
+| Mode | When | Output |
+| ---- | ---- | ------ |
+| **Plan Mode** | Start of each sprint | `sprint-plans/sprint-NN-local-plan.md` (committed with sprint or in same PR) |
+| **Agent Mode** | After plan approved | Code + tests + doc checkboxes |
+
+**Anti-pattern:** Agent Mode + “implement Sprint 2” with no local plan → scope creep, wrong branch, skipped gates.
+
+#### Step C — Sprint folder convention
+
+```
+docs/planning/sprint-plans/
+  sprint-01-local-plan.md   ← optional retro for S1
+  sprint-02-local-plan.md   ← create in Plan Mode before S2 Agent session
+  …
+```
+
+Commit the local plan in the same sprint PR (or immediately after Plan Mode) so future sessions have a frozen scope artifact.
+
+---
+
 ### 2.1 Session rhythm
 
+0. **Git check** (§2.0 Step A) — confirm branch and baseline.
 1. **One sprint focus per session** (or per calendar day for large sprints like S8/S9).
 2. Open a **fresh Agent chat** per sprint merge — avoids stale context and hallucinated file paths.
 3. **You merge; AI proposes.** Never stack two sprints in one PR.
@@ -143,9 +215,11 @@ dotnet build "$PROJ" -c Release -p:Platform=x64 -v minimal --no-restore
 Checklist:
 
 ```
+[ ] Git: on auto-torrent (or agreed sprint branch); status reviewed (§2.0)
+[ ] Sprint local plan exists: docs/planning/sprint-plans/sprint-NN-local-plan.md
 [ ] git diff reviewed — no unrelated files, no .env/secrets
 [ ] Release x64 build green (commands above, or ./scripts/build.sh Release x64)
-[ ] dotnet test on *Tests.csproj — all green (skip until test project exists)
+[ ] dotnet test on MediaManager.Core.Tests — all green
 [ ] Sprint-specific manual checklist from 05 §4 — each item checked
 [ ] AI_CONTEXT.md updated if structure/DI changed
 [ ] No duplicate event subscriptions (grep += for new handlers; verify -= or weak refs)
@@ -155,20 +229,22 @@ Checklist:
 
 ### 2.5 Branch strategy
 
+**Canonical development branch:** `auto-torrent`  
+(`origin/main` is ~76 commits behind — do not treat it as the active codebase.)
+
 **Recommended:**
 
 ```
-main
- └── initiative/four-pillars          ← long-lived integration branch (optional)
-      ├── sprint/00-kickoff-design    ← docs only → merge to main or four-pillars
-      ├── sprint/01-core-parser
-      ├── sprint/02-migration-runner
-      └── … through sprint/10-closeout
+auto-torrent                         ← primary integration branch for this initiative
+ └── sprint/00-kickoff-design        ← merged (Sprint 0 tag: four-pillars-sprint-00)
+ └── sprint/01-core-parser           ← optional; or commit directly on auto-torrent
+ └── sprint/02-migration-runner
+ └── … through sprint/10-closeout
 ```
 
-- **Small initiative:** merge each `sprint/NN-*` directly to `main` after gates pass.
-- **Safer initiative:** merge to `initiative/four-pillars`, then one final merge to `main` at Sprint 10.
-- **Tag** each merge: `four-pillars-sprint-01`, etc.
+- **Small initiative:** merge each `sprint/NN-*` into **`auto-torrent`** after gates pass; optionally fast-forward local `main` when ready to publish.
+- **Safer initiative:** use `initiative/four-pillars` as intermediate, merge to `auto-torrent` at Sprint 10.
+- **Tag** each merge: `four-pillars-sprint-01`, etc. (Sprint 0 tagged; Sprint 1 tag pending commit).
 
 **Never:** combine migration runner (S2) with Library or Torrent VM splits (S8/S9) in one PR.
 
@@ -290,13 +366,20 @@ Here is my schema export:
 
 | | |
 | --- | --- |
+| **Status** | ✅ **Complete** — tagged `four-pillars-sprint-01` on `auto-torrent` |
 | **Goal** | `MediaManager.Core` + ≥15 parser tests; WPF references Core. |
 | **AI sessions** | **1–2** |
-| **Key files** | `TorrentCandidateParser` (grep Services/), `.csproj`, `App.xaml.cs` DI |
-| **Human only** | Smoke: app launch, torrent search parses; verify no duplicate types. |
-| **Merge gate** | `dotnet test` green (Tests csproj); Release x64 `dotnet build` per [BUILD.md](../BUILD.md). |
+| **Key files** | `MediaManager.Core/`, `MediaManager.Core.Tests/`, `media management app.csproj` |
+| **Human only** | Smoke: app launch, torrent search parses — **passed** |
+| **Merge gate** | `dotnet test` 20/20 green; Release + Debug x64 build green |
 
-**First prompt:**
+**Delivered:** Parser + `TorrentReleaseKind` + `MediaKind` + `TorrentQuality.Detect` in Core; 20 xUnit tests; `TorrentQualityScoring` in WPF.
+
+**Deferred to Sprint 3:** `RecipeBuilder`, `TrackedShowBuilder` fixture helpers.
+
+**Before Sprint 2:** Commit Sprint 1 on `auto-torrent`, tag `four-pillars-sprint-01`, create `sprint-plans/sprint-02-local-plan.md` in **Plan Mode**.
+
+**First prompt (for future reference — S1 already done):**
 
 ```
 Implement Sprint 1 from @docs/planning/05-sprint-timeline.md and @docs/planning/02-unit-tests-critical-paths.md.

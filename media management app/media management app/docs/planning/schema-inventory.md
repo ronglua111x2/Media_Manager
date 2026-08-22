@@ -473,4 +473,15 @@ main
 
 **Fixtures:** Parser golden inputs in [fixtures/torrent-release-names.json](./fixtures/torrent-release-names.json) (28 cases).
 
-**Next:** Begin Sprint 1 (`MediaManager.Core` + parser tests).
+**Next:** Sprint 1 complete — commit on `auto-torrent`, then Sprint 2 (migration runner). Use [06-ai-execution-guide.md §2.0](./06-ai-execution-guide.md#20-mandatory-pre-sprint-workflow-git--plan-mode) before starting.
+
+---
+
+## 8. Sprint 1 status (Aug 2026)
+
+- [x] `MediaManager.Core` + `MediaManager.Core.Tests` created
+- [x] Moved: `TorrentCandidateParser`, `TorrentReleaseKind`, `TorrentQuality` (detect), `MediaKind`
+- [x] 20 parser tests green; WPF smoke parse verified
+- [x] `AI_CONTEXT.md` updated
+- [x] Git commit + tag `four-pillars-sprint-01`
+- [ ] `RecipeBuilder` / `TrackedShowBuilder` — deferred to Sprint 3

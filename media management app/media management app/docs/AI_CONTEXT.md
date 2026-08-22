@@ -9,14 +9,20 @@ meta:
   framework: WPF .NET 8
   language: C#
   database: SQLite
-  branch: auto-torrent
-  commit: 631c3d74621669389c5ac31a5ef27eb55c808646
-  commit_message: remove add paused and added polling validation after torrent add
+  branch: auto-torrent  # canonical dev branch; origin/main is ~76 commits behind
+  commit: f2ca7c720688e732dc660f3cff94d10d13dd5720
+  commit_message: Sprint 0 planning docs (on auto-torrent)
   root_namespace: media_management_app
   project_file: media management app.csproj
+  core_library: MediaManager.Core/MediaManager.Core.csproj
+  test_project: MediaManager.Core.Tests/MediaManager.Core.Tests.csproj
   default_state_folder: D:\MediaManagerState
   default_db: "{StateFolder}/media-manager.db"
   default_settings: "{StateFolder}/settings.json"
+  initiative_status: "Sprint 1 complete; Sprint 2 next"
+  workflow_doc: docs/planning/06-ai-execution-guide.md#20-mandatory-pre-sprint-workflow-git--plan-mode
+  sprint_plan_folder: docs/planning/sprint-plans/
+  before_coding: "git check on auto-torrent; Plan Mode local plan for each new sprint"
 ```
 
 ---
@@ -485,6 +491,30 @@ shutdown_order:
 
 ---
 
+## MediaManager.Core (Sprint 1)
+
+Pure torrent parsing logic extracted to a **net8.0** class library so unit tests run without WPF.
+
+```yaml
+core:
+  project: MediaManager.Core/MediaManager.Core.csproj
+  tfm: net8.0
+  tests: MediaManager.Core.Tests/MediaManager.Core.Tests.csproj
+  test_stack: [xUnit, FluentAssertions]
+  wpf_reference: media management app.csproj -> ProjectReference MediaManager.Core
+  moved_types:
+    - TorrentCandidateParser (+ TorrentCandidateParseResult)
+    - TorrentReleaseKind (+ TorrentReleaseKindFlags)
+    - TorrentQuality (Detect, GetRank, AllQualities, MatchesSelectedQuality)
+    - MediaKind (enum; removed duplicate from Common/AppEnums.cs)
+  wpf_only:
+    - TorrentQualityScoring (CalculateSizeScore, CalculateCandidateScore — needs CandidateScoringWeights)
+  namespaces_unchanged: media_management_app.Services, media_management_app.Common
+  sprint_3_moves: CandidateEvaluationService, SearchPlanBuilder, pack/validation services (not yet)
+```
+
+---
+
 ## Build
 
 ```yaml
@@ -493,7 +523,10 @@ build:
   platform: x64
   tfm: net8.0-windows10.0.17763.0
   project: media management app.csproj
+  core_project: MediaManager.Core/MediaManager.Core.csproj
+  test_project: MediaManager.Core.Tests/MediaManager.Core.Tests.csproj
   command: msbuild "media management app.csproj" /p:Platform=x64
+  test_command: dotnet test MediaManager.Core.Tests/MediaManager.Core.Tests.csproj -c Release
   publish: single-file self-contained win-x64
   third_party: ThirdParty/Sonarr.Parser/MediaManager.Sonarr.Parser.csproj
 ```

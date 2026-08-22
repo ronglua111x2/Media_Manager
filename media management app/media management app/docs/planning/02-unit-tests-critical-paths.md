@@ -2,7 +2,7 @@
 
 **Priority:** High  
 **Source:** [IMPROVEMENTS.md](../IMPROVEMENTS.md) § Priority: High #2  
-**Status:** Planning only — no implementation yet
+**Status:** Sprint 1 implemented — Core library + 20 parser tests on `auto-torrent` (commit pending)
 
 ---
 

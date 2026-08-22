@@ -404,7 +404,9 @@ Recorded from owner input (Aug 2026) plus agent-chosen standards where gaps rema
 
 ## Related reading
 
-- **[05-sprint-timeline.md](./05-sprint-timeline.md)** — sprint-by-sprint goals, test gates, migration milestones, unit test matrix  
+- **[06-ai-execution-guide.md](./06-ai-execution-guide.md)** — **mandatory workflow:** git check before code; Plan Mode → `sprint-plans/sprint-NN-local-plan.md` before Agent Mode per sprint  
+- **[05-sprint-timeline.md](./05-sprint-timeline.md)** — sprint-by-sprint goals, test gates, migration milestones, unit test matrix (Sprint 1 marked complete)  
+- [planning/sprint-plans/README.md](./sprint-plans/README.md) — local plan template  
 - [planning/README.md](./README.md) — index of per-item deep dives  
 - [IMPROVEMENTS.md](../IMPROVEMENTS.md) — original evaluation  
 - [AI_CONTEXT.md](../AI_CONTEXT.md) — module map for agents after refactors

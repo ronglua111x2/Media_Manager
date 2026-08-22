@@ -4,10 +4,14 @@ Canonical build/test commands for this repo on **Windows x64**, verified with **
 
 ## Project layout (no solution file)
 
+**Before any sprint work:** confirm git branch (`auto-torrent`) — see [06-ai-execution-guide.md §2.0](planning/06-ai-execution-guide.md#20-mandatory-pre-sprint-workflow-git--plan-mode).
+
 | Item | Path (relative to app root) |
 |------|-----------------------------|
 | **App root** | `d:\VScode\Misc\Media_Manager\media management app\media management app\` |
 | **Main WPF project** | `media management app.csproj` |
+| **Core library** | `MediaManager.Core\MediaManager.Core.csproj` |
+| **Unit tests** | `MediaManager.Core.Tests\MediaManager.Core.Tests.csproj` |
 | **Third-party parser** | `ThirdParty\Sonarr.Parser\MediaManager.Sonarr.Parser.csproj` |
 | **Solution (`.sln`)** | *None* — build the main `.csproj` (it pulls in `ProjectReference`s). |
 
@@ -66,19 +70,9 @@ dotnet build "$PROJ" -c Debug -p:Platform=x64 -v minimal
 
 ### Tests — `dotnet test`
 
-There is **no test project yet** (planned: `MediaManager.Core.Tests`). Running `dotnet test` on the WPF `.csproj` only restores and exits **0** — it does **not** run tests.
-
-**When `MediaManager.Core.Tests` exists:**
-
 ```bash
 TEST_PROJ="$APP_ROOT/MediaManager.Core.Tests/MediaManager.Core.Tests.csproj"
 dotnet test "$TEST_PROJ" -c Release -v normal
-```
-
-**Future (multiple projects / `.sln`):**
-
-```bash
-dotnet test "$APP_ROOT/media management app.sln" -c Release -v normal
 ```
 
 ### Publish (single-file self-contained)

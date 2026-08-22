@@ -2,8 +2,10 @@
 
 **Audience:** Solo developer (part-time, ~10–15 h/week)  
 **Initiative scope:** E1 Stability + E2 Correctness + E3 UX freshness + E4 Maintainability  
-**Status:** Planning — locked decisions recorded; no code yet  
-**Related:** [00-integrated-roadmap.md](./00-integrated-roadmap.md) · [01](./01-database-migration-versioning.md) · [02](./02-unit-tests-critical-paths.md) · [03](./03-split-large-viewmodels-services.md) · [04](./04-transient-vs-singleton-viewmodels.md)
+**Status:** In progress — Sprint 0–1 complete on `auto-torrent`; Sprint 2 next  
+**Canonical dev branch:** `auto-torrent` (not `origin/main`, which is ~76 commits behind)  
+**Workflow:** Git check + Plan Mode local plan before every new sprint — see [06-ai-execution-guide.md §2.0](./06-ai-execution-guide.md#20-mandatory-pre-sprint-workflow-git--plan-mode)  
+**Related:** [00-integrated-roadmap.md](./00-integrated-roadmap.md) · [01](./01-database-migration-versioning.md) · [02](./02-unit-tests-critical-paths.md) · [03](./03-split-large-viewmodels-services.md) · [04](./04-transient-vs-singleton-viewmodels.md) · [06-ai-execution-guide.md](./06-ai-execution-guide.md)
 
 **Calendar assumption:** Each sprint = **2 calendar weeks** at ~12 h effective effort. Adjust dates when you start; week numbers are relative to Sprint 0 kickoff.
 
@@ -85,20 +87,19 @@ Sprint 10  [Closeout & regression]              All epics verified
 ## 3. Sprint overview table
 
 
-| Sprint | Weeks (rel.) | Est. hours | Goal (outcome)                         | Primary deliverable                                                           | Test gate                                     |
-| ------ | ------------ | ---------- | -------------------------------------- | ----------------------------------------------------------------------------- | --------------------------------------------- |
-| **0**  | W0–W1        | 8          | Decisions locked; repos designed       | Migration inventory, Core project plan, branch strategy                       | N/A (docs only)                               |
-| **1**  | W2–W3        | 12         | Testable Core boundary exists          | `MediaManager.Core` + xUnit project; parser tests ≥15                         | `dotnet test` green; MSBuild x64 app build    |
-| **2**  | W4–W5        | 12         | Trustworthy DB upgrades                | `SchemaMigrations` runner; 001 baseline + 002 FetchJobs once; migration tests | Migration tests + manual DB upgrade           |
-| **3**  | W6–W7        | 12         | Critical logic regression-safe         | Evaluation, search, pack, validation test suites                              | ≥40 unit tests total; manual cart smoke       |
-| **4**  | W8–W9        | 12         | Stale UI fixed via navigation contract | `INavigationAware`; per-workspace refresh; Torrent cancel on leave            | Manual stale-UI repro scripts pass            |
-| **5**  | W10–W11      | 12         | Settings maintainable (half)           | Integrations + Backup + System section sub-VMs + user controls                | Unit tests green; settings manual checklist   |
-| **6**  | W12–W13      | 12         | Settings fully decomposed              | Remaining 4 section sub-VMs; host orchestrates save/load                      | Same + dirty-tracking verified                |
-| **7**  | W14–W15      | 12         | AutoTrack phases isolated              | Discovery / Hunt / Reconcile services + façade                                | Hunt tests still green; Auto-Track manual run |
-| **8**  | W16–W17      | 14         | Library split for catalog vs detail    | `LibraryCatalogViewModel` + `LibraryDetailViewModel` (or nested host)         | Library manual checklist; tests green         |
-| **9**  | W18–W19      | 14         | DB + Torrent debt reduced              | Migration runner extracted; repositories; Torrent VM + FetchJob split         | Migration tests + torrent workspace manual    |
-| **10** | W20–W21      | 10         | Initiative formally complete           | Docs updated; no file >800 lines unjustified; final regression                | Full manual regression pass                   |
-
+| Sprint | Weeks (rel.) | Est. hours | Status | Goal (outcome)                         | Primary deliverable                                                           | Test gate                                     |
+| ------ | ------------ | ---------- | ------ | -------------------------------------- | ----------------------------------------------------------------------------- | --------------------------------------------- |
+| **0**  | W0–W1        | 8          | ✅ Done | Decisions locked; repos designed       | Migration inventory, Core project plan, branch strategy                       | N/A (docs only)                               |
+| **1**  | W2–W3        | 12         | ✅ Done | Testable Core boundary exists          | `MediaManager.Core` + xUnit project; parser tests ≥15                         | `dotnet test` green; MSBuild x64 app build    |
+| **2**  | W4–W5        | 12         | ⬜ Next | Trustworthy DB upgrades                | `SchemaMigrations` runner; 001 baseline + 002 FetchJobs once; migration tests | Migration tests + manual DB upgrade           |
+| **3**  | W6–W7        | 12         | ⬜ | Critical logic regression-safe         | Evaluation, search, pack, validation test suites                              | ≥40 unit tests total; manual cart smoke       |
+| **4**  | W8–W9        | 12         | ⬜ | Stale UI fixed via navigation contract | `INavigationAware`; per-workspace refresh; Torrent cancel on leave            | Manual stale-UI repro scripts pass            |
+| **5**  | W10–W11      | 12         | ⬜ | Settings maintainable (half)           | Integrations + Backup + System section sub-VMs + user controls                | Unit tests green; settings manual checklist   |
+| **6**  | W12–W13      | 12         | ⬜ | Settings fully decomposed              | Remaining 4 section sub-VMs; host orchestrates save/load                      | Same + dirty-tracking verified                |
+| **7**  | W14–W15      | 12         | ⬜ | AutoTrack phases isolated              | Discovery / Hunt / Reconcile services + façade                                | Hunt tests still green; Auto-Track manual run |
+| **8**  | W16–W17      | 14         | ⬜ | Library split for catalog vs detail    | `LibraryCatalogViewModel` + `LibraryDetailViewModel` (or nested host)         | Library manual checklist; tests green         |
+| **9**  | W18–W19      | 14         | ⬜ | DB + Torrent debt reduced              | Migration runner extracted; repositories; Torrent VM + FetchJob split         | Migration tests + torrent workspace manual    |
+| **10** | W20–W21      | 10         | ⬜ | Initiative formally complete           | Docs updated; no file >800 lines unjustified; final regression                | Full manual regression pass                   |
 
 **Total:** ~11 sprints, ~22 weeks, ~118 h estimated.
 
@@ -148,6 +149,8 @@ Zero runtime risk. Rollback = don’t start Sprint 1.
 
 ### Sprint 1 — Core library & parser tests (W2–W3, ~12 h)
 
+**Status:** ✅ **Complete** (Aug 2026) — committed on `auto-torrent`.
+
 #### Goal
 
 Pure torrent logic lives in `**MediaManager.Core**` with a running xUnit suite — parser behavior is frozen before any schema or UI work.
@@ -175,9 +178,9 @@ None (DB untouched).
 
 **Manual test checklist**
 
-- [ ] App launches; search torrent workspace still parses candidates (smoke)
-- [ ] MSBuild x64 Release build succeeds
-- [ ] `dotnet test` on solution passes
+- [x] App launches; search torrent workspace still parses candidates (smoke)
+- [x] MSBuild x64 Release build succeeds
+- [x] `dotnet test` on solution passes (20 parser tests)
 
 **Regression areas**
 
@@ -186,10 +189,19 @@ None (DB untouched).
 
 #### Definition of Done
 
-- [ ] Core + Tests projects in solution; WPF project references Core
-- [ ] No duplicate type definitions (moved, not copied)
-- [ ] ≥15 parser tests green
-- [ ] `AI_CONTEXT.md` notes Core project
+- [x] Core + Tests projects in solution; WPF project references Core
+- [x] No duplicate type definitions (moved, not copied)
+- [x] ≥15 parser tests green (20 tests)
+- [x] `AI_CONTEXT.md` notes Core project
+- [x] Git commit on `auto-torrent` + tag `four-pillars-sprint-01`
+- [ ] Fixture helpers `RecipeBuilder`, `TrackedShowBuilder` — **deferred to Sprint 3** (not required for parser-only gate)
+
+#### Session notes (Aug 2026)
+
+- Canonical branch: **`auto-torrent`** (not stale `origin/main`).
+- `MediaKind` moved to Core; `TorrentQualityScoring` remains in WPF (scoring deps).
+- Core projects need `<Platforms>AnyCPU;x64</Platforms>` for VS Debug builds.
+- Errors encountered: WPF glob picked up test files (fixed via `Compile Remove`); `Tokenize` made public for cross-assembly callers.
 
 #### Risk / rollback
 

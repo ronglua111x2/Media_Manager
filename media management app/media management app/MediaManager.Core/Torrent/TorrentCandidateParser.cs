@@ -373,7 +373,7 @@ public static class TorrentCandidateParser
 
     private static string NormalizePath(string path) => path.Replace('\\', '/');
 
-    internal static IEnumerable<string> Tokenize(string value)
+    public static IEnumerable<string> Tokenize(string value)
     {
         return value
             .Replace('.', ' ')

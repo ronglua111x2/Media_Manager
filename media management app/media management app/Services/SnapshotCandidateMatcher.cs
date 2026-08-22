@@ -110,8 +110,8 @@ public sealed class SnapshotCandidateMatcher
         var audioScore = PreferredTermMatcher.CountMatches(result.FileName, show.PreferredAudioCodec);
         var preferTermsScore = PreferredTermMatcher.CountMatches(result.FileName, preferTerms);
         var identityScore = titleMatch.Score + (parsed.ExplicitYear is not null && parsed.ExplicitYear == show.FirstAirYear ? 10 : 0);
-        var sizeScore = TorrentQuality.CalculateSizeScore(result.FileSize, weights: weights);
-        var totalScore = TorrentQuality.CalculateCandidateScore(
+        var sizeScore = TorrentQualityScoring.CalculateSizeScore(result.FileSize, weights: weights);
+        var totalScore = TorrentQualityScoring.CalculateCandidateScore(
             qualityScore,
             audioScore,
             result.Seeders,

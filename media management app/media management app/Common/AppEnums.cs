@@ -58,14 +58,6 @@ public enum BackupTriggerType
 
 #region Media
 
-public enum MediaKind
-{
-    Unknown = 0,
-    TvEpisode = 1,
-    Movie = 2,
-    TvSeasonPack = 3
-}
-
 public enum ParserPattern
 {
     Unknown = 0,

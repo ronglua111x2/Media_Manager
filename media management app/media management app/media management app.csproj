@@ -30,10 +30,18 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <DefaultItemExcludes>$(DefaultItemExcludes);ThirdParty/**;tools/**</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);ThirdParty/**;tools/**;MediaManager.Core/**;MediaManager.Core.Tests/**</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="MediaManager.Core/**" />
+    <None Remove="MediaManager.Core/**" />
+    <EmbeddedResource Remove="MediaManager.Core/**" />
+    <Page Remove="MediaManager.Core/**" />
+    <Compile Remove="MediaManager.Core.Tests/**" />
+    <None Remove="MediaManager.Core.Tests/**" />
+    <EmbeddedResource Remove="MediaManager.Core.Tests/**" />
+    <Page Remove="MediaManager.Core.Tests/**" />
     <Compile Remove="ThirdParty\**" />
     <None Remove="ThirdParty\**" />
     <EmbeddedResource Remove="ThirdParty\**" />
@@ -45,6 +53,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="MediaManager.Core\MediaManager.Core.csproj" />
     <ProjectReference Include="ThirdParty\Sonarr.Parser\MediaManager.Sonarr.Parser.csproj" />
   </ItemGroup>
 

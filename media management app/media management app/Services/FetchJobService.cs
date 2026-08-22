@@ -1195,7 +1195,7 @@ public sealed class FetchJobService : IFetchJobService
             var preferTermsScore = PreferredTermMatcher.CountMatches(
                 result.FileName,
                 GetPreferTerms(packRecipe));
-            var sizeScore = TorrentQuality.CalculateSizeScore(
+            var sizeScore = TorrentQualityScoring.CalculateSizeScore(
                 result.FileSize,
                 packFilter?.MinimumSizeBytes,
                 packFilter?.MaximumSizeBytes,
@@ -1216,7 +1216,7 @@ public sealed class FetchJobService : IFetchJobService
                 AudioCodecLabel = DetectAudioCodec(result.FileName),
                 CoveredSeasons = coveredSeasons,
                 ContentProfile = contentProfile,
-                TotalScore = TorrentQuality.CalculateCandidateScore(
+                TotalScore = TorrentQualityScoring.CalculateCandidateScore(
                     qualityScore,
                     audioScore,
                     result.Seeders,
