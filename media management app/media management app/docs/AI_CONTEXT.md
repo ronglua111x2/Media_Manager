@@ -10,7 +10,7 @@ meta:
   language: C#
   database: SQLite
   branch: auto-torrent  # canonical dev branch; origin/main is ~76 commits behind
-  commit: 687d6f37e35b4201d74c0de1a6678dece02f71be
+  commit: 1dcc5246c215087aa4836c060b125ca314d355fb
   commit_message: Sprint 2 SchemaMigrations runner and FetchJobs one-time purge
   root_namespace: media_management_app
   project_file: media management app.csproj
