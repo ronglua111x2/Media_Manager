@@ -25,7 +25,7 @@
 | 10 | `TorrentBlacklist` | Rejected/suspicious torrent listings per show |
 | 11 | `sqlite_sequence` | SQLite internal AUTOINCREMENT counter (system) |
 
-**Note:** `SchemaMigrations` is **not** present yet — created by the migration runner in Sprint 2.
+**Note:** `SchemaMigrations` is created by `MigrationRunner` (Sprint 2). Embedded scripts: `MediaManager.Core/Migrations/001_baseline.sql`, `002_fetchjobs_legacy_purge.sql`.
 
 ---
 
@@ -473,7 +473,7 @@ main
 
 **Fixtures:** Parser golden inputs in [fixtures/torrent-release-names.json](./fixtures/torrent-release-names.json) (28 cases).
 
-**Next:** Sprint 1 complete — commit on `auto-torrent`, then Sprint 2 (migration runner). Use [06-ai-execution-guide.md §2.0](./06-ai-execution-guide.md#20-mandatory-pre-sprint-workflow-git--plan-mode) before starting.
+**Next:** Sprint 2 complete — tag `four-pillars-sprint-02`. Next is Sprint 3 (critical-path tests) via [06-ai-execution-guide.md §2.0](./06-ai-execution-guide.md#20-mandatory-pre-sprint-workflow-git--plan-mode).
 
 ---
 

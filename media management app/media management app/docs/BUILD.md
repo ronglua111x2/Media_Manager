@@ -13,7 +13,8 @@ Canonical build/test commands for this repo on **Windows x64**, verified with **
 | **Core library** | `MediaManager.Core\MediaManager.Core.csproj` |
 | **Unit tests** | `MediaManager.Core.Tests\MediaManager.Core.Tests.csproj` |
 | **Third-party parser** | `ThirdParty\Sonarr.Parser\MediaManager.Sonarr.Parser.csproj` |
-| **Solution (`.sln`)** | *None* — build the main `.csproj` (it pulls in `ProjectReference`s). |
+| **Solution (`.slnx`)** | `media management app.slnx` (parent folder — includes WPF + Core + Tests) |
+| **Solution (`.sln`)** | *None* — open `.slnx` or build the main `.csproj` directly. |
 
 ### Target framework & platform
 
@@ -183,12 +184,15 @@ No separate restore step is required for ThirdParty beyond building the main pro
 | `dotnet test` passes but no tests ran | Tests not added yet; tested WPF exe project | Point `dotnet test` at `*Tests.csproj` when it exists |
 | NU1100 / restore errors | Offline or missing SDK | Install .NET 8 SDK + Windows desktop workload; run `dotnet restore` |
 | WPF markup errors | XAML compile | Read `error MC` / `error CS` lines; rebuild after fixing XAML |
+| `CS0234` / `CS0246` — `media_management_app.Migrations` not found | VS rebuilt WPF only; `MediaManager.Core` stale or wrong config (Sprint 2+) | Close VS → **Rebuild Solution** (not single project). Confirm **Release \| x64** for **all** projects in Configuration Manager. Ensure Solution Explorer lists `MediaManager.Core`. Clean `bin/` + `obj/` under app + Core (see below). Or build from terminal: `dotnet build "media management app/media management app.csproj" -c Release -p:Platform=x64` |
 
 **Clean rebuild:**
 
 ```bash
 dotnet clean "$PROJ" -c Release -p:Platform=x64
 rm -rf "$APP_ROOT/obj" "$APP_ROOT/bin" "$APP_ROOT/ThirdParty/Sonarr.Parser/obj" "$APP_ROOT/ThirdParty/Sonarr.Parser/bin"
+rm -rf "$APP_ROOT/MediaManager.Core/obj" "$APP_ROOT/MediaManager.Core/bin"
+rm -rf "$APP_ROOT/MediaManager.Core.Tests/obj" "$APP_ROOT/MediaManager.Core.Tests/bin"
 dotnet build "$PROJ" -c Release -p:Platform=x64
 ```
 

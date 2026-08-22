@@ -1,5 +1,6 @@
 using Microsoft.Data.Sqlite;
 using media_management_app.Common;
+using media_management_app.Migrations;
 using media_management_app.Models;
 
 namespace media_management_app.Services;
@@ -57,6 +58,22 @@ public sealed class DatabaseService : IDatabaseService
 
         using var connection = new SqliteConnection(_connectionString);
         connection.Open();
+
+        try
+        {
+            MigrationRunner.ApplyPendingMigrations(
+                connection,
+                message => _logger.Info(message, LogTarget.File | LogTarget.Console));
+        }
+        catch (DatabaseMigrationException ex)
+        {
+            _logger.Error(
+                "Database migration failed. Startup is blocked until the database is restored.",
+                ex,
+                LogTarget.File | LogTarget.Console);
+            ShowMigrationFailureDialog(ex);
+            throw;
+        }
 
         using var command = connection.CreateCommand();
         command.CommandText = """
@@ -132,7 +149,6 @@ public sealed class DatabaseService : IDatabaseService
         InitializeTorrentCartOrders(connection);
         InitializeTorrentCartOrderCandidates(connection);
         InitializeTorrentBlacklist(connection);
-        PurgeLegacyFetchJobs(connection);
         _logger.Info("SQLite database is ready", LogTarget.File | LogTarget.Ui | LogTarget.Console);
     }
 
@@ -2539,15 +2555,24 @@ public sealed class DatabaseService : IDatabaseService
         EnsureColumn(connection, "FetchJobs", "TargetKind", "INTEGER NOT NULL DEFAULT 1");
     }
 
-    private void PurgeLegacyFetchJobs(SqliteConnection connection)
+    private static void ShowMigrationFailureDialog(DatabaseMigrationException exception)
     {
-        using var command = connection.CreateCommand();
-        command.CommandText = "DELETE FROM FetchJobs;";
-        var deleted = command.ExecuteNonQuery();
-        if (deleted > 0)
-        {
-            _logger.Info($"Purged {deleted} legacy fetch job(s).", LogTarget.File | LogTarget.Console);
-        }
+        var details = string.IsNullOrWhiteSpace(exception.InnerException?.Message)
+            ? exception.Message
+            : exception.InnerException.Message;
+        var message =
+            $"Database migration '{exception.MigrationName}' failed.{Environment.NewLine}{Environment.NewLine}" +
+            $"The app cannot start until the database is repaired.{Environment.NewLine}{Environment.NewLine}" +
+            $"Recovery:{Environment.NewLine}" +
+            $"1. Restore media-manager.db from a Google Drive backup (Settings → Backup).{Environment.NewLine}" +
+            $"2. Or restore a local snapshot created with CreateSafeSnapshot().{Environment.NewLine}{Environment.NewLine}" +
+            $"Details: {details}";
+
+        System.Windows.MessageBox.Show(
+            message,
+            "Media Manager — Database migration failed",
+            System.Windows.MessageBoxButton.OK,
+            System.Windows.MessageBoxImage.Error);
     }
 
     private static void InitializeTorrentCartOrders(SqliteConnection connection)
@@ -3029,6 +3054,7 @@ public sealed class DatabaseService : IDatabaseService
         EnsureColumn(connection, "TorrentBlacklist", "IsActive", "INTEGER NOT NULL DEFAULT 1");
         EnsureColumn(connection, "TorrentBlacklist", "Notes", "TEXT NULL");
 
+        // TODO Sprint 3: extract this rebuild into migration 003 (optional Sprint 2 leftover).
         // Legacy schema had TorrentHash NOT NULL without DEFAULT. Rebuild so INSERT without that
         // column no longer fails, and copy any hash into InfoHash.
         if (HasColumn(connection, "TorrentBlacklist", "TorrentHash"))

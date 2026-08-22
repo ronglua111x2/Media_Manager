@@ -2,7 +2,7 @@
 
 **Priority:** High  
 **Source:** [IMPROVEMENTS.md](../IMPROVEMENTS.md) § Priority: High #1  
-**Status:** Planning only — no implementation yet
+**Status:** Sprint 2 implemented (Option A runner live) — see [05 Sprint 2](./05-sprint-timeline.md#sprint-2--migration-runner-option-a-w4w5-12-h)
 
 ---
 

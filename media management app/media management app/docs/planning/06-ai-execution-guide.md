@@ -2,7 +2,7 @@
 
 **Audience:** Solo developer using Cursor (or similar AI coding agents)  
 **Companion docs:** [05-sprint-timeline.md](./05-sprint-timeline.md) — sprint goals, DoD, test gates (source of truth); [BUILD.md](../BUILD.md) — **canonical build/test commands** (x64 merge gate)  
-**Status:** Active — Sprint 0–1 complete; use §2.0 workflow before Sprint 2+
+**Status:** Active — Sprint 0–2 complete; use §2.0 workflow before Sprint 3+
 
 ---
 
@@ -404,10 +404,11 @@ Update docs/AI_CONTEXT.md with Core project note.
 | | |
 | --- | --- |
 | **Goal** | `SchemaMigrations` + runner; 001 baseline + 002 FetchJobs purge once. |
-| **AI sessions** | **2–3** (runner + tests + edge cases) |
-| **Key files** | `DatabaseService.cs`, new `Migrations/` folder, `STATE_FOLDER.md` |
-| **Human only** | Upgrade **copy** of production DB; spot-check counts; second startup no FetchJobs spam. |
-| **Merge gate** | Migration tests + manual DB upgrade checklist from 05. |
+| **AI sessions** | **2–3** (runner + tests + edge cases) — done Aug 2026 |
+| **Key files** | `MediaManager.Core/Migrations/*`, `DatabaseService.cs`, `App.xaml.cs`, `STATE_FOLDER.md` |
+| **Human only** | Upgrade **copy** of production DB; spot-check counts; second startup no FetchJobs spam — see [05 Sprint 2 manual checklist](./05-sprint-timeline.md#sprint-2--migration-runner-option-a-w4w5-12-h). |
+| **Merge gate** | ✅ Migration unit tests + Release x64 build + manual DB checklist; tag `four-pillars-sprint-02`. |
+| **Deferred** | Migration 003 (TorrentBlacklist rebuild) → Sprint 3 |
 
 **First prompt:**
 

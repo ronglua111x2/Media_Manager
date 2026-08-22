@@ -7,7 +7,7 @@ Per-sprint **Plan Mode** output before Agent Mode implementation.
 | File | Sprint | Status |
 | ---- | ------ | ------ |
 | *(none committed)* | 1 | S1 executed without local plan — retro optional |
-| `sprint-02-local-plan.md` | 2 | Create in Plan Mode before migration runner work |
+| `sprint-02-local-plan.md` | 2 | ✅ Complete — tagged `four-pillars-sprint-02` |
 
 ## Template (copy for each sprint)
 

@@ -1,8 +1,8 @@
 # Planning Documents
 
-Pre-implementation planning for **High priority** technical debt identified in [IMPROVEMENTS.md](../IMPROVEMENTS.md). Sprint 0–1 complete on **`auto-torrent`**; Sprint 2 is next.
+Pre-implementation planning for **High priority** technical debt identified in [IMPROVEMENTS.md](../IMPROVEMENTS.md). Sprint 0–2 complete on **`auto-torrent`**; Sprint 3 is next.
 
-**Branch context:** `auto-torrent` (Sprint 1 tagged `four-pillars-sprint-01`)
+**Branch context:** `auto-torrent` (Sprint 1 tagged `four-pillars-sprint-01`; Sprint 2 tagged `four-pillars-sprint-02`)
 
 **Before every new sprint:** [06 §2.0 — git check + Plan Mode local plan](./06-ai-execution-guide.md#20-mandatory-pre-sprint-workflow-git--plan-mode)
 
@@ -24,7 +24,7 @@ Pre-implementation planning for **High priority** technical debt identified in [
 
 | # | Topic | Document | Summary |
 |---|--------|----------|---------|
-| 1 | Database migration versioning | [01-database-migration-versioning.md](./01-database-migration-versioning.md) | SQLite schema evolves via ~127 `EnsureColumn` calls and ad-hoc rebuilds in `DatabaseService.cs` with no version table; `FetchJobs` rows are deleted every startup. Planning covers migration runner options and removing the blunt purge. |
+| 1 | Database migration versioning | [01-database-migration-versioning.md](./01-database-migration-versioning.md) | **Sprint 2 implemented:** `SchemaMigrations` + `MigrationRunner`; FetchJobs purge is one-time migration 002. EnsureColumn chain still a transition safety net. |
 | 2 | Unit tests for critical paths | [02-unit-tests-critical-paths.md](./02-unit-tests-critical-paths.md) | No test project exists; torrent parsing, scoring, search plans, pack mapping, and content validation are untested regex/logic-heavy code on the Auto-Track and cart pipeline. Planning covers xUnit setup, fixture strategy, and Core extraction tradeoffs. |
 | 3 | Split large ViewModels/services | [03-split-large-viewmodels-services.md](./03-split-large-viewmodels-services.md) | `SettingsViewModel` (~2k lines), `LibraryViewModel` (~2.4k), and `AutoTrackService` (~1.5k) combine many features in single types; settings UI already has 7 sections but one VM. Planning maps split candidates and partial vs sub-VM vs service extraction options. |
 | 4 | Transient vs singleton ViewModels | [04-transient-vs-singleton-viewmodels.md](./04-transient-vs-singleton-viewmodels.md) | All seven workspace VMs are DI singletons; navigation swaps `CurrentView` with no refresh hooks, so long sessions can show stale grids while retaining poster/search memory. Planning compares navigation-aware refresh vs transient recreation vs hybrid coordinators. |

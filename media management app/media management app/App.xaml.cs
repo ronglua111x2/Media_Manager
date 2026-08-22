@@ -11,6 +11,7 @@ using media_management_app.Services.Backup;
 using media_management_app.Services.Events;
 using media_management_app.Services.Gemini;
 using media_management_app.Services.Symlink;
+using media_management_app.Migrations;
 using media_management_app.ViewModels;
 
 namespace media_management_app;
@@ -53,7 +54,15 @@ public partial class App : System.Windows.Application
         _serviceProvider.GetRequiredService<IThemeService>().Apply(settings.Current.Ui?.Theme ?? AppTheme.Light);
 
         var database = _serviceProvider.GetRequiredService<IDatabaseService>();
-        database.Initialize(settings.Current.StateFolder);
+        try
+        {
+            database.Initialize(settings.Current.StateFolder);
+        }
+        catch (DatabaseMigrationException)
+        {
+            Shutdown();
+            return;
+        }
 
         _serviceProvider.GetRequiredService<ILogCleanupService>().Start();
 

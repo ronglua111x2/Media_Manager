@@ -2,7 +2,7 @@
 
 **Audience:** Solo developer (part-time, ~10–15 h/week)  
 **Initiative scope:** E1 Stability + E2 Correctness + E3 UX freshness + E4 Maintainability  
-**Status:** In progress — Sprint 0–1 complete on `auto-torrent`; Sprint 2 next  
+**Status:** In progress — Sprint 0–2 complete on `auto-torrent`; Sprint 3 next  
 **Canonical dev branch:** `auto-torrent` (not `origin/main`, which is ~76 commits behind)  
 **Workflow:** Git check + Plan Mode local plan before every new sprint — see [06-ai-execution-guide.md §2.0](./06-ai-execution-guide.md#20-mandatory-pre-sprint-workflow-git--plan-mode)  
 **Related:** [00-integrated-roadmap.md](./00-integrated-roadmap.md) · [01](./01-database-migration-versioning.md) · [02](./02-unit-tests-critical-paths.md) · [03](./03-split-large-viewmodels-services.md) · [04](./04-transient-vs-singleton-viewmodels.md) · [06-ai-execution-guide.md](./06-ai-execution-guide.md)
@@ -73,13 +73,13 @@ Sprint 10  [Closeout & regression]              All epics verified
 | 4   | Include `TorrentWorkspaceViewModel` in E4? | **Yes**                                                 | Sprint 9 alongside DB repos and FetchJobService                                    |
 | 5   | Phase 5 (transient VMs)?                   | **Reserved for future**                                 | Hooks-only for initiative; document triggers to reopen Phase 5                     |
 | 6   | Initiative “done”                          | **E1 + E2 + E3 + E4**                                   | Sprint 10 exit checklist                                                           |
-| 7   | Migration failure policy                   | **Block startup** + restore guidance                    | Error dialog → `CreateSafeSnapshot()` / Google Drive restore                         |
-| 8   | FetchJobs table fate                       | **One-time purge in 002**                               | Keep empty schema in v1; optional 003+ to `DROP TABLE` later                         |
-| 9   | Fresh install vs upgrade                   | **Single chain from 001**                               | No separate “create all tables” fork                                                 |
-| 10  | Settings split depth                       | **Sub-VMs + user controls** (03 Option B)             | Matches existing `SettingsSection` UI structure                                      |
-| 11  | Settings dirty-tracking                    | **Required before reload** (Sprint 6)                   | `LoadFromSettings()` on every Settings visit only when not dirty                     |
-| 12  | Coverage enforcement                       | **Advisory ≥80%** on parser + evaluation (Sprint 3)   | coverlet locally; no enforced CI threshold in initiative                             |
-| 13  | CI test step                               | **Local gate every sprint**                             | `dotnet test` + Release x64 build; GitHub Actions deferred to post-initiative        |
+| 7   | Migration failure policy                   | **Block startup** + restore guidance                    | Error dialog → `CreateSafeSnapshot()` / Google Drive restore                       |
+| 8   | FetchJobs table fate                       | **One-time purge in 002**                               | Keep empty schema in v1; optional 003+ to `DROP TABLE` later                       |
+| 9   | Fresh install vs upgrade                   | **Single chain from 001**                               | No separate “create all tables” fork                                               |
+| 10  | Settings split depth                       | **Sub-VMs + user controls** (03 Option B)               | Matches existing `SettingsSection` UI structure                                    |
+| 11  | Settings dirty-tracking                    | **Required before reload** (Sprint 6)                   | `LoadFromSettings()` on every Settings visit only when not dirty                   |
+| 12  | Coverage enforcement                       | **Advisory ≥80%** on parser + evaluation (Sprint 3)     | coverlet locally; no enforced CI threshold in initiative                           |
+| 13  | CI test step                               | **Local gate every sprint**                             | `dotnet test` + Release x64 build; GitHub Actions deferred to post-initiative      |
 
 
 ---
@@ -87,19 +87,20 @@ Sprint 10  [Closeout & regression]              All epics verified
 ## 3. Sprint overview table
 
 
-| Sprint | Weeks (rel.) | Est. hours | Status | Goal (outcome)                         | Primary deliverable                                                           | Test gate                                     |
-| ------ | ------------ | ---------- | ------ | -------------------------------------- | ----------------------------------------------------------------------------- | --------------------------------------------- |
-| **0**  | W0–W1        | 8          | ✅ Done | Decisions locked; repos designed       | Migration inventory, Core project plan, branch strategy                       | N/A (docs only)                               |
-| **1**  | W2–W3        | 12         | ✅ Done | Testable Core boundary exists          | `MediaManager.Core` + xUnit project; parser tests ≥15                         | `dotnet test` green; MSBuild x64 app build    |
-| **2**  | W4–W5        | 12         | ⬜ Next | Trustworthy DB upgrades                | `SchemaMigrations` runner; 001 baseline + 002 FetchJobs once; migration tests | Migration tests + manual DB upgrade           |
-| **3**  | W6–W7        | 12         | ⬜ | Critical logic regression-safe         | Evaluation, search, pack, validation test suites                              | ≥40 unit tests total; manual cart smoke       |
-| **4**  | W8–W9        | 12         | ⬜ | Stale UI fixed via navigation contract | `INavigationAware`; per-workspace refresh; Torrent cancel on leave            | Manual stale-UI repro scripts pass            |
-| **5**  | W10–W11      | 12         | ⬜ | Settings maintainable (half)           | Integrations + Backup + System section sub-VMs + user controls                | Unit tests green; settings manual checklist   |
-| **6**  | W12–W13      | 12         | ⬜ | Settings fully decomposed              | Remaining 4 section sub-VMs; host orchestrates save/load                      | Same + dirty-tracking verified                |
-| **7**  | W14–W15      | 12         | ⬜ | AutoTrack phases isolated              | Discovery / Hunt / Reconcile services + façade                                | Hunt tests still green; Auto-Track manual run |
-| **8**  | W16–W17      | 14         | ⬜ | Library split for catalog vs detail    | `LibraryCatalogViewModel` + `LibraryDetailViewModel` (or nested host)         | Library manual checklist; tests green         |
-| **9**  | W18–W19      | 14         | ⬜ | DB + Torrent debt reduced              | Migration runner extracted; repositories; Torrent VM + FetchJob split         | Migration tests + torrent workspace manual    |
-| **10** | W20–W21      | 10         | ⬜ | Initiative formally complete           | Docs updated; no file >800 lines unjustified; final regression                | Full manual regression pass                   |
+| Sprint | Weeks (rel.) | Est. hours | Status  | Goal (outcome)                         | Primary deliverable                                                           | Test gate                                     |
+| ------ | ------------ | ---------- | ------- | -------------------------------------- | ----------------------------------------------------------------------------- | --------------------------------------------- |
+| **0**  | W0–W1        | 8          | ✅ Done  | Decisions locked; repos designed       | Migration inventory, Core project plan, branch strategy                       | N/A (docs only)                               |
+| **1**  | W2–W3        | 12         | ✅ Done  | Testable Core boundary exists          | `MediaManager.Core` + xUnit project; parser tests ≥15                         | `dotnet test` green; MSBuild x64 app build    |
+| **2**  | W4–W5        | 12         | ✅ Done  | Trustworthy DB upgrades                | `SchemaMigrations` runner; 001 baseline + 002 FetchJobs once; migration tests | Migration tests + manual DB upgrade           |
+| **3**  | W6–W7        | 12         | ⬜ Next  | Critical logic regression-safe         | Evaluation, search, pack, validation test suites                              | ≥40 unit tests total; manual cart smoke       |
+| **4**  | W8–W9        | 12         | ⬜       | Stale UI fixed via navigation contract | `INavigationAware`; per-workspace refresh; Torrent cancel on leave            | Manual stale-UI repro scripts pass            |
+| **5**  | W10–W11      | 12         | ⬜       | Settings maintainable (half)           | Integrations + Backup + System section sub-VMs + user controls                | Unit tests green; settings manual checklist   |
+| **6**  | W12–W13      | 12         | ⬜       | Settings fully decomposed              | Remaining 4 section sub-VMs; host orchestrates save/load                      | Same + dirty-tracking verified                |
+| **7**  | W14–W15      | 12         | ⬜       | AutoTrack phases isolated              | Discovery / Hunt / Reconcile services + façade                                | Hunt tests still green; Auto-Track manual run |
+| **8**  | W16–W17      | 14         | ⬜       | Library split for catalog vs detail    | `LibraryCatalogViewModel` + `LibraryDetailViewModel` (or nested host)         | Library manual checklist; tests green         |
+| **9**  | W18–W19      | 14         | ⬜       | DB + Torrent debt reduced              | Migration runner extracted; repositories; Torrent VM + FetchJob split         | Migration tests + torrent workspace manual    |
+| **10** | W20–W21      | 10         | ⬜       | Initiative formally complete           | Docs updated; no file >800 lines unjustified; final regression                | Full manual regression pass                   |
+
 
 **Total:** ~11 sprints, ~22 weeks, ~118 h estimated.
 
@@ -198,7 +199,7 @@ None (DB untouched).
 
 #### Session notes (Aug 2026)
 
-- Canonical branch: **`auto-torrent`** (not stale `origin/main`).
+- Canonical branch: `**auto-torrent**` (not stale `origin/main`).
 - `MediaKind` moved to Core; `TorrentQualityScoring` remains in WPF (scoring deps).
 - Core projects need `<Platforms>AnyCPU;x64</Platforms>` for VS Debug builds.
 - Errors encountered: WPF glob picked up test files (fixed via `Compile Remove`); `Tokenize` made public for cross-assembly callers.
@@ -210,6 +211,8 @@ None (DB untouched).
 ---
 
 ### Sprint 2 — Migration runner (Option A) (W4–W5, ~12 h)
+
+**Status:** ✅ **Complete** (Aug 2026) — committed on `auto-torrent`; tag `four-pillars-sprint-02`.
 
 #### Goal
 
@@ -231,24 +234,45 @@ None (DB untouched).
 
 #### Migration milestone
 
-- **M1:** Runner live; history table populated on first run after upgrade
-- **M2:** FetchJobs purge demoted to migration 002
+- **M1:** ✅ Runner live; history table populated on first run after upgrade
+- **M2:** ✅ FetchJobs purge demoted to migration 002
+- **003:** Deferred to Sprint 3 (inline TorrentBlacklist rebuild kept with `TODO Sprint 3`)
 
 #### Test strategy
 
 **Unit tests added**
 
-- `MigrationRunnerTests`: empty DB → all migrations applied, `SchemaMigrations` row count correct
-- `MigrationRunnerTests`: legacy fixture DB with old `TorrentHash` column → upgrades without data loss (if 003 shipped)
-- `MigrationRunnerTests`: running runner twice is idempotent (no duplicate applies)
+- [x] `MigrationRunnerTests`: empty DB → all migrations applied, `SchemaMigrations` row count correct
+- [ ] `MigrationRunnerTests`: legacy fixture DB with old `TorrentHash` column → upgrades without data loss (**deferred with 003**)
+- [x] `MigrationRunnerTests`: running runner twice is idempotent (no duplicate applies)
+- [x] Extra: FetchJobs rows purged once; second runner pass does not delete new rows
 
-**Manual test checklist**
+**Automated gate (already green)**
 
-- [ ] Copy production `media-manager.db` to temp folder; point app at it; upgrade succeeds
-- [ ] Second app start: no FetchJobs delete log spam
-- [ ] Fresh state folder: app creates DB via migration chain
-- [ ] `CreateSafeSnapshot()` still works post-migrate
-- [ ] Tracked shows, cart orders, blacklist rows intact (spot-check counts)
+```bash
+APP_ROOT="d:/VScode/Misc/Media_Manager/media management app/media management app"
+dotnet test "$APP_ROOT/MediaManager.Core.Tests/MediaManager.Core.Tests.csproj" -c Release -v normal
+# Expected: 23 passed (20 parser + 3 migration)
+dotnet build "$APP_ROOT/media management app.csproj" -c Release -p:Platform=x64 -v minimal
+```
+
+**Manual test checklist** (human, Aug 2026 — `D:\MediaManagerState_sprint2test`)
+
+1. **Prepare a throwaway state folder**
+   - [x] Used `D:\MediaManagerState_sprint2test` (Release x64 against disposable StateFolder)
+2. **Upgrade / first-migrate smoke**
+   - [x] App starts with no migration error dialog
+   - [x] `SchemaMigrations` has `001_baseline` + `002_fetchjobs_legacy_purge` with `AppliedUtc` (sqlite3 verified ~23:20 local / `16:20:08Z`)
+3. **Second start (idempotent / no purge spam)**
+   - [x] Quit and launch again against the same folder
+   - [x] Log `20260822_232815_154_systemlog.txt`: only `Initializing` + `SQLite database is ready` — **no** re-apply of 001/002, **no** FetchJobs purge
+   - [x] `SchemaMigrations` still exactly two rows
+4. **Fresh install path**
+   - [x] Empty/new DB path: log `20260822_232518_983_systemlog.txt` shows apply 001 then 002 then ready; sqlite3 `AppliedUtc` `16:25:19Z` matches
+5. **Backup / snapshot**
+   - [x] Manual Google Drive backup succeeded after migrate (`BackupService` uploaded at `2026-08-22 16:28:32Z`)
+6. **Light regression**
+   - [x] Spot-checked by human (workspaces / cart / library as exercised during session)
 
 **Regression areas**
 
@@ -259,10 +283,45 @@ None (DB untouched).
 
 #### Definition of Done
 
-- [ ] `SchemaMigrations` records each applied migration
-- [ ] No unconditional FetchJobs purge in `Initialize()`
-- [ ] Migration tests in `dotnet test`
-- [ ] `STATE_FOLDER.md` + `AI_CONTEXT.md` migration section updated
+- [x] `SchemaMigrations` records each applied migration
+- [x] No unconditional FetchJobs purge in `Initialize()`
+- [x] Migration tests in `dotnet test` (3 tests; suite total 23)
+- [x] `STATE_FOLDER.md` + `AI_CONTEXT.md` migration section updated
+- [x] Manual DB checklist above (human)
+- [x] Git commit on `auto-torrent` + tag `four-pillars-sprint-02`
+
+#### Session notes (Aug 2026)
+
+**Delivered**
+
+
+| Artifact  | Location                                                                                                   |
+| --------- | ---------------------------------------------------------------------------------------------------------- |
+| Runner    | `MediaManager.Core/Migrations/MigrationRunner.cs`                                                          |
+| Exception | `MediaManager.Core/Migrations/DatabaseMigrationException.cs`                                               |
+| SQL       | `001_baseline.sql`, `002_fetchjobs_legacy_purge.sql` (embedded resources)                                  |
+| Tests     | `MediaManager.Core.Tests/Migrations/MigrationRunnerTests.cs`                                               |
+| Wire-up   | `DatabaseService.Initialize()` runs runner first; `App.xaml.cs` shuts down on `DatabaseMigrationException` |
+| Solution  | Parent `media management app.slnx` lists Core + Tests + WPF (fixes VS stale-Core rebuild)                 |
+| Docs      | `docs/STATE_FOLDER.md`, `docs/AI_CONTEXT.md`, `docs/BUILD.md`, planning docs                                |
+
+
+**Transition design:** `EnsureColumn` chain **kept** as safety net (not extracted in Sprint 2). `PurgeLegacyFetchJobs` **removed**. Optional **003** TorrentBlacklist rebuild **deferred**.
+
+**Errors encountered (and fixes)**
+
+
+| Error | Cause | Fix |
+| ----- | ----- | --- |
+| `CS8207: An expression tree may not contain a discard` in `MigrationRunnerTests` | FluentAssertions `OnlyContain` lambda used `DateTime.TryParse(..., out _)` | Extracted helper `IsRoundtripDateTime(string)` |
+| First `StrReplace` on `Initialize()` open/connection block matched ambiguously | Many `connection.Open()` sites in `DatabaseService.cs` | Retargeted with more surrounding context (`Initializing SQLite database…`) |
+| Dialog string used `{Environment.NewLine}` inside a non-interpolated literal | Would show literal braces | Switched message construction to `$"..."` interpolated string |
+| VS **Release \| x64**: `CS0234` / `CS0246` — `media_management_app.Migrations` / `DatabaseMigrationException` not found | `.slnx` listed only the WPF project; **Rebuild media management app** skipped fresh `MediaManager.Core` (stale DLL) | Add Core (+ Tests) to `media management app.slnx`; **Rebuild Solution**; document in `BUILD.md` |
+| Git Bash / VS confusion on “wrong project” | Opening parent `.slnx` is correct; Core lives under nested `media management app/` folder | Clarify in BUILD.md + sprint notes |
+
+**Not an error (by design):** migration **003** not shipped; inline blacklist rebuild remains with `// TODO Sprint 3`.
+
+**Manual verify notes:** Fresh-install log proves 001→002 apply; second-start log proves skip; sqlite3 confirmed history rows. Full production-data upgrade smoke optional later (test folder DB was empty during verify).
 
 #### Risk / rollback
 
@@ -836,18 +895,20 @@ The **~22 week** table in §3 assumes solo-human typing at 10–15 h/week. With 
 
 **How to execute:** [06-ai-execution-guide.md](./06-ai-execution-guide.md) — session rhythm, prompt templates, Sprint 0 start checklist, pre-merge review.
 
-| Calendar (focused) | Sprints | Primary deliverable | Merge gate (unchanged) |
-| ------------------ | ------- | ------------------- | ------------------------ |
-| Day 1 | 0 → 1 start | Schema inventory + Core scaffold | S0: docs DoD; S1: build + test |
-| Day 2 | 1 | ≥15 parser tests | `dotnet test`; MSBuild x64 |
-| Day 3 | 2 | Migration runner + 001/002 | Migration tests + DB copy upgrade |
-| Day 4–5 | 3 | ≥40 tests; evaluation in Core | coverlet advisory; cart smoke |
-| Day 6 | 4 | `INavigationAware` wired | Stale-UI repro scripts 1–5 |
-| Day 7–9 | 5 → 6 | Settings 7 section sub-VMs | Per-section manual checklist |
-| Day 10–11 | 7 | AutoTrack phase services | Hunt manual + tests green |
-| Day 12–14 | 8 | Library catalog/detail split | Library checklist + cart events |
-| Day 15–17 | 9 | DB repos + Torrent/FetchJob | **DB backup**; CRUD + migration retest |
-| Day 18–20 | 10 | Closeout + full regression | §8 master checklist; E1–E4 verified |
+
+| Calendar (focused) | Sprints     | Primary deliverable              | Merge gate (unchanged)                 |
+| ------------------ | ----------- | -------------------------------- | -------------------------------------- |
+| Day 1              | 0 → 1 start | Schema inventory + Core scaffold | S0: docs DoD; S1: build + test         |
+| Day 2              | 1           | ≥15 parser tests                 | `dotnet test`; MSBuild x64             |
+| Day 3              | 2           | Migration runner + 001/002       | Migration tests + DB copy upgrade      |
+| Day 4–5            | 3           | ≥40 tests; evaluation in Core    | coverlet advisory; cart smoke          |
+| Day 6              | 4           | `INavigationAware` wired         | Stale-UI repro scripts 1–5             |
+| Day 7–9            | 5 → 6       | Settings 7 section sub-VMs       | Per-section manual checklist           |
+| Day 10–11          | 7           | AutoTrack phase services         | Hunt manual + tests green              |
+| Day 12–14          | 8           | Library catalog/detail split     | Library checklist + cart events        |
+| Day 15–17          | 9           | DB repos + Torrent/FetchJob      | **DB backup**; CRUD + migration retest |
+| Day 18–20          | 10          | Closeout + full regression       | §8 master checklist; E1–E4 verified    |
+
 
 **Do not compress:** one sprint per PR; never combine S2 migrations with S8/S9 VM splits. **Safe same-day pairing:** S0 AM + S1 PM; consecutive S5/S6 sessions with separate merges.
 

@@ -141,26 +141,29 @@ Contains refresh/access tokens — **do not share or document contents**.
 ## Database
 
 - **File:** `media-manager.db` (SQLite)
-- **Init:** `DatabaseService.Initialize()` creates/migrates tables, then calls `PurgeLegacyFetchJobs()` (see [FetchJobs purge](#fetchjobs-legacy-purge))
+- **Init:** `DatabaseService.Initialize()` runs `MigrationRunner.ApplyPendingMigrations()` first (`001_baseline` then `002_fetchjobs_legacy_purge`), then the existing `CREATE TABLE IF NOT EXISTS` + `EnsureColumn` safety net
+- **History table:** `SchemaMigrations` (`Id`, `Name`, `AppliedUtc`) records each applied script
 - **Safe snapshot:** `DatabaseService.CreateSafeSnapshot()` for backups (WAL checkpoint + copy)
+- **Migration failure:** startup is blocked with an error dialog; restore `media-manager.db` from a Google Drive backup (Settings → Backup) or a local snapshot from `CreateSafeSnapshot()`
 
 ---
 
 ## FetchJobs Legacy Purge
 
-On **every** database initialization:
+One-time migration **`002_fetchjobs_legacy_purge`** (not every boot):
 
-```csharp
+```sql
 DELETE FROM FetchJobs;
 ```
 
-- Table is still created (`InitializeFetchJobs`) for schema compatibility
+- Table is still created (`001_baseline` / `InitializeFetchJobs`) for schema compatibility
 - `FetchJobService` no longer persists rows to this table (in-memory candidate cache only)
-- Any leftover rows from older app versions are wiped silently; count logged if &gt; 0
+- Already-applied databases skip 002 on later startups (`SchemaMigrations` history)
+- `DROP TABLE FetchJobs` is deferred (cosmetic)
 
-**Why:** Legacy background fetch job tracking was replaced by `TorrentCartOrders` + in-memory search. The purge prevents stale job UI/state from old builds.
+**Why:** Legacy background fetch job tracking was replaced by `TorrentCartOrders` + in-memory search.
 
-**Code:** `Services/DatabaseService.cs` → `PurgeLegacyFetchJobs()`
+**Code:** `MediaManager.Core/Migrations/002_fetchjobs_legacy_purge.sql` via `MigrationRunner`
 
 ---
 

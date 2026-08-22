@@ -11,7 +11,7 @@ meta:
   database: SQLite
   branch: auto-torrent  # canonical dev branch; origin/main is ~76 commits behind
   commit: 687d6f37e35b4201d74c0de1a6678dece02f71be
-  commit_message: Sprint 1 extract MediaManager.Core and add parser unit tests
+  commit_message: Sprint 2 SchemaMigrations runner and FetchJobs one-time purge
   root_namespace: media_management_app
   project_file: media management app.csproj
   core_library: MediaManager.Core/MediaManager.Core.csproj
@@ -19,7 +19,8 @@ meta:
   default_state_folder: D:\MediaManagerState
   default_db: "{StateFolder}/media-manager.db"
   default_settings: "{StateFolder}/settings.json"
-  initiative_status: "Sprint 1 complete; Sprint 2 next"
+  initiative_status: "Sprint 2 complete; Sprint 3 next"
+  tag: four-pillars-sprint-02
   workflow_doc: docs/planning/06-ai-execution-guide.md#20-mandatory-pre-sprint-workflow-git--plan-mode
   sprint_plan_folder: docs/planning/sprint-plans/
   before_coding: "git check on auto-torrent; Plan Mode local plan for each new sprint"
@@ -95,8 +96,8 @@ tables:
     purpose: TMDB movie tracking
     key_columns: [TmdbId, RecipeId, TorrentHash]
   FetchJobs:
-    purpose: Legacy fetch job table (schema kept; rows purged on every init)
-    purge: DatabaseService.PurgeLegacyFetchJobs on init
+    purpose: Legacy fetch job table (schema kept; rows purged once in migration 002)
+    purge: MediaManager.Core/Migrations/002_fetchjobs_legacy_purge.sql
   TorrentCartOrders:
     purpose: Torrent acquisition cart orders
     key_columns: [TargetKind, MediaId, Status, Source]
@@ -109,10 +110,19 @@ tables:
     key_columns: [ListingUrl, InfoHash, ShowId, IsActive]
 
 migration_strategy:
-  type: additive_alter_table
-  version_table: false
+  type: numbered_sql_scripts
+  version_table: SchemaMigrations
+  version_table_columns: [Id, Name, AppliedUtc]
+  runner: MediaManager.Core/Migrations/MigrationRunner.cs
+  scripts: MediaManager.Core/Migrations/*.sql
+  applied:
+    - 001_baseline
+    - 002_fetchjobs_legacy_purge
   init_file: Services/DatabaseService.cs
-  methods: [CREATE TABLE IF NOT EXISTS, EnsureColumn, table_rebuild]
+  methods: [MigrationRunner.ApplyPendingMigrations, CREATE TABLE IF NOT EXISTS, EnsureColumn, table_rebuild]
+  failure_policy: block_startup
+  failure_recovery: restore media-manager.db from Google Drive backup or CreateSafeSnapshot()
+  ensure_column_chain: retained as transition safety net until later sprint
 ```
 
 ---
@@ -469,7 +479,8 @@ startup_order:
   4: Gemini model catalog reload + normalize
   5: ThemeService.Apply()
   6: DatabaseService.Initialize(stateFolder)
-    side_effect: PurgeLegacyFetchJobs deletes all FetchJobs rows
+    side_effect: MigrationRunner applies pending SchemaMigrations (001_baseline, 002_fetchjobs_legacy_purge once)
+    on_failure: DatabaseMigrationException + dialog; App.OnStartup Shutdown()
   7: LogCleanupService.Start()
   8: SymlinkCoordinatorService.Start()
   9: AutoTrackSchedulerService.Start()
@@ -511,6 +522,10 @@ core:
     - TorrentQualityScoring (CalculateSizeScore, CalculateCandidateScore — needs CandidateScoringWeights)
   namespaces_unchanged: media_management_app.Services, media_management_app.Common
   sprint_3_moves: CandidateEvaluationService, SearchPlanBuilder, pack/validation services (not yet)
+  sprint_2:
+    runner: MediaManager.Core/Migrations/MigrationRunner.cs
+    tests: MediaManager.Core.Tests/Migrations/MigrationRunnerTests.cs
+    migrations: [001_baseline, 002_fetchjobs_legacy_purge]
 ```
 
 ---
@@ -544,7 +559,7 @@ resolved_docs:
   - state_folder: docs/STATE_FOLDER.md
   - pack_link_heuristics: docs/FEATURES.md Appendix A
   - autotrack_eligibility: docs/FEATURES.md section 3.7
-  - fetch_jobs_purge: docs/STATE_FOLDER.md
+  - fetch_jobs_purge: docs/STATE_FOLDER.md (one-time migration 002)
   - google_drive_oauth: docs/STATE_FOLDER.md
   - commit_631c3d7: docs/FEATURES.md section 10.6, torrent_add_gate above
 ```
@@ -556,5 +571,5 @@ resolved_docs:
 - [APP_OVERVIEW.md](./APP_OVERVIEW.md) — narrative overview
 - [FEATURES.md](./FEATURES.md) — exhaustive feature list
 - [IMPROVEMENTS.md](./IMPROVEMENTS.md) — evaluation and suggestions
-- [STATE_FOLDER.md](./STATE_FOLDER.md) — state folder, OAuth, FetchJobs purge
+- [STATE_FOLDER.md](./STATE_FOLDER.md) — state folder, OAuth, SchemaMigrations / FetchJobs purge
 - [RECIPE_SCHEMA.md](./RECIPE_SCHEMA.md) — recipe `.rcp` JSON schema

@@ -3,6 +3,14 @@
     <Platform Name="Any CPU" />
     <Platform Name="x64" />
   </Configurations>
+  <Project Path="media management app/MediaManager.Core/MediaManager.Core.csproj">
+    <Platform Solution="*|x64" Project="x64" />
+    <Platform Solution="*|Any CPU" Project="AnyCPU" />
+  </Project>
+  <Project Path="media management app/MediaManager.Core.Tests/MediaManager.Core.Tests.csproj">
+    <Platform Solution="*|x64" Project="x64" />
+    <Platform Solution="*|Any CPU" Project="AnyCPU" />
+  </Project>
   <Project Path="media management app/media management app.csproj">
     <Platform Solution="*|x64" Project="x64" />
   </Project>
