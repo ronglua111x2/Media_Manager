@@ -10,8 +10,8 @@ meta:
   language: C#
   database: SQLite
   branch: auto-torrent  # canonical dev branch; origin/main is ~76 commits behind
-  commit: f2ca7c720688e732dc660f3cff94d10d13dd5720
-  commit_message: Sprint 0 planning docs (on auto-torrent)
+  commit: 687d6f37e35b4201d74c0de1a6678dece02f71be
+  commit_message: Sprint 1 extract MediaManager.Core and add parser unit tests
   root_namespace: media_management_app
   project_file: media management app.csproj
   core_library: MediaManager.Core/MediaManager.Core.csproj
