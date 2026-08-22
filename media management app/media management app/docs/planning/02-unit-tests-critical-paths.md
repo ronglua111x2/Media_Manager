@@ -200,7 +200,7 @@ Record inputs/outputs of current behavior before refactors; assert unchanged unt
 
 1. **Option A vs B** — Accept WPF test reference short-term, or invest in Core extraction first?  
 2. **InternalsVisibleTo** — Expose internal helpers vs. test only public API?  
-3. **Fixture source** — Can real torrent names from your library be committed (anonymized)?  
+3. **Fixture source** — **Resolved:** Yes — anonymized release filenames committed in [fixtures/torrent-release-names.json](./fixtures/torrent-release-names.json) (Aug 2026).  
 4. **Integration tests** — Scope qBittorrent mock server later, or never?  
 5. **Recipe files** — Load real `.rcp` from `docs/` or `STATE_FOLDER` as test data?  
 6. **Coverage threshold** — Enforce in CI or advisory only?

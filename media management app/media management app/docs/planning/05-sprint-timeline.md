@@ -71,13 +71,13 @@ Sprint 10  [Closeout & regression]              All epics verified
 | 4   | Include `TorrentWorkspaceViewModel` in E4? | **Yes**                                                 | Sprint 9 alongside DB repos and FetchJobService                                    |
 | 5   | Phase 5 (transient VMs)?                   | **Reserved for future**                                 | Hooks-only for initiative; document triggers to reopen Phase 5                     |
 | 6   | Initiative “done”                          | **E1 + E2 + E3 + E4**                                   | Sprint 10 exit checklist                                                           |
-| 7   | Migration failure policy                   | *(gap)*                                                 | Block startup + restore guidance                                                   |
-| 8   | FetchJobs table fate                       | *(gap)*                                                 | One-time purge migration; drop table deferred                                      |
-| 9   | Fresh install vs upgrade                   | *(gap)*                                                 | Single migration chain from 001                                                    |
-| 10  | Settings split depth                       | *(gap)*                                                 | Sub-VMs + user controls per section                                                |
-| 11  | Settings dirty-tracking                    | *(gap)*                                                 | Required before `LoadFromSettings()` on every Settings visit                       |
-| 12  | Coverage enforcement                       | *(gap)*                                                 | Advisory ≥80% line coverage on parser + evaluation by end Sprint 3                 |
-| 13  | CI test step                               | *(gap)*                                                 | Local `dotnet test` gate every sprint; GitHub Actions deferred to post-initiative  |
+| 7   | Migration failure policy                   | **Block startup** + restore guidance                    | Error dialog → `CreateSafeSnapshot()` / Google Drive restore                         |
+| 8   | FetchJobs table fate                       | **One-time purge in 002**                               | Keep empty schema in v1; optional 003+ to `DROP TABLE` later                         |
+| 9   | Fresh install vs upgrade                   | **Single chain from 001**                               | No separate “create all tables” fork                                                 |
+| 10  | Settings split depth                       | **Sub-VMs + user controls** (03 Option B)             | Matches existing `SettingsSection` UI structure                                      |
+| 11  | Settings dirty-tracking                    | **Required before reload** (Sprint 6)                   | `LoadFromSettings()` on every Settings visit only when not dirty                     |
+| 12  | Coverage enforcement                       | **Advisory ≥80%** on parser + evaluation (Sprint 3)   | coverlet locally; no enforced CI threshold in initiative                             |
+| 13  | CI test step                               | **Local gate every sprint**                             | `dotnet test` + Release x64 build; GitHub Actions deferred to post-initiative        |
 
 
 ---
@@ -135,10 +135,10 @@ Design only: baseline **001** = effective schema at initiative start; **002** = 
 
 #### Definition of Done
 
-- [ ] Schema inventory doc or spreadsheet checked into `docs/planning/` (or appendix in this file’s PR)
-- [ ] Migration numbering rules written (integer prefix, idempotent, never edit applied scripts)
-- [ ] Core type move list approved
-- [ ] [00-integrated-roadmap.md](./00-integrated-roadmap.md) locked decisions table complete
+- [x] Schema inventory doc or spreadsheet checked into `docs/planning/` ([schema-inventory.md](./schema-inventory.md))
+- [x] Migration numbering rules written (integer prefix, idempotent, never edit applied scripts)
+- [x] Core type move list approved ([schema-inventory.md §5](./schema-inventory.md#5-core-type-move-list))
+- [x] [00-integrated-roadmap.md](./00-integrated-roadmap.md) locked decisions table complete
 
 #### Risk / rollback
 

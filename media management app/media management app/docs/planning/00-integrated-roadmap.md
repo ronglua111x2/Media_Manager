@@ -393,6 +393,10 @@ Recorded from owner input (Aug 2026) plus agent-chosen standards where gaps rema
 | VM lifetime for initiative | Option A — `INavigationAware` hooks only |
 | Test stack | xUnit + FluentAssertions; coverlet advisory (no CI gate in initiative) |
 | Settings on navigate | Dirty-tracking before reload (Sprint 6) |
+| Coverage enforcement | Advisory ≥80% line coverage on parser + evaluation by end Sprint 3 (coverlet locally; no CI threshold in initiative) |
+| CI test step | Local `dotnet test` + Release x64 build gate every sprint ([BUILD.md](../BUILD.md)); GitHub Actions deferred to post-initiative |
+| Test exposure | `InternalsVisibleTo` on Core for fixture builders; public API tests for parser/evaluation |
+| Schema baseline | Documented in [schema-inventory.md](./schema-inventory.md); export source [schema-export-initiative-start.sql](./schema-export-initiative-start.sql) |
 
 ---
 
