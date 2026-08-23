@@ -2,7 +2,7 @@
 
 **Audience:** Solo developer (part-time, ~10–15 h/week)  
 **Initiative scope:** E1 Stability + E2 Correctness + E3 UX freshness + E4 Maintainability  
-**Status:** In progress — Sprint 0–4 complete on `auto-torrent`; Sprint 5 next (Settings split)  
+**Status:** **Initiative complete at E1+E2+E3.** Sprints 0–4 done on `auto-torrent`. **Sprints 5–10 (E4 structural splits) are frozen/cancelled.** Do not resume Sprint 5–10. Poster flash is a surgical follow-up, not Sprint 8.  
 **Canonical dev branch:** `auto-torrent` (not `origin/main`, which is ~76 commits behind)  
 **Workflow:** Git check + Plan Mode local plan before every new sprint — see [06-ai-execution-guide.md §2.0](./06-ai-execution-guide.md#20-mandatory-pre-sprint-workflow-git--plan-mode). After each closed sprint: [progress review §2.1a](./06-ai-execution-guide.md#21a-post-sprint-progress-review-mandatory-after-each-closed-sprint).  
 **Related:** [00-integrated-roadmap.md](./00-integrated-roadmap.md) · [01](./01-database-migration-versioning.md) · [02](./02-unit-tests-critical-paths.md) · [03](./03-split-large-viewmodels-services.md) · [04](./04-transient-vs-singleton-viewmodels.md) · [06-ai-execution-guide.md](./06-ai-execution-guide.md)
@@ -30,7 +30,7 @@ This initiative turns four intertwined debt items into a **sequenced, test-gated
 | **VM lifetime (E3)**         | **Option A — singleton VMs + `INavigationAware` hooks** (Phase 3 before splits)                                                          | Most common WPF fix; user confirmed Phase 3 before Phase 4. Phase 5 (transient VMs) **reserved for future** — not part of “done”.                                                     |
 | **Split depth (E4)**         | **Option B — section sub-ViewModels + user controls**; services extracted where logic-heavy (AutoTrack phases, Library catalog/detail)   | Matches existing UI structure (`SettingsSection`, Library catalog vs detail); better SRP than partial files alone.                                                                    |
 | **Phase 4 scope**            | Settings → AutoTrack service → Library → DatabaseService repos → **TorrentWorkspaceViewModel** + FetchJobService (user: include Torrent) | Lowest runtime risk first; highest-value hunt logic protected by tests before split.                                                                                                  |
-| **Done definition**          | **E1 + E2 + E3 + E4** complete; Phase 5 explicitly out of scope                                                                          | User-locked minimum bar.                                                                                                                                                              |
+| **Done definition**          | **E1 + E2 + E3** complete; **E4 frozen**; Phase 5 explicitly out of scope                                                                | User-locked Aug 2026: personal app is complete enough; remaining splits are maintainability, not usefulness.                                                                          |
 
 
 ### Timeline at a glance
@@ -38,9 +38,9 @@ This initiative turns four intertwined debt items into a **sequenced, test-gated
 
 | Metric                | Value                                                                                      |
 | --------------------- | ------------------------------------------------------------------------------------------ |
-| **Sprint count**      | **11** (Sprint 0 kickoff through Sprint 10 closeout)                                       |
-| **Calendar duration** | **~22 weeks (~5.5 months)** at 10–15 h/week                                                |
-| **Parallelism**       | Minimal — solo dev; only Sprint 1–2 have slight overlap (Core move vs migration design)    |
+| **Sprint count**      | **11 planned; 0–4 shipped; 5–10 frozen**                                                   |
+| **Calendar duration** | Stopped after Sprint 4. Remaining E4 weeks are not scheduled.                              |
+| **Parallelism**       | Minimal — solo dev; only Sprint 1–2 had slight overlap (Core move vs migration design)     |
 | **Merge strategy**    | One sprint merge (or small PRs) per sprint; never combine migration runner + Library split |
 
 
@@ -51,14 +51,23 @@ Sprint 0   [Kickoff & design]
 Sprint 1   [Core lib + parser tests]          ─┐ E2 start
 Sprint 2   [Migration runner A + mig tests]   ─┤ E1
 Sprint 3   [Critical-path test matrix]        ─┘ E2
-Sprint 4   [Navigation refresh hooks]           E3
-Sprint 5   [Settings split (1/2)]             ─┐
-Sprint 6   [Settings split (2/2)]               │
-Sprint 7   [AutoTrack service split]            ├ E4
-Sprint 8   [Library split]                      │
-Sprint 9   [DB repos + Torrent/FetchJob split]  ─┘
-Sprint 10  [Closeout & regression]              All epics verified
+Sprint 4   [Navigation refresh hooks]           E3  ← initiative stops here
+Sprint 5–6 [Settings split]                   ─┐
+Sprint 7   [AutoTrack service split]            │  FROZEN / cancelled
+Sprint 8   [Library catalog/detail split]       ├ E4 (design kept in 03; do not resume)
+Sprint 9   [DB repos + Torrent/FetchJob split]  │
+Sprint 10  [Closeout & regression]              ─┘
 ```
+
+**Do not start Sprint 5–10.** Poster flash: [poster-flash-surgical-fix.md](./sprint-plans/poster-flash-surgical-fix.md) — not Sprint 8.
+
+### Freeze rationale (Aug 2026)
+
+1. No further product features. This is a personal Sonarr/*arr + Jellyfin + indexer replacement and is complete enough for daily use.
+2. Remaining four-pillars **E4** sprints (Settings 7-VM, Auto-Track phase split, Library catalog/detail, DB repos/Torrent, closeout) are **frozen/cancelled as a program** — maintainability, not usefulness.
+3. **Sprints 0–4 stay done and kept** (E1 migrations, E2 Core tests, E3 nav hooks).
+4. Auto-Track and Library are the daily core; splitting them without a feature is the larger risk. Settings VM split is a landmine (UI tabs ≠ JSON/Apply) with no daily-use win.
+5. The Library poster flash is the **only leftover bug** from that initiative. Fix it surgically — not via a Library or Auto-Track split. Optional Settings hygiene (Sprint 4.5) is out of this freeze task and is not a reason to resume Sprint 5.
 
 ---
 
@@ -69,10 +78,11 @@ Sprint 10  [Closeout & regression]              All epics verified
 | --- | ------------------------------------------ | ------------------------------------------------------- | ---------------------------------------------------------------------------------- |
 | 1   | Migration path                             | **Jump to Option A** (numbered scripts + history table) | Homegrown runner, not FluentMigrator; baseline 001 = schema as of initiative start |
 | 2   | Test layout                                | **Option B — `MediaManager.Core`**                      | xUnit test project references Core only; WPF app references Core                   |
-| 3   | Phase 3 before Phase 4?                    | **Yes**                                                 | Sprint 4 (hooks) before Sprint 5+ (splits)                                         |
-| 4   | Include `TorrentWorkspaceViewModel` in E4? | **Yes**                                                 | Sprint 9 alongside DB repos and FetchJobService                                    |
-| 5   | Phase 5 (transient VMs)?                   | **Reserved for future**                                 | Hooks-only for initiative; document triggers to reopen Phase 5                     |
-| 6   | Initiative “done”                          | **E1 + E2 + E3 + E4**                                   | Sprint 10 exit checklist                                                           |
+| 3   | Phase 3 before Phase 4?                    | **Yes** — then **E4 frozen** after Sprint 4             | Sprint 4 shipped; Sprint 5+ splits will not run                                    |
+| 4   | Include `TorrentWorkspaceViewModel` in E4? | **Yes (design only)**                                   | Sprint 9 frozen with the rest of E4                                                |
+| 5   | Phase 5 (transient VMs)?                   | **Reserved / not in scope**                             | Unchanged — hooks-only; do not reopen as part of this freeze                       |
+| 6   | Initiative “done”                          | **E1 + E2 + E3** (E4 cancelled)                         | No Sprint 10 closeout. Poster flash is a separate surgical fix                     |
+| 14  | E4 structural splits (S5–10)               | **Frozen / cancelled**                                  | Personal app works; splits are maintainability; Auto-Track/Library daily-core risk; Settings 7-VM is a landmine (UI tabs ≠ JSON/Apply) |
 | 7   | Migration failure policy                   | **Block startup** + restore guidance                    | Error dialog → `CreateSafeSnapshot()` / Google Drive restore                       |
 | 8   | FetchJobs table fate                       | **One-time purge in 002**                               | Keep empty schema in v1; optional 003+ to `DROP TABLE` later                       |
 | 9   | Fresh install vs upgrade                   | **Single chain from 001**                               | No separate “create all tables” fork                                               |
@@ -94,15 +104,15 @@ Sprint 10  [Closeout & regression]              All epics verified
 | **2**  | W4–W5        | 12         | ✅ Done | Trustworthy DB upgrades                | `SchemaMigrations` runner; 001 baseline + 002 FetchJobs once; migration tests | Migration tests + manual DB upgrade           |
 | **3**  | W6–W7        | 12         | ✅ Done | Critical logic regression-safe         | Evaluation, search, pack, validation test suites                              | ≥40 unit tests total; manual cart smoke       |
 | **4**  | W8–W9        | 12         | ✅ Done | Stale UI fixed via navigation contract | `INavigationAware`; per-workspace refresh; Torrent cart continues off-tab     | Manual stale-UI repro scripts pass            |
-| **5**  | W10–W11      | 12         | ⬜      | Settings maintainable (half)           | Integrations + Backup + System section sub-VMs + user controls                | Unit tests green; settings manual checklist   |
-| **6**  | W12–W13      | 12         | ⬜      | Settings fully decomposed              | Remaining 4 section sub-VMs; host orchestrates save/load                      | Same + dirty-tracking verified                |
-| **7**  | W14–W15      | 12         | ⬜      | AutoTrack phases isolated              | Discovery / Hunt / Reconcile services + façade                                | Hunt tests still green; Auto-Track manual run |
-| **8**  | W16–W17      | 14         | ⬜      | Library split for catalog vs detail    | `LibraryCatalogViewModel` + `LibraryDetailViewModel` (or nested host)         | Library manual checklist; tests green         |
-| **9**  | W18–W19      | 14         | ⬜      | DB + Torrent debt reduced              | Migration runner extracted; repositories; Torrent VM + FetchJob split         | Migration tests + torrent workspace manual    |
-| **10** | W20–W21      | 10         | ⬜      | Initiative formally complete           | Docs updated; no file >800 lines unjustified; final regression                | Full manual regression pass                   |
+| **5**  | W10–W11      | 12         | 🧊 Frozen | Settings maintainable (half)           | *Cancelled — do not resume.* Audit docs remain historical.                    | —                                             |
+| **6**  | W12–W13      | 12         | 🧊 Frozen | Settings fully decomposed              | *Cancelled — do not resume.*                                                  | —                                             |
+| **7**  | W14–W15      | 12         | 🧊 Frozen | AutoTrack phases isolated              | *Cancelled — do not resume.*                                                  | —                                             |
+| **8**  | W16–W17      | 14         | 🧊 Frozen | Library split for catalog vs detail    | *Cancelled.* Poster flash is **not** this split — see surgical plan.          | —                                             |
+| **9**  | W18–W19      | 14         | 🧊 Frozen | DB + Torrent debt reduced              | *Cancelled — do not resume.*                                                  | —                                             |
+| **10** | W20–W21      | 10         | 🧊 Frozen | Initiative formally complete           | *Cancelled.* Initiative is done at E1+E2+E3.                                  | —                                             |
 
 
-**Total:** ~11 sprints, ~22 weeks, ~118 h estimated.
+**Shipped:** Sprints 0–4. **Frozen:** 5–10. Do not treat the original ~22 week / 118 h estimate as remaining work.
 
 ---
 
@@ -484,15 +494,20 @@ None.
 - Policy change vs early Sprint 4 draft: **no** `_operationCts.Cancel()` on `OnNavigatedFrom` — multitask across tabs preferred for personal single-user use.
 - Cancel path remains explicit **Stop** on Torrent workspace.
 - Human stale-UI scripts **1–6** passed (Aug 2026).
-- **Known debt (not S4):** Library detail poster flashes **No cover** when `Reconciled`/`PackReconciled` fires a full `LoadSelectedMediaAsync` while the user is already on Library — carry to Sprint 8 (see Sprint 8 notes).
+- **Known debt (not S4, not S8):** Library detail poster flashes **No cover** when `Reconciled`/`PackReconciled` fires a full `LoadSelectedMediaAsync` while the user is already on Library. Fix surgically: [poster-flash-surgical-fix.md](./sprint-plans/poster-flash-surgical-fix.md). Do **not** extract `LibraryDetailViewModel` and do **not** resume Sprint 8.
 
 ---
 
 ### Sprint 5 — Settings split part 1 (E4) (W10–W11, ~12 h)
 
+**Status:** 🧊 **Frozen / cancelled** (Aug 2026). Do **not** resume. Audit remains historical.  
+**Audit:** [settings-modernization/](../settings-modernization/README.md) · Local plan: [sprint-05-local-plan.md](./sprint-plans/sprint-05-local-plan.md) (superseded)
+
 #### Goal
 
 **Three settings sections** are owned by dedicated sub-VMs and user controls — pattern proven for the rest.
+
+**Freeze (was pause):** UI tabs (7) do not match JSON/`Apply*` ownership. User chose **not** to pick a full modernization track and **not** to run the 7-VM split. E4 is cancelled; optional Sprint 4.5 hygiene is not this task.
 
 #### Scope
 
@@ -537,9 +552,27 @@ None.
 
 **Risk:** Binding path errors silent in UI. **Mitigation:** Click every control in migrated sections. **Rollback:** Revert to monolithic Settings VM.
 
+#### Session notes (Aug 2026 — audit, no code merge)
+
+**Findings (historical — do not use as a resume trigger):**
+
+| # | Finding | Impact |
+| --- | --------- | ------ |
+| 1 | Jellyfin UI split: credentials on **Integrations**, refresh/log on **Auto-Track**; one `AutoTrack.Jellyfin` object | Cannot extract Integrations VM without Apply split |
+| 2 | qBittorrent UI on **Integrations**, download folders on **Torrent Storage**; one `ApplyAutoTorrentSettings()` | Same |
+| 3 | WARP UI on **Integrations**, JSON root `Warp`, consumed by Auto-Track hunt | Belongs with Auto-Track domain |
+| 4 | `Save()` applies all sections; test buttons call partial `Apply*` (sometimes full AutoTorrent/AutoTrack) | Split + dirty-tracking landmines |
+| 5 | `UiSettings` written by Library/Torrent/News VMs — not Settings host | Whole-file Save last-writer-wins |
+| 6 | Live `Current` mutation: library preview, WARP path keystrokes | In-memory drift before Save |
+| 7 | `SystemSettingsViewModel` = workspace VM; collides with planned System **section** VM name | Rename to `SettingsWorkspaceViewModel` when split resumes |
+
+**Not resumed.** Design only: [settings-modernization/05-split-boundaries-recommendation.md](../settings-modernization/05-split-boundaries-recommendation.md).
+
 ---
 
 ### Sprint 6 — Settings split part 2 (E4) (W12–W13, ~12 h)
+
+**Status:** 🧊 **Frozen / cancelled.** Do not resume. Design below is historical.
 
 #### Goal
 
@@ -591,6 +624,8 @@ Same as Sprint 5.
 ---
 
 ### Sprint 7 — AutoTrack service split (E4) (W14–W15, ~12 h)
+
+**Status:** 🧊 **Frozen / cancelled.** Do not resume. Auto-Track is daily core; split without a feature is the larger risk. Design below is historical.
 
 #### Goal
 
@@ -645,6 +680,8 @@ None.
 
 ### Sprint 8 — Library split (E4) (W16–W17, ~14 h)
 
+**Status:** 🧊 **Frozen / cancelled.** Do **not** extract `LibraryCatalogViewModel` / `LibraryDetailViewModel`. Poster flash is **not** owned by this sprint.
+
 #### Goal
 
 **Library catalog and detail concerns separated** — grid commands vs detail/pack/cart commands no longer share one 2.4k-line type.
@@ -659,8 +696,8 @@ None.
 | Host `LibraryViewModel` composes catalog + detail; XAML `ContentControl` for detail | Database repos                                                   |
 
 
-**Known issue to address in this sprint (carry from S4 investigation):**  
-Auto-Track / torrent `Reconciled` (and `PackReconciled`) currently call full `LoadSelectedMediaAsync` on `LibraryViewModel`, which clears `SelectedPosterImage` then rebuilds detail. While the user is already on Library with a media selected, the cover flashes **No cover** (or stays blank until navigate away/back). Pending-queue-only reconcile reduces frequency but does not fix the handler. Prefer a scoped detail refresh (availability/cart/link only; keep poster) owned by `LibraryDetailViewModel` after the split — do not rely on Sprint 4 navigate-away refresh as the fix.
+**Poster flash — moved out of this sprint:**  
+Auto-Track / torrent `Reconciled` (and `PackReconciled`) currently call full `LoadSelectedMediaAsync` on `LibraryViewModel`, which clears `SelectedPosterImage` then rebuilds detail. While the user is already on Library with a media selected, the cover flashes **No cover**. **Do not** wait for a catalog/detail split. Surgical plan: [poster-flash-surgical-fix.md](./sprint-plans/poster-flash-surgical-fix.md).
 
 
 #### Migration milestone
@@ -705,6 +742,8 @@ None.
 ---
 
 ### Sprint 9 — Database repos + Torrent/FetchJob (E4) (W18–W19, ~14 h)
+
+**Status:** 🧊 **Frozen / cancelled.** Do not resume. Design below is historical.
 
 #### Goal
 
@@ -762,9 +801,11 @@ None.
 
 ### Sprint 10 — Closeout & final regression (W20–W21, ~10 h)
 
-#### Goal
+**Status:** 🧊 **Frozen / cancelled.** Initiative is **done at E1+E2+E3**. No E4 closeout sprint.
 
-**Initiative declared done** per E1–E4; documentation matches code; no unjustified giant files remain.
+#### Goal (historical)
+
+**Initiative declared done** per original E1–E4 bar; documentation matches code; no unjustified giant files remain.
 
 #### Scope
 
@@ -802,7 +843,7 @@ Freeze migration numbering until next feature schema change.
 
 #### Definition of Done
 
-- [ ] User locked bar met: **E1 + E2 + E3 + E4**
+- [ ] User locked bar met: **E1 + E2 + E3** (E4 frozen — this sprint cancelled)
 - [ ] ≥40 unit tests; parser/evaluation coverage ≥80% advisory
 - [ ] No unconditional FetchJobs purge
 - [ ] Stale UI scripts pass
@@ -888,14 +929,11 @@ Legend: ✅ = primary sprint for coverage · 🔄 = extend existing · — = not
 - Torrent (and similar workspace UI) long operations **continue** when navigating away; explicit Stop cancels
 - Settings reload respects dirty-tracking
 
-### Maintainability (E4)
+### Maintainability (E4) — **frozen / not required for done**
 
-- Settings: 7 section sub-VMs + user controls; host coordinates save
-- AutoTrack: discovery / hunt / reconcile services + façade
-- Library: catalog + detail split
-- Torrent workspace: split parallel to Library
-- DatabaseService: migration runner + repositories; no 3k-line god class
-- No type > ~800 lines without documented exception
+Original split targets (Settings 7-VM, AutoTrack phases, Library catalog/detail, Torrent split, DB repos) **will not ship**. Design remains in [03](./03-split-large-viewmodels-services.md). Large files stay as they are.
+
+### Explicitly NOT done (reserved)
 
 ### Explicitly NOT done (reserved)
 
@@ -938,7 +976,7 @@ Use as copy-paste test run; mark date and app version.
 
 ## 9. AI-accelerated schedule
 
-The **~22 week** table in §3 assumes solo-human typing at 10–15 h/week. With Cursor (or similar) generating code and you reviewing merges, the same 11 sprints typically fit **3–4 weeks** focused effort or **4–6 weeks** part-time — **sprint order and merge gates unchanged**.
+The original **~22 week** table assumed all 11 sprints. **That schedule is obsolete.** Initiative stopped after Sprint 4. Days 7–20 (Sprints 5–10) below are **historical — do not run.**
 
 **How to execute:** [06-ai-execution-guide.md](./06-ai-execution-guide.md) — session rhythm, prompt templates, Sprint 0 start checklist, pre-merge review.
 
@@ -950,14 +988,10 @@ The **~22 week** table in §3 assumes solo-human typing at 10–15 h/week. With 
 | Day 3              | 2           | Migration runner + 001/002       | Migration tests + DB copy upgrade      |
 | Day 4–5            | 3           | ≥40 tests; evaluation in Core    | coverlet advisory; cart smoke          |
 | Day 6              | 4           | `INavigationAware` wired         | Stale-UI repro scripts 1–5             |
-| Day 7–9            | 5 → 6       | Settings 7 section sub-VMs       | Per-section manual checklist           |
-| Day 10–11          | 7           | AutoTrack phase services         | Hunt manual + tests green              |
-| Day 12–14          | 8           | Library catalog/detail split     | Library checklist + cart events        |
-| Day 15–17          | 9           | DB repos + Torrent/FetchJob      | **DB backup**; CRUD + migration retest |
-| Day 18–20          | 10          | Closeout + full regression       | §8 master checklist; E1–E4 verified    |
+| Day 7–20           | 5–10        | **Frozen — do not execute**      | —                                      |
 
 
-**Do not compress:** one sprint per PR; never combine S2 migrations with S8/S9 VM splits. **Safe same-day pairing:** S0 AM + S1 PM; consecutive S5/S6 sessions with separate merges.
+**Do not resume S5–S10.** Next code work is the surgical poster fix only: [poster-flash-surgical-fix.md](./sprint-plans/poster-flash-surgical-fix.md).
 
 ---
 

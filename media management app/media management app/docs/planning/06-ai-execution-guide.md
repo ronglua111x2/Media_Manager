@@ -2,7 +2,7 @@
 
 **Audience:** Solo developer using Cursor (or similar AI coding agents)  
 **Companion docs:** [05-sprint-timeline.md](./05-sprint-timeline.md) — sprint goals, DoD, test gates (source of truth); [BUILD.md](../BUILD.md) — **canonical build/test commands** (x64 merge gate)  
-**Status:** Active — Sprint 0–4 complete; use §2.0 workflow before Sprint 5+
+**Status:** **E4 frozen.** Sprint 0–4 complete; **do not resume Sprint 5–10.** Settings audit is historical ([settings-modernization/](../settings-modernization/README.md)). Next code work: [poster-flash-surgical-fix.md](./sprint-plans/poster-flash-surgical-fix.md).
 
 ---
 
@@ -135,7 +135,7 @@ Dedicated chat (not mixed with implementation). Goal: score DoD honestly, list c
 
 **Output:** short verdict (on track / at risk / blocked) + carry-forward list + “next: Sprint N+1 Plan Mode”. Update 05 session notes if facts changed during review.
 
-**First review:** Sprint 0–2 batch (Aug 2026) — foundation complete. Sprint 3 closed (80 tests + 003 + human 2/3). Sprint 4 closed (INavigationAware + human scripts 1–6); next Plan Mode is Sprint 5.
+**First review:** Sprint 0–2 batch (Aug 2026) — foundation complete. Sprint 3 closed (80 tests + 003 + human 2/3). Sprint 4 closed (INavigationAware + human scripts 1–6). **E4 frozen — next Plan Mode is not Sprint 5.** Poster flash: [poster-flash-surgical-fix.md](./sprint-plans/poster-flash-surgical-fix.md).
 
 ### 2.2 What to attach every time
 
@@ -513,33 +513,42 @@ Document refresh policy in AI_CONTEXT.md. Update docs when touching code.
 
 ---
 
-### Sprint 5 — Settings split part 1
+### Sprint 5 — Settings split part 1 (**FROZEN / cancelled**)
 
 | | |
 | --- | --- |
-| **Goal** | Integrations + Backup + System → sub-VMs + user controls. |
-| **AI sessions** | **1–2** |
-| **Human only** | Click every control in 3 sections; integration test buttons; Drive backup smoke. |
-| **Merge gate** | dotnet test + Release x64 build ([BUILD.md](../BUILD.md)); binding paths verified. |
+| **Status** | 🧊 Frozen Aug 2026 — do **not** resume |
+| **Audit docs** | [settings-modernization/](../settings-modernization/README.md) (historical) |
+| **Goal (original)** | Integrations + Backup + System → sub-VMs + user controls. |
+| **Human only** | No Settings split. User did not pick a modernization track. |
 
-**First prompt:**
+**Do NOT run Sprint 5 prompts.** Settings 7-VM split is cancelled with E4. Next code work is [poster-flash-surgical-fix.md](./sprint-plans/poster-flash-surgical-fix.md). Original/resume prompts below are **historical — do not use.**
+
+<details>
+<summary>Original Sprint 5 prompt (superseded)</summary>
 
 ```
 Implement Sprint 5 from @docs/planning/05-sprint-timeline.md and @docs/planning/03-split-large-viewmodels-services.md.
+...
+```
 
-Extract sub-VMs + IntegrationsSettingsPanel, BackupSettingsPanel, SystemSettingsPanel.
-Host SettingsViewModel keeps SelectedSettingsSection and save orchestration.
-XAML: {Binding Integrations.TmdbToken} style paths. Register section VMs in DI.
+</details>
 
-Do NOT migrate remaining 4 sections (Sprint 6). No behavior change to settings values.
+**Resume prompt (cancelled — do not use):**
 
-DoD: [paste Sprint 5 checklist]
-List all binding path changes for my manual click-test.
+```
+Read @docs/settings-modernization/07-pre-sprint-checklist.md and user-chosen option in 06-modernization-options.md.
+
+Implement Sprint 5 Phase A only: System + Backup section VMs + panels.
+Host keeps SelectedSettingsSection and Save orchestration.
+Do NOT extract Integrations until Apply* splits land (see settings-modernization/05-split-boundaries-recommendation.md).
+
+DoD: [paste revised Sprint 5 checklist from sprint-05-local-plan.md]
 ```
 
 ---
 
-### Sprint 6 — Settings split part 2
+### Sprint 6 — Settings split part 2 (**FROZEN / cancelled — do not run**)
 
 | | |
 | --- | --- |
@@ -562,7 +571,7 @@ SettingsViewModel coordinator ~300 lines target. Update AI_CONTEXT.md ownership 
 
 ---
 
-### Sprint 7 — AutoTrack service split
+### Sprint 7 — AutoTrack service split (**FROZEN / cancelled — do not run**)
 
 | | |
 | --- | --- |
@@ -587,7 +596,7 @@ DoD: [paste Sprint 7 checklist]
 
 ---
 
-### Sprint 8 — Library split
+### Sprint 8 — Library split (**FROZEN / cancelled — do not run**)
 
 | | |
 | --- | --- |
@@ -612,7 +621,7 @@ DoD: [paste Sprint 8 checklist]
 
 ---
 
-### Sprint 9 — DB repos + Torrent/FetchJob split
+### Sprint 9 — DB repos + Torrent/FetchJob split (**FROZEN / cancelled — do not run**)
 
 | | |
 | --- | --- |
@@ -641,7 +650,7 @@ I will test on a DB backup copy before merge.
 
 ---
 
-### Sprint 10 — Closeout & regression
+### Sprint 10 — Closeout & regression (**FROZEN / cancelled — do not run**)
 
 | | |
 | --- | --- |

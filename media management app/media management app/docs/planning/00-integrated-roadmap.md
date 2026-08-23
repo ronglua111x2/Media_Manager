@@ -177,9 +177,15 @@ Estimate assumes solo developer, part-time refactors alongside feature work. Adj
 
 
 
-### Phase 4 — Structural splits (03)
+### Phase 4 — Structural splits (03) — **FROZEN / cancelled (Aug 2026)**
 
-**Goal:** Maintainable units; prepare optional transient VMs later.
+**Do not start.** Design in [03](./03-split-large-viewmodels-services.md) is kept for history. Settings 7-VM, AutoTrack phases, Library catalog/detail, DB repos, Torrent split will not run.
+
+**Why (short):** Personal app already works; remaining splits are maintainability not usefulness; Auto-Track/Library are daily core so splitting without a feature is the larger risk; Settings VM split is a landmine (UI tabs ≠ JSON/Apply) with no daily-use win.
+
+**Exception:** Library poster flash is a surgical bugfix outside this program — [poster-flash-surgical-fix.md](./sprint-plans/poster-flash-surgical-fix.md).
+
+**Original goal (historical):** Maintainable units; prepare optional transient VMs later.
 
 Suggested **order within Phase 4** (lowest runtime risk first):
 
@@ -228,14 +234,14 @@ Phase 0   [Decisions]
 Phase 1   [Tests bootstrap] ──────── [Migration quick win]
 Phase 2   [Full migrations] ─────── [Expand tests]
 Phase 3   [Navigation refresh hooks]
-Phase 4   [Settings split] → [AutoTrack split] → [Library split] → [DB repos]
-Phase 5   [Transient VMs] (optional)
+Phase 4   [Settings / AutoTrack / Library / DB splits]  ← FROZEN
+Phase 5   [Transient VMs] (deferred; still out of scope)
           ─────────────────────────────────────────────────────────► time
 ```
 
-**Minimum viable refactor path** (if time is limited): **Phase 1 + Phase 3** only — stops data purge, adds parser tests, fixes stale UI. Defer full migration runner and splits.
+**Initiative “done” (locked Aug 2026):** **Phases 1–3 / E1+E2+E3.** Phase 4 (E4) frozen. Phase 5 remains deferred.
 
-**Professional “done” path:** Phases 1–4; Phase 5 only if metrics show memory pain.
+**Do not resume Phase 4 sprints.** Poster flash is not a Library split — [poster-flash-surgical-fix.md](./sprint-plans/poster-flash-surgical-fix.md).
 
 ---
 
@@ -358,8 +364,8 @@ Treat as **one initiative**, **multiple epics**, **sequential epics**:
 | **E1 Stability**       | 1b, 2  | Trustworthy DB upgrades          |
 | **E2 Correctness**     | 1a, 2  | Regression safety                |
 | **E3 UX freshness**    | 3      | Stale UI fixed                   |
-| **E4 Maintainability** | 4      | Smaller types, clearer ownership |
-| **E5 Optional polish** | 5      | Memory/transient if needed       |
+| **E4 Maintainability** | 4      | **Frozen / cancelled** — design kept, not implemented |
+| **E5 Optional polish** | 5      | Memory/transient if needed (still reserved) |
 
 
 Epics E1 and E2 can overlap in calendar time but should **merge to main independently**.
@@ -376,10 +382,10 @@ Recorded from owner input (Aug 2026) plus agent-chosen standards where gaps rema
 | --- | ----------------------------------------------- | ------------- |
 | 1   | Migration: C → A, or jump to A?                 | **Jump to A** — `SchemaMigrations` + numbered scripts from Sprint 2 (skip Option C-only path) |
 | 2   | Tests: Option A (WPF ref) or B (Core lib)?      | **B — `MediaManager.Core`** + xUnit from Sprint 1 |
-| 3   | Phase 3 before any Phase 4 split?               | **Yes** — navigation hooks in Sprint 4, splits Sprint 5+ |
-| 4   | Include `TorrentWorkspaceViewModel` in Phase 4? | **Yes** — Sprint 9 with DB repos + FetchJobService |
-| 5   | Target Phase 5 at all, or stop after hooks?     | **Reserved for future** — hooks only for this initiative |
-| 6   | Minimum bar to call initiative “done”?          | **E1 + E2 + E3 + E4** (Sprint 10 closeout) |
+| 3   | Phase 3 before any Phase 4 split?               | **Yes** — hooks in Sprint 4. **Phase 4 / E4 then frozen** (do not start Sprint 5+) |
+| 4   | Include `TorrentWorkspaceViewModel` in Phase 4? | **Yes in original design** — Sprint 9 **cancelled** with E4 |
+| 5   | Target Phase 5 at all, or stop after hooks?     | **Reserved / out of scope** — unchanged |
+| 6   | Minimum bar to call initiative “done”?          | **E1 + E2 + E3** (E4 structural splits frozen/cancelled) |
 
 ### Agent-chosen standards (delegated)
 

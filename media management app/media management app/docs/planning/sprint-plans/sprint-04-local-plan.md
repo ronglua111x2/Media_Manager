@@ -44,8 +44,8 @@
 
 ## Carry-forward
 
-- Library poster **No cover** on `Reconciled` while detail is open → Sprint 8 (scoped detail refresh / detail VM ownership).
+- Library poster **No cover** on `Reconciled` while detail is open → surgical fix, **not** Sprint 8: [poster-flash-surgical-fix.md](./poster-flash-surgical-fix.md).
 
 ## What you do next
 
-Sprint 4 closed. Start Sprint 5 with Plan Mode + `sprint-05-local-plan.md` per 06 §2.0. Optional: progress-review chat (§2.1a) before S5.
+Sprint 4 closed. **Do not start Sprint 5** — E4 frozen. Next code work is the poster flash surgical fix (plan above).

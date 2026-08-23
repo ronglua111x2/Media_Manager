@@ -1,6 +1,6 @@
 # Planning Documents
 
-Pre-implementation planning for **High priority** technical debt identified in [IMPROVEMENTS.md](../IMPROVEMENTS.md). Sprint 0–2 complete on **`auto-torrent`**; Sprint 3 is next.
+Pre-implementation planning for **High priority** technical debt identified in [IMPROVEMENTS.md](../IMPROVEMENTS.md). **Sprints 0–4 complete** on **`auto-torrent`**. **Sprints 5–10 (E4) frozen/cancelled.** Do not resume Sprint 5. Next code work: [poster-flash-surgical-fix.md](./sprint-plans/poster-flash-surgical-fix.md).
 
 **Branch context:** `auto-torrent` (Sprint 1 tagged `four-pillars-sprint-01`; Sprint 2 tagged `four-pillars-sprint-02`)
 
@@ -39,13 +39,13 @@ See **[00-integrated-roadmap.md](./00-integrated-roadmap.md)** for the dependenc
 
 Short version:
 
-1. **Foundation (parallel):** tests bootstrap ([02](./02-unit-tests-critical-paths.md)) + migration quick win ([01](./01-database-migration-versioning.md))
-2. **Hardening:** full migrations + expand tests
-3. **Navigation hooks** ([04](./04-transient-vs-singleton-viewmodels.md) Option A) — before big splits
-4. **Splits** ([03](./03-split-large-viewmodels-services.md)) — Settings → AutoTrack → Library
-5. **Transient VMs** (optional) — only if hooks are not enough
+1. **Foundation (done):** tests + migrations (Sprints 1–3)
+2. **Navigation hooks (done):** [04](./04-transient-vs-singleton-viewmodels.md) Option A — Sprint 4
+3. **Splits ([03](./03-split-large-viewmodels-services.md)) — FROZEN.** Do not start Settings → AutoTrack → Library.
+4. **Next code:** surgical Library poster fix — [poster-flash-surgical-fix.md](./sprint-plans/poster-flash-surgical-fix.md)
+5. **Transient VMs** (optional) — still reserved; not a reason to resume E4
 
-You do **not** need to implement all four as one release.
+Initiative is **done at E1+E2+E3.** You do **not** implement remaining splits.
 
 ---
 

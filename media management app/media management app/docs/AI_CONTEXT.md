@@ -19,10 +19,11 @@ meta:
   default_state_folder: D:\MediaManagerState
   default_db: "{StateFolder}/media-manager.db"
   default_settings: "{StateFolder}/settings.json"
-  initiative_status: "Sprint 4 complete; Sprint 5 next (Settings split)"
+  initiative_status: "E1+E2+E3 done (Sprints 0–4). E4 Sprints 5–10 frozen/cancelled. Do not resume Sprint 5. Next: poster-flash-surgical-fix.md"
   tag: four-pillars-sprint-04
   workflow_doc: docs/planning/06-ai-execution-guide.md#20-mandatory-pre-sprint-workflow-git--plan-mode
   sprint_plan_folder: docs/planning/sprint-plans/
+  settings_audit_folder: docs/settings-modernization/
   before_coding: "git check on auto-torrent; Plan Mode local plan for each new sprint"
   when_touching_code: >
     After any code change in a sprint/session, update progress in the relevant docs in the same change set:
@@ -30,7 +31,10 @@ meta:
     sprint-plans/sprint-NN-local-plan.md, and feature docs (FEATURES/STATE_FOLDER) when behavior changes.
     Do not leave planning docs describing cancelled policies or stale DoD.
   known_debt:
-    - library_reconcile_poster: "Reconciled/PackReconciled full LoadSelectedMediaAsync clears SelectedPosterImage (No cover) while on Library — fix in Sprint 8 with detail VM"
+    - library_reconcile_poster: "Reconciled/PackReconciled full LoadSelectedMediaAsync clears SelectedPosterImage (No cover) while on Library — surgical fix docs/planning/sprint-plans/poster-flash-surgical-fix.md (not Sprint 8, no LibraryDetailViewModel)"
+    - settings_ui_json_mismatch: "Settings UI tabs != JSON/Apply ownership — audit docs/settings-modernization/; 7-VM split cancelled with E4, do not resume Sprint 5"
+    - settings_live_apply: "RefreshLibraryRootPreview and OnWarpExecutablePathChanged mutate ISettingsService.Current without Save"
+    - settings_multi_writer: "UiSettings in settings.json written by Library/Torrent/News VMs — whole-file Save last-writer-wins"
 ```
 
 ---

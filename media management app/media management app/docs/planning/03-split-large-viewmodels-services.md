@@ -2,7 +2,7 @@
 
 **Priority:** High  
 **Source:** [IMPROVEMENTS.md](../IMPROVEMENTS.md) § Priority: High #3  
-**Status:** Planning only — no implementation yet
+**Status:** Design kept. **E4 implementation frozen/cancelled (Aug 2026)** — do not start Settings 7-VM, AutoTrack phase, Library catalog/detail, or DB/Torrent splits. See [05-sprint-timeline.md](./05-sprint-timeline.md) freeze rationale. Poster flash is a surgical fix, not the Library split: [poster-flash-surgical-fix.md](./sprint-plans/poster-flash-surgical-fix.md).
 
 ---
 

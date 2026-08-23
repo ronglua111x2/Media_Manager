@@ -11,7 +11,9 @@ Per-sprint **Plan Mode** output before Agent Mode implementation.
 | `sprint-02-local-plan.md` | 2 | ✅ Complete — tagged `four-pillars-sprint-02` |
 | `sprint-03-local-plan.md` | 3 | ✅ Complete — tagged `four-pillars-sprint-03` |
 | `sprint-04-local-plan.md` | 4 | ✅ Complete — tagged `four-pillars-sprint-04` |
-| — | 0–2 review | ✅ Progress review Aug 2026 — foundation on track; S3 next |
+| `sprint-05-local-plan.md` | 5 | 🧊 **Frozen / cancelled** — do not resume. Audit: [settings-modernization/](../settings-modernization/README.md) |
+| `poster-flash-surgical-fix.md` | — | **Next code work** — Library poster flash (not Sprint 8 split) |
+| — | 0–4 | ✅ Complete. E4 sprints 5–10 frozen. |
 
 ## Template (copy for each sprint)
 
