@@ -10,8 +10,8 @@ meta:
   language: C#
   database: SQLite
   branch: auto-torrent  # canonical dev branch; origin/main is ~76 commits behind
-  commit: 48e03d6c185f5197a95c06082ad8ef66824a91d4
-  commit_message: Sprint 3 Core critical-path services, tests, and migration 003
+  commit: 177cd5bd857adb21490e207bf4ee3f564542e080
+  commit_message: Sprint 4 INavigationAware workspace refresh hooks (E3)
   root_namespace: media_management_app
   project_file: media management app.csproj
   core_library: MediaManager.Core/MediaManager.Core.csproj
