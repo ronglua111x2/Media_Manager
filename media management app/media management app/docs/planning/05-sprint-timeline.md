@@ -494,7 +494,7 @@ None.
 - Policy change vs early Sprint 4 draft: **no** `_operationCts.Cancel()` on `OnNavigatedFrom` — multitask across tabs preferred for personal single-user use.
 - Cancel path remains explicit **Stop** on Torrent workspace.
 - Human stale-UI scripts **1–6** passed (Aug 2026).
-- **Known debt (not S4, not S8):** Library detail poster flashes **No cover** when `Reconciled`/`PackReconciled` fires a full `LoadSelectedMediaAsync` while the user is already on Library. Fix surgically: [poster-flash-surgical-fix.md](./sprint-plans/poster-flash-surgical-fix.md). Do **not** extract `LibraryDetailViewModel` and do **not** resume Sprint 8.
+- **Poster flash (shipped, not S4/S8):** `Reconciled`/`PackReconciled` now use scoped `RefreshSelectedDetailAfterReconcile` (keeps `SelectedPosterImage`). Plan: [poster-flash-surgical-fix.md](./sprint-plans/poster-flash-surgical-fix.md).
 
 ---
 

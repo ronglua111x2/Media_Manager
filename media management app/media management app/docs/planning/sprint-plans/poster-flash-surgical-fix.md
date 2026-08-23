@@ -2,14 +2,14 @@
 
 **Branch:** `auto-torrent`  
 **Date:** Aug 2026  
-**Status:** Plan only — **do not implement in the freeze session.** Next Agent session implements this file.  
+**Status:** ✅ Implemented (Aug 2026) — scoped reconcile refresh; poster kept.  
 **Not a sprint:** E4 Library catalog/detail split (Sprint 8) is frozen. This is a one-PR bugfix.  
 **Source:** Sprint 4 known debt in [05-sprint-timeline.md](../05-sprint-timeline.md); `docs/AI_CONTEXT.md` `library_reconcile_poster`
 
 ## Git baseline (implementer)
 
-- [ ] `git status -sb` on `auto-torrent`
-- [ ] Working tree otherwise clean or unrelated dirt left unstaged
+- [x] `git status -sb` on `auto-torrent`
+- [x] Working tree otherwise clean or unrelated dirt left unstaged
 
 ## Bug (confirmed in code)
 
@@ -117,8 +117,8 @@ dotnet test "$APP_ROOT/MediaManager.Core.Tests/MediaManager.Core.Tests.csproj" -
 
 ## Definition of Done
 
-- [ ] Reconcile/pack-reconcile while Library detail is open: poster does not flash **No cover**
-- [ ] Link/availability/cart/episode state still refreshes
-- [ ] No `LibraryDetailViewModel` extract
-- [ ] `dotnet test` + MSBuild x64 Release green
-- [ ] `AI_CONTEXT.md` `library_reconcile_poster` note updated when the fix ships
+- [x] Reconcile/pack-reconcile while Library detail is open: poster does not flash **No cover** (code path no longer clears poster; human still runs checklist)
+- [x] Link/availability/cart/episode state still refreshes (`RebuildSelectedShowDetail` / `RebuildSelectedMovieDetail` + `RefreshCartStateOnSelectedDetail`)
+- [x] No `LibraryDetailViewModel` extract
+- [x] `dotnet test` + MSBuild x64 Release green
+- [x] `AI_CONTEXT.md` `library_reconcile_poster` note updated when the fix ships

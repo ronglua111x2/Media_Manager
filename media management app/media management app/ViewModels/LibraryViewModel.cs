@@ -92,8 +92,8 @@ public sealed partial class LibraryViewModel : ViewModelBase
 
             RefreshCartStateOnSelectedDetail();
         };
-        _torrentReconciliationService.Reconciled += (_, _) => RunReloadSelectedDetailOnUiThread();
-        packLinkCoordinatorService.PackReconciled += (_, _) => RunReloadSelectedDetailOnUiThread();
+        _torrentReconciliationService.Reconciled += (_, _) => RunRefreshSelectedDetailAfterReconcileOnUiThread();
+        packLinkCoordinatorService.PackReconciled += (_, _) => RunRefreshSelectedDetailAfterReconcileOnUiThread();
         lifecycleService.AppModeChanged += OnAppModeChanged;
         SubscribeWatchStatusFilterOptions();
         RestoreLibraryUiState();
@@ -1815,16 +1815,44 @@ public sealed partial class LibraryViewModel : ViewModelBase
         CleanupSeasonPackCommand.NotifyCanExecuteChanged();
     }
 
-    private void RunReloadSelectedDetailOnUiThread()
+    private void RunRefreshSelectedDetailAfterReconcileOnUiThread()
     {
         var dispatcher = System.Windows.Application.Current?.Dispatcher;
         if (dispatcher is not null && !dispatcher.CheckAccess())
         {
-            dispatcher.BeginInvoke(DispatcherPriority.Background, RunReloadSelectedDetailOnUiThread);
+            dispatcher.BeginInvoke(DispatcherPriority.Background, RunRefreshSelectedDetailAfterReconcileOnUiThread);
             return;
         }
 
-        _ = ReloadSelectedDetailAsync();
+        RefreshSelectedDetailAfterReconcile();
+    }
+
+    private void RefreshSelectedDetailAfterReconcile()
+    {
+        var card = SelectedMediaCard;
+        if (card is null)
+        {
+            return;
+        }
+
+        var id = card.Id;
+        var kind = card.MediaKind;
+
+        if (card.IsShow)
+        {
+            RebuildSelectedShowDetail();
+        }
+        else
+        {
+            RebuildSelectedMovieDetail();
+        }
+
+        if (SelectedMediaCard?.Id != id || SelectedMediaCard?.MediaKind != kind)
+        {
+            return;
+        }
+
+        RefreshCartStateOnSelectedDetail();
     }
 
     private async Task ReloadSelectedDetailAsync()
@@ -1941,6 +1969,24 @@ public sealed partial class LibraryViewModel : ViewModelBase
             LibraryLinkStatus = IsMovieLinked(movie.TmdbId, sourceItems) ? "Linked" : "Not linked",
             IsInCart = _torrentCartService.TryGetActiveMovieOrder(movie.Id, out _)
         };
+    }
+
+    private void RebuildSelectedMovieDetail()
+    {
+        if (SelectedMediaCard?.IsMovie != true)
+        {
+            return;
+        }
+
+        var movie = _trackedMovieService.GetMovies().FirstOrDefault(item => item.Id == SelectedMediaCard.Id);
+        if (movie is null)
+        {
+            return;
+        }
+
+        SelectedMovie = BuildMovieDetail(movie, _databaseService.GetSourceItems());
+        SetWatchProgressUi(movie.WatchStatus, watchedEpisodes: 0, totalEpisodes: 0);
+        SetRatingThoughtUi(movie.Rating, movie.Thought);
     }
 
     private void ApplyMediaCardFilterAndSort()
