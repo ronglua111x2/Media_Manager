@@ -473,7 +473,7 @@ main
 
 **Fixtures:** Parser golden inputs in [fixtures/torrent-release-names.json](./fixtures/torrent-release-names.json) (28 cases).
 
-**Next:** Sprint 2 complete — tag `four-pillars-sprint-02`. Next is Sprint 3 (critical-path tests) via [06-ai-execution-guide.md §2.0](./06-ai-execution-guide.md#20-mandatory-pre-sprint-workflow-git--plan-mode).
+**Next:** Sprint 3 code complete — 79 Core.Tests. Next is Sprint 4 (navigation hooks) after human cart smoke + tag `four-pillars-sprint-03`.
 
 ---
 
@@ -484,4 +484,4 @@ main
 - [x] 20 parser tests green; WPF smoke parse verified
 - [x] `AI_CONTEXT.md` updated
 - [x] Git commit + tag `four-pillars-sprint-01`
-- [ ] `RecipeBuilder` / `TrackedShowBuilder` — deferred to Sprint 3
+- [x] `RecipeBuilder` / `TrackedShowBuilder` — added in Sprint 3

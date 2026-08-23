@@ -27,7 +27,10 @@ public class MigrationRunnerTests
 
         MigrationRunner.ApplyPendingMigrations(db.Connection);
 
-        GetAppliedNames(db.Connection).Should().Equal("001_baseline", "002_fetchjobs_legacy_purge");
+        GetAppliedNames(db.Connection).Should().Equal(
+            "001_baseline",
+            "002_fetchjobs_legacy_purge",
+            "003_torrentblacklist_rebuild");
         GetUserTableNames(db.Connection).Should().Contain(ApplicationTables);
         GetUserTableNames(db.Connection).Should().Contain(MigrationRunner.HistoryTableName);
         GetAppliedUtcValues(db.Connection).Should().OnlyContain(value => IsRoundtripDateTime(value));
@@ -61,7 +64,34 @@ public class MigrationRunnerTests
 
         MigrationRunner.ApplyPendingMigrations(db.Connection);
         CountFetchJobs(db.Connection).Should().Be(1);
-        GetAppliedNames(db.Connection).Should().Equal("001_baseline", "002_fetchjobs_legacy_purge");
+        GetAppliedNames(db.Connection).Should().Equal(
+            "001_baseline",
+            "002_fetchjobs_legacy_purge",
+            "003_torrentblacklist_rebuild");
+    }
+
+    [Fact]
+    public void ApplyPending_LegacyTorrentHashColumn_RebuildsWithoutDataLoss()
+    {
+        using var db = TemporaryDatabase.Create();
+        SeedLegacyTorrentBlacklistWithTorrentHash(db.Connection);
+
+        MigrationRunner.ApplyPendingMigrations(db.Connection);
+
+        GetAppliedNames(db.Connection).Should().Contain("003_torrentblacklist_rebuild");
+        HasColumn(db.Connection, "TorrentBlacklist", "TorrentHash").Should().BeFalse();
+        HasColumn(db.Connection, "TorrentBlacklist", "InfoHash").Should().BeTrue();
+
+        var rows = ReadBlacklistRows(db.Connection);
+        rows.Should().HaveCount(2);
+        rows.Should().Contain(row =>
+            row.ShowId == 1 &&
+            row.InfoHash == "abcdef0123456789abcdef0123456789abcdef01" &&
+            row.Reason == "malware");
+        rows.Should().Contain(row =>
+            row.ShowId == 2 &&
+            row.InfoHash == "1111222233334444555566667777888899990000" &&
+            row.Reason == "manual");
     }
 
     private static bool IsRoundtripDateTime(string value)
@@ -163,6 +193,90 @@ public class MigrationRunnerTests
         insert.Parameters.AddWithValue("$ShowTitle", title);
         insert.Parameters.AddWithValue("$CreatedUtc", DateTime.UtcNow.ToString("o"));
         insert.ExecuteNonQuery();
+    }
+
+    private static void SeedLegacyTorrentBlacklistWithTorrentHash(SqliteConnection connection)
+    {
+        using var create = connection.CreateCommand();
+        create.CommandText = """
+            CREATE TABLE TorrentBlacklist (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ListingUrl TEXT NOT NULL DEFAULT '',
+                InfoHash TEXT NOT NULL DEFAULT '',
+                TorrentHash TEXT NOT NULL,
+                ShowId INTEGER NOT NULL,
+                Reason TEXT NOT NULL,
+                SuspiciousFilesJson TEXT NULL,
+                DateAddedUtc TEXT NOT NULL,
+                IsActive INTEGER NOT NULL DEFAULT 1,
+                Notes TEXT NULL
+            );
+            """;
+        create.ExecuteNonQuery();
+
+        InsertLegacyBlacklistRow(
+            connection,
+            showId: 1,
+            infoHash: "",
+            torrentHash: "ABCDEF0123456789ABCDEF0123456789ABCDEF01",
+            reason: "malware");
+        InsertLegacyBlacklistRow(
+            connection,
+            showId: 2,
+            infoHash: "1111222233334444555566667777888899990000",
+            torrentHash: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+            reason: "manual");
+    }
+
+    private static void InsertLegacyBlacklistRow(
+        SqliteConnection connection,
+        int showId,
+        string infoHash,
+        string torrentHash,
+        string reason)
+    {
+        using var insert = connection.CreateCommand();
+        insert.CommandText = """
+            INSERT INTO TorrentBlacklist (ListingUrl, InfoHash, TorrentHash, ShowId, Reason, DateAddedUtc, IsActive)
+            VALUES ($ListingUrl, $InfoHash, $TorrentHash, $ShowId, $Reason, $DateAddedUtc, 1);
+            """;
+        insert.Parameters.AddWithValue("$ListingUrl", $"https://example.test/{showId}");
+        insert.Parameters.AddWithValue("$InfoHash", infoHash);
+        insert.Parameters.AddWithValue("$TorrentHash", torrentHash);
+        insert.Parameters.AddWithValue("$ShowId", showId);
+        insert.Parameters.AddWithValue("$Reason", reason);
+        insert.Parameters.AddWithValue("$DateAddedUtc", DateTime.UtcNow.ToString("o"));
+        insert.ExecuteNonQuery();
+    }
+
+    private static bool HasColumn(SqliteConnection connection, string tableName, string columnName)
+    {
+        using var check = connection.CreateCommand();
+        check.CommandText = $"PRAGMA table_info({tableName});";
+        using var reader = check.ExecuteReader();
+        while (reader.Read())
+        {
+            if (string.Equals(reader.GetString(1), columnName, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static List<(long ShowId, string InfoHash, string Reason)> ReadBlacklistRows(SqliteConnection connection)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT ShowId, InfoHash, Reason FROM TorrentBlacklist ORDER BY ShowId;";
+        using var reader = command.ExecuteReader();
+        var rows = new List<(long ShowId, string InfoHash, string Reason)>();
+        while (reader.Read())
+        {
+            rows.Add((reader.GetInt64(0), reader.GetString(1), reader.GetString(2)));
+        }
+
+        return rows;
     }
 
     private sealed class TemporaryDatabase : IDisposable

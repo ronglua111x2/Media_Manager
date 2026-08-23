@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "description": "Pack folder trees for PackSeasonFileGrouper golden tests.",
+  "cases": [
+    {
+      "id": "multi-season-plus-extras",
+      "files": [
+        { "relativePath": "Season 01/Show - S01E01.mkv", "fileName": "Show - S01E01.mkv" },
+        { "relativePath": "Season 01/Show - S01E02.mkv", "fileName": "Show - S01E02.mkv" },
+        { "relativePath": "Season 02/Show - S02E01.mkv", "fileName": "Show - S02E01.mkv" },
+        { "relativePath": "Extras/trailer.mkv", "fileName": "trailer.mkv" },
+        { "relativePath": "movies/feature.mkv", "fileName": "feature.mkv" }
+      ]
+    }
+  ]
+}

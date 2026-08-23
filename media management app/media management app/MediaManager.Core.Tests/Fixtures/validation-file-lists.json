@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "description": "Torrent file lists for TorrentContentValidationService.ValidateFilesAsync.",
+  "cases": [
+    {
+      "id": "safe-episode",
+      "files": [{ "name": "Show.S01E01.1080p.mkv", "size": 1400000000 }]
+    },
+    {
+      "id": "exe-disguised",
+      "files": [{ "name": "Show.S01E01.mkv.exe", "size": 400000 }]
+    },
+    {
+      "id": "virus-exe",
+      "files": [
+        { "name": "Show.S01E01.1080p.mkv", "size": 1400000000 },
+        { "name": "virus.exe", "size": 12000 }
+      ]
+    },
+    {
+      "id": "pack-with-samples",
+      "files": [
+        { "name": "Season 01/E01.mkv", "size": 900000000 },
+        { "name": "Season 01/E02.mkv", "size": 910000000 },
+        { "name": "Season 01/E03.mkv", "size": 905000000 },
+        { "name": "sample/sample.mkv", "size": 12000000 },
+        { "name": "Season 01/E01.nfo", "size": 400 }
+      ]
+    }
+  ]
+}

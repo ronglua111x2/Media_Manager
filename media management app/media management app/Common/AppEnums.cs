@@ -72,12 +72,6 @@ public enum LibraryRootMode
     AutoPerDrive = 0
 }
 
-public enum EpisodeAvailability
-{
-    Missing = 0,
-    Available = 1
-}
-
 public enum FetchJobStatus
 {
     Pending = 0,
@@ -102,23 +96,6 @@ public enum SeasonManagementMode
 {
     Episode = 0,
     Pack = 1
-}
-
-public enum ShowSeriesStatus
-{
-    Unknown = 0,
-    Ongoing = 1,
-    Finished = 2
-}
-
-public enum UserWatchStatus
-{
-    None = 0,
-    Watching = 1,
-    Completed = 2,
-    OnHold = 3,
-    Dropped = 4,
-    PlanToWatch = 5
 }
 
 public enum AutoTorrentLinkKind

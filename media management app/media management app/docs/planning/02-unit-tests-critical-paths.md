@@ -2,7 +2,7 @@
 
 **Priority:** High  
 **Source:** [IMPROVEMENTS.md](../IMPROVEMENTS.md) § Priority: High #2  
-**Status:** Sprint 1 implemented — Core library + 20 parser tests on `auto-torrent` (commit pending)
+**Status:** Sprint 3 implemented — Core critical-path services + 79 unit tests on `auto-torrent`
 
 ---
 

@@ -204,7 +204,7 @@ public partial class App : System.Windows.Application
         services.AddSingleton<IGoogleDriveClient, GoogleDriveClient>();
         services.AddSingleton<IBackupService, BackupService>();
         services.AddSingleton<IBackupSchedulerService, BackupSchedulerService>();
-        services.AddSingleton<ITorrentContentValidationService, TorrentContentValidationService>();
+        services.AddSingleton<ITorrentContentValidationService, QbittorrentTorrentContentValidationService>();
         services.AddSingleton<ITorrentCleanupService, TorrentCleanupService>();
         services.AddSingleton<ITorrentBlacklistService, TorrentBlacklistService>();
         services.AddSingleton<ITorrentAddGateService, TorrentAddGateService>();

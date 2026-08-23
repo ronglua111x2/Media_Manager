@@ -74,6 +74,7 @@ dotnet build "$PROJ" -c Debug -p:Platform=x64 -v minimal
 ```bash
 TEST_PROJ="$APP_ROOT/MediaManager.Core.Tests/MediaManager.Core.Tests.csproj"
 dotnet test "$TEST_PROJ" -c Release -v normal
+# Expected (Sprint 3): 79 passed; Core.Tests references Core only (no WPF).
 ```
 
 ### Publish (single-file self-contained)

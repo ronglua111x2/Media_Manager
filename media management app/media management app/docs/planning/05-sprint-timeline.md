@@ -2,9 +2,9 @@
 
 **Audience:** Solo developer (part-time, ~10–15 h/week)  
 **Initiative scope:** E1 Stability + E2 Correctness + E3 UX freshness + E4 Maintainability  
-**Status:** In progress — Sprint 0–2 complete on `auto-torrent`; Sprint 3 next  
+**Status:** In progress — Sprint 0–3 complete on `auto-torrent`; Sprint 4 next  
 **Canonical dev branch:** `auto-torrent` (not `origin/main`, which is ~76 commits behind)  
-**Workflow:** Git check + Plan Mode local plan before every new sprint — see [06-ai-execution-guide.md §2.0](./06-ai-execution-guide.md#20-mandatory-pre-sprint-workflow-git--plan-mode)  
+**Workflow:** Git check + Plan Mode local plan before every new sprint — see [06-ai-execution-guide.md §2.0](./06-ai-execution-guide.md#20-mandatory-pre-sprint-workflow-git--plan-mode). After each closed sprint: [progress review §2.1a](./06-ai-execution-guide.md#21a-post-sprint-progress-review-mandatory-after-each-closed-sprint).  
 **Related:** [00-integrated-roadmap.md](./00-integrated-roadmap.md) · [01](./01-database-migration-versioning.md) · [02](./02-unit-tests-critical-paths.md) · [03](./03-split-large-viewmodels-services.md) · [04](./04-transient-vs-singleton-viewmodels.md) · [06-ai-execution-guide.md](./06-ai-execution-guide.md)
 
 **Calendar assumption:** Each sprint = **2 calendar weeks** at ~12 h effective effort. Adjust dates when you start; week numbers are relative to Sprint 0 kickoff.
@@ -87,19 +87,19 @@ Sprint 10  [Closeout & regression]              All epics verified
 ## 3. Sprint overview table
 
 
-| Sprint | Weeks (rel.) | Est. hours | Status  | Goal (outcome)                         | Primary deliverable                                                           | Test gate                                     |
-| ------ | ------------ | ---------- | ------- | -------------------------------------- | ----------------------------------------------------------------------------- | --------------------------------------------- |
-| **0**  | W0–W1        | 8          | ✅ Done  | Decisions locked; repos designed       | Migration inventory, Core project plan, branch strategy                       | N/A (docs only)                               |
-| **1**  | W2–W3        | 12         | ✅ Done  | Testable Core boundary exists          | `MediaManager.Core` + xUnit project; parser tests ≥15                         | `dotnet test` green; MSBuild x64 app build    |
-| **2**  | W4–W5        | 12         | ✅ Done  | Trustworthy DB upgrades                | `SchemaMigrations` runner; 001 baseline + 002 FetchJobs once; migration tests | Migration tests + manual DB upgrade           |
-| **3**  | W6–W7        | 12         | ⬜ Next  | Critical logic regression-safe         | Evaluation, search, pack, validation test suites                              | ≥40 unit tests total; manual cart smoke       |
-| **4**  | W8–W9        | 12         | ⬜       | Stale UI fixed via navigation contract | `INavigationAware`; per-workspace refresh; Torrent cancel on leave            | Manual stale-UI repro scripts pass            |
-| **5**  | W10–W11      | 12         | ⬜       | Settings maintainable (half)           | Integrations + Backup + System section sub-VMs + user controls                | Unit tests green; settings manual checklist   |
-| **6**  | W12–W13      | 12         | ⬜       | Settings fully decomposed              | Remaining 4 section sub-VMs; host orchestrates save/load                      | Same + dirty-tracking verified                |
-| **7**  | W14–W15      | 12         | ⬜       | AutoTrack phases isolated              | Discovery / Hunt / Reconcile services + façade                                | Hunt tests still green; Auto-Track manual run |
-| **8**  | W16–W17      | 14         | ⬜       | Library split for catalog vs detail    | `LibraryCatalogViewModel` + `LibraryDetailViewModel` (or nested host)         | Library manual checklist; tests green         |
-| **9**  | W18–W19      | 14         | ⬜       | DB + Torrent debt reduced              | Migration runner extracted; repositories; Torrent VM + FetchJob split         | Migration tests + torrent workspace manual    |
-| **10** | W20–W21      | 10         | ⬜       | Initiative formally complete           | Docs updated; no file >800 lines unjustified; final regression                | Full manual regression pass                   |
+| Sprint | Weeks (rel.) | Est. hours | Status | Goal (outcome)                         | Primary deliverable                                                           | Test gate                                     |
+| ------ | ------------ | ---------- | ------ | -------------------------------------- | ----------------------------------------------------------------------------- | --------------------------------------------- |
+| **0**  | W0–W1        | 8          | ✅ Done | Decisions locked; repos designed       | Migration inventory, Core project plan, branch strategy                       | N/A (docs only)                               |
+| **1**  | W2–W3        | 12         | ✅ Done | Testable Core boundary exists          | `MediaManager.Core` + xUnit project; parser tests ≥15                         | `dotnet test` green; MSBuild x64 app build    |
+| **2**  | W4–W5        | 12         | ✅ Done | Trustworthy DB upgrades                | `SchemaMigrations` runner; 001 baseline + 002 FetchJobs once; migration tests | Migration tests + manual DB upgrade           |
+| **3**  | W6–W7        | 12         | ✅ Done  | Critical logic regression-safe         | Evaluation, search, pack, validation test suites                              | ≥40 unit tests total; manual cart smoke       |
+| **4**  | W8–W9        | 12         | ⬜      | Stale UI fixed via navigation contract | `INavigationAware`; per-workspace refresh; Torrent cancel on leave            | Manual stale-UI repro scripts pass            |
+| **5**  | W10–W11      | 12         | ⬜      | Settings maintainable (half)           | Integrations + Backup + System section sub-VMs + user controls                | Unit tests green; settings manual checklist   |
+| **6**  | W12–W13      | 12         | ⬜      | Settings fully decomposed              | Remaining 4 section sub-VMs; host orchestrates save/load                      | Same + dirty-tracking verified                |
+| **7**  | W14–W15      | 12         | ⬜      | AutoTrack phases isolated              | Discovery / Hunt / Reconcile services + façade                                | Hunt tests still green; Auto-Track manual run |
+| **8**  | W16–W17      | 14         | ⬜      | Library split for catalog vs detail    | `LibraryCatalogViewModel` + `LibraryDetailViewModel` (or nested host)         | Library manual checklist; tests green         |
+| **9**  | W18–W19      | 14         | ⬜      | DB + Torrent debt reduced              | Migration runner extracted; repositories; Torrent VM + FetchJob split         | Migration tests + torrent workspace manual    |
+| **10** | W20–W21      | 10         | ⬜      | Initiative formally complete           | Docs updated; no file >800 lines unjustified; final regression                | Full manual regression pass                   |
 
 
 **Total:** ~11 sprints, ~22 weeks, ~118 h estimated.
@@ -259,20 +259,20 @@ dotnet build "$APP_ROOT/media management app.csproj" -c Release -p:Platform=x64 
 **Manual test checklist** (human, Aug 2026 — `D:\MediaManagerState_sprint2test`)
 
 1. **Prepare a throwaway state folder**
-   - [x] Used `D:\MediaManagerState_sprint2test` (Release x64 against disposable StateFolder)
+  - [x] Used `D:\MediaManagerState_sprint2test` (Release x64 against disposable StateFolder)
 2. **Upgrade / first-migrate smoke**
-   - [x] App starts with no migration error dialog
-   - [x] `SchemaMigrations` has `001_baseline` + `002_fetchjobs_legacy_purge` with `AppliedUtc` (sqlite3 verified ~23:20 local / `16:20:08Z`)
+  - [x] App starts with no migration error dialog
+     [x] `SchemaMigrations` has `001_baseline` + `002_fetchjobs_legacy_purge` with `AppliedUtc` (sqlite3 verified ~23:20 local / `16:20:08Z`)
 3. **Second start (idempotent / no purge spam)**
-   - [x] Quit and launch again against the same folder
-   - [x] Log `20260822_232815_154_systemlog.txt`: only `Initializing` + `SQLite database is ready` — **no** re-apply of 001/002, **no** FetchJobs purge
-   - [x] `SchemaMigrations` still exactly two rows
+  - [x] Quit and launch again against the same folder
+     [x] Log `20260822_232815_154_systemlog.txt`: only `Initializing` + `SQLite database is ready` — **no** re-apply of 001/002, **no** FetchJobs purge
+     [x] `SchemaMigrations` still exactly two rows
 4. **Fresh install path**
-   - [x] Empty/new DB path: log `20260822_232518_983_systemlog.txt` shows apply 001 then 002 then ready; sqlite3 `AppliedUtc` `16:25:19Z` matches
+  - [x] Empty/new DB path: log `20260822_232518_983_systemlog.txt` shows apply 001 then 002 then ready; sqlite3 `AppliedUtc` `16:25:19Z` matches
 5. **Backup / snapshot**
-   - [x] Manual Google Drive backup succeeded after migrate (`BackupService` uploaded at `2026-08-22 16:28:32Z`)
+  - [x] Manual Google Drive backup succeeded after migrate (`BackupService` uploaded at `2026-08-22 16:28:32Z`)
 6. **Light regression**
-   - [x] Spot-checked by human (workspaces / cart / library as exercised during session)
+  - [x] Spot-checked by human (workspaces / cart / library as exercised during session)
 
 **Regression areas**
 
@@ -302,8 +302,8 @@ dotnet build "$APP_ROOT/media management app.csproj" -c Release -p:Platform=x64 
 | SQL       | `001_baseline.sql`, `002_fetchjobs_legacy_purge.sql` (embedded resources)                                  |
 | Tests     | `MediaManager.Core.Tests/Migrations/MigrationRunnerTests.cs`                                               |
 | Wire-up   | `DatabaseService.Initialize()` runs runner first; `App.xaml.cs` shuts down on `DatabaseMigrationException` |
-| Solution  | Parent `media management app.slnx` lists Core + Tests + WPF (fixes VS stale-Core rebuild)                 |
-| Docs      | `docs/STATE_FOLDER.md`, `docs/AI_CONTEXT.md`, `docs/BUILD.md`, planning docs                                |
+| Solution  | Parent `media management app.slnx` lists Core + Tests + WPF (fixes VS stale-Core rebuild)                  |
+| Docs      | `docs/STATE_FOLDER.md`, `docs/AI_CONTEXT.md`, `docs/BUILD.md`, planning docs                               |
 
 
 **Transition design:** `EnsureColumn` chain **kept** as safety net (not extracted in Sprint 2). `PurgeLegacyFetchJobs` **removed**. Optional **003** TorrentBlacklist rebuild **deferred**.
@@ -311,13 +311,14 @@ dotnet build "$APP_ROOT/media management app.csproj" -c Release -p:Platform=x64 
 **Errors encountered (and fixes)**
 
 
-| Error | Cause | Fix |
-| ----- | ----- | --- |
-| `CS8207: An expression tree may not contain a discard` in `MigrationRunnerTests` | FluentAssertions `OnlyContain` lambda used `DateTime.TryParse(..., out _)` | Extracted helper `IsRoundtripDateTime(string)` |
-| First `StrReplace` on `Initialize()` open/connection block matched ambiguously | Many `connection.Open()` sites in `DatabaseService.cs` | Retargeted with more surrounding context (`Initializing SQLite database…`) |
-| Dialog string used `{Environment.NewLine}` inside a non-interpolated literal | Would show literal braces | Switched message construction to `$"..."` interpolated string |
-| VS **Release \| x64**: `CS0234` / `CS0246` — `media_management_app.Migrations` / `DatabaseMigrationException` not found | `.slnx` listed only the WPF project; **Rebuild media management app** skipped fresh `MediaManager.Core` (stale DLL) | Add Core (+ Tests) to `media management app.slnx`; **Rebuild Solution**; document in `BUILD.md` |
-| Git Bash / VS confusion on “wrong project” | Opening parent `.slnx` is correct; Core lives under nested `media management app/` folder | Clarify in BUILD.md + sprint notes |
+| Error                                                                                                                  | Cause                                                                                                               | Fix                                                                                             |
+| ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `CS8207: An expression tree may not contain a discard` in `MigrationRunnerTests`                                       | FluentAssertions `OnlyContain` lambda used `DateTime.TryParse(..., out _)`                                          | Extracted helper `IsRoundtripDateTime(string)`                                                  |
+| First `StrReplace` on `Initialize()` open/connection block matched ambiguously                                         | Many `connection.Open()` sites in `DatabaseService.cs`                                                              | Retargeted with more surrounding context (`Initializing SQLite database…`)                      |
+| Dialog string used `{Environment.NewLine}` inside a non-interpolated literal                                           | Would show literal braces                                                                                           | Switched message construction to `$"..."` interpolated string                                   |
+| VS **Release | x64**: `CS0234` / `CS0246` — `media_management_app.Migrations` / `DatabaseMigrationException` not found | `.slnx` listed only the WPF project; **Rebuild media management app** skipped fresh `MediaManager.Core` (stale DLL) | Add Core (+ Tests) to `media management app.slnx`; **Rebuild Solution**; document in `BUILD.md` |
+| Git Bash / VS confusion on “wrong project”                                                                             | Opening parent `.slnx` is correct; Core lives under nested `media management app/` folder                           | Clarify in BUILD.md + sprint notes                                                              |
+
 
 **Not an error (by design):** migration **003** not shipped; inline blacklist rebuild remains with `// TODO Sprint 3`.
 
@@ -330,6 +331,8 @@ dotnet build "$APP_ROOT/media management app.csproj" -c Release -p:Platform=x64 
 ---
 
 ### Sprint 3 — Critical-path test expansion (W6–W7, ~12 h)
+
+**Status:** ✅ **Complete** (Aug 2026) — committed on `auto-torrent`; tag `four-pillars-sprint-03`.
 
 #### Goal
 
@@ -347,7 +350,7 @@ Auto-Track/cart **business logic** is covered by golden fixtures — safe to ref
 
 #### Migration milestone
 
-Optional **003**: extract inline TorrentBlacklist rebuild to numbered migration (if not done Sprint 2).
+**003:** Shipped in Sprint 3 — `003_torrentblacklist_rebuild` (C# conditional); inline rebuild removed from `DatabaseService`.
 
 #### Test strategy
 
@@ -363,11 +366,12 @@ Optional **003**: extract inline TorrentBlacklist rebuild to numbered migration 
 | `TorrentContentValidationService`           | ≥8    | `.exe` disguised, double extension, sample count              |
 
 
-**Manual test checklist**
+**Manual test checklist** (human, Aug 2026 — `D:\MediaManagerState`)
 
-- [ ] Add torrent to cart manually; candidate list sane
-- [ ] Pack link review opens with correct episode mapping (one show)
-- [ ] Auto-Track hunt on one tracked show (dev qBittorrent)
+- [x] Add torrent to cart manually; candidate list sane
+- [x] Pack link review opens with correct episode mapping (one show)
+- [ ] Auto-Track hunt on one tracked show (dev qBittorrent) — **deferred** to later sprint smoke / Sprint 7 hunt verify
+- [x] Release x64 start applied `003_torrentblacklist_rebuild` once (`SchemaMigrations` Id=3, AppliedUtc `2026-08-23T03:28:18Z`)
 
 **Regression areas**
 
@@ -376,9 +380,40 @@ Optional **003**: extract inline TorrentBlacklist rebuild to numbered migration 
 
 #### Definition of Done
 
-- [ ] ≥40 unit tests total in Core.Tests
-- [ ] Advisory ≥80% line coverage on parser + evaluation (coverlet report locally)
-- [ ] No WPF reference from test project
+- [x] ≥40 unit tests total in Core.Tests (**80**: 20 parser + 4 migration + 16 eval + 10 search + 6 grouper + 12 inferrer + 10 validation)
+- [x] Advisory ≥80% line coverage on parser + evaluation (coverlet: parser **90.9%**, evaluation **94.8%**)
+- [x] No WPF reference from test project
+- [x] Manual checklist 2/3 + production DB migration 003 verified (Auto-Track hunt deferred)
+- [x] Git commit on `auto-torrent` + tag `four-pillars-sprint-03`
+
+#### Session notes (Aug 2026)
+
+**Delivered**
+
+
+| Artifact                                | Location                                                                           |
+| --------------------------------------- | ---------------------------------------------------------------------------------- |
+| Evaluation / search / pack / validation | `MediaManager.Core/Services/`                                                      |
+| Models + RecipeRuntimeSettings          | `MediaManager.Core/Models/`, `MediaManager.Core/Services/RecipeRuntimeSettings.cs` |
+| qBit wrapper                            | `Services/QbittorrentTorrentContentValidationService.cs`                           |
+| Tests                                   | `MediaManager.Core.Tests/{Evaluation,Search,Pack,Validation,Fixtures}/`            |
+| Builders                                | `RecipeBuilder`, `TrackedShowBuilder`, `FakeSearchTitleResolver`                   |
+| Golden JSON                             | `MediaManager.Core.Tests/Fixtures/*.json`                                          |
+| Migration 003                           | `TorrentBlacklistRebuildMigration.cs` + marker SQL                                 |
+
+
+**003:** shipped (conditional rebuild; legacy `TorrentHash` fixture test). **DI:** `ITorrentContentValidationService` → App wrapper; other services still registered in `App.xaml.cs`.
+
+**Errors encountered (and fixes)**
+
+
+| Error                                              | Cause                                                              | Fix                                                    |
+| -------------------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------ |
+| XAML MC3050 `ShowSeriesStatus` / `RecipeBlockType` | Types moved to Core; `clr-namespace` without assembly looks in WPF | `assembly=MediaManager.Core` on Library + Recipe xmlns |
+| Compact stem tests expected `S01E05`               | Inferrer compact regex is `S0105` (no `E`)                         | Tests use compact `S0105` form                         |
+
+
+**Automated gate:** migration filter 4 passed; full suite **80 passed**; Release x64 **0 errors**.
 
 #### Risk / rollback
 

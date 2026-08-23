@@ -1,27 +1,12 @@
-using media_management_app.Common;
 using media_management_app.Models;
 
 namespace media_management_app.Services;
-
-public interface ITorrentContentValidationService
-{
-    Task<TorrentContentValidationResult> ValidateAsync(
-        string torrentHash,
-        CancellationToken cancellationToken = default);
-
-    Task<TorrentContentValidationResult> ValidateFilesAsync(
-        string torrentHash,
-        IReadOnlyList<TorrentContentFile> files,
-        CancellationToken cancellationToken = default,
-        string? listingName = null,
-        bool isPack = false);
-}
 
 /// <summary>
 /// Validates torrent file lists for dangerous extensions, double-extension obfuscation,
 /// and main-payload format mismatch. Extra files (.nfo, images, subs) are ignored.
 /// </summary>
-public sealed class TorrentContentValidationService : ITorrentContentValidationService
+public sealed class TorrentContentValidationService
 {
     private static readonly HashSet<string> PayloadIgnoreExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -32,29 +17,15 @@ public sealed class TorrentContentValidationService : ITorrentContentValidationS
 
     private const int PackPayloadCount = 3;
 
-    private readonly IQbittorrentClient _qbittorrentClient;
-    private readonly ISettingsService _settingsService;
-    private readonly IAppLogger _logger;
+    private readonly Func<TorrentValidationConfig> _getConfig;
+    private readonly ITorrentContentValidationLogger? _logger;
 
     public TorrentContentValidationService(
-        IQbittorrentClient qbittorrentClient,
-        ISettingsService settingsService,
-        IAppLogger logger)
+        Func<TorrentValidationConfig>? getConfig = null,
+        ITorrentContentValidationLogger? logger = null)
     {
-        _qbittorrentClient = qbittorrentClient;
-        _settingsService = settingsService;
+        _getConfig = getConfig ?? (() => new TorrentValidationConfig());
         _logger = logger;
-    }
-
-    private TorrentValidationConfig Config =>
-        _settingsService.Current.TorrentValidation ?? new TorrentValidationConfig();
-
-    public async Task<TorrentContentValidationResult> ValidateAsync(
-        string torrentHash,
-        CancellationToken cancellationToken = default)
-    {
-        var files = await _qbittorrentClient.GetTorrentFilesAsync(torrentHash, cancellationToken);
-        return await ValidateFilesAsync(torrentHash, files, cancellationToken);
     }
 
     public Task<TorrentContentValidationResult> ValidateFilesAsync(
@@ -73,7 +44,7 @@ public sealed class TorrentContentValidationService : ITorrentContentValidationS
             Recommendation = TorrentHandleRecommendation.Safe
         };
 
-        var config = Config;
+        var config = _getConfig() ?? new TorrentValidationConfig();
         if (!config.EnableContentValidation)
         {
             return Task.FromResult(result);
@@ -97,11 +68,11 @@ public sealed class TorrentContentValidationService : ITorrentContentValidationS
         if (!result.IsValid)
         {
             result.Recommendation = TorrentHandleRecommendation.Delete;
-            _logger.Info($"Torrent validation for {torrentHash}: {result.Summary}", LogTarget.File | LogTarget.Console);
+            _logger?.Info($"Torrent validation for {torrentHash}: {result.Summary}");
         }
         else
         {
-            _logger.Debug($"Torrent validation for {torrentHash}: {result.Summary}", LogTarget.File);
+            _logger?.Debug($"Torrent validation for {torrentHash}: {result.Summary}");
         }
 
         return Task.FromResult(result);
@@ -132,9 +103,8 @@ public sealed class TorrentContentValidationService : ITorrentContentValidationS
                 SuspicionLevel = SuspicionLevel.Critical
             });
             result.IsValid = false;
-            _logger.Warning(
-                $"Critical malware indicator: {extension} file '{fileName}' in torrent {result.TorrentHash}",
-                LogTarget.All);
+            _logger?.Warning(
+                $"Critical malware indicator: {extension} file '{fileName}' in torrent {result.TorrentHash}");
         }
 
         if (config.CheckExtensionObfuscation && IsLikelyObfuscated(fileName, extension, config, dangerous))
@@ -148,9 +118,8 @@ public sealed class TorrentContentValidationService : ITorrentContentValidationS
                 SuspicionLevel = SuspicionLevel.High
             });
             result.IsValid = false;
-            _logger.Warning(
-                $"Possible obfuscation: '{fileName}' in torrent {result.TorrentHash}",
-                LogTarget.All);
+            _logger?.Warning(
+                $"Possible obfuscation: '{fileName}' in torrent {result.TorrentHash}");
         }
     }
 
@@ -190,12 +159,10 @@ public sealed class TorrentContentValidationService : ITorrentContentValidationS
                 SuspicionLevel = SuspicionLevel.Critical
             });
             result.IsValid = false;
-            _logger.Warning(
-                $"Payload mismatch: '{fileName}' ext={extension} listing='{listingName}' torrent={result.TorrentHash}",
-                LogTarget.File | LogTarget.Console);
-            _logger.Debug(
-                $"Payload mismatch details: path='{payload.Name}', size={payload.Size}, pack={isPack}.",
-                LogTarget.File);
+            _logger?.Warning(
+                $"Payload mismatch: '{fileName}' ext={extension} listing='{listingName}' torrent={result.TorrentHash}");
+            _logger?.Debug(
+                $"Payload mismatch details: path='{payload.Name}', size={payload.Size}, pack={isPack}.");
         }
     }
 

@@ -141,7 +141,7 @@ Contains refresh/access tokens — **do not share or document contents**.
 ## Database
 
 - **File:** `media-manager.db` (SQLite)
-- **Init:** `DatabaseService.Initialize()` runs `MigrationRunner.ApplyPendingMigrations()` first (`001_baseline` then `002_fetchjobs_legacy_purge`), then the existing `CREATE TABLE IF NOT EXISTS` + `EnsureColumn` safety net
+- **Init:** `DatabaseService.Initialize()` runs `MigrationRunner.ApplyPendingMigrations()` first (`001_baseline` → `002_fetchjobs_legacy_purge` → `003_torrentblacklist_rebuild`), then the existing `CREATE TABLE IF NOT EXISTS` + `EnsureColumn` safety net
 - **History table:** `SchemaMigrations` (`Id`, `Name`, `AppliedUtc`) records each applied script
 - **Safe snapshot:** `DatabaseService.CreateSafeSnapshot()` for backups (WAL checkpoint + copy)
 - **Migration failure:** startup is blocked with an error dialog; restore `media-manager.db` from a Google Drive backup (Settings → Backup) or a local snapshot from `CreateSafeSnapshot()`
@@ -164,6 +164,19 @@ DELETE FROM FetchJobs;
 **Why:** Legacy background fetch job tracking was replaced by `TorrentCartOrders` + in-memory search.
 
 **Code:** `MediaManager.Core/Migrations/002_fetchjobs_legacy_purge.sql` via `MigrationRunner`
+
+---
+
+## TorrentBlacklist Legacy Rebuild
+
+One-time migration **`003_torrentblacklist_rebuild`** (Sprint 3):
+
+- If `TorrentBlacklist` still has legacy `TorrentHash` (NOT NULL, no default), rebuild to the InfoHash-only schema and copy hash data into `InfoHash`
+- No-op when `TorrentHash` is already absent (modern / already-rebuilt DBs)
+- Implemented in C# (`TorrentBlacklistRebuildMigration`) because the branch depends on `PRAGMA table_info`
+- Marker SQL: `MediaManager.Core/Migrations/003_torrentblacklist_rebuild.sql`
+
+**Code:** `MediaManager.Core/Migrations/TorrentBlacklistRebuildMigration.cs` via `MigrationRunner`
 
 ---
 

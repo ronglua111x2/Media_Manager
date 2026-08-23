@@ -19,8 +19,8 @@ meta:
   default_state_folder: D:\MediaManagerState
   default_db: "{StateFolder}/media-manager.db"
   default_settings: "{StateFolder}/settings.json"
-  initiative_status: "Sprint 2 complete; Sprint 3 next"
-  tag: four-pillars-sprint-02
+  initiative_status: "Sprint 3 complete; Sprint 4 next"
+  tag: four-pillars-sprint-03
   workflow_doc: docs/planning/06-ai-execution-guide.md#20-mandatory-pre-sprint-workflow-git--plan-mode
   sprint_plan_folder: docs/planning/sprint-plans/
   before_coding: "git check on auto-torrent; Plan Mode local plan for each new sprint"
@@ -118,11 +118,14 @@ migration_strategy:
   applied:
     - 001_baseline
     - 002_fetchjobs_legacy_purge
+    - 003_torrentblacklist_rebuild
   init_file: Services/DatabaseService.cs
-  methods: [MigrationRunner.ApplyPendingMigrations, CREATE TABLE IF NOT EXISTS, EnsureColumn, table_rebuild]
+  methods: [MigrationRunner.ApplyPendingMigrations, CREATE TABLE IF NOT EXISTS, EnsureColumn]
   failure_policy: block_startup
   failure_recovery: restore media-manager.db from Google Drive backup or CreateSafeSnapshot()
   ensure_column_chain: retained as transition safety net until later sprint
+  code_migrations:
+    - 003_torrentblacklist_rebuild: MediaManager.Core/Migrations/TorrentBlacklistRebuildMigration.cs
 ```
 
 ---
@@ -479,7 +482,7 @@ startup_order:
   4: Gemini model catalog reload + normalize
   5: ThemeService.Apply()
   6: DatabaseService.Initialize(stateFolder)
-    side_effect: MigrationRunner applies pending SchemaMigrations (001_baseline, 002_fetchjobs_legacy_purge once)
+    side_effect: MigrationRunner applies pending SchemaMigrations (001_baseline, 002_fetchjobs_legacy_purge, 003_torrentblacklist_rebuild once)
     on_failure: DatabaseMigrationException + dialog; App.OnStartup Shutdown()
   7: LogCleanupService.Start()
   8: SymlinkCoordinatorService.Start()
@@ -502,30 +505,40 @@ shutdown_order:
 
 ---
 
-## MediaManager.Core (Sprint 1)
+## MediaManager.Core (Sprint 1–3)
 
-Pure torrent parsing logic extracted to a **net8.0** class library so unit tests run without WPF.
+Pure torrent / recipe / pack / validation logic extracted to a **net8.0** class library so unit tests run without WPF.
 
 ```yaml
 core:
   project: MediaManager.Core/MediaManager.Core.csproj
   tfm: net8.0
   tests: MediaManager.Core.Tests/MediaManager.Core.Tests.csproj
-  test_stack: [xUnit, FluentAssertions]
+  test_stack: [xUnit, FluentAssertions, coverlet.collector]
+  test_count: 80
   wpf_reference: media management app.csproj -> ProjectReference MediaManager.Core
   moved_types:
     - TorrentCandidateParser (+ TorrentCandidateParseResult)
     - TorrentReleaseKind (+ TorrentReleaseKindFlags)
     - TorrentQuality (Detect, GetRank, AllQualities, MatchesSelectedQuality)
     - MediaKind (enum; removed duplicate from Common/AppEnums.cs)
-  wpf_only:
-    - TorrentQualityScoring (CalculateSizeScore, CalculateCandidateScore — needs CandidateScoringWeights)
-  namespaces_unchanged: media_management_app.Services, media_management_app.Common
-  sprint_3_moves: CandidateEvaluationService, SearchPlanBuilder, pack/validation services (not yet)
+    - CandidateEvaluationService + ICandidateEvaluationService
+    - SearchPlanBuilder + ISearchPlanBuilder
+    - SearchTitleResolver + ISearchTitleResolver
+    - PackSeasonFileGrouper, PackEpisodePatternInferrer, PackSpecialBucketDetector
+    - TorrentContentValidationService (file-list); ITorrentContentValidationService
+    - RecipeRuntimeSettings, Recipe/Tracked/validation models
+  app_wrapper:
+    - QbittorrentTorrentContentValidationService (ValidateAsync via qBit, then Core file-list)
+  namespaces_unchanged: media_management_app.Services, media_management_app.Models, media_management_app.Common
+  coverage_advisory:
+    TorrentCandidateParser: "90.9% line"
+    CandidateEvaluationService: "94.8% line"
   sprint_2:
     runner: MediaManager.Core/Migrations/MigrationRunner.cs
     tests: MediaManager.Core.Tests/Migrations/MigrationRunnerTests.cs
-    migrations: [001_baseline, 002_fetchjobs_legacy_purge]
+    migrations: [001_baseline, 002_fetchjobs_legacy_purge, 003_torrentblacklist_rebuild]
+  sprint_3_note: "003 TorrentBlacklist rebuild extracted from DatabaseService (C# conditional migration)"
 ```
 
 ---

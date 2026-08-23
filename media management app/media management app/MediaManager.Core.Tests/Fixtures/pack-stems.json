@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "description": "Stem lists for PackEpisodePatternInferrer (Appendix A sequential / compact / revision).",
+  "cases": [
+    {
+      "id": "fixed-width-two-digit",
+      "stems": ["Show Name - 01", "Show Name - 02", "Show Name - 03"]
+    },
+    {
+      "id": "compact-sxxexx-suffix",
+      "stems": ["Show Name S01E01", "Show Name S01E02", "Show Name S01E03"]
+    },
+    {
+      "id": "repack-crc",
+      "stems": ["Show Name - 01 v2 [A1B2C3D4]", "Show Name - 02 REPACK [E5F6A7B8]"]
+    }
+  ]
+}

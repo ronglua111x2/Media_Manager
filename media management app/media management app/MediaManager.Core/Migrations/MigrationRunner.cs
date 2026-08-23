@@ -14,7 +14,7 @@ public static class MigrationRunner
         {
             EnsureHistoryTable(connection);
             var applied = GetAppliedNames(connection);
-            foreach (var migration in LoadEmbeddedMigrations())
+            foreach (var migration in LoadAllMigrations())
             {
                 if (applied.Contains(migration.Name))
                 {
@@ -25,7 +25,15 @@ public static class MigrationRunner
                 using var transaction = connection.BeginTransaction();
                 try
                 {
-                    ExecuteSql(connection, transaction, migration.Sql);
+                    if (migration.ApplyCode is not null)
+                    {
+                        migration.ApplyCode(connection, transaction);
+                    }
+                    else if (!string.IsNullOrWhiteSpace(migration.Sql))
+                    {
+                        ExecuteSql(connection, transaction, migration.Sql);
+                    }
+
                     RecordApplied(connection, transaction, migration.Name);
                     transaction.Commit();
                     logInfo?.Invoke($"Applied database migration {migration.Name}");
@@ -130,7 +138,28 @@ public static class MigrationRunner
         }
     }
 
-    private static IReadOnlyList<EmbeddedMigration> LoadEmbeddedMigrations()
+    private static IReadOnlyList<EmbeddedMigration> LoadAllMigrations()
+    {
+        var migrations = new Dictionary<string, EmbeddedMigration>(StringComparer.Ordinal);
+
+        foreach (var sqlMigration in LoadEmbeddedSqlMigrations())
+        {
+            migrations[sqlMigration.Name] = sqlMigration;
+        }
+
+        // Conditional rebuild cannot be expressed in plain SQL (needs PRAGMA table_info).
+        // Prefer the C# apply path over the no-op marker SQL for the same name.
+        migrations[TorrentBlacklistRebuildMigration.Name] = new EmbeddedMigration(
+            TorrentBlacklistRebuildMigration.Name,
+            Sql: null,
+            ApplyCode: TorrentBlacklistRebuildMigration.Apply);
+
+        return migrations.Values
+            .OrderBy(migration => migration.Name, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    private static IReadOnlyList<EmbeddedMigration> LoadEmbeddedSqlMigrations()
     {
         var assembly = typeof(MigrationRunner).Assembly;
         var migrations = new List<EmbeddedMigration>();
@@ -151,13 +180,14 @@ public static class MigrationRunner
             using var stream = assembly.GetManifestResourceStream(resourceName)
                 ?? throw new InvalidOperationException($"Missing embedded migration resource '{resourceName}'.");
             using var reader = new StreamReader(stream);
-            migrations.Add(new EmbeddedMigration(name, reader.ReadToEnd()));
+            migrations.Add(new EmbeddedMigration(name, reader.ReadToEnd(), ApplyCode: null));
         }
 
-        migrations.Sort(static (left, right) =>
-            string.Compare(left.Name, right.Name, StringComparison.Ordinal));
         return migrations;
     }
 
-    private sealed record EmbeddedMigration(string Name, string Sql);
+    private sealed record EmbeddedMigration(
+        string Name,
+        string? Sql,
+        Action<SqliteConnection, SqliteTransaction>? ApplyCode);
 }

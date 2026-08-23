@@ -2,7 +2,7 @@
 
 **Audience:** Solo developer using Cursor (or similar AI coding agents)  
 **Companion docs:** [05-sprint-timeline.md](./05-sprint-timeline.md) — sprint goals, DoD, test gates (source of truth); [BUILD.md](../BUILD.md) — **canonical build/test commands** (x64 merge gate)  
-**Status:** Active — Sprint 0–2 complete; use §2.0 workflow before Sprint 3+
+**Status:** Active — Sprint 0–3 complete; use §2.0 workflow before Sprint 4+
 
 ---
 
@@ -114,6 +114,28 @@ Commit the local plan in the same sprint PR (or immediately after Plan Mode) so 
 2. Open a **fresh Agent chat** per sprint merge — avoids stale context and hallucinated file paths.
 3. **You merge; AI proposes.** Never stack two sprints in one PR.
 4. End every session with: build → test → manual smoke → commit message draft.
+5. **After each sprint closes** (commit + tag): run a **progress-review session** (§2.1a) before Plan Mode for the next sprint.
+
+### 2.1a Post-sprint progress review (mandatory after each closed sprint)
+
+Dedicated chat (not mixed with implementation). Goal: score DoD honestly, list carry-forwards, confirm the test gate is still green, then unlock the next sprint’s Plan Mode.
+
+**Attach:** `@docs/planning/05-sprint-timeline.md` · `@docs/planning/sprint-plans/` · `@docs/planning/06-ai-execution-guide.md` · current sprint local plan if any.
+
+**Review checklist**
+
+| Check | Pass if |
+| ----- | ------- |
+| DoD vs 05 | Every checkbox met or explicitly deferred with owner sprint |
+| Tag / commit | `four-pillars-sprint-NN` on `auto-torrent` |
+| Test gate | `dotnet test` + Release x64 green (counts match 05) |
+| Manual checklist | Human-signed items in 05 / local plan |
+| Carry-forward | Deferred items listed for next sprint (builders, 003, etc.) |
+| Process debt | Local plan existed (or retro noted); no scope creep into next epic |
+
+**Output:** short verdict (on track / at risk / blocked) + carry-forward list + “next: Sprint N+1 Plan Mode”. Update 05 session notes if facts changed during review.
+
+**First review:** Sprint 0–2 batch (Aug 2026) — foundation complete. Sprint 3 closed (80 tests + 003 + human 2/3); next Plan Mode is Sprint 4.
 
 ### 2.2 What to attach every time
 
