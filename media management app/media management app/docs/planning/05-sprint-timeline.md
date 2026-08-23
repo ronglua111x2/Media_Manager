@@ -2,7 +2,7 @@
 
 **Audience:** Solo developer (part-time, ~10–15 h/week)  
 **Initiative scope:** E1 Stability + E2 Correctness + E3 UX freshness + E4 Maintainability  
-**Status:** In progress — Sprint 0–3 complete on `auto-torrent`; Sprint 4 next  
+**Status:** In progress — Sprint 0–4 complete on `auto-torrent`; Sprint 5 next (Settings split)  
 **Canonical dev branch:** `auto-torrent` (not `origin/main`, which is ~76 commits behind)  
 **Workflow:** Git check + Plan Mode local plan before every new sprint — see [06-ai-execution-guide.md §2.0](./06-ai-execution-guide.md#20-mandatory-pre-sprint-workflow-git--plan-mode). After each closed sprint: [progress review §2.1a](./06-ai-execution-guide.md#21a-post-sprint-progress-review-mandatory-after-each-closed-sprint).  
 **Related:** [00-integrated-roadmap.md](./00-integrated-roadmap.md) · [01](./01-database-migration-versioning.md) · [02](./02-unit-tests-critical-paths.md) · [03](./03-split-large-viewmodels-services.md) · [04](./04-transient-vs-singleton-viewmodels.md) · [06-ai-execution-guide.md](./06-ai-execution-guide.md)
@@ -92,8 +92,8 @@ Sprint 10  [Closeout & regression]              All epics verified
 | **0**  | W0–W1        | 8          | ✅ Done | Decisions locked; repos designed       | Migration inventory, Core project plan, branch strategy                       | N/A (docs only)                               |
 | **1**  | W2–W3        | 12         | ✅ Done | Testable Core boundary exists          | `MediaManager.Core` + xUnit project; parser tests ≥15                         | `dotnet test` green; MSBuild x64 app build    |
 | **2**  | W4–W5        | 12         | ✅ Done | Trustworthy DB upgrades                | `SchemaMigrations` runner; 001 baseline + 002 FetchJobs once; migration tests | Migration tests + manual DB upgrade           |
-| **3**  | W6–W7        | 12         | ✅ Done  | Critical logic regression-safe         | Evaluation, search, pack, validation test suites                              | ≥40 unit tests total; manual cart smoke       |
-| **4**  | W8–W9        | 12         | ⬜      | Stale UI fixed via navigation contract | `INavigationAware`; per-workspace refresh; Torrent cancel on leave            | Manual stale-UI repro scripts pass            |
+| **3**  | W6–W7        | 12         | ✅ Done | Critical logic regression-safe         | Evaluation, search, pack, validation test suites                              | ≥40 unit tests total; manual cart smoke       |
+| **4**  | W8–W9        | 12         | ✅ Done | Stale UI fixed via navigation contract | `INavigationAware`; per-workspace refresh; Torrent cart continues off-tab     | Manual stale-UI repro scripts pass            |
 | **5**  | W10–W11      | 12         | ⬜      | Settings maintainable (half)           | Integrations + Backup + System section sub-VMs + user controls                | Unit tests green; settings manual checklist   |
 | **6**  | W12–W13      | 12         | ⬜      | Settings fully decomposed              | Remaining 4 section sub-VMs; host orchestrates save/load                      | Same + dirty-tracking verified                |
 | **7**  | W14–W15      | 12         | ⬜      | AutoTrack phases isolated              | Discovery / Hunt / Reconcile services + façade                                | Hunt tests still green; Auto-Track manual run |
@@ -311,13 +311,13 @@ dotnet build "$APP_ROOT/media management app.csproj" -c Release -p:Platform=x64 
 **Errors encountered (and fixes)**
 
 
-| Error                                                                                                                  | Cause                                                                                                               | Fix                                                                                             |
-| ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `CS8207: An expression tree may not contain a discard` in `MigrationRunnerTests`                                       | FluentAssertions `OnlyContain` lambda used `DateTime.TryParse(..., out _)`                                          | Extracted helper `IsRoundtripDateTime(string)`                                                  |
-| First `StrReplace` on `Initialize()` open/connection block matched ambiguously                                         | Many `connection.Open()` sites in `DatabaseService.cs`                                                              | Retargeted with more surrounding context (`Initializing SQLite database…`)                      |
-| Dialog string used `{Environment.NewLine}` inside a non-interpolated literal                                           | Would show literal braces                                                                                           | Switched message construction to `$"..."` interpolated string                                   |
-| VS **Release | x64**: `CS0234` / `CS0246` — `media_management_app.Migrations` / `DatabaseMigrationException` not found | `.slnx` listed only the WPF project; **Rebuild media management app** skipped fresh `MediaManager.Core` (stale DLL) | Add Core (+ Tests) to `media management app.slnx`; **Rebuild Solution**; document in `BUILD.md` |
-| Git Bash / VS confusion on “wrong project”                                                                             | Opening parent `.slnx` is correct; Core lives under nested `media management app/` folder                           | Clarify in BUILD.md + sprint notes                                                              |
+| Error                                                                            | Cause                                                                                                   | Fix                                                                                                                 |
+| -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `CS8207: An expression tree may not contain a discard` in `MigrationRunnerTests` | FluentAssertions `OnlyContain` lambda used `DateTime.TryParse(..., out _)`                              | Extracted helper `IsRoundtripDateTime(string)`                                                                      |
+| First `StrReplace` on `Initialize()` open/connection block matched ambiguously   | Many `connection.Open()` sites in `DatabaseService.cs`                                                  | Retargeted with more surrounding context (`Initializing SQLite database…`)                                          |
+| Dialog string used `{Environment.NewLine}` inside a non-interpolated literal     | Would show literal braces                                                                               | Switched message construction to `$"..."` interpolated string                                                       |
+| VS **Release                                                                     | x64**: `CS0234` / `CS0246` — `media_management_app.Migrations` / `DatabaseMigrationException` not found | `.slnx` listed only the WPF project; **Rebuild media management app** skipped fresh `MediaManager.Core` (stale DLL) |
+| Git Bash / VS confusion on “wrong project”                                       | Opening parent `.slnx` is correct; Core lives under nested `media management app/` folder               | Clarify in BUILD.md + sprint notes                                                                                  |
 
 
 **Not an error (by design):** migration **003** not shipped; inline blacklist rebuild remains with `// TODO Sprint 3`.
@@ -423,6 +423,8 @@ Auto-Track/cart **business logic** is covered by golden fixtures — safe to ref
 
 ### Sprint 4 — Navigation refresh hooks (E3) (W8–W9, ~12 h)
 
+**Status:** ✅ **Complete** (Aug 2026) — committed on `auto-torrent`; tag `four-pillars-sprint-04`.
+
 #### Goal
 
 **Returning to a workspace shows fresh data** without manual Refresh; background Auto-Track/cart updates visible on next visit.
@@ -435,8 +437,8 @@ Auto-Track/cart **business logic** is covered by golden fixtures — safe to ref
 | `INavigationAware` (`OnNavigatedTo` / `OnNavigatedFrom`) on `ViewModelBase`                          | Transient VMs (Phase 5)                       |
 | `MainViewModel.NavigateTo` invokes hooks                                                             | Splitting large VMs                           |
 | Per-workspace refresh policy (see [04 § draft behaviors](./04-transient-vs-singleton-viewmodels.md)) | Full `IWorkspaceRefreshService` unless needed |
-| Cancel Torrent `_operationCts` on `OnNavigatedFrom`                                                  | Settings dirty-tracking (Sprint 6)            |
-| FindAdd: `RefreshExistingMedia()` on navigate                                                        |                                               |
+| Torrent cart/search **keep running** when navigating away (explicit Stop only)                       | Cancel `_operationCts` on leave               |
+| FindAdd: `RefreshExistingMedia()` on navigate                                                        | Settings dirty-tracking (Sprint 6)            |
 
 
 #### Migration milestone
@@ -450,18 +452,14 @@ None.
 - Optional: `NavigationAwareTests` for a small coordinator if extracted to Core (low priority)
 - **Regression:** Full Core test suite green
 
-**Manual test checklist** (stale-UI repro scripts)
+**Manual test checklist** (stale-UI repro scripts) — tick as you run:
 
-
-| #   | Script                                                               | Expected                                                                       |
-| --- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| 1   | Auto-Track run → News → Library                                      | Library grid reflects new/changed tracked media without Refresh                |
-| 2   | Cart add in Torrent → Library → Torrent                              | Cart badge/state updated                                                       |
-| 3   | Edit `settings.json` path externally → Settings workspace            | Reload shows disk values (or dirty prompt if editing — full dirty in Sprint 6) |
-| 4   | Start torrent search → navigate away mid-search                      | Operation cancelled; no background UI updates on wrong tab                     |
-| 5   | FindAdd → Library → FindAdd                                          | Existing-media flags updated                                                   |
-| 6   | Long session: minimize to tray (background mode) → restore → Library | Poster reload policy still works                                               |
-
+- [x] **1** Auto-Track run → News → Library — Library grid reflects new/changed tracked media without Refresh
+- [x] **2** Cart add in Torrent → Library → Torrent — Cart badge/state updated
+- [x] **3** Edit `settings.json` externally → Settings workspace — Reload shows disk values (dirty prompt = Sprint 6)
+- [x] **4** Start torrent search → navigate away mid-search → return to Torrent — Search/cart **still running** (or completed); Stop still works; no forced cancel on leave
+- [x] **5** FindAdd → Library → FindAdd — Existing-media flags updated
+- [x] **6** Long session: minimize to tray → restore → Library — Poster reload policy still works
 
 **Regression areas**
 
@@ -471,13 +469,22 @@ None.
 
 #### Definition of Done
 
-- [ ] All seven workspace VMs implement refresh policy (documented in code or `AI_CONTEXT.md`)
-- [ ] Repro scripts 1–5 pass
-- [ ] No new singleton memory leaks from duplicate event subscriptions
+- [x] All seven workspace VMs implement refresh policy (documented in code or `AI_CONTEXT.md`)
+- [x] Repro scripts 1–5 pass (checkboxes above)
+- [x] No new singleton memory leaks from duplicate event subscriptions
+- [x] Torrent (and similar UI long-ops) do **not** cancel solely because the user changed workspace
+- [x] Git commit on `auto-torrent` + tag `four-pillars-sprint-04`
 
 #### Risk / rollback
 
-**Risk:** Over-refresh causes slow tab switches on large libraries. **Mitigation:** Catalog refresh may be incremental later; for initiative, full `RefreshLibrary()` acceptable per [04](./04-transient-vs-singleton-viewmodels.md). **Rollback:** Revert hook wiring; VMs behave as before.
+**Risk:** Over-refresh causes slow tab switches on large libraries. **Mitigation:** Catalog refresh may be incremental later; for initiative, full `RefreshLibrary()` acceptable per [04](./04-transient-vs-singleton-viewmodels.md). **Accepted:** cart/search UI updates may continue while on another tab (single-user personal app). **Rollback:** Revert hook wiring; VMs behave as before.
+
+#### Session notes (Aug 2026)
+
+- Policy change vs early Sprint 4 draft: **no** `_operationCts.Cancel()` on `OnNavigatedFrom` — multitask across tabs preferred for personal single-user use.
+- Cancel path remains explicit **Stop** on Torrent workspace.
+- Human stale-UI scripts **1–6** passed (Aug 2026).
+- **Known debt (not S4):** Library detail poster flashes **No cover** when `Reconciled`/`PackReconciled` fires a full `LoadSelectedMediaAsync` while the user is already on Library — carry to Sprint 8 (see Sprint 8 notes).
 
 ---
 
@@ -652,6 +659,10 @@ None.
 | Host `LibraryViewModel` composes catalog + detail; XAML `ContentControl` for detail | Database repos                                                   |
 
 
+**Known issue to address in this sprint (carry from S4 investigation):**  
+Auto-Track / torrent `Reconciled` (and `PackReconciled`) currently call full `LoadSelectedMediaAsync` on `LibraryViewModel`, which clears `SelectedPosterImage` then rebuilds detail. While the user is already on Library with a media selected, the cover flashes **No cover** (or stays blank until navigate away/back). Pending-queue-only reconcile reduces frequency but does not fix the handler. Prefer a scoped detail refresh (availability/cart/link only; keep poster) owned by `LibraryDetailViewModel` after the split — do not rely on Sprint 4 navigate-away refresh as the fix.
+
+
 #### Migration milestone
 
 None.
@@ -673,6 +684,7 @@ None.
 - [ ] Delete media; watch status; rating
 - [ ] Sprint 4 Library navigation script still passes
 - [ ] Selection restored from `settings.json` after restart
+- [ ] Reconcile while Library detail is open — poster does **not** reset to No cover (S4 known debt)
 
 **Regression areas**
 
@@ -873,7 +885,7 @@ Legend: ✅ = primary sprint for coverage · 🔄 = extend existing · — = not
 
 - `INavigationAware` wired for all workspaces
 - Documented refresh policy per workspace in `AI_CONTEXT.md`
-- Torrent long operations cancel on navigate away
+- Torrent (and similar workspace UI) long operations **continue** when navigating away; explicit Stop cancels
 - Settings reload respects dirty-tracking
 
 ### Maintainability (E4)
@@ -909,7 +921,7 @@ Use as copy-paste test run; mark date and app version.
 [ ] DB upgrade from legacy backup
 [ ] Fresh install migration chain
 [ ] Library: browse, detail, import, delete, pack link, cart add
-[ ] Torrent: search, recipe, cart run, cancel on navigate
+[ ] Torrent: search, recipe, cart run; cart continues if user switches tabs (Stop still works)
 [ ] Auto-Track: discovery, hunt, reconcile, notifications
 [ ] FindAdd: TMDB search, add show/movie
 [ ] Recipe workspace: open, edit, save .rcp

@@ -101,6 +101,15 @@ public sealed partial class LibraryViewModel : ViewModelBase
         StatusMessage = "Select a media card to view details.";
     }
 
+    public override void OnNavigatedTo()
+    {
+        // Force detail reload even when the same card remains selected (04 stale-detail bug).
+        _loadedDetailMediaId = null;
+        _loadedDetailMediaKind = null;
+        RefreshLibrary();
+        _ = ReloadSelectedDetailAsync();
+    }
+
     private bool _isRestoringLibraryUiState;
     private bool _suppressWatchStatusFilterApply;
     private long? _pendingRestoreMediaId;

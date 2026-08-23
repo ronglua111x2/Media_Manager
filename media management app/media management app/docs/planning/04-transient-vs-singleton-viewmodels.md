@@ -2,7 +2,7 @@
 
 **Priority:** High  
 **Source:** [IMPROVEMENTS.md](../IMPROVEMENTS.md) § Priority: High #4  
-**Status:** Planning only — no implementation yet
+**Status:** Option A implemented (Sprint 4) — singleton VMs + `INavigationAware` hooks; Phase 5 transient VMs still reserved
 
 ---
 
@@ -120,7 +120,7 @@ There is **no** `IWorkspaceNavigable`, `OnNavigatedTo`, or `OnNavigatedFrom` any
 | **Stale UI** | User returns to Library/Torrent after Auto-Track run; grid not updated until Refresh |
 | **Memory** | Posters + full card lists for all workspaces for hours/days |
 | **Wrong detail pane** | `_loadedDetailMediaId` optimization may skip reload when underlying DB changed |
-| **Duplicate operations** | Torrent workspace `_operationCts` may span navigations away |
+| **Duplicate operations** | Torrent `_operationCts` may span navigations by design — cart/search continue off-tab; user Stop cancels |
 | **Settings drift** | `SettingsViewModel.LoadFromSettings()` only at startup |
 | **Confusing bugs** | Hard to reproduce “left tab open overnight” reports |
 
@@ -203,7 +203,7 @@ Create a scope per workspace visit; dispose scope on leave. Middle ground betwee
 3. **Introduce navigation interface** — `INavigationAware` on `ViewModelBase` optional implementation.
 4. **Wire MainViewModel** — Call `OnNavigatedFrom` on old, `OnNavigatedTo` on new workspace.
 5. **Event hub optional** — `IWorkspaceRefreshService`.Publish(`LibraryCatalogInvalidated`) for background updates while away.
-6. **Memory pass** — Ensure `IDisposable` clears poster caches, cancels `_operationCts` on Torrent VM leave.
+6. **Memory pass** — Ensure `IDisposable` clears poster caches on dispose; Torrent `_operationCts` is **not** cancelled on navigate away (multitask); cancel only via explicit Stop / `BeginOperation` replacement.
 7. **Evaluate transient pilot** — Try `FindAddViewModel` transient first (smallest blast radius, no detail persistence).
 8. **Measure** — Working set before/after long session with 500+ library items.
 
@@ -215,7 +215,7 @@ Create a scope per workspace visit; dispose scope on leave. Middle ground betwee
 | Auto-Track | Refresh show cards + scheduler status |
 | FindAdd | `RefreshExistingMedia()` |
 | Library | `RefreshLibrary()` + restore selection from settings |
-| Torrent | Reload media cards + cart list |
+| Torrent | Reload media cards + cart list (`RefreshWorkspace`); leave mid-run allowed |
 | Recipe | Reload recipe list if `RecipesChanged` fired while away |
 | Settings | `LoadFromSettings()` |
 

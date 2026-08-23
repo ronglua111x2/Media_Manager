@@ -52,6 +52,8 @@ public sealed partial class TmdbUnifiedSearchResult : ObservableObject
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(LibraryStatus))]
     [NotifyPropertyChangedFor(nameof(StatusSortValue))]
+    [NotifyPropertyChangedFor(nameof(StatusAccentBrushKey))]
+    [NotifyPropertyChangedFor(nameof(StatusChipBackgroundBrushKey))]
     private bool isAlreadyAdded;
 
     [ObservableProperty]

@@ -2,7 +2,7 @@
 
 **Audience:** Solo developer using Cursor (or similar AI coding agents)  
 **Companion docs:** [05-sprint-timeline.md](./05-sprint-timeline.md) — sprint goals, DoD, test gates (source of truth); [BUILD.md](../BUILD.md) — **canonical build/test commands** (x64 merge gate)  
-**Status:** Active — Sprint 0–3 complete; use §2.0 workflow before Sprint 4+
+**Status:** Active — Sprint 0–4 complete; use §2.0 workflow before Sprint 5+
 
 ---
 
@@ -135,7 +135,7 @@ Dedicated chat (not mixed with implementation). Goal: score DoD honestly, list c
 
 **Output:** short verdict (on track / at risk / blocked) + carry-forward list + “next: Sprint N+1 Plan Mode”. Update 05 session notes if facts changed during review.
 
-**First review:** Sprint 0–2 batch (Aug 2026) — foundation complete. Sprint 3 closed (80 tests + 003 + human 2/3); next Plan Mode is Sprint 4.
+**First review:** Sprint 0–2 batch (Aug 2026) — foundation complete. Sprint 3 closed (80 tests + 003 + human 2/3). Sprint 4 closed (INavigationAware + human scripts 1–6); next Plan Mode is Sprint 5.
 
 ### 2.2 What to attach every time
 
@@ -199,11 +199,13 @@ Regression: Sprint 1 parser tests must stay green.
 Implement INavigationAware per Sprint 4 in @docs/planning/05-sprint-timeline.md and @docs/planning/04-transient-vs-singleton-viewmodels.md.
 
 Wire MainViewModel.NavigateTo to OnNavigatedTo/From on all workspace VMs.
-Cancel Torrent _operationCts on navigate away. FindAdd: RefreshExistingMedia on navigate.
+Torrent: do NOT cancel _operationCts on navigate away — cart/search continue; explicit Stop only.
+FindAdd: RefreshExistingMedia on navigate.
 
 Do NOT split ViewModels. Do NOT add transient DI registration.
 
 Manual repro scripts 1–5 in 05 must pass after implementation — list what you changed for each script.
+Update planning docs + AI_CONTEXT when touching code (see AI_CONTEXT meta.when_touching_code).
 ```
 
 #### VM / service split (S5–S9)
@@ -486,11 +488,11 @@ DoD: [paste Sprint 3 checklist]
 
 | | |
 | --- | --- |
-| **Goal** | `INavigationAware`; fresh data on workspace return; cancel Torrent ops on leave. |
+| **Goal** | `INavigationAware`; fresh data on workspace return; Torrent cart continues off-tab. |
 | **AI sessions** | **1–2** |
 | **Key files** | `ViewModelBase`, `MainViewModel`, each workspace VM |
-| **Human only** | All 6 stale-UI repro scripts in 05 §4 Sprint 4 table. |
-| **Merge gate** | Scripts 1–5 pass; no new event leaks. |
+| **Human only** | All 6 stale-UI repro scripts in 05 §4 Sprint 4 (checkbox list). |
+| **Merge gate** | Scripts 1–5 pass; no new event leaks; no cancel-on-leave for Torrent. |
 
 **First prompt:**
 
@@ -499,13 +501,14 @@ Implement Sprint 4 (E3) from @docs/planning/05-sprint-timeline.md and @docs/plan
 
 Add INavigationAware (OnNavigatedTo / OnNavigatedFrom) on ViewModelBase.
 MainViewModel.NavigateTo invokes hooks for all seven workspace VMs.
-Per-workspace refresh policy per 04. Cancel Torrent _operationCts on OnNavigatedFrom.
+Per-workspace refresh policy per 04 / AI_CONTEXT.
+Torrent: keep _operationCts running on OnNavigatedFrom (multitask); explicit Stop only.
 FindAdd: RefreshExistingMedia() on navigate.
 
 NO transient VMs. NO Settings dirty-tracking (Sprint 6). NO VM splits.
 
 DoD: [paste Sprint 4 checklist]
-Document refresh policy in AI_CONTEXT.md.
+Document refresh policy in AI_CONTEXT.md. Update docs when touching code.
 ```
 
 ---

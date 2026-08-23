@@ -163,7 +163,7 @@ Estimate assumes solo developer, part-time refactors alongside feature work. Adj
 | `INavigationAware` (or similar) on `ViewModelBase`                                        | S    | —                                                               |
 | `MainViewModel.NavigateTo` calls `OnNavigatedTo` / `OnNavigatedFrom`                      | S    | —                                                               |
 | Per-workspace refresh policy (Library refresh + restore selection, Settings reload, etc.) | M    | Manual audit in [04](./04-transient-vs-singleton-viewmodels.md) |
-| Cancel Torrent `_operationCts` on navigate away                                           | S    | —                                                               |
+| Torrent long-ops policy: **continue** off-tab (explicit Stop only; no cancel on leave)    | S    | Personal single-user multitask preference                       |
 
 
 **Why before Phase 4 splits:** Low risk, immediate user-visible benefit, no XAML binding churn.

@@ -89,6 +89,13 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         StatusMessage = "Select a media card to view its cart.";
     }
 
+    public override void OnNavigatedTo()
+    {
+        // Cart/search may still run in the background while the user is on another tab;
+        // refresh when returning so cart state matches DB without cancelling work.
+        RefreshWorkspace();
+    }
+
     public ObservableCollection<LibraryMediaCardViewModel> MediaCards { get; } = [];
 
     public ObservableCollection<TorrentOrderViewModel> Orders { get; } = [];

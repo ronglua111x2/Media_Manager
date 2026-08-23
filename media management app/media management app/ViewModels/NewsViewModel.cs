@@ -17,6 +17,8 @@ public sealed partial class NewsViewModel : ViewModelBase
     private readonly IPosterImageService _posterImageService;
     private readonly List<NewsEpisodeCardViewModel> _weekEpisodeSource = [];
     private bool _isRestoringUiState;
+    private DateTime _lastDashboardUtc = DateTime.MinValue;
+    private static readonly TimeSpan DashboardRefreshTtl = TimeSpan.FromMinutes(2);
 
     public NewsViewModel(
         ISettingsService settingsService,
@@ -149,12 +151,23 @@ public sealed partial class NewsViewModel : ViewModelBase
         PersistTrackedShowViewMode(value);
     }
 
+    public override void OnNavigatedTo()
+    {
+        if (DateTime.UtcNow - _lastDashboardUtc < DashboardRefreshTtl)
+        {
+            return;
+        }
+
+        UpdateDashboard();
+    }
+
     [RelayCommand]
     private void UpdateDashboard()
     {
         TrackedShows.Clear();
         _weekEpisodeSource.Clear();
         NewEpisodesThisWeek.Clear();
+        _lastDashboardUtc = DateTime.UtcNow;
 
         TodaySummary = $"Today is {AppTimeZone.FormatLongDate(AppTimeZone.Now)}";
 

@@ -11,12 +11,42 @@ public sealed partial class RecipeWorkspaceViewModel : ViewModelBase
 {
     private readonly IRecipeService _recipeService;
     private readonly IQbittorrentSearchPluginService _searchPluginService;
+    private bool _isActive;
+    private bool _recipesChangedWhileAway;
 
     public RecipeWorkspaceViewModel(IRecipeService recipeService, IQbittorrentSearchPluginService searchPluginService)
     {
         _recipeService = recipeService;
         _searchPluginService = searchPluginService;
+        _recipeService.RecipesChanged += OnRecipesChanged;
         ReloadRecipes();
+    }
+
+    public override void OnNavigatedTo()
+    {
+        _isActive = true;
+        if (!_recipesChangedWhileAway)
+        {
+            return;
+        }
+
+        _recipesChangedWhileAway = false;
+        ReloadRecipes(SelectedRecipe?.RecipeId);
+    }
+
+    public override void OnNavigatedFrom()
+    {
+        _isActive = false;
+    }
+
+    private void OnRecipesChanged(object? sender, EventArgs e)
+    {
+        if (_isActive)
+        {
+            return;
+        }
+
+        _recipesChangedWhileAway = true;
     }
 
     public ObservableCollection<RecipeListItemViewModel> Recipes { get; } = [];

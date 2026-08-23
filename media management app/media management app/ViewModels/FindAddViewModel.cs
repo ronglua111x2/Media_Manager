@@ -324,6 +324,12 @@ public sealed partial class FindAddViewModel : ViewModelBase
         }
     }
 
+    public override void OnNavigatedTo()
+    {
+        RefreshExistingMedia();
+        RefreshSearchResultAlreadyAddedFlags();
+    }
+
     [RelayCommand]
     private void RefreshExistingMedia()
     {
@@ -354,6 +360,26 @@ public sealed partial class FindAddViewModel : ViewModelBase
 
         _allMediaCards = shows.Concat(movies).ToList();
         ApplyMediaCardSort();
+    }
+
+    private void RefreshSearchResultAlreadyAddedFlags()
+    {
+        if (SearchResults.Count == 0)
+        {
+            return;
+        }
+
+        var existingShows = _trackedShowService.GetShows().Select(show => show.TmdbId).ToHashSet();
+        var existingMovies = _trackedMovieService.GetMovies().Select(movie => movie.TmdbId).ToHashSet();
+        foreach (var result in SearchResults)
+        {
+            result.IsAlreadyAdded = result.MediaKind == MediaKind.Movie
+                ? existingMovies.Contains(result.TmdbId)
+                : existingShows.Contains(result.TmdbId);
+        }
+
+        AddSelectedToLibraryCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(AddButtonText));
     }
 
     [RelayCommand]

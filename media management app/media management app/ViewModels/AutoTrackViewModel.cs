@@ -95,6 +95,11 @@ public sealed partial class AutoTrackViewModel : ViewModelBase
         }
     }
 
+    public override void OnNavigatedTo()
+    {
+        RefreshDashboard();
+    }
+
     [RelayCommand]
     private void RefreshDashboard()
     {

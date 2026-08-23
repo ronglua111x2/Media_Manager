@@ -411,6 +411,13 @@ public partial class SettingsViewModel : ViewModelBase
         LoadFromSettings();
     }
 
+    public override void OnNavigatedTo()
+    {
+        // Sprint 4: reload disk values on each visit. Dirty-tracking lands in Sprint 6.
+        _settingsService.Load();
+        LoadFromSettings();
+    }
+
     public ObservableCollection<string> SourceFolders { get; }
 
     public ObservableCollection<string> AutoTorrentDownloadFolders { get; }

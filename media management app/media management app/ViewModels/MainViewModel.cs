@@ -451,13 +451,25 @@ public partial class MainViewModel : ViewModelBase
 
     private void NavigateTo(AppWorkspaceKind workspace)
     {
+        if (SelectedWorkspace == workspace && CurrentView is not null)
+        {
+            return;
+        }
+
+        var previous = CurrentView;
+        var next = _workspaceMap[workspace];
+
+        previous?.OnNavigatedFrom();
+
         SelectedWorkspace = workspace;
-        CurrentView = _workspaceMap[workspace];
+        CurrentView = next;
         SelectedWorkspaceLabel = NavigationItems.First(item => item.Kind == workspace).Label;
         foreach (var item in NavigationItems)
         {
             item.IsSelected = item.Kind == workspace;
         }
+
+        next.OnNavigatedTo();
     }
 
     private async Task RefreshStatusAsync()

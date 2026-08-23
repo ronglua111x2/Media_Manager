@@ -19,11 +19,18 @@ meta:
   default_state_folder: D:\MediaManagerState
   default_db: "{StateFolder}/media-manager.db"
   default_settings: "{StateFolder}/settings.json"
-  initiative_status: "Sprint 3 complete; Sprint 4 next"
-  tag: four-pillars-sprint-03
+  initiative_status: "Sprint 4 complete; Sprint 5 next (Settings split)"
+  tag: four-pillars-sprint-04
   workflow_doc: docs/planning/06-ai-execution-guide.md#20-mandatory-pre-sprint-workflow-git--plan-mode
   sprint_plan_folder: docs/planning/sprint-plans/
   before_coding: "git check on auto-torrent; Plan Mode local plan for each new sprint"
+  when_touching_code: >
+    After any code change in a sprint/session, update progress in the relevant docs in the same change set:
+    AI_CONTEXT.md (structure/DI/navigation/policy), 05-sprint-timeline.md (status/session notes/checklists),
+    sprint-plans/sprint-NN-local-plan.md, and feature docs (FEATURES/STATE_FOLDER) when behavior changes.
+    Do not leave planning docs describing cancelled policies or stale DoD.
+  known_debt:
+    - library_reconcile_poster: "Reconciled/PackReconciled full LoadSelectedMediaAsync clears SelectedPosterImage (No cover) while on Library — fix in Sprint 8 with detail VM"
 ```
 
 ---
@@ -66,6 +73,23 @@ shell:
   main_viewmodel: ViewModels/MainViewModel.cs
   view_templates: Resources/ViewTemplates.xaml
   navigation_command: NavigateCommand
+navigation:
+  contract: ViewModels/INavigationAware.cs
+  base: ViewModels/ViewModelBase.cs (virtual OnNavigatedTo / OnNavigatedFrom)
+  wiring: MainViewModel.NavigateTo — OnNavigatedFrom(previous) then swap then OnNavigatedTo(next); skip if same workspace
+  lifetime: all seven workspace VMs remain DI singletons (Phase 5 transient reserved)
+  refresh_policy:
+    News: OnNavigatedTo UpdateDashboard if last load older than 2 minutes
+    AutoTrack: OnNavigatedTo RefreshDashboard
+    FindAdd: OnNavigatedTo RefreshExistingMedia + refresh SearchResults IsAlreadyAdded flags
+    Library: OnNavigatedTo clear detail-load cache, RefreshLibrary, reload selected detail
+    Torrent: OnNavigatedTo RefreshWorkspace; OnNavigatedFrom no-op — cart/search keep running while on other tabs (user Stop only)
+    Recipe: OnNavigatedTo ReloadRecipes if RecipesChanged while away; OnNavigatedFrom mark inactive
+    Settings: OnNavigatedTo settingsService.Load + LoadFromSettings (dirty-tracking Sprint 6)
+  long_ops_policy: >
+    Workspace long-running UI ops (Torrent cart/search via _operationCts) are NOT cancelled on navigate away.
+    Personal single-user app: multitask across tabs is preferred over cancel-for-safety.
+    Explicit Stop on Torrent workspace remains the cancel path. FindAdd TMDB search likewise continues if user leaves mid-search.
 ```
 
 ---

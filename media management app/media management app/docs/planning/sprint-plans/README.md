@@ -10,6 +10,7 @@ Per-sprint **Plan Mode** output before Agent Mode implementation.
 | *(none committed)* | 1 | S1 executed without local plan — retro optional |
 | `sprint-02-local-plan.md` | 2 | ✅ Complete — tagged `four-pillars-sprint-02` |
 | `sprint-03-local-plan.md` | 3 | ✅ Complete — tagged `four-pillars-sprint-03` |
+| `sprint-04-local-plan.md` | 4 | ✅ Complete — tagged `four-pillars-sprint-04` |
 | — | 0–2 review | ✅ Progress review Aug 2026 — foundation on track; S3 next |
 
 ## Template (copy for each sprint)
