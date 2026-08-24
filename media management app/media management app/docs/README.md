@@ -20,6 +20,8 @@ Comprehensive documentation for the **Media Manager** Windows desktop applicatio
 | [AI_CONTEXT.md](./AI_CONTEXT.md) | AI / tooling | Structured machine-readable reference (modules, entities, flows, key files) |
 | [STATE_FOLDER.md](./STATE_FOLDER.md) | Humans / AI | Live state folder layout, OAuth paths, FetchJobs purge, sensitive fields |
 | [RECIPE_SCHEMA.md](./RECIPE_SCHEMA.md) | Humans / AI | Recipe `.rcp` JSON schema with examples from real state files |
+| [debug/](./debug/) | Humans / AI | **Live issue investigations** — symptoms, log evidence, root cause |
+| [debug/torrent-hunt/](./debug/torrent-hunt/) | Humans / AI | Auto-Track torrent hunt pipeline debug notes |
 
 ## Quick Summary
 

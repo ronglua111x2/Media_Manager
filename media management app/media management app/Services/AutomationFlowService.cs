@@ -434,7 +434,7 @@ public sealed class AutomationFlowService : IAutomationFlowService
         }
 
         _logger.Info(
-            $"Recipe search pagination query='{query}' pages={pagesFetched} rawRows={rawRows} mergedRows={merged.Count} bufferTotal={latestTotal} cursorOffset={nextOffset} status='{latestStatus}' pageSize={effectivePageSize} maxPages={effectiveMaxPages} cap={effectiveMaxTotal} idleSeconds={idleTimeoutSeconds} endedBy='{endedBy}' engines=[{SearchEngineDiagnostics.BuildEngineSummaryIncludingEmpty(requestedEngineNames, merged)}] pollCycles={pollCycle}.",
+            $"Recipe search pagination query='{query}' pages={pagesFetched} rawRows={rawRows} mergedRows={merged.Count} bufferTotal={latestTotal} cursorOffset={nextOffset} status='{latestStatus}' pageSize={effectivePageSize} maxPages={effectiveMaxPages} cap={effectiveMaxTotal} idleSeconds={idleTimeoutSeconds} endedBy='{HuntLogFormatter.FormatEndedBy(endedBy, merged.Count)}' engines=[{SearchEngineDiagnostics.BuildEngineSummaryIncludingEmpty(requestedEngineNames, merged)}] pollCycles={pollCycle}.",
             LogTarget.All);
         SearchEngineDiagnostics.LogEmptyEngines(_logger, requestedEngineNames, merged, query);
         return merged;
@@ -554,59 +554,29 @@ public sealed class AutomationFlowService : IAutomationFlowService
         IReadOnlyList<TorrentSearchResult> searchResults,
         IReadOnlyList<RecipeCandidateResult> evaluated)
     {
-        if (!RecipeRuntimeSettings.GetEnableCandidateDebugLog(recipe))
+        var session = HuntCandidateDebugWriter.TryCreateSession(recipe, _settingsService, _logger);
+        if (session is null)
         {
             return;
         }
 
-        var logSession = new CartCandidateDebugSession(
-            _settingsService.Current.StateFolder,
-            _settingsService.Current.Logs.MaxLinesPerFile);
-        logSession.WriteLine(
-            $"Media='{SanitizeForLog(targetTitle)}' Recipe='{SanitizeForLog(recipe.Name)}' RecipeId='{recipe.RecipeId}' Target='{targetKind}'");
-        logSession.WriteLine($"Queries={queries.Count} => {string.Join(" | ", queries.Select(SanitizeForLog))}");
         var timeoutSeconds = targetKind == MediaKind.Movie
             ? RecipeRuntimeSettings.GetMovieSearchTimeoutSeconds(recipe, _settingsService.Current.AutoTorrent)
             : RecipeRuntimeSettings.GetParallelSearchTimeoutSeconds(recipe, _settingsService.Current.AutoTorrent);
-        logSession.WriteLine(
-            $"SearchResults={searchResults.Count} TimeoutSeconds={timeoutSeconds} Accepted={evaluated.Count(item => item.IsAccepted)} Rejected={evaluated.Count(item => !item.IsAccepted)}");
-        foreach (var summary in evaluated
-                     .Where(item => !item.IsAccepted)
-                     .GroupBy(item => item.RejectReason)
-                     .OrderByDescending(group => group.Count()))
-        {
-            logSession.WriteLine($"RejectSummary reason={summary.Key} count={summary.Count()}");
-        }
-
-        foreach (var item in evaluated)
-        {
-            var result = item.SearchResult;
-            var sizeGb = result.FileSize > 0
-                ? (result.FileSize / (1024d * 1024d * 1024d)).ToString("0.00")
-                : "unknown";
-            var verdict = item.IsAccepted ? "ACCEPT" : "REJECT";
-            var detail = item.IsAccepted ? "-" : SanitizeForLog(item.RejectDetail);
-            logSession.WriteLine(
-                $"{verdict} reason={item.RejectReason} detail='{detail}' quality='{TorrentQuality.Detect(result.FileName)}' sizeGB={sizeGb} seeders={result.Seeders} " +
-                $"Q={item.QualityScore} A={item.AudioScore} Pref={item.PreferTermsScore} Size={item.SizeScore} Total={item.TotalScore} " +
-                $"engine='{SanitizeForLog(result.EngineName)}' linkType='{result.LinkType}' name='{SanitizeForLog(result.FileName)}'");
-        }
-
-        _logger.Info($"Cart debug log: {logSession.FirstFilePath}", LogTarget.All);
+        HuntCandidateDebugWriter.WriteRecipeEvaluation(
+            session,
+            recipe,
+            targetTitle,
+            targetKind,
+            queries,
+            searchResults,
+            evaluated,
+            timeoutSeconds);
+        HuntCandidateDebugWriter.LogSessionPath(_logger, session);
     }
 
     private static string SanitizeForLog(string? value)
     {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return string.Empty;
-        }
-
-        return value
-            .Replace('\r', ' ')
-            .Replace('\n', ' ')
-            .Replace('\t', ' ')
-            .Replace("'", "''")
-            .Trim();
+        return HuntCandidateDebugWriter.SanitizeForLog(value);
     }
 }

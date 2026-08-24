@@ -201,7 +201,7 @@ public sealed class ShowSearchSnapshotService
             }
 
             _logger.Info(
-                $"Snapshot search completed. Query='{query}', Status='{latestStatus}', Results={mergedByUrl.Count}, EndedBy='{endedBy}', engines=[{SearchEngineDiagnostics.BuildEngineSummaryIncludingEmpty(requestedEngineNames, mergedByUrl.Values)}].",
+                $"Snapshot search completed. Query='{query}', Status='{latestStatus}', Results={mergedByUrl.Count}, EndedBy='{HuntLogFormatter.FormatEndedBy(endedBy, mergedByUrl.Count)}', engines=[{SearchEngineDiagnostics.BuildEngineSummaryIncludingEmpty(requestedEngineNames, mergedByUrl.Values)}].",
                 LogTarget.All);
             SearchEngineDiagnostics.LogEmptyEngines(_logger, requestedEngineNames, mergedByUrl.Values, query);
 

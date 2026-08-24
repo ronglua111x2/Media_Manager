@@ -21,4 +21,11 @@ public sealed class AutoTrackRunResult
     public bool Succeeded { get; set; }
 
     public string Summary { get; set; } = string.Empty;
+
+    public List<HuntEpisodeOutcome> EpisodeOutcomes { get; } = [];
+
+    public string FormatHumanSummary()
+    {
+        return Services.HuntLogFormatter.FormatHumanSummary(Summary, EpisodeOutcomes);
+    }
 }

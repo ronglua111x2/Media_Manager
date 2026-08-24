@@ -81,7 +81,7 @@ public sealed partial class AutoTrackViewModel : ViewModelBase
                 _autoTrackSchedulerService.RequestReconcileAfterAdds();
             }
 
-            StatusMessage = result.Summary;
+            StatusMessage = result.FormatHumanSummary();
             RefreshDashboard();
         }
         catch (Exception ex)
@@ -143,7 +143,8 @@ public sealed partial class AutoTrackViewModel : ViewModelBase
                 huntBatch,
                 autoTrack,
                 folderOptions,
-                _trackedShowService);
+                _trackedShowService,
+                GetLastHuntFailureDetail(show.Id));
             TrackedShows.Add(card);
             _ = LoadShowPosterAsync(card, show);
 
@@ -229,6 +230,17 @@ public sealed partial class AutoTrackViewModel : ViewModelBase
         var remaining = budget.Remaining(max, nowLocal);
         var used = budget.IsExpiredFor(nowLocal) ? 0 : Math.Max(0, budget.Used);
         return $"TMDB refreshes left today: {remaining} ({used}/{max} used)";
+    }
+
+    private string? GetLastHuntFailureDetail(long showId)
+    {
+        var order = _torrentCartService.GetOrders(MediaKind.TvEpisode, showId)
+            .Where(item => item.Source == TorrentOrderSource.AutoTrack)
+            .Where(item => item.Status is TorrentOrderStatus.NoCandidates or TorrentOrderStatus.Failed)
+            .OrderByDescending(item => item.Id)
+            .FirstOrDefault();
+
+        return string.IsNullOrWhiteSpace(order?.StatusDetail) ? null : order.StatusDetail.Trim();
     }
 
     private bool CanRunNow() => !IsRunning && !_autoTrackService.IsRunning;

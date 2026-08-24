@@ -19,27 +19,45 @@ public static class SearchEngineDiagnostics
         IAppLogger logger,
         IReadOnlyList<string> requestedNames,
         IEnumerable<TorrentSearchResult> results,
-        string query)
+        string query,
+        LogTarget emptyEngineTarget = LogTarget.All)
     {
         if (requestedNames.Count == 0)
         {
             return;
         }
 
-        var counts = results
+        var resultList = results as IList<TorrentSearchResult> ?? results.ToList();
+        var counts = resultList
             .GroupBy(result => result.EngineName, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(group => group.Key, group => group.Count(), StringComparer.OrdinalIgnoreCase);
 
-        foreach (var engineName in requestedNames)
+        var emptyNames = requestedNames
+            .Where(engineName => !counts.TryGetValue(engineName, out var count) || count <= 0)
+            .ToList();
+        if (emptyNames.Count == 0)
         {
-            if (counts.TryGetValue(engineName, out var count) && count > 0)
-            {
-                continue;
-            }
+            return;
+        }
 
-            logger.Info(
-                $"Search engine '{engineName}' returned no results. Query='{query}'.",
-                LogTarget.All);
+        var allRequestedEmpty = emptyNames.Count == requestedNames.Count && resultList.Count == 0;
+        var target = allRequestedEmpty
+            ? LogTarget.All
+            : emptyEngineTarget == LogTarget.All
+                ? LogTarget.File
+                : emptyEngineTarget;
+
+        foreach (var engineName in emptyNames)
+        {
+            var message = $"Search engine '{engineName}' returned no results. Query='{query}'.";
+            if (allRequestedEmpty)
+            {
+                logger.Info(message, target);
+            }
+            else
+            {
+                logger.Debug(message, target);
+            }
         }
     }
 

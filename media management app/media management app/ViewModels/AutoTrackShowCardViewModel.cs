@@ -19,6 +19,7 @@ public sealed partial class AutoTrackShowCardViewModel : ObservableObject
         AutoTrackSettings settings,
         IReadOnlyList<string> downloadFolderOptions,
         ITrackedShowService trackedShowService,
+        string? lastHuntFailureDetail = null,
         Action? onSettingsSaved = null)
     {
         _trackedShowService = trackedShowService;
@@ -53,7 +54,7 @@ public sealed partial class AutoTrackShowCardViewModel : ObservableObject
                                  string.Join(", ", settings.Quality?.AllowedQualities ?? []);
 
         TmdbStatusLine = BuildTmdbStatusLine(show, settings);
-        HuntStatusLine = BuildHuntStatusLine(show, huntBatchEpisodes);
+        HuntStatusLine = BuildHuntStatusLine(show, huntBatchEpisodes, lastHuntFailureDetail);
         ScheduleStatusLine = BuildScheduleStatusLine();
 
         if (!string.IsNullOrWhiteSpace(DownloadFolder) &&
@@ -331,12 +332,20 @@ public sealed partial class AutoTrackShowCardViewModel : ObservableObject
         return $"Next TMDB: after {AutoTrackWeekAnchor.FormatEffectiveAnchor(show, settings)}";
     }
 
-    private static string BuildHuntStatusLine(TrackedShow show, IReadOnlyList<TrackedEpisode> huntBatchEpisodes)
+    private static string BuildHuntStatusLine(
+        TrackedShow show,
+        IReadOnlyList<TrackedEpisode> huntBatchEpisodes,
+        string? lastHuntFailureDetail)
     {
         var line = AutoTrackTmdbEligibility.FormatHuntStatusLine(huntBatchEpisodes);
         if (!string.IsNullOrEmpty(line))
         {
             return line;
+        }
+
+        if (!string.IsNullOrWhiteSpace(lastHuntFailureDetail))
+        {
+            return $"Last hunt failed: {lastHuntFailureDetail}";
         }
 
         return show.AutoTrackTmdbState switch

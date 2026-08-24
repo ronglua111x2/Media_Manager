@@ -23,9 +23,11 @@ public sealed class FetchJobService : IFetchJobService
     private readonly IOperationProgressService _progressService;
     private readonly IAppLogger _logger;
     private readonly Dictionary<long, IReadOnlyList<EpisodeFetchCandidate>> _candidatesByEpisodeId = [];
+    private readonly Dictionary<long, int> _searchRowsByEpisodeId = [];
     private readonly Dictionary<long, IReadOnlyList<EpisodeFetchCandidate>> _candidatesByMovieId = [];
     private readonly Dictionary<(long ShowId, int SeasonNumber), IReadOnlyList<SeasonPackCandidate>> _packCandidatesBySeason = [];
     private readonly object _gate = new();
+    private CartCandidateDebugSession? _activeHuntDebugSession;
 
     public FetchJobService(
         IDatabaseService databaseService,
@@ -60,6 +62,14 @@ public sealed class FetchJobService : IFetchJobService
         lock (_gate)
         {
             return _candidatesByEpisodeId.TryGetValue(episodeId, out var candidates) ? candidates : [];
+        }
+    }
+
+    public int GetSearchRowCount(long episodeId)
+    {
+        lock (_gate)
+        {
+            return _searchRowsByEpisodeId.TryGetValue(episodeId, out var rows) ? rows : 0;
         }
     }
 
@@ -116,13 +126,21 @@ public sealed class FetchJobService : IFetchJobService
         }
     }
 
+    public CartCandidateDebugSession? TakeHuntDebugSession()
+    {
+        var session = _activeHuntDebugSession;
+        _activeHuntDebugSession = null;
+        return session;
+    }
+
     public async Task<IReadOnlyDictionary<long, IReadOnlyList<EpisodeFetchCandidate>>> FetchEpisodeCandidatesAsync(
         long showId,
         IReadOnlyList<long> episodeIds,
         string? recipeId = null,
         Action<long, string>? statusChanged = null,
         CancellationToken cancellationToken = default,
-        EpisodeFetchOptions? options = null)
+        EpisodeFetchOptions? options = null,
+        bool finalizeDebugLog = true)
     {
         var show = _databaseService.GetTrackedShow(showId) ?? throw new InvalidOperationException("Tracked show was not found.");
         var requestedEpisodeIds = episodeIds.Distinct().ToHashSet();
@@ -147,6 +165,7 @@ public sealed class FetchJobService : IFetchJobService
             LogTarget.All);
 
         _progressService.Start("Search: preparing…", 0);
+        _activeHuntDebugSession = HuntCandidateDebugWriter.TryCreateSession(recipe, _settingsService, _logger);
         try
         {
             return useSnapshot
@@ -155,8 +174,35 @@ public sealed class FetchJobService : IFetchJobService
         }
         finally
         {
+            if (_activeHuntDebugSession is not null && finalizeDebugLog)
+            {
+                HuntCandidateDebugWriter.LogSessionPath(_logger, _activeHuntDebugSession);
+                _activeHuntDebugSession = null;
+            }
+
             _progressService.Finish("Idle");
         }
+    }
+
+    private void TryWriteHuntMatchDebug(
+        SearchRecipe recipe,
+        string showTitle,
+        string episodeLabel,
+        int searchRows,
+        IReadOnlyList<EpisodeFetchCandidate> recipeMatched)
+    {
+        if (_activeHuntDebugSession is null)
+        {
+            return;
+        }
+
+        HuntCandidateDebugWriter.WriteHuntMatch(
+            _activeHuntDebugSession,
+            recipe,
+            showTitle,
+            episodeLabel,
+            searchRows,
+            recipeMatched);
     }
 
     public async Task FetchSeasonPacksAsync(long showId, IReadOnlyList<int> seasonNumbers, CancellationToken cancellationToken = default, int? maxCandidatesOverride = null)
@@ -223,6 +269,7 @@ public sealed class FetchJobService : IFetchJobService
             foreach (var episode in targetEpisodes)
             {
                 _candidatesByEpisodeId[episode.Id] = [];
+                _searchRowsByEpisodeId[episode.Id] = 0;
             }
         }
     }
@@ -265,6 +312,7 @@ public sealed class FetchJobService : IFetchJobService
                 lock (_gate)
                 {
                     _candidatesByEpisodeId[episode.Id] = searchSummary.Candidates;
+                    _searchRowsByEpisodeId[episode.Id] = searchSummary.SearchResults.Count;
                 }
 
                 lock (resultGate)
@@ -273,12 +321,13 @@ public sealed class FetchJobService : IFetchJobService
                 }
 
                 var detail = searchSummary.Candidates.Count == 0
-                    ? $"No candidates found for {label}."
-                    : $"Found {searchSummary.Candidates.Count} candidate(s) for {label}.";
+                    ? $"No recipe match found for {label}."
+                    : $"Matched {searchSummary.Candidates.Count} candidate(s) for {label}.";
                 statusChanged?.Invoke(episode.Id, detail);
                 _logger.Info(
-                    $"Cart parallel search finished {label}. RawResults={searchSummary.SearchResults.Count}, Candidates={searchSummary.Candidates.Count}.",
+                    $"Cart parallel search finished {label}. searchRows={searchSummary.SearchResults.Count}, recipeMatched={searchSummary.Candidates.Count}.",
                     LogTarget.All);
+                TryWriteHuntMatchDebug(recipe, show.DisplayTitle, label, searchSummary.SearchResults.Count, searchSummary.Candidates);
                 await Task.Yield();
             }
         }
@@ -365,6 +414,7 @@ public sealed class FetchJobService : IFetchJobService
                 lock (_gate)
                 {
                     _candidatesByEpisodeId[episode.Id] = candidates;
+                    _searchRowsByEpisodeId[episode.Id] = snapshotCandidates.Count;
                 }
 
                 lock (resultGate)
@@ -376,6 +426,7 @@ public sealed class FetchJobService : IFetchJobService
                     ? $"No snapshot match found for {label}."
                     : $"Matched {candidates.Count} candidate(s) for {label}.";
                 statusChanged?.Invoke(episode.Id, detail);
+                TryWriteHuntMatchDebug(recipe, show.DisplayTitle, label, snapshotCandidates.Count, candidates);
                 await Task.Yield();
             }
         }
@@ -752,7 +803,7 @@ public sealed class FetchJobService : IFetchJobService
         }
 
         _logger.Info(
-            $"Fetch query pagination query='{query}' pages={pagesFetched} rawRows={rawRows} mergedRows={merged.Count} status='{latestStatus}' pageSize={effectivePageSize} maxPages={effectiveMaxPages} cap={effectiveMaxTotal} idleSeconds={idleTimeoutSeconds} endedBy='{endedBy}' engines=[{SearchEngineDiagnostics.BuildEngineSummaryIncludingEmpty(requestedEngineNames, merged)}].",
+            $"Fetch query pagination query='{query}' pages={pagesFetched} rawRows={rawRows} mergedRows={merged.Count} status='{latestStatus}' pageSize={effectivePageSize} maxPages={effectiveMaxPages} cap={effectiveMaxTotal} idleSeconds={idleTimeoutSeconds} endedBy='{HuntLogFormatter.FormatEndedBy(endedBy, merged.Count)}' engines=[{SearchEngineDiagnostics.BuildEngineSummaryIncludingEmpty(requestedEngineNames, merged)}].",
             LogTarget.All);
         SearchEngineDiagnostics.LogEmptyEngines(_logger, requestedEngineNames, merged, query);
         return merged;
@@ -1102,7 +1153,7 @@ public sealed class FetchJobService : IFetchJobService
             .ToList();
 
         _logger.Info(
-            $"Snapshot matching complete for {show.DisplayTitle} {episode.SeasonNumber:00}x{episode.EpisodeNumber:00}. Candidates={finalCandidates.Count}, SnapshotSize={snapshotCandidates.Count}, JobId={job.Id}.",
+            $"Snapshot matching complete for {show.DisplayTitle} {episode.SeasonNumber:00}x{episode.EpisodeNumber:00}. recipeMatched={finalCandidates.Count} (from snapshotSize={snapshotCandidates.Count}), JobId={job.Id}.",
             LogTarget.All);
 
         return finalCandidates;

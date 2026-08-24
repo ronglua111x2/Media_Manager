@@ -208,7 +208,7 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
                 : SearchEngineDiagnostics.BuildEngineSummary(mergedResults);
 
             _logger.Info(
-                $"qBittorrent search completed. Query='{request.Query}', Status='{latestStatus}', Results={mergedResults.Count}, TimeoutSeconds={timeoutSeconds}, IdleTimeoutSeconds={idleTimeoutSeconds}, EndedBy='{endedBy}', engines=[{engineSummary}].",
+                $"qBittorrent search completed. Query='{request.Query}', Status='{latestStatus}', Results={mergedResults.Count}, TimeoutSeconds={timeoutSeconds}, IdleTimeoutSeconds={idleTimeoutSeconds}, EndedBy='{HuntLogFormatter.FormatEndedBy(endedBy, mergedResults.Count)}', engines=[{engineSummary}].",
                 LogTarget.All);
 
             return mergedResults;

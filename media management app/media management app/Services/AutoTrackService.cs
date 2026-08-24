@@ -467,6 +467,7 @@ public sealed class AutoTrackService : IAutoTrackService
         discovery.Failed += hunt.Failed;
         discovery.Succeeded = discovery.Succeeded && hunt.Succeeded;
         discovery.ShowsProcessed += hunt.ShowsProcessed;
+        discovery.EpisodeOutcomes.AddRange(hunt.EpisodeOutcomes);
     }
 
     private async Task<AutoTrackRunResult> RunTorrentHuntCoreAsync(
@@ -604,6 +605,7 @@ public sealed class AutoTrackService : IAutoTrackService
         result.Succeeded = result.Failed == 0;
         result.Summary =
             $"Hunt: shows={result.ShowsProcessed}, queued={result.EpisodesQueued}, candidates={result.CandidatesFound}, added={result.TorrentsAdded}, failed={result.Failed}.";
+
         _logger.Info($"Auto-track torrent hunt complete. {result.Summary}", LogTarget.All);
         return result;
     }
@@ -866,6 +868,7 @@ public sealed class AutoTrackService : IAutoTrackService
         }
 
         _progressService.Start("Hunting…", 0);
+        var approvedFetchOutcomes = new Dictionary<long, HuntEpisodeOutcome>();
         try
         {
             foreach (var (showId, entry) in pendingOrdersByShow)
@@ -913,7 +916,9 @@ public sealed class AutoTrackService : IAutoTrackService
                             }
                         },
                         cancellationToken,
-                        fetchOptions);
+                        fetchOptions,
+                        finalizeDebugLog: false);
+                    var huntDebugSession = _fetchJobService.TakeHuntDebugSession();
 
                     foreach (var order in ordersNeedingSearch)
                     {
@@ -922,32 +927,88 @@ public sealed class AutoTrackService : IAutoTrackService
                             continue;
                         }
 
+                        var episodeLabel = BuildOrderEpisodeLabel(order);
+                        var searchRows = _fetchJobService.GetSearchRowCount(order.EpisodeId.Value);
+
                         if (!candidatesByEpisodeId.TryGetValue(order.EpisodeId.Value, out var candidates) ||
                             candidates.Count == 0)
                         {
                             result.Failed++;
-                            _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.NoCandidates, "No candidates found.");
+                            var stage = searchRows > 0 ? HuntEpisodeStage.RecipeMatch : HuntEpisodeStage.Search;
+                            var failureReason = searchRows > 0
+                                ? "No recipe matches"
+                                : "Search returned no rows";
+                            var statusDetail = searchRows > 0
+                                ? $"No recipe matches from {searchRows} search row(s)."
+                                : "No candidates found.";
+                            _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.NoCandidates, statusDetail);
+                            RecordAndLogEpisodeOutcome(
+                                result,
+                                BuildEpisodeOutcome(
+                                    order,
+                                    show.DisplayTitle,
+                                    episodeLabel,
+                                    searchRows,
+                                    recipeMatched: 0,
+                                    policyKept: 0,
+                                    stage,
+                                    failureReason));
                             continue;
                         }
 
-                        var filtered = _candidatePolicyService.Apply(show, settings, candidates);
-                        if (filtered.Count == 0)
+                        var policyResult = _candidatePolicyService.ApplyWithDiagnostics(show, settings, candidates);
+                        if (policyResult.Kept.Count == 0)
                         {
                             result.Failed++;
+                            var rejectSummary = HuntLogFormatter.FormatPolicyRejectSummary(policyResult.RejectCounts);
+                            var statusDetail = string.IsNullOrWhiteSpace(rejectSummary)
+                                ? "No candidates passed auto-track quality policy."
+                                : $"No candidates passed auto-track quality policy. {rejectSummary}.";
                             _torrentCartService.UpdateOrderStatus(
                                 order.Id,
                                 TorrentOrderStatus.NoCandidates,
-                                "No candidates passed auto-track quality policy.");
+                                statusDetail);
                             NotifyStage(
                                 "Auto-Track",
                                 $"{show.DisplayTitle} — {order.Title}: no candidates passed quality policy.",
                                 show,
                                 NotificationKind.AutoTrackHuntProgress);
+                            var outcome = BuildEpisodeOutcome(
+                                order,
+                                show.DisplayTitle,
+                                episodeLabel,
+                                searchRows,
+                                candidates.Count,
+                                policyKept: 0,
+                                HuntEpisodeStage.AutoTrackPolicy,
+                                rejectSummary,
+                                policyResult);
+                            if (huntDebugSession is not null)
+                            {
+                                HuntCandidateDebugWriter.WriteHuntPolicy(huntDebugSession, outcome);
+                            }
+
+                            RecordAndLogEpisodeOutcome(result, outcome);
                             continue;
                         }
 
                         result.CandidatesFound++;
-                        _torrentCartService.ReplaceCandidates(order.Id, ToCartCandidates(filtered));
+                        _torrentCartService.ReplaceCandidates(order.Id, ToCartCandidates(policyResult.Kept));
+                        approvedFetchOutcomes[order.Id] = BuildEpisodeOutcome(
+                            order,
+                            show.DisplayTitle,
+                            episodeLabel,
+                            searchRows,
+                            candidates.Count,
+                            policyResult.Kept.Count,
+                            HuntEpisodeStage.Accept,
+                            failureReason: null,
+                            policyResult);
+                    }
+
+                    if (huntDebugSession is not null)
+                    {
+                        HuntCandidateDebugWriter.LogSessionPath(_logger, huntDebugSession);
                     }
                 }
                 catch (OperationCanceledException)
@@ -1023,6 +1084,7 @@ public sealed class AutoTrackService : IAutoTrackService
                             order,
                             savePath,
                             result,
+                            approvedFetchOutcomes,
                             cancellationToken);
                         if (!added)
                         {
@@ -1035,6 +1097,15 @@ public sealed class AutoTrackService : IAutoTrackService
                                     ? "All candidates failed."
                                     : $"All candidates failed. Last error: {refreshed.LastFailureReason}";
                                 _torrentCartService.SaveOrder(refreshed);
+                            }
+
+                            if (approvedFetchOutcomes.TryGetValue(order.Id, out var fetchOutcome))
+                            {
+                                fetchOutcome.Stage = HuntEpisodeStage.Add;
+                                fetchOutcome.FailureReason = "Add failed";
+                                fetchOutcome.FailureDetail = refreshed.LastFailureReason;
+                                RecordAndLogEpisodeOutcome(result, fetchOutcome);
+                                approvedFetchOutcomes.Remove(order.Id);
                             }
                         }
                     }
@@ -1070,6 +1141,7 @@ public sealed class AutoTrackService : IAutoTrackService
         TorrentCartOrder order,
         string savePath,
         AutoTrackRunResult result,
+        Dictionary<long, HuntEpisodeOutcome> approvedFetchOutcomes,
         CancellationToken cancellationToken)
     {
         var candidates = _torrentCartService.GetCandidates(order.Id)
@@ -1113,6 +1185,14 @@ public sealed class AutoTrackService : IAutoTrackService
                 _progressService.Report(0, $"Adding: {JobMessageFormat.Truncate(order.Title)}");
                 await AddOrderToClientAsync(order, savePath, cancellationToken);
                 result.TorrentsAdded++;
+                if (approvedFetchOutcomes.TryGetValue(order.Id, out var fetchOutcome))
+                {
+                    fetchOutcome.Stage = HuntEpisodeStage.Succeeded;
+                    fetchOutcome.AddedCandidateName = order.SelectedCandidateName;
+                    RecordAndLogEpisodeOutcome(result, fetchOutcome);
+                    approvedFetchOutcomes.Remove(order.Id);
+                }
+
                 NotifyStage(
                     "Auto-Track",
                     $"{show.DisplayTitle} — Added {order.Title} → {savePath}",
@@ -1416,8 +1496,86 @@ public sealed class AutoTrackService : IAutoTrackService
     {
         var autoTrack = GetAutoTrackSettings();
         autoTrack.LastRunUtc = DateTime.UtcNow;
-        autoTrack.LastRunSummary = result.Summary;
+        autoTrack.LastRunSummary = result.FormatHumanSummary();
         _settingsService.Save();
+    }
+
+    private void RecordAndLogEpisodeOutcome(AutoTrackRunResult result, HuntEpisodeOutcome outcome)
+    {
+        result.EpisodeOutcomes.Add(outcome);
+        var line = HuntLogFormatter.FormatEpisodeLine(outcome);
+        if (outcome.IsFailure)
+        {
+            _logger.Warning(line, LogTarget.All);
+            return;
+        }
+
+        _logger.Info(line, LogTarget.All);
+    }
+
+    private static HuntEpisodeOutcome BuildEpisodeOutcome(
+        TorrentCartOrder order,
+        string showTitle,
+        string episodeLabel,
+        int searchRows,
+        int recipeMatched,
+        int policyKept,
+        HuntEpisodeStage stage,
+        string? failureReason,
+        AutoTrackCandidatePolicyService.AutoTrackPolicyApplyResult? policyResult = null)
+    {
+        var outcome = new HuntEpisodeOutcome
+        {
+            OrderId = order.Id,
+            ShowTitle = showTitle,
+            EpisodeLabel = episodeLabel,
+            SearchRows = searchRows,
+            RecipeMatched = recipeMatched,
+            PolicyKept = policyKept,
+            Stage = stage,
+            FailureReason = failureReason,
+            FailureDetail = failureReason
+        };
+
+        if (policyResult is null)
+        {
+            return outcome;
+        }
+
+        outcome.PolicyMinFileSizeMb = policyResult.Policy.MinFileSizeMb;
+        outcome.PolicyMinSeeders = policyResult.Policy.MinSeeders > 0 ? policyResult.Policy.MinSeeders : null;
+        outcome.PolicyMinQuality = policyResult.Policy.MinQuality;
+        outcome.BestRejectedFileSize = policyResult.BestRejected?.FileSize;
+        foreach (var (reason, count) in policyResult.RejectCounts)
+        {
+            outcome.PolicyRejectCounts[reason] = count;
+        }
+
+        return outcome;
+    }
+
+    private static string BuildOrderEpisodeLabel(TorrentCartOrder order)
+    {
+        if (order.SeasonNumber is null || order.EpisodeNumber is null)
+        {
+            return order.Title;
+        }
+
+        var code = $"S{order.SeasonNumber:00}E{order.EpisodeNumber:00}";
+        var trimmedTitle = order.Title?.Trim();
+        if (string.IsNullOrWhiteSpace(trimmedTitle))
+        {
+            return code;
+        }
+
+        // Some sources already include the episode code in order.Title (e.g. "S01E05 - David").
+        // Avoid producing "S01E05 S01E05 - David".
+        if (trimmedTitle.StartsWith(code, StringComparison.OrdinalIgnoreCase))
+        {
+            return trimmedTitle;
+        }
+
+        return $"{code} {trimmedTitle}";
     }
 
     private void NotifyStage(string title, string message, TrackedShow show, NotificationKind kind)

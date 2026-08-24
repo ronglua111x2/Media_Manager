@@ -224,7 +224,10 @@ public sealed class AutoTrackSchedulerService : IAutoTrackSchedulerService
             var result = await _autoTrackService.RunTmdbDiscoveryAsync(cancellationToken: _shutdown.Token);
             if (IsMeaningfulAutoTrackResult(result))
             {
-                _logger.Info($"Auto-track TMDB discovery cycle complete. {result.Summary}", LogTarget.All);
+                var logSummary = result.EpisodeOutcomes.Count > 0
+                    ? result.FormatHumanSummary()
+                    : result.Summary;
+                _logger.Info($"Auto-track TMDB discovery cycle complete. {logSummary}", LogTarget.All);
                 _autoTrackService.RecordRunResult(result);
                 NotifyRunCompleted(result);
             }
