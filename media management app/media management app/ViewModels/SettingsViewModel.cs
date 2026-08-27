@@ -122,6 +122,15 @@ public partial class SettingsViewModel : ViewModelBase
     private string? qbittorrentPassword;
 
     [ObservableProperty]
+    private string? qbittorrentApiKey;
+
+    [ObservableProperty]
+    private bool isQbittorrentApiKeyVisible;
+
+    [ObservableProperty]
+    private string qbittorrentApiKeyMasked = string.Empty;
+
+    [ObservableProperty]
     private bool qbittorrentConfirmCloseViewer = true;
 
     [ObservableProperty]
@@ -1222,6 +1231,7 @@ public partial class SettingsViewModel : ViewModelBase
             QbittorrentWebUiUrl = _settingsService.Current.AutoTorrent.QbittorrentWebUiUrl;
             QbittorrentUsername = _settingsService.Current.AutoTorrent.Username;
             QbittorrentPassword = _settingsService.Current.AutoTorrent.Password;
+            QbittorrentApiKey = _settingsService.Current.AutoTorrent.ApiKey;
             QbittorrentConfirmCloseViewer = _settingsService.Current.AutoTorrent.ConfirmCloseViewer;
             QbittorrentAutoCloseViewerOnBackground = _settingsService.Current.AutoTorrent.AutoCloseViewerOnBackground;
             var processRestart = _settingsService.Current.AutoTorrent.ProcessRestart
@@ -1655,6 +1665,7 @@ public partial class SettingsViewModel : ViewModelBase
             : QbittorrentWebUiUrl.Trim();
         _settingsService.Current.AutoTorrent.Username = string.IsNullOrWhiteSpace(QbittorrentUsername) ? null : QbittorrentUsername.Trim();
         _settingsService.Current.AutoTorrent.Password = string.IsNullOrWhiteSpace(QbittorrentPassword) ? null : QbittorrentPassword;
+        _settingsService.Current.AutoTorrent.ApiKey = string.IsNullOrWhiteSpace(QbittorrentApiKey) ? null : QbittorrentApiKey.Trim();
         _settingsService.Current.AutoTorrent.ConfirmCloseViewer = QbittorrentConfirmCloseViewer;
         _settingsService.Current.AutoTorrent.AutoCloseViewerOnBackground = QbittorrentAutoCloseViewerOnBackground;
         _settingsService.Current.AutoTorrent.DownloadFolder = string.IsNullOrWhiteSpace(AutoTorrentDownloadFolder)
@@ -2044,12 +2055,24 @@ public partial class SettingsViewModel : ViewModelBase
         RefreshTokenMasks();
     }
 
+    [RelayCommand]
+    private void ToggleQbittorrentApiKeyVisibility()
+    {
+        IsQbittorrentApiKeyVisible = !IsQbittorrentApiKeyVisible;
+        RefreshTokenMasks();
+    }
+
     partial void OnTmdbReadAccessTokenChanged(string? value)
     {
         RefreshTokenMasks();
     }
 
     partial void OnGeminiApiKeyChanged(string? value)
+    {
+        RefreshTokenMasks();
+    }
+
+    partial void OnQbittorrentApiKeyChanged(string? value)
     {
         RefreshTokenMasks();
     }
@@ -2064,6 +2087,7 @@ public partial class SettingsViewModel : ViewModelBase
         TmdbReadAccessTokenMasked = MaskSecret(TmdbReadAccessToken);
         GeminiApiKeyMasked = MaskSecret(GeminiApiKey);
         AutoTrackJellyfinApiKeyMasked = MaskSecret(AutoTrackJellyfinApiKey);
+        QbittorrentApiKeyMasked = MaskSecret(QbittorrentApiKey);
     }
 
     private static string MaskSecret(string? value)

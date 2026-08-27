@@ -424,8 +424,9 @@ key_enums:
 integrations:
   qbittorrent:
     client: Services/QbittorrentClient.cs
-    config: AutoTorrentSettings (WebUiUrl, credentials, DownloadFolders)
+    config: AutoTorrentSettings (WebUiUrl, credentials, ApiKey, DownloadFolders)
     features: [search, add, pause, resume, delete, file list, plugins]
+    webapi_docs: docs/qbittorrent-webapi/  # 5.1 vs 5.2; client supports 5.2 login/add + optional API key
   jellyfin:
     client: Services/JellyfinClient.cs
     config: JellyfinRefreshSettings (BaseUrl, ApiKey)

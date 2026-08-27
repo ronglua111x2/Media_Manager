@@ -65,6 +65,7 @@ Redacted example — **never commit real secrets**.
 `BackupSettingsRedactor` strips these before upload:
 
 - `AutoTorrent.Password`
+- `AutoTorrent.ApiKey`
 - `TmdbReadAccessToken`
 - `Gemini.ApiKey`
 - `AutoTrack.Jellyfin.ApiKey`

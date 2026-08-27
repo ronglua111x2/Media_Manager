@@ -10,6 +10,11 @@ public sealed class AutoTorrentSettings
 
     public string? Password { get; set; }
 
+    /// <summary>
+    /// Optional qBittorrent 5.2+ WebAPI key. When set, the client uses Bearer auth and skips cookie login.
+    /// </summary>
+    public string? ApiKey { get; set; }
+
     public string? DownloadFolder { get; set; }
 
     public List<string> DownloadFolders { get; set; } = [];

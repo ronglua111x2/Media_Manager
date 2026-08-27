@@ -1268,6 +1268,69 @@
                                     <TextBlock Text="Password" Style="{StaticResource SettingsLabelStyle}" />
                                     <TextBox Text="{Binding QbittorrentPassword, UpdateSourceTrigger=PropertyChanged}"
                                              Style="{StaticResource SettingsTextBoxStyle}" />
+                                    <TextBlock Text="API key" Style="{StaticResource SettingsLabelStyle}" />
+                                    <Grid Margin="0,0,0,4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <Grid Grid.Column="0">
+                                            <TextBox Text="{Binding QbittorrentApiKey, UpdateSourceTrigger=PropertyChanged}"
+                                                     Margin="0">
+                                                <TextBox.Style>
+                                                    <Style TargetType="TextBox" BasedOn="{StaticResource SettingsTextBoxStyle}">
+                                                        <Setter Property="Margin" Value="0" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsQbittorrentApiKeyVisible}" Value="False">
+                                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBox.Style>
+                                            </TextBox>
+                                            <TextBox Text="{Binding QbittorrentApiKeyMasked}"
+                                                     IsReadOnly="True"
+                                                     Margin="0">
+                                                <TextBox.Style>
+                                                    <Style TargetType="TextBox" BasedOn="{StaticResource SettingsTextBoxStyle}">
+                                                        <Setter Property="Margin" Value="0" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsQbittorrentApiKeyVisible}" Value="True">
+                                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBox.Style>
+                                            </TextBox>
+                                        </Grid>
+                                        <Button Grid.Column="1"
+                                                Command="{Binding ToggleQbittorrentApiKeyVisibilityCommand}"
+                                                Margin="8,0,0,0"
+                                                Padding="10,7"
+                                                VerticalAlignment="Top">
+                                            <Button.Style>
+                                                <Style TargetType="Button" BasedOn="{StaticResource SettingsIconTextButtonStyle}">
+                                                    <Setter Property="Content">
+                                                        <Setter.Value>
+                                                            <iconPacks:PackIconLucide Kind="Eye" Width="16" Height="16" />
+                                                        </Setter.Value>
+                                                    </Setter>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsQbittorrentApiKeyVisible}" Value="True">
+                                                            <Setter Property="Content">
+                                                                <Setter.Value>
+                                                                    <iconPacks:PackIconLucide Kind="EyeOff" Width="16" Height="16" />
+                                                                </Setter.Value>
+                                                            </Setter>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Button.Style>
+                                        </Button>
+                                    </Grid>
+                                    <TextBlock Style="{StaticResource SettingsHintStyle}"
+                                               Margin="0,0,0,8"
+                                               Text="qBittorrent 5.2+. If set, used instead of username/password for WebAPI. Does not log into the embedded WebUI." />
                                     <Button Command="{Binding TestQbittorrentConnectionCommand}"
                                             Style="{StaticResource SettingsIconTextButtonStyle}"
                                             HorizontalAlignment="Left"

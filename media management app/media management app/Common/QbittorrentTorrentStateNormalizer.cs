@@ -40,11 +40,11 @@ public static class QbittorrentTorrentStateNormalizer
 
         return state.ToLowerInvariant() switch
         {
-            "uploading" or "stalledup" or "queuedup" or "checkingup" or "forcedup" or "pausedup" => Uploading,
+            "uploading" or "stalledup" or "queuedup" or "checkingup" or "forcedup" or "pausedup" or "stoppedup" => Uploading,
             "downloading" or "forceddl" or "queueddl" or "checkingdl" or "metadl" or "allocating"
                 or "checkingresumedata" or "moving" => Downloading,
             "stalleddl" => Stalled,
-            "pauseddl" => Paused,
+            "pauseddl" or "stoppeddl" => Paused,
             "error" => Error,
             "missingfiles" => MissingFiles,
             // Unknown / transient API noise — never persist raw values like metaDL.

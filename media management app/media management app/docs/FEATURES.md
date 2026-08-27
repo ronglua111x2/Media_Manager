@@ -434,7 +434,7 @@ Settings organized in seven sections (`SettingsSection` enum). All saved to `set
 |---------|-------------|------|
 | TMDB token | Enter/test | `Services/TmdbMetadataProvider.cs` |
 | Gemini API | Key, model, fallbacks, test | `Services/Gemini/GeminiApiClient.cs` |
-| qBittorrent | URL, credentials, test | `Services/QbittorrentClient.cs` |
+| qBittorrent | URL, credentials, API key, test | `Services/QbittorrentClient.cs` |
 | qBittorrent restart | Opt-in process recovery | `Services/QbittorrentProcessRestartService.cs` |
 | Jellyfin | URL, API key, test | `Services/JellyfinClient.cs` |
 | WARP CLI | Path, test, auto-recover | `Services/WarpCliService.cs` |

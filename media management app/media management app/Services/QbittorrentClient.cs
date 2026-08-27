@@ -29,11 +29,12 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
     {
         _settingsService = settingsService;
         _logger = logger;
-        _httpClient = new HttpClient(new HttpClientHandler
+        var cookieHandler = new HttpClientHandler
         {
             CookieContainer = _cookies,
             UseCookies = true
-        });
+        };
+        _httpClient = new HttpClient(new QbittorrentAuthHandler(this, cookieHandler));
     }
 
     public async Task<string> TestConnectionAsync(CancellationToken cancellationToken = default)
@@ -66,13 +67,13 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
                 new Uri(baseUri, "api/v2/app/version"),
                 cancellationToken);
 
-            if (IsAuthenticationFailure(versionResponse.StatusCode))
+            if (QbittorrentWebApiCompatibility.IsAuthenticationFailure(versionResponse.StatusCode))
             {
-                // Bound but needs auth — try login for a clearer Ok vs AuthFailed.
+                // Bound but needs auth — try login / API key for a clearer Ok vs AuthFailed.
             }
             else if (versionResponse.IsSuccessStatusCode)
             {
-                // May succeed without login on some setups; still verify login when credentials exist.
+                // May succeed without login on some setups; still verify auth when credentials exist.
             }
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or OperationCanceledException)
@@ -88,9 +89,9 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
 
         try
         {
-            await LoginAsync(cancellationToken, force: true);
+            await EnsureAuthenticatedAsync(cancellationToken, force: true);
             using var response = await _httpClient.GetAsync(CreateUri("api/v2/app/version"), cancellationToken);
-            if (IsAuthenticationFailure(response.StatusCode))
+            if (QbittorrentWebApiCompatibility.IsAuthenticationFailure(response.StatusCode))
             {
                 return QbittorrentWebUiProbeResult.AuthFailed(
                     $"qBittorrent WebUI auth failed: {(int)response.StatusCode} {response.ReasonPhrase}");
@@ -131,7 +132,7 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
             throw new InvalidOperationException("Search query is empty.");
         }
 
-        await LoginAsync(cancellationToken);
+        await EnsureAuthenticatedAsync(cancellationToken);
         int? searchId = null;
         var timeoutSeconds = Math.Clamp(request.TimeoutSeconds, MinSearchTimeoutSeconds, MaxSearchTimeoutSeconds);
         var deadline = DateTimeOffset.UtcNow.AddSeconds(timeoutSeconds);
@@ -291,7 +292,7 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
             throw new InvalidOperationException($"Auto Torrent download folder does not exist: {savePath}");
         }
 
-        await LoginAsync(cancellationToken);
+        await EnsureAuthenticatedAsync(cancellationToken);
         var category = await TryPrepareCategoryAsync(request.Category, savePath, cancellationToken);
 
         var existingHashes = (await GetTorrentsAsync(cancellationToken))
@@ -328,9 +329,8 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
         foreach (var source in addSources)
         {
             _logger.Info($"Trying qBittorrent add source: {source.Description}", LogTarget.All);
-            await PostAddTorrentAsync(source, request, savePath, category, cancellationToken);
-
-            var addedTorrent = await WaitForAddedTorrentAsync(existingHashes, category, cancellationToken);
+            var addResult = await PostAddTorrentAsync(source, request, savePath, category, cancellationToken);
+            var addedTorrent = await TryResolveAddedTorrentAsync(addResult, existingHashes, category, cancellationToken);
             if (addedTorrent is not null)
             {
                 _logger.Info(
@@ -352,10 +352,11 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
         _httpClient.Dispose();
     }
 
-    private async Task LoginAsync(CancellationToken cancellationToken, bool force = false)
+    private async Task EnsureAuthenticatedAsync(CancellationToken cancellationToken, bool force = false)
     {
         var settings = _settingsService.Current.AutoTorrent;
-        var sessionKey = $"{settings.QbittorrentWebUiUrl}|{settings.Username}|{settings.Password}";
+        var apiKey = GetApiKey();
+        var sessionKey = $"{settings.QbittorrentWebUiUrl}|{settings.Username}|{settings.Password}|{apiKey}";
         await _loginGate.WaitAsync(cancellationToken);
         try
         {
@@ -364,7 +365,14 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
                 return;
             }
 
-            _cookies.GetCookies(GetBaseUri()).Clear();
+            TryClearQbittorrentCookies();
+            if (!string.IsNullOrWhiteSpace(apiKey))
+            {
+                _isLoggedIn = true;
+                _loginSessionKey = sessionKey;
+                return;
+            }
+
             using var content = new FormUrlEncodedContent(new Dictionary<string, string>
             {
                 ["username"] = settings.Username ?? string.Empty,
@@ -373,10 +381,11 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
 
             using var response = await _httpClient.PostAsync(CreateUri("api/v2/auth/login"), content, cancellationToken);
             var body = (await response.Content.ReadAsStringAsync(cancellationToken)).Trim();
-            if (!response.IsSuccessStatusCode || !body.Equals("Ok.", StringComparison.OrdinalIgnoreCase))
+            if (!QbittorrentWebApiCompatibility.IsLoginSuccess(response.StatusCode, body))
             {
                 MarkLoggedOut();
-                throw new InvalidOperationException("qBittorrent login failed. Check Web UI URL, username, password, and Web UI settings.");
+                throw new InvalidOperationException(
+                    "qBittorrent login failed. Check Web UI URL, username, password, API key, and Web UI settings.");
             }
 
             _isLoggedIn = true;
@@ -394,9 +403,45 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
         _loginSessionKey = null;
     }
 
-    private static bool IsAuthenticationFailure(HttpStatusCode statusCode)
+    private string? GetApiKey()
     {
-        return statusCode is HttpStatusCode.Forbidden or HttpStatusCode.Unauthorized;
+        var key = _settingsService.Current.AutoTorrent.ApiKey;
+        return string.IsNullOrWhiteSpace(key) ? null : key.Trim();
+    }
+
+    private bool HasApiKey() => !string.IsNullOrWhiteSpace(GetApiKey());
+
+    private void TryClearQbittorrentCookies()
+    {
+        try
+        {
+            _cookies.GetCookies(GetBaseUri()).Clear();
+        }
+        catch (InvalidOperationException)
+        {
+            // Invalid Web UI URL — caller will fail on the next request.
+        }
+    }
+
+    private bool IsQbittorrentRequest(Uri? requestUri)
+    {
+        if (requestUri is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            var baseUri = GetBaseUri();
+            return string.Equals(requestUri.Scheme, baseUri.Scheme, StringComparison.OrdinalIgnoreCase) &&
+                   string.Equals(requestUri.Host, baseUri.Host, StringComparison.OrdinalIgnoreCase) &&
+                   requestUri.Port == baseUri.Port &&
+                   requestUri.AbsolutePath.StartsWith(baseUri.AbsolutePath, StringComparison.OrdinalIgnoreCase);
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
     }
 
     private static bool IsSearchCapacityFailure(HttpStatusCode statusCode)
@@ -404,23 +449,37 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
         return statusCode == HttpStatusCode.Conflict;
     }
 
+    private async Task RetryAuthenticationAsync(CancellationToken cancellationToken)
+    {
+        MarkLoggedOut();
+        if (HasApiKey())
+        {
+            throw new InvalidOperationException("qBittorrent authentication failed after retry.");
+        }
+
+        await EnsureAuthenticatedAsync(cancellationToken, force: true);
+    }
+
     private async Task<HttpResponseMessage> PostFormWithAuthRetryAsync(
         string relativePath,
         Dictionary<string, string> form,
         CancellationToken cancellationToken)
     {
+        await EnsureAuthenticatedAsync(cancellationToken);
         for (var attempt = 0; attempt < 2; attempt++)
         {
             using var content = new FormUrlEncodedContent(form);
             var response = await _httpClient.PostAsync(CreateUri(relativePath), content, cancellationToken);
-            if (!IsAuthenticationFailure(response.StatusCode))
+            if (!QbittorrentWebApiCompatibility.IsAuthenticationFailure(response.StatusCode))
             {
                 return response;
             }
 
             response.Dispose();
-            MarkLoggedOut();
-            await LoginAsync(cancellationToken, force: true);
+            if (attempt == 0)
+            {
+                await RetryAuthenticationAsync(cancellationToken);
+            }
         }
 
         throw new InvalidOperationException("qBittorrent authentication failed after retry.");
@@ -428,20 +487,70 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
 
     private async Task<HttpResponseMessage> GetWithAuthRetryAsync(string relativePath, CancellationToken cancellationToken)
     {
+        await EnsureAuthenticatedAsync(cancellationToken);
         for (var attempt = 0; attempt < 2; attempt++)
         {
             var response = await _httpClient.GetAsync(CreateUri(relativePath), cancellationToken);
-            if (!IsAuthenticationFailure(response.StatusCode))
+            if (!QbittorrentWebApiCompatibility.IsAuthenticationFailure(response.StatusCode))
             {
                 return response;
             }
 
             response.Dispose();
-            MarkLoggedOut();
-            await LoginAsync(cancellationToken, force: true);
+            if (attempt == 0)
+            {
+                await RetryAuthenticationAsync(cancellationToken);
+            }
         }
 
         throw new InvalidOperationException("qBittorrent authentication failed after retry.");
+    }
+
+    private async Task<HttpResponseMessage> PostContentWithAuthRetryAsync(
+        string relativePath,
+        Func<HttpContent> contentFactory,
+        CancellationToken cancellationToken)
+    {
+        await EnsureAuthenticatedAsync(cancellationToken);
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            using var content = contentFactory();
+            var response = await _httpClient.PostAsync(CreateUri(relativePath), content, cancellationToken);
+            if (!QbittorrentWebApiCompatibility.IsAuthenticationFailure(response.StatusCode))
+            {
+                return response;
+            }
+
+            response.Dispose();
+            if (attempt == 0)
+            {
+                await RetryAuthenticationAsync(cancellationToken);
+            }
+        }
+
+        throw new InvalidOperationException("qBittorrent authentication failed after retry.");
+    }
+
+    private sealed class QbittorrentAuthHandler : DelegatingHandler
+    {
+        private readonly QbittorrentClient _owner;
+
+        public QbittorrentAuthHandler(QbittorrentClient owner, HttpMessageHandler innerHandler)
+            : base(innerHandler)
+        {
+            _owner = owner;
+        }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var apiKey = _owner.GetApiKey();
+            if (!string.IsNullOrWhiteSpace(apiKey) && _owner.IsQbittorrentRequest(request.RequestUri))
+            {
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+            }
+
+            return base.SendAsync(request, cancellationToken);
+        }
     }
 
     private async Task<string?> TryPrepareCategoryAsync(string categoryName, string? savePath, CancellationToken cancellationToken)
@@ -464,13 +573,14 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
             return null;
         }
 
-        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
-        {
-            ["category"] = categoryName,
-            ["savePath"] = savePath
-        });
-
-        using var response = await _httpClient.PostAsync(CreateUri("api/v2/torrents/createCategory"), content, cancellationToken);
+        using var response = await PostFormWithAuthRetryAsync(
+            "api/v2/torrents/createCategory",
+            new Dictionary<string, string>
+            {
+                ["category"] = categoryName,
+                ["savePath"] = savePath
+            },
+            cancellationToken);
         var responseText = (await response.Content.ReadAsStringAsync(cancellationToken)).Trim();
         if (!response.IsSuccessStatusCode || responseText.Equals("Fails.", StringComparison.OrdinalIgnoreCase))
         {
@@ -485,7 +595,7 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
 
     private async Task<Dictionary<string, string?>> GetCategoriesAsync(CancellationToken cancellationToken)
     {
-        using var response = await _httpClient.GetAsync(CreateUri("api/v2/torrents/categories"), cancellationToken);
+        using var response = await GetWithAuthRetryAsync("api/v2/torrents/categories", cancellationToken);
         response.EnsureSuccessStatusCode();
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
@@ -530,10 +640,27 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
         return null;
     }
 
+    private async Task<AddedTorrentResult?> TryResolveAddedTorrentAsync(
+        QbittorrentAddApiResult addResult,
+        HashSet<string> existingHashes,
+        string? categoryName,
+        CancellationToken cancellationToken)
+    {
+        foreach (var id in addResult.AddedTorrentIds)
+        {
+            var torrent = await GetTorrentAsync(id, cancellationToken);
+            if (torrent is not null && !existingHashes.Contains(torrent.Hash))
+            {
+                return torrent;
+            }
+        }
+
+        return await WaitForAddedTorrentAsync(existingHashes, categoryName, cancellationToken);
+    }
+
     public async Task<IReadOnlyList<AddedTorrentResult>> GetTorrentsAsync(CancellationToken cancellationToken = default)
     {
-        await LoginAsync(cancellationToken);
-        using var response = await _httpClient.GetAsync(CreateUri("api/v2/torrents/info"), cancellationToken);
+        using var response = await GetWithAuthRetryAsync("api/v2/torrents/info", cancellationToken);
         response.EnsureSuccessStatusCode();
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
@@ -574,8 +701,7 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
             return [];
         }
 
-        await LoginAsync(cancellationToken);
-        using var response = await _httpClient.GetAsync(CreateUri($"api/v2/torrents/files?hash={Uri.EscapeDataString(hash)}"), cancellationToken);
+        using var response = await GetWithAuthRetryAsync($"api/v2/torrents/files?hash={Uri.EscapeDataString(hash)}", cancellationToken);
         response.EnsureSuccessStatusCode();
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
@@ -775,14 +901,35 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
         return IsTorrentPayload(contentType, bytes) ? bytes : null;
     }
 
-    private async Task PostAddTorrentAsync(
+    private async Task<QbittorrentAddApiResult> PostAddTorrentAsync(
         TorrentAddSource source,
         AddTorrentRequest request,
         string? savePath,
         string? category,
         CancellationToken cancellationToken)
     {
-        using var content = new MultipartFormDataContent();
+        using var response = await PostContentWithAuthRetryAsync(
+            "api/v2/torrents/add",
+            () => CreateAddTorrentContent(source, request, savePath, category),
+            cancellationToken);
+        var responseText = (await response.Content.ReadAsStringAsync(cancellationToken)).Trim();
+        var parsed = QbittorrentWebApiCompatibility.ParseAddResponse(response.StatusCode, responseText);
+        if (!parsed.IsSuccess)
+        {
+            throw new InvalidOperationException(
+                $"Failed to add torrent: {(int)response.StatusCode} {response.ReasonPhrase} {parsed.ErrorDetail ?? responseText}".Trim());
+        }
+
+        return parsed;
+    }
+
+    private static MultipartFormDataContent CreateAddTorrentContent(
+        TorrentAddSource source,
+        AddTorrentRequest request,
+        string? savePath,
+        string? category)
+    {
+        var content = new MultipartFormDataContent();
         if (source.TorrentBytes is not null)
         {
             var torrentContent = new ByteArrayContent(source.TorrentBytes);
@@ -807,25 +954,22 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
             AddStringContent(content, "category", category);
         }
         AddStringContent(content, "tags", request.Tags);
-        AddStringContent(content, "paused", request.Paused ? "true" : "false");
-
-        using var response = await _httpClient.PostAsync(CreateUri("api/v2/torrents/add"), content, cancellationToken);
-        var responseText = (await response.Content.ReadAsStringAsync(cancellationToken)).Trim();
-        if (!response.IsSuccessStatusCode || responseText.Equals("Fails.", StringComparison.OrdinalIgnoreCase))
-        {
-            throw new InvalidOperationException($"Failed to add torrent: {(int)response.StatusCode} {response.ReasonPhrase} {responseText}".Trim());
-        }
+        var pausedValue = request.Paused ? "true" : "false";
+        AddStringContent(content, "paused", pausedValue);
+        AddStringContent(content, "stopped", pausedValue);
+        return content;
     }
 
     private async Task PostSearchDownloadTorrentAsync(string torrentUrl, string pluginName, CancellationToken cancellationToken)
     {
-        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
-        {
-            ["torrentUrl"] = torrentUrl,
-            ["pluginName"] = pluginName
-        });
-
-        using var response = await _httpClient.PostAsync(CreateUri("api/v2/search/downloadTorrent"), content, cancellationToken);
+        using var response = await PostFormWithAuthRetryAsync(
+            "api/v2/search/downloadTorrent",
+            new Dictionary<string, string>
+            {
+                ["torrentUrl"] = torrentUrl,
+                ["pluginName"] = pluginName
+            },
+            cancellationToken);
         var responseText = (await response.Content.ReadAsStringAsync(cancellationToken)).Trim();
         if (!response.IsSuccessStatusCode || responseText.Equals("Fails.", StringComparison.OrdinalIgnoreCase))
         {
@@ -865,8 +1009,7 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
 
     private async Task PostFormAsync(string relativePath, Dictionary<string, string> form, CancellationToken cancellationToken)
     {
-        using var content = new FormUrlEncodedContent(form);
-        using var response = await _httpClient.PostAsync(CreateUri(relativePath), content, cancellationToken);
+        using var response = await PostFormWithAuthRetryAsync(relativePath, form, cancellationToken);
         var responseText = (await response.Content.ReadAsStringAsync(cancellationToken)).Trim();
         if (!response.IsSuccessStatusCode || responseText.Equals("Fails.", StringComparison.OrdinalIgnoreCase))
         {
@@ -1119,21 +1262,27 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
             return;
         }
 
-        using var response = await PostFormWithAuthRetryAsync("api/v2/torrents/start", new Dictionary<string, string>
+        var form = new Dictionary<string, string>
         {
             ["hashes"] = string.Join("|", hashList)
-        }, cancellationToken);
+        };
 
-        if (!response.IsSuccessStatusCode)
+        using var startResponse = await PostFormWithAuthRetryAsync("api/v2/torrents/start", form, cancellationToken);
+        if (startResponse.IsSuccessStatusCode)
+        {
+            return;
+        }
+
+        using var resumeResponse = await PostFormWithAuthRetryAsync("api/v2/torrents/resume", form, cancellationToken);
+        if (!resumeResponse.IsSuccessStatusCode)
         {
             throw new InvalidOperationException(
-                $"Failed to resume torrents in qBittorrent: {(int)response.StatusCode} {response.ReasonPhrase}");
+                $"Failed to resume torrents in qBittorrent: {(int)resumeResponse.StatusCode} {resumeResponse.ReasonPhrase}");
         }
     }
 
     public async Task<IReadOnlyList<SearchPluginInfo>> GetSearchPluginsAsync(CancellationToken cancellationToken = default)
     {
-        await LoginAsync(cancellationToken);
         using var response = await GetWithAuthRetryAsync("api/v2/search/plugins", cancellationToken);
         response.EnsureSuccessStatusCode();
 
