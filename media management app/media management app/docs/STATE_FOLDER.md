@@ -196,3 +196,4 @@ One-time migration **`003_torrentblacklist_rebuild`** (Sprint 3):
 - [APP_OVERVIEW.md](./APP_OVERVIEW.md) — workflows using state data
 - [RECIPE_SCHEMA.md](./RECIPE_SCHEMA.md) — recipe JSON format
 - [FEATURES.md](./FEATURES.md) — backup and recipe features
+- [legacy-overlap/](./legacy-overlap/) — leftover `PreferredQuality` vs recipe matching (docs only)

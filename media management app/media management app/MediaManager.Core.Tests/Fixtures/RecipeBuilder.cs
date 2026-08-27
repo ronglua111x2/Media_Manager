@@ -38,6 +38,31 @@ public sealed class RecipeBuilder
         });
     }
 
+    public static RecipeBuilder TvSeasonPack(string name = "Default Pack")
+    {
+        return new RecipeBuilder(new SearchRecipe
+        {
+            Name = name,
+            TargetKind = MediaKind.TvSeasonPack,
+            Modules =
+            [
+                Module(RecipeBlockType.Identity),
+                Module(RecipeBlockType.QueryBuilder, query =>
+                {
+                    query.QueryTemplates = ["{title} S{season:00} {quality}"];
+                    query.QualityAllowList = ["1080p"];
+                }),
+                Module(RecipeBlockType.CandidateFilter, filter =>
+                {
+                    filter.QualityAllowList = ["1080p"];
+                    filter.MinimumSeeders = 0;
+                }),
+                Module(RecipeBlockType.CandidateParser),
+                Module(RecipeBlockType.Scoring)
+            ]
+        });
+    }
+
     public static RecipeBuilder Movie(string name = "Default Movie")
     {
         return new RecipeBuilder(new SearchRecipe

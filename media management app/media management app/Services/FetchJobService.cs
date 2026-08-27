@@ -184,28 +184,50 @@ public sealed class FetchJobService : IFetchJobService
         }
     }
 
-    private void TryWriteHuntMatchDebug(
+    private void TryWriteCandidateDebug(
         SearchRecipe recipe,
-        string showTitle,
-        string episodeLabel,
-        int searchRows,
-        IReadOnlyList<EpisodeFetchCandidate> recipeMatched)
+        string targetTitle,
+        MediaKind targetKind,
+        IReadOnlyList<string> queries,
+        IReadOnlyList<TorrentSearchResult> searchResults,
+        IReadOnlyList<RecipeCandidateResult> evaluated,
+        int timeoutSeconds,
+        string? huntMatchTitle = null,
+        string? huntMatchEpisodeLabel = null,
+        IReadOnlyList<EpisodeFetchCandidate>? huntMatched = null)
     {
         if (_activeHuntDebugSession is null)
         {
             return;
         }
 
-        HuntCandidateDebugWriter.WriteHuntMatch(
+        HuntCandidateDebugWriter.WriteRecipeEvaluation(
             _activeHuntDebugSession,
             recipe,
-            showTitle,
-            episodeLabel,
-            searchRows,
-            recipeMatched);
+            targetTitle,
+            targetKind,
+            queries,
+            searchResults,
+            evaluated,
+            timeoutSeconds);
+        if (huntMatchTitle is not null && huntMatchEpisodeLabel is not null && huntMatched is not null)
+        {
+            HuntCandidateDebugWriter.WriteHuntMatch(
+                _activeHuntDebugSession,
+                recipe,
+                huntMatchTitle,
+                huntMatchEpisodeLabel,
+                searchResults.Count,
+                huntMatched);
+        }
     }
 
-    public async Task FetchSeasonPacksAsync(long showId, IReadOnlyList<int> seasonNumbers, CancellationToken cancellationToken = default, int? maxCandidatesOverride = null)
+    public async Task FetchSeasonPacksAsync(
+        long showId,
+        IReadOnlyList<int> seasonNumbers,
+        CancellationToken cancellationToken = default,
+        int? maxCandidatesOverride = null,
+        string? recipeId = null)
     {
         var show = _databaseService.GetTrackedShow(showId) ?? throw new InvalidOperationException("Tracked show was not found.");
         var hiddenSeasons = _databaseService.GetTrackedSeasons(showId)
@@ -225,20 +247,23 @@ public sealed class FetchJobService : IFetchJobService
         _progressService.Start("Search: preparing…", 0);
         try
         {
-            var packRecipe = _recipeService.GetRecipeOrDefault(show.PackRecipeId, MediaKind.TvSeasonPack);
+            var packRecipe = _recipeService.GetRecipeOrDefault(recipeId ?? show.PackRecipeId, MediaKind.TvSeasonPack);
+            var packDebugSession = HuntCandidateDebugWriter.TryCreateSession(packRecipe, _settingsService, _logger);
             var snapshotResults = await _snapshotService.CaptureSnapshotAsync(
                 show,
                 _progressService,
                 cancellationToken,
-                MediaKind.TvSeasonPack);
+                MediaKind.TvSeasonPack,
+                packRecipe.RecipeId);
             _progressService.Report(0, "Filtering results...");
-            var candidates = await MapSeasonPackCandidatesAsync(
+            var packSummary = await MapSeasonPackCandidatesAsync(
                 show,
                 selectedSeasons,
                 snapshotResults,
                 packRecipe,
                 maxCandidatesOverride,
                 cancellationToken);
+            var candidates = packSummary.Candidates;
             lock (_gate)
             {
                 foreach (var seasonNumber in selectedSeasons)
@@ -247,6 +272,21 @@ public sealed class FetchJobService : IFetchJobService
                         .Where(candidate => candidate.CoveredSeasons.Contains(seasonNumber))
                         .ToList();
                 }
+            }
+
+            if (packDebugSession is not null)
+            {
+                var packQueries = _searchPlanBuilder.BuildShowSnapshotQueries(packRecipe, show);
+                HuntCandidateDebugWriter.WriteRecipeEvaluation(
+                    packDebugSession,
+                    packRecipe,
+                    show.DisplayTitle,
+                    MediaKind.TvSeasonPack,
+                    packQueries,
+                    snapshotResults,
+                    packSummary.Evaluated,
+                    RecipeRuntimeSettings.GetSnapshotTimeoutSeconds(packRecipe, _settingsService.Current.AutoTorrent));
+                HuntCandidateDebugWriter.LogSessionPath(_logger, packDebugSession);
             }
 
             _logger.Info($"Fetched season pack candidates for {show.DisplayTitle}. Seasons={string.Join(",", selectedSeasons)}, Candidates={candidates.Count}.", LogTarget.All);
@@ -327,7 +367,17 @@ public sealed class FetchJobService : IFetchJobService
                 _logger.Info(
                     $"Cart parallel search finished {label}. searchRows={searchSummary.SearchResults.Count}, recipeMatched={searchSummary.Candidates.Count}.",
                     LogTarget.All);
-                TryWriteHuntMatchDebug(recipe, show.DisplayTitle, label, searchSummary.SearchResults.Count, searchSummary.Candidates);
+                TryWriteCandidateDebug(
+                    recipe,
+                    show.DisplayTitle,
+                    MediaKind.TvEpisode,
+                    queries,
+                    searchSummary.SearchResults,
+                    searchSummary.Evaluated,
+                    RecipeRuntimeSettings.GetParallelSearchTimeoutSeconds(recipe, _settingsService.Current.AutoTorrent),
+                    show.DisplayTitle,
+                    label,
+                    searchSummary.Candidates);
                 await Task.Yield();
             }
         }
@@ -357,7 +407,12 @@ public sealed class FetchJobService : IFetchJobService
             $"Cart snapshot search started for {show.DisplayTitle}. Recipe='{recipe.Name}', Orders={targetEpisodes.Count}, TargetResults={RecipeRuntimeSettings.GetSnapshotTargetResults(recipe, _settingsService.Current.AutoTorrent)}, TimeoutSeconds={RecipeRuntimeSettings.GetSnapshotTimeoutSeconds(recipe, _settingsService.Current.AutoTorrent)}, LocalWorkers={RecipeRuntimeSettings.GetLocalMatchWorkers(recipe, _settingsService.Current.AutoTorrent)}.",
             LogTarget.All);
 
-        var snapshotResults = await _snapshotService.CaptureSnapshotAsync(show, _progressService, cancellationToken);
+        var snapshotResults = await _snapshotService.CaptureSnapshotAsync(
+            show,
+            _progressService,
+            cancellationToken,
+            MediaKind.TvEpisode,
+            recipe.RecipeId);
         _progressService.Report(0, "Filtering results...");
         var usesAnimeAbsolute = RecipeRuntimeSettings.UsesAnimeAbsoluteEpisodeNumbering(recipe);
         var snapshotCandidates = snapshotResults
@@ -368,9 +423,9 @@ public sealed class FetchJobService : IFetchJobService
             })
             .ToList();
         var matcher = new SnapshotCandidateMatcher();
-        var selectedQualities = ParseQualities(show.PreferredQuality);
         var titleVariants = _titleResolver.Resolve(
             _titleResolver.CreateRequest(recipe, show.Title, show.GetSearchableAlternativeTitles()));
+        var snapshotQueries = _searchPlanBuilder.BuildShowSnapshotQueries(recipe, show);
         var workerCount = Math.Min(
             RecipeRuntimeSettings.GetLocalMatchWorkers(recipe, _settingsService.Current.AutoTorrent),
             Math.Max(targetEpisodes.Count, 1));
@@ -400,12 +455,11 @@ public sealed class FetchJobService : IFetchJobService
                 var episode = targetEpisodes[index];
                 var label = $"{show.DisplayTitle} S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00}";
                 statusChanged?.Invoke(episode.Id, $"Matching {label} from snapshot (worker {workerId}).");
-                var candidates = await MapSnapshotCandidatesAsync(
+                var mapped = await MapSnapshotCandidatesAsync(
                     show,
                     episode,
                     snapshotCandidates,
                     matcher,
-                    selectedQualities,
                     titleVariants,
                     cartJob,
                     cancellationToken,
@@ -413,20 +467,30 @@ public sealed class FetchJobService : IFetchJobService
 
                 lock (_gate)
                 {
-                    _candidatesByEpisodeId[episode.Id] = candidates;
+                    _candidatesByEpisodeId[episode.Id] = mapped.Candidates;
                     _searchRowsByEpisodeId[episode.Id] = snapshotCandidates.Count;
                 }
 
                 lock (resultGate)
                 {
-                    results[episode.Id] = candidates;
+                    results[episode.Id] = mapped.Candidates;
                 }
 
-                var detail = candidates.Count == 0
+                var detail = mapped.Candidates.Count == 0
                     ? $"No snapshot match found for {label}."
-                    : $"Matched {candidates.Count} candidate(s) for {label}.";
+                    : $"Matched {mapped.Candidates.Count} candidate(s) for {label}.";
                 statusChanged?.Invoke(episode.Id, detail);
-                TryWriteHuntMatchDebug(recipe, show.DisplayTitle, label, snapshotCandidates.Count, candidates);
+                TryWriteCandidateDebug(
+                    recipe,
+                    show.DisplayTitle,
+                    MediaKind.TvEpisode,
+                    snapshotQueries,
+                    snapshotResults,
+                    mapped.Evaluated,
+                    RecipeRuntimeSettings.GetSnapshotTimeoutSeconds(recipe, _settingsService.Current.AutoTorrent),
+                    show.DisplayTitle,
+                    label,
+                    mapped.Candidates);
                 await Task.Yield();
             }
         }
@@ -487,15 +551,35 @@ public sealed class FetchJobService : IFetchJobService
 
     private sealed class EpisodeSearchSummary
     {
-        public EpisodeSearchSummary(IReadOnlyList<EpisodeFetchCandidate> candidates, IReadOnlyList<TorrentSearchResult> searchResults)
+        public EpisodeSearchSummary(
+            IReadOnlyList<EpisodeFetchCandidate> candidates,
+            IReadOnlyList<TorrentSearchResult> searchResults,
+            IReadOnlyList<RecipeCandidateResult> evaluated)
         {
             Candidates = candidates;
             SearchResults = searchResults;
+            Evaluated = evaluated;
         }
 
         public IReadOnlyList<EpisodeFetchCandidate> Candidates { get; }
 
         public IReadOnlyList<TorrentSearchResult> SearchResults { get; }
+
+        public IReadOnlyList<RecipeCandidateResult> Evaluated { get; }
+    }
+
+    private sealed class SnapshotMapSummary
+    {
+        public required IReadOnlyList<EpisodeFetchCandidate> Candidates { get; init; }
+
+        public required IReadOnlyList<RecipeCandidateResult> Evaluated { get; init; }
+    }
+
+    private sealed class PackMapSummary
+    {
+        public required IReadOnlyList<SeasonPackCandidate> Candidates { get; init; }
+
+        public required IReadOnlyList<RecipeCandidateResult> Evaluated { get; init; }
     }
 
     private async Task<EpisodeSearchSummary> SearchEpisodeCandidatesSequentialAsync(
@@ -506,8 +590,10 @@ public sealed class FetchJobService : IFetchJobService
         CancellationToken cancellationToken)
     {
         var maxCandidates = RecipeRuntimeSettings.GetMaxCandidatesPerFetch(recipe, _settingsService.Current.AutoTorrent);
+        var writeDebug = _activeHuntDebugSession is not null;
         var resultsByUrl = new Dictionary<string, TorrentSearchResult>(StringComparer.OrdinalIgnoreCase);
         var matchedCandidates = new List<(EpisodeFetchCandidate Candidate, RecipeCandidateResult Match)>();
+        var evaluated = new List<RecipeCandidateResult>();
         var plannedQueries = queries
             .Where(query => !string.IsNullOrWhiteSpace(query))
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -536,12 +622,17 @@ public sealed class FetchJobService : IFetchJobService
                     resultsByUrl[result.FileUrl] = result;
                 }
 
-                if (matchedCandidates.Count >= maxCandidates)
+                if (!writeDebug && matchedCandidates.Count >= maxCandidates)
                 {
                     continue;
                 }
 
                 var match = _candidateEvaluationService.EvaluateEpisode(recipe, show, episode, result);
+                if (writeDebug)
+                {
+                    evaluated.Add(match);
+                }
+
                 if (!match.IsAccepted)
                 {
                     var message =
@@ -562,11 +653,16 @@ public sealed class FetchJobService : IFetchJobService
                     continue;
                 }
 
+                if (matchedCandidates.Count >= maxCandidates)
+                {
+                    continue;
+                }
+
                 var candidate = ToCandidate(episode.Id, result, match.QualityScore, match.TotalScore);
                 matchedCandidates.Add((candidate, match));
             }
 
-            if (matchedCandidates.Count >= maxCandidates)
+            if (!writeDebug && matchedCandidates.Count >= maxCandidates)
             {
                 if (completedQueries < totalQueries)
                 {
@@ -604,7 +700,7 @@ public sealed class FetchJobService : IFetchJobService
             .OrderByDescending(result => result.Seeders)
             .ToList();
 
-        return new EpisodeSearchSummary(candidates, searchResults);
+        return new EpisodeSearchSummary(candidates, searchResults, evaluated);
     }
 
     private async Task<IReadOnlyList<TorrentSearchResult>> SearchSingleQueryAsync(
@@ -823,98 +919,16 @@ public sealed class FetchJobService : IFetchJobService
         return true;
     }
 
-    private bool IsUsableMovieCandidate(TorrentSearchResult result, TrackedMovie movie, string query)
-    {
-        if (IsBlacklistedListing(movie.Id, result, query))
-        {
-            return false;
-        }
-
-        var rejectionReason = GetMovieCandidateRejectionReason(result, movie);
-        if (rejectionReason is null)
-        {
-            return true;
-        }
-
-        var message =
-            $"Rejected movie search candidate for '{query}'. Reason='{rejectionReason}', Engine='{result.EngineName}', Name='{result.FileName}', Url='{result.FileUrl}'.";
-        if (rejectionReason.Contains("plugin error", StringComparison.OrdinalIgnoreCase))
-        {
-            _logger.Warning(message, LogTarget.All);
-        }
-        else
-        {
-            _logger.Debug(message, LogTarget.File | LogTarget.Console);
-        }
-
-        return false;
-    }
-
-    private static string? GetMovieCandidateRejectionReason(TorrentSearchResult result, TrackedMovie movie)
-    {
-        if (!result.CanAdd)
-        {
-            return $"not addable link type '{result.LinkType}'";
-        }
-
-        if (LooksLikePluginError(result.FileName))
-        {
-            return "search plugin error row";
-        }
-
-        if (result.Seeders < movie.MinimumSeeders)
-        {
-            return $"seeders below threshold {movie.MinimumSeeders}";
-        }
-
-        var selectedQualities = ParseQualities(movie.PreferredQuality);
-        var detectedQuality = TorrentQuality.Detect(result.FileName);
-        if (!TorrentQuality.MatchesSelectedQuality(detectedQuality, selectedQualities))
-        {
-            return $"does not match selected quality options: {string.Join(", ", selectedQualities)}";
-        }
-
-        if (movie.ReleaseYear is not null && !result.FileName.Contains(movie.ReleaseYear.Value.ToString(), StringComparison.OrdinalIgnoreCase))
-        {
-            return $"does not contain release year {movie.ReleaseYear}";
-        }
-
-        if (!LooksLikeMovieTitleMatch(result.FileName, movie.Title))
-        {
-            return "does not contain enough movie title tokens";
-        }
-
-        return null;
-    }
-
-    private void LogCandidateSummary(
-        string query,
-        TrackedEpisode episode,
-        IReadOnlyList<TorrentSearchResult> searchResults,
-        IReadOnlyList<EpisodeFetchCandidate> candidates)
-    {
-        if (candidates.Count > 0)
-        {
-            _logger.Info(
-                $"Mapped {candidates.Count} candidate(s) for {query}. SearchResults={searchResults.Count}, EpisodeId={episode.Id}.",
-                LogTarget.All);
-            return;
-        }
-
-        _logger.Warning(
-            $"No usable candidates for {query}. SearchResults={searchResults.Count}, EpisodeId={episode.Id}. Check earlier rejected-candidate logs for plugin errors or title mismatch.",
-            LogTarget.All);
-    }
-
     private async Task<string?> GetEpisodeMetadataRejectReasonAsync(
         TrackedShow show,
         TrackedEpisode episode,
         TorrentSearchResult result,
         TorrentCandidateParseResult parsed,
         int identityScore,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        SearchRecipe? recipeOverride = null)
     {
-        var recipe = _recipeService.GetRecipeOrDefault(show.RecipeId, MediaKind.TvEpisode);
+        var recipe = recipeOverride ?? _recipeService.GetRecipeOrDefault(show.RecipeId, MediaKind.TvEpisode);
         if (!ShouldProbeEpisodeCandidate(recipe, result, parsed, identityScore))
         {
             return null;
@@ -1053,50 +1067,24 @@ public sealed class FetchJobService : IFetchJobService
         }
     }
 
-    private static bool LooksLikePluginError(string fileName)
-    {
-        if (string.IsNullOrWhiteSpace(fileName))
-        {
-            return true;
-        }
-
-        return fileName.Contains("api key error", StringComparison.OrdinalIgnoreCase) ||
-               fileName.Contains("right-click this row", StringComparison.OrdinalIgnoreCase) ||
-               fileName.Contains("open description", StringComparison.OrdinalIgnoreCase) ||
-               fileName.Contains("jackett:", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static bool LooksLikeMovieTitleMatch(string fileName, string title)
-    {
-        var fileTokens = Tokenize(fileName).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var titleTokens = Tokenize(title).Where(token => token.Length > 2).ToList();
-        if (titleTokens.Count == 0)
-        {
-            return true;
-        }
-
-        var matched = titleTokens.Count(token => fileTokens.Contains(token));
-        return matched >= Math.Min(2, titleTokens.Count);
-    }
-
-    private async Task<List<EpisodeFetchCandidate>> MapSnapshotCandidatesAsync(
+    private async Task<SnapshotMapSummary> MapSnapshotCandidatesAsync(
         TrackedShow show,
         TrackedEpisode episode,
         IReadOnlyList<SnapshotCandidate> snapshotCandidates,
         SnapshotCandidateMatcher matcher,
-        IReadOnlyList<string> selectedQualities,
         IReadOnlyList<string> titleVariants,
         FetchJob job,
         CancellationToken cancellationToken,
         SearchRecipe? recipeOverride = null)
     {
         var matchedCandidates = new List<(EpisodeFetchCandidate Candidate, SnapshotMatchResult Match)>();
+        var evaluated = new List<RecipeCandidateResult>();
         var recipe = recipeOverride ?? _recipeService.GetRecipeOrDefault(show.RecipeId, MediaKind.TvEpisode);
         var scoringWeights = RecipeRuntimeSettings.GetCandidateScoringWeights(recipe);
-        var preferTerms = GetPreferTerms(recipe);
         foreach (var candidate in snapshotCandidates)
         {
-            var match = matcher.Match(show, episode, candidate, selectedQualities, titleVariants, scoringWeights, preferTerms);
+            var match = matcher.Match(show, episode, candidate, recipe, titleVariants, scoringWeights);
+            var recipeResult = match.ToRecipeCandidateResult(candidate.Result);
             if (!match.IsAccepted)
             {
                 if (match.RejectReason?.Contains("plugin error", StringComparison.OrdinalIgnoreCase) == true)
@@ -1106,6 +1094,7 @@ public sealed class FetchJobService : IFetchJobService
                         LogTarget.All);
                 }
 
+                evaluated.Add(recipeResult);
                 continue;
             }
 
@@ -1115,17 +1104,21 @@ public sealed class FetchJobService : IFetchJobService
                 candidate.Result,
                 candidate.Parsed,
                 match.IdentityScore,
-                cancellationToken);
+                cancellationToken,
+                recipe);
             if (metadataRejectReason is not null)
             {
+                evaluated.Add(RejectedRecipeResult(candidate.Result, CandidateRejectReason.YearMismatch, metadataRejectReason));
                 continue;
             }
 
             if (IsBlacklistedListing(show.Id, candidate.Result))
             {
+                evaluated.Add(RejectedRecipeResult(candidate.Result, CandidateRejectReason.Blacklisted, "listing URL or infohash blacklisted"));
                 continue;
             }
 
+            evaluated.Add(recipeResult);
             var episodeCandidate = ToCandidate(episode.Id, candidate.Result, match.QualityScore, match.TotalScore);
             matchedCandidates.Add((episodeCandidate, match));
         }
@@ -1156,10 +1149,14 @@ public sealed class FetchJobService : IFetchJobService
             $"Snapshot matching complete for {show.DisplayTitle} {episode.SeasonNumber:00}x{episode.EpisodeNumber:00}. recipeMatched={finalCandidates.Count} (from snapshotSize={snapshotCandidates.Count}), JobId={job.Id}.",
             LogTarget.All);
 
-        return finalCandidates;
+        return new SnapshotMapSummary
+        {
+            Candidates = finalCandidates,
+            Evaluated = evaluated
+        };
     }
 
-    private async Task<List<SeasonPackCandidate>> MapSeasonPackCandidatesAsync(
+    private async Task<PackMapSummary> MapSeasonPackCandidatesAsync(
         TrackedShow show,
         IReadOnlyList<int> selectedSeasons,
         IReadOnlyList<TorrentSearchResult> snapshotResults,
@@ -1167,23 +1164,25 @@ public sealed class FetchJobService : IFetchJobService
         int? maxCandidatesOverride,
         CancellationToken cancellationToken)
     {
-        var selectedQualities = ParseQualities(show.PreferredQuality);
         var maxCandidates = maxCandidatesOverride ??
             RecipeRuntimeSettings.GetMaxCandidatesPerFetch(packRecipe, _settingsService.Current.AutoTorrent);
         var candidates = new List<SeasonPackCandidate>();
+        var evaluated = new List<RecipeCandidateResult>();
         foreach (var result in snapshotResults)
         {
             var parsed = TorrentCandidateParser.Parse(result.FileName);
-            var rejectReason = GetPackRejectReason(show, selectedSeasons, result, parsed, selectedQualities);
+            var reject = GetPackRejectReason(show, selectedSeasons, result, parsed, packRecipe);
+            var rejectReason = PackRejectDetail(reject);
             var coveredSeasons = parsed.CoveredSeasons.ToList();
             TorrentMetadataProbeResult? probe = null;
 
-            if (rejectReason is "no explicit season coverage" && ShouldProbePackCandidate(packRecipe, result, parsed))
+            if (rejectReason is SeasonPackIdentity.NoExplicitSeasonCoverage && ShouldProbePackCandidate(packRecipe, result, parsed))
             {
                 probe = await _qbittorrentClient.ProbeTorrentMetadataAsync(result, cancellationToken);
                 var probeRejectReason = GetProbeYearRejectReason(show, probe);
                 if (probeRejectReason is not null)
                 {
+                    reject = (CandidateRejectReason.YearMismatch, probeRejectReason);
                     rejectReason = probeRejectReason;
                 }
                 else
@@ -1192,7 +1191,8 @@ public sealed class FetchJobService : IFetchJobService
                     if (probedSeasons.Count > 0)
                     {
                         coveredSeasons = probedSeasons;
-                        rejectReason = GetPackRejectReason(show, selectedSeasons, result, parsed, selectedQualities, coveredSeasons);
+                        reject = GetPackRejectReason(show, selectedSeasons, result, parsed, packRecipe, coveredSeasons);
+                        rejectReason = PackRejectDetail(reject);
                         _logger.Debug(
                             $"Pack metadata probe inferred seasons for '{show.DisplayTitle}'. Seasons={string.Join(",", coveredSeasons)}, Name='{result.FileName}'.",
                             LogTarget.File | LogTarget.Console);
@@ -1202,22 +1202,31 @@ public sealed class FetchJobService : IFetchJobService
             else if (rejectReason is null && ShouldProbePackCandidate(packRecipe, result, parsed))
             {
                 probe = await _qbittorrentClient.ProbeTorrentMetadataAsync(result, cancellationToken);
-                rejectReason = GetProbeYearRejectReason(show, probe);
+                var probeYear = GetProbeYearRejectReason(show, probe);
+                rejectReason = probeYear;
+                if (probeYear is not null)
+                {
+                    reject = (CandidateRejectReason.YearMismatch, probeYear);
+                }
+
                 var probedSeasons = InferCoveredSeasonsFromProbe(probe).ToList();
                 if (rejectReason is null && probedSeasons.Count > 0 && !probedSeasons.Any(selectedSeasons.Contains))
                 {
                     rejectReason = $"metadata files do not cover selected seasons {string.Join(",", selectedSeasons)}";
+                    reject = (CandidateRejectReason.EpisodeMismatch, rejectReason);
                 }
             }
 
             if (rejectReason is not null)
             {
                 _logger.Debug($"Rejected pack candidate for '{show.DisplayTitle}'. Reason='{rejectReason}', Name='{result.FileName}', Url='{result.FileUrl}'.", LogTarget.File | LogTarget.Console);
+                evaluated.Add(RejectedRecipeResult(result, reject.Reason, rejectReason));
                 continue;
             }
 
             if (IsBlacklistedListing(show.Id, result, show.DisplayTitle))
             {
+                evaluated.Add(RejectedRecipeResult(result, CandidateRejectReason.Blacklisted, "listing URL or infohash blacklisted"));
                 continue;
             }
 
@@ -1236,13 +1245,12 @@ public sealed class FetchJobService : IFetchJobService
             }
 
             var matchingSeasonCount = coveredSeasons.Count(selectedSeasons.Contains);
-            var packFilter = packRecipe.Modules.FirstOrDefault(module =>
-                module.BlockType == RecipeBlockType.CandidateFilter && module.IsEnabled);
+            var packFilter = RecipeCandidateFilter.GetFilterModule(packRecipe);
             var scoringWeights = RecipeRuntimeSettings.GetCandidateScoringWeights(packRecipe);
             var singleSeasonBoost = coveredSeasons.Count == 1 ? scoringWeights.SingleSeasonBoost : 0;
             var extrasPriorityBoost = RecipeRuntimeSettings.GetPackExtrasPriorityScoreBoost(packRecipe, result.FileName);
             var qualityScore = TorrentQuality.GetRank(parsed.Quality);
-            var audioScore = PreferredTermMatcher.CountMatches(result.FileName, show.PreferredAudioCodec);
+            var audioScore = PreferredTermMatcher.CountMatches(result.FileName, packFilter?.PreferredAudioCodec);
             var preferTermsScore = PreferredTermMatcher.CountMatches(
                 result.FileName,
                 GetPreferTerms(packRecipe));
@@ -1279,9 +1287,18 @@ public sealed class FetchJobService : IFetchJobService
                     engineRankScore),
                 Warning = contentProfile.BuildWarningText()
             });
+            evaluated.Add(new RecipeCandidateResult
+            {
+                SearchResult = result,
+                QualityScore = qualityScore,
+                AudioScore = audioScore,
+                PreferTermsScore = preferTermsScore,
+                SizeScore = sizeScore,
+                TotalScore = candidates[^1].TotalScore
+            });
         }
 
-        return candidates
+        var finalCandidates = candidates
             .GroupBy(candidate => candidate.FileUrl, StringComparer.OrdinalIgnoreCase)
             .Select(group => group.OrderByDescending(candidate => candidate.TotalScore).First())
             .OrderByDescending(candidate => candidate.QualityLabel is { Length: > 0 } quality ? TorrentQuality.GetRank(quality) : 0)
@@ -1289,127 +1306,47 @@ public sealed class FetchJobService : IFetchJobService
             .ThenByDescending(candidate => candidate.TotalScore)
             .Take(maxCandidates)
             .ToList();
+
+        return new PackMapSummary
+        {
+            Candidates = finalCandidates,
+            Evaluated = evaluated
+        };
     }
 
-    private static string? GetPackRejectReason(
+    private static (CandidateRejectReason Reason, string Detail) GetPackRejectReason(
         TrackedShow show,
         IReadOnlyList<int> selectedSeasons,
         TorrentSearchResult result,
         TorrentCandidateParseResult parsed,
-        IReadOnlyList<string> selectedQualities,
+        SearchRecipe packRecipe,
         IReadOnlyList<int>? coveredSeasonsOverride = null)
     {
-        var coveredSeasons = coveredSeasonsOverride ?? parsed.CoveredSeasons;
-        if (!result.CanAdd)
-        {
-            return $"not addable link type '{result.LinkType}'";
-        }
-
-        if (LooksLikePluginError(result.FileName))
-        {
-            return "search plugin error row";
-        }
-
-        var kind = TorrentReleaseKind.Classify(result.FileName, parsed);
-        var kindReject = TorrentReleaseKind.GetRejectReasonForTarget(MediaKind.TvSeasonPack, kind);
-        if (kindReject is not null)
-        {
-            return kindReject;
-        }
-
-        if (coveredSeasons.Count == 0)
-        {
-            return "no explicit season coverage";
-        }
-
-        if (parsed.ExplicitYear is not null && show.FirstAirYear is not null && parsed.ExplicitYear != show.FirstAirYear)
-        {
-            return $"explicit year mismatch {parsed.ExplicitYear} != {show.FirstAirYear}";
-        }
-
-        if (show.FirstAirYear is not null &&
-            parsed.ExplicitYear is null &&
-            result.FileName.Contains("20", StringComparison.OrdinalIgnoreCase) &&
-            !TorrentCandidateParser.ContainsYearRangeIncluding(result.FileName, show.FirstAirYear.Value))
-        {
-            // Do not reject date-range names here; explicit mismatches are handled above.
-        }
-
-        if (!coveredSeasons.Any(selectedSeasons.Contains))
-        {
-            return $"does not cover selected seasons {string.Join(",", selectedSeasons)}";
-        }
-
-        if (!TorrentQuality.MatchesSelectedQuality(parsed.Quality, selectedQualities))
-        {
-            return $"does not match selected quality options: {string.Join(", ", selectedQualities)}";
-        }
-
-        if (result.Seeders < show.MinimumSeeders)
-        {
-            return $"seeders below threshold {show.MinimumSeeders}";
-        }
-
-        var titleTokens = TorrentCandidateParser.Tokenize(show.Title).Where(token => token.Length > 2).ToList();
-        var matched = titleTokens.Count(token => parsed.TitleTokens.Contains(token, StringComparer.OrdinalIgnoreCase));
-        return matched >= Math.Min(2, titleTokens.Count) ? null : "does not contain enough show title tokens";
+        return SeasonPackIdentity.GetRejectReason(
+            show,
+            selectedSeasons,
+            result,
+            parsed,
+            packRecipe,
+            coveredSeasonsOverride);
     }
 
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("CodeQuality", "IDE0051:Remove unused private members", Justification = "Kept for potential reuse after sequential search refactor.")]
-    private List<EpisodeFetchCandidate> MapEpisodeCandidates(
-        TrackedEpisode episode,
-        TrackedShow show,
-        string query,
-        IReadOnlyList<TorrentSearchResult> searchResults,
-        IReadOnlyList<string> selectedQualities,
-        SearchRecipe? recipe = null)
+    private static string? PackRejectDetail((CandidateRejectReason Reason, string Detail) reject)
     {
-        var scoringWeights = recipe is not null
-            ? RecipeRuntimeSettings.GetCandidateScoringWeights(recipe)
-            : CandidateScoringWeights.Default;
-        var preferTerms = GetPreferTerms(recipe);
-        var matchedCandidates = new List<(EpisodeFetchCandidate Candidate, CandidateMatchResult Match)>();
-        foreach (var result in searchResults)
+        return reject.Reason == CandidateRejectReason.None ? null : reject.Detail;
+    }
+
+    private static RecipeCandidateResult RejectedRecipeResult(
+        TorrentSearchResult result,
+        CandidateRejectReason reason,
+        string detail)
+    {
+        return new RecipeCandidateResult
         {
-            var match = CandidateMatcher.MatchEpisodeCandidate(show, episode, result, selectedQualities, scoringWeights, preferTerms);
-            if (!match.IsAccepted)
-            {
-                var message =
-                    $"Rejected search candidate for '{query}'. Reason='{match.RejectReason}', Engine='{result.EngineName}', Name='{result.FileName}', Url='{result.FileUrl}'.";
-                if (match.RejectReason?.Contains("plugin error", StringComparison.OrdinalIgnoreCase) == true)
-                {
-                    _logger.Warning(message, LogTarget.All);
-                }
-                else
-                {
-                    _logger.Debug(message, LogTarget.File | LogTarget.Console);
-                }
-
-                continue;
-            }
-
-            if (IsBlacklistedListing(show.Id, result, query))
-            {
-                continue;
-            }
-
-            var candidate = ToCandidate(episode.Id, result, match.QualityScore, match.TotalScore);
-            matchedCandidates.Add((candidate, match));
-        }
-
-        return matchedCandidates
-            .OrderByDescending(entry => entry.Match.QualityScore)
-            .ThenByDescending(entry => entry.Match.AudioScore)
-            .ThenByDescending(entry => entry.Match.PreferTermsScore)
-            .ThenByDescending(entry => entry.Match.SizeScore)
-            .ThenByDescending(entry => entry.Candidate.Seeders)
-            .ThenByDescending(entry => entry.Match.IdentityScore)
-            .ThenByDescending(entry => entry.Match.EpisodeScore)
-            .Take(RecipeRuntimeSettings.GetMaxCandidatesPerFetch(
-                _recipeService.GetRecipeOrDefault(show.RecipeId, MediaKind.TvEpisode),
-                _settingsService.Current.AutoTorrent))
-            .Select(entry => entry.Candidate)
-            .ToList();
+            SearchResult = result,
+            RejectReason = reason,
+            RejectDetail = detail
+        };
     }
 
     private static IReadOnlyList<string> GetPreferTerms(SearchRecipe? recipe)
@@ -1495,25 +1432,6 @@ public sealed class FetchJobService : IFetchJobService
         var candidate = ToCandidate(0, result, qualityScore, totalScore);
         candidate.MovieId = movieId;
         return candidate;
-    }
-
-    private static IReadOnlyList<string> ParseQualities(string value)
-    {
-        return value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Where(quality => !string.IsNullOrWhiteSpace(quality))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-    }
-
-    private static IEnumerable<string> Tokenize(string value)
-    {
-        return value
-            .Replace('.', ' ')
-            .Replace('-', ' ')
-            .Replace('_', ' ')
-            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(token => new string(token.Where(char.IsLetterOrDigit).ToArray()))
-            .Where(token => !string.IsNullOrWhiteSpace(token));
     }
 
     private static string DetectAudioCodec(string fileName)

@@ -16,8 +16,8 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
     {
         var usesAnimeAbsolute = RecipeRuntimeSettings.UsesAnimeAbsoluteEpisodeNumbering(recipe);
         var parsed = TorrentCandidateParser.Parse(result.FileName, usesAnimeAbsolute);
-        var filter = GetModule(recipe, RecipeBlockType.CandidateFilter);
-        var reject = GetCommonRejectReason(recipe, result, parsed, filter);
+        var filter = RecipeCandidateFilter.GetFilterModule(recipe);
+        var reject = RecipeCandidateFilter.GetRejectReason(recipe, result, parsed);
         if (reject.Reason != CandidateRejectReason.None)
         {
             return Rejected(result, reject.Reason, reject.Detail);
@@ -67,8 +67,8 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
     public RecipeCandidateResult EvaluateMovie(SearchRecipe recipe, TrackedMovie movie, TorrentSearchResult result)
     {
         var parsed = TorrentCandidateParser.Parse(result.FileName);
-        var filter = GetModule(recipe, RecipeBlockType.CandidateFilter);
-        var reject = GetCommonRejectReason(recipe, result, parsed, filter);
+        var filter = RecipeCandidateFilter.GetFilterModule(recipe);
+        var reject = RecipeCandidateFilter.GetRejectReason(recipe, result, parsed);
         if (reject.Reason != CandidateRejectReason.None)
         {
             return Rejected(result, reject.Reason, reject.Detail);
@@ -102,82 +102,6 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
         var weights = RecipeRuntimeSettings.GetCandidateScoringWeights(recipe);
         var engineRankScore = RecipeRuntimeSettings.ResolveEngineRankScore(result.EngineName, filter);
         return Accepted(result, qualityScore, titleMatch.Score, episodeScore: 0, audioScore, preferTermsScore, weights, filter, engineRankScore);
-    }
-
-    private static (CandidateRejectReason Reason, string Detail) GetCommonRejectReason(
-        SearchRecipe recipe,
-        TorrentSearchResult result,
-        TorrentCandidateParseResult parsed,
-        RecipeModuleConfig? filter)
-    {
-        if (!result.CanAdd)
-        {
-            return (CandidateRejectReason.NotAddable, $"not addable link type '{result.LinkType}'");
-        }
-
-        if (LooksLikePluginError(result.FileName))
-        {
-            return (CandidateRejectReason.PluginError, "search plugin error row");
-        }
-
-        if (filter is null)
-        {
-            return (CandidateRejectReason.None, string.Empty);
-        }
-
-        if (result.Seeders < filter.MinimumSeeders)
-        {
-            return (CandidateRejectReason.SeedersTooLow, $"seeders below threshold {filter.MinimumSeeders}");
-        }
-
-        if (filter.MinimumSizeBytes is not null &&
-            result.FileSize > 0 &&
-            result.FileSize < filter.MinimumSizeBytes.Value)
-        {
-            return (CandidateRejectReason.SizeTooSmall, "candidate is smaller than recipe minimum size");
-        }
-
-        if (filter.MaximumSizeBytes is not null && result.FileSize > filter.MaximumSizeBytes.Value)
-        {
-            return (CandidateRejectReason.SizeTooLarge, "candidate is larger than recipe maximum size");
-        }
-
-        var detectedQuality = string.IsNullOrWhiteSpace(parsed.Quality) ? TorrentQuality.Detect(result.FileName) : parsed.Quality;
-        if (!TorrentQuality.MatchesSelectedQuality(detectedQuality, filter.QualityAllowList))
-        {
-            return (CandidateRejectReason.QualityMismatch, $"does not match selected quality options: {string.Join(", ", filter.QualityAllowList)}");
-        }
-
-        var missingTerm = filter.IncludeTerms
-            .Where(term => !string.IsNullOrWhiteSpace(term))
-            .FirstOrDefault(term => !result.FileName.Contains(term, StringComparison.OrdinalIgnoreCase));
-        if (missingTerm is not null)
-        {
-            return (CandidateRejectReason.MissingIncludeTerm, $"missing include term '{missingTerm}'");
-        }
-
-        var excludedTerm = filter.ExcludeTerms
-            .Where(term => !string.IsNullOrWhiteSpace(term))
-            .FirstOrDefault(term => result.FileName.Contains(term, StringComparison.OrdinalIgnoreCase));
-        if (excludedTerm is not null)
-        {
-            return (CandidateRejectReason.ExcludedTerm, $"contains excluded term '{excludedTerm}'");
-        }
-
-        var blockedGroup = filter.BlockedReleaseGroups
-            .Where(group => !string.IsNullOrWhiteSpace(group))
-            .FirstOrDefault(group => result.FileName.Contains(group, StringComparison.OrdinalIgnoreCase));
-        if (blockedGroup is not null)
-        {
-            return (CandidateRejectReason.BlockedReleaseGroup, $"contains blocked group '{blockedGroup}'");
-        }
-
-        return (CandidateRejectReason.None, string.Empty);
-    }
-
-    private static RecipeModuleConfig? GetModule(SearchRecipe recipe, RecipeBlockType blockType)
-    {
-        return recipe.Modules.FirstOrDefault(module => module.BlockType == blockType && module.IsEnabled);
     }
 
     private static RecipeCandidateResult Accepted(
@@ -226,15 +150,6 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
             RejectReason = reason,
             RejectDetail = detail
         };
-    }
-
-    private static bool LooksLikePluginError(string fileName)
-    {
-        return string.IsNullOrWhiteSpace(fileName) ||
-               fileName.Contains("api key error", StringComparison.OrdinalIgnoreCase) ||
-               fileName.Contains("right-click this row", StringComparison.OrdinalIgnoreCase) ||
-               fileName.Contains("open description", StringComparison.OrdinalIgnoreCase) ||
-               fileName.Contains("jackett:", StringComparison.OrdinalIgnoreCase);
     }
 
     private static (bool IsMatch, int Score) EvaluateTitleMatch(

@@ -12,105 +12,88 @@ public sealed class SnapshotCandidateMatcher
         TrackedShow show,
         TrackedEpisode episode,
         SnapshotCandidate candidate,
-        IReadOnlyList<string> selectedQualities,
+        SearchRecipe recipe,
         IReadOnlyList<string> titleVariants,
-        CandidateScoringWeights weights,
-        IReadOnlyList<string>? preferTerms = null)
+        CandidateScoringWeights weights)
     {
         var result = candidate.Result;
         var parsed = candidate.Parsed;
 
         if (!result.CanAdd)
         {
-            return new SnapshotMatchResult { IsAccepted = false, RejectReason = $"not addable link type '{result.LinkType}'" };
+            return Reject(CandidateRejectReason.NotAddable, $"not addable link type '{result.LinkType}'");
         }
 
-        if (LooksLikePluginError(result.FileName))
+        if (RecipeCandidateFilter.LooksLikePluginError(result.FileName))
         {
-            return new SnapshotMatchResult { IsAccepted = false, RejectReason = "search plugin error row" };
+            return Reject(CandidateRejectReason.PluginError, "search plugin error row");
         }
 
         var kind = TorrentReleaseKind.Classify(result.FileName, parsed);
         var kindReject = TorrentReleaseKind.GetRejectReasonForTarget(MediaKind.TvEpisode, kind);
         if (kindReject is not null)
         {
-            return new SnapshotMatchResult { IsAccepted = false, RejectReason = kindReject };
+            return Reject(CandidateRejectReason.WrongReleaseKind, kindReject);
         }
 
         if (parsed.ExplicitYear is not null && show.FirstAirYear is not null && parsed.ExplicitYear != show.FirstAirYear)
         {
-            return new SnapshotMatchResult
-            {
-                IsAccepted = false,
-                RejectReason = $"explicit year mismatch {parsed.ExplicitYear} != {show.FirstAirYear}"
-            };
+            return Reject(
+                CandidateRejectReason.YearMismatch,
+                $"explicit year mismatch {parsed.ExplicitYear} != {show.FirstAirYear}");
         }
 
         var isAbsoluteEpisodeMatch = parsed.AbsoluteEpisodeNumber is not null && parsed.SeasonNumber is null;
         if (!isAbsoluteEpisodeMatch && !IsSeasonMatch(parsed, episode.SeasonNumber))
         {
-            return new SnapshotMatchResult
-            {
-                IsAccepted = false,
-                RejectReason = $"season mismatch {episode.SeasonNumber:00}"
-            };
-        }
-
-        if (result.Seeders < show.MinimumSeeders)
-        {
-            return new SnapshotMatchResult
-            {
-                IsAccepted = false,
-                RejectReason = $"seeders below threshold {show.MinimumSeeders}"
-            };
-        }
-
-        if (!TorrentQuality.MatchesSelectedQuality(parsed.Quality, selectedQualities))
-        {
-            return new SnapshotMatchResult
-            {
-                IsAccepted = false,
-                RejectReason = $"does not match selected quality options: {string.Join(", ", selectedQualities)}"
-            };
+            return Reject(CandidateRejectReason.EpisodeMismatch, $"season mismatch {episode.SeasonNumber:00}");
         }
 
         var titleMatch = EvaluateTitleMatch(titleVariants, parsed.TitleTokens);
         if (!titleMatch.IsMatch)
         {
-            return new SnapshotMatchResult { IsAccepted = false, RejectReason = "does not contain enough show title or alias tokens" };
+            return Reject(CandidateRejectReason.TitleMismatch, "does not contain enough show title or alias tokens");
         }
 
         if (isAbsoluteEpisodeMatch)
         {
             if (parsed.AbsoluteEpisodeNumber != episode.EpisodeNumber)
             {
-                return new SnapshotMatchResult
-                {
-                    IsAccepted = false,
-                    RejectReason = $"does not contain absolute episode {episode.EpisodeNumber}"
-                };
+                return Reject(
+                    CandidateRejectReason.EpisodeMismatch,
+                    $"does not contain absolute episode {episode.EpisodeNumber}");
             }
         }
         else if (parsed.SeasonNumber != episode.SeasonNumber || parsed.EpisodeNumber != episode.EpisodeNumber)
         {
-            return new SnapshotMatchResult
-            {
-                IsAccepted = false,
-                RejectReason = $"does not contain S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00} or {episode.SeasonNumber}x{episode.EpisodeNumber:00}"
-            };
+            return Reject(
+                CandidateRejectReason.EpisodeMismatch,
+                $"does not contain S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00} or {episode.SeasonNumber}x{episode.EpisodeNumber:00}");
         }
 
         var episodeScore = EvaluateEpisodeTitleMatch(episode.Title, parsed.EpisodeTitle, out var episodeRejectReason);
         if (episodeRejectReason is not null)
         {
-            return new SnapshotMatchResult { IsAccepted = false, RejectReason = episodeRejectReason };
+            return Reject(CandidateRejectReason.EpisodeMismatch, episodeRejectReason);
         }
 
+        var filterReject = RecipeCandidateFilter.GetRejectReason(recipe, result, parsed);
+        if (filterReject.Reason != CandidateRejectReason.None)
+        {
+            return Reject(filterReject.Reason, filterReject.Detail);
+        }
+
+        var filter = RecipeCandidateFilter.GetFilterModule(recipe);
         var qualityScore = TorrentQuality.GetRank(parsed.Quality);
-        var audioScore = PreferredTermMatcher.CountMatches(result.FileName, show.PreferredAudioCodec);
-        var preferTermsScore = PreferredTermMatcher.CountMatches(result.FileName, preferTerms);
+        var audioScore = PreferredTermMatcher.CountMatches(result.FileName, filter?.PreferredAudioCodec);
+        var preferTermsScore = PreferredTermMatcher.CountMatches(result.FileName, filter?.PreferTerms);
         var identityScore = titleMatch.Score + (parsed.ExplicitYear is not null && parsed.ExplicitYear == show.FirstAirYear ? 10 : 0);
-        var sizeScore = TorrentQualityScoring.CalculateSizeScore(result.FileSize, weights: weights);
+        var sizeScore = TorrentQualityScoring.CalculateSizeScore(
+            result.FileSize,
+            filter?.MinimumSizeBytes,
+            filter?.MaximumSizeBytes,
+            weights);
+        var engineRankScore = RecipeRuntimeSettings.ResolveEngineRankScore(result.EngineName, filter);
         var totalScore = TorrentQualityScoring.CalculateCandidateScore(
             qualityScore,
             audioScore,
@@ -119,7 +102,8 @@ public sealed class SnapshotCandidateMatcher
             episodeScore,
             weights,
             preferTermsScore,
-            sizeScore);
+            sizeScore,
+            engineRankScore);
 
         return new SnapshotMatchResult
         {
@@ -134,17 +118,15 @@ public sealed class SnapshotCandidateMatcher
         };
     }
 
-    private static bool LooksLikePluginError(string fileName)
+    private static SnapshotMatchResult Reject(CandidateRejectReason reason, string detail)
     {
-        if (string.IsNullOrWhiteSpace(fileName))
+        return new SnapshotMatchResult
         {
-            return true;
-        }
-
-        return fileName.Contains("api key error", StringComparison.OrdinalIgnoreCase) ||
-               fileName.Contains("right-click this row", StringComparison.OrdinalIgnoreCase) ||
-               fileName.Contains("open description", StringComparison.OrdinalIgnoreCase) ||
-               fileName.Contains("jackett:", StringComparison.OrdinalIgnoreCase);
+            IsAccepted = false,
+            RejectReason = detail,
+            RejectReasonCode = reason,
+            RejectDetail = detail
+        };
     }
 
     private static bool IsSeasonMatch(TorrentCandidateParseResult parsed, int seasonNumber)

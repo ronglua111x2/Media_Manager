@@ -34,7 +34,8 @@ public sealed class ShowSearchSnapshotService
         TrackedShow show,
         IOperationProgressService? progressService,
         CancellationToken cancellationToken,
-        MediaKind recipeKind = MediaKind.TvEpisode)
+        MediaKind recipeKind = MediaKind.TvEpisode,
+        string? recipeId = null)
     {
         if (progressService is null)
         {
@@ -43,8 +44,8 @@ public sealed class ShowSearchSnapshotService
 
         var fallback = _settingsService.Current.AutoTorrent;
         var recipe = recipeKind == MediaKind.TvSeasonPack
-            ? _recipeService.GetRecipeOrDefault(show.PackRecipeId, MediaKind.TvSeasonPack)
-            : _recipeService.GetRecipeOrDefault(show.RecipeId, MediaKind.TvEpisode);
+            ? _recipeService.GetRecipeOrDefault(recipeId ?? show.PackRecipeId, MediaKind.TvSeasonPack)
+            : _recipeService.GetRecipeOrDefault(recipeId ?? show.RecipeId, MediaKind.TvEpisode);
         var targetResults = RecipeRuntimeSettings.GetSnapshotTargetResults(recipe, fallback);
         var timeoutSeconds = RecipeRuntimeSettings.GetSnapshotTimeoutSeconds(recipe, fallback);
         var idleTimeoutSeconds = RecipeRuntimeSettings.GetSnapshotIdleTimeoutSeconds(recipe, fallback);

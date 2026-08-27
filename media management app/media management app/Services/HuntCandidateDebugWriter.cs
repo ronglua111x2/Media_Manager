@@ -36,7 +36,7 @@ public static class HuntCandidateDebugWriter
         int timeoutSeconds)
     {
         session.WriteLine(
-            $"Media='{SanitizeForLog(targetTitle)}' Recipe='{SanitizeForLog(recipe.Name)}' RecipeId='{recipe.RecipeId}' Target='{targetKind}'");
+            $"Media='{SanitizeForLog(targetTitle)}' Recipe='{SanitizeForLog(recipe.Name)}' RecipeId='{recipe.RecipeId}' Target='{FormatTarget(targetKind)}'");
         session.WriteLine($"Queries={queries.Count} => {string.Join(" | ", queries.Select(SanitizeForLog))}");
         session.WriteLine(
             $"SearchResults={searchResults.Count} TimeoutSeconds={timeoutSeconds} Accepted={evaluated.Count(item => item.IsAccepted)} Rejected={evaluated.Count(item => !item.IsAccepted)}");
@@ -98,6 +98,14 @@ public static class HuntCandidateDebugWriter
     {
         logger.Info($"Cart debug log: {session.FirstFilePath}", LogTarget.All);
     }
+
+    private static string FormatTarget(MediaKind targetKind) => targetKind switch
+    {
+        MediaKind.TvEpisode => "TV episode",
+        MediaKind.TvSeasonPack => "TV season pack",
+        MediaKind.Movie => "Movie",
+        _ => targetKind.ToString()
+    };
 
     public static string SanitizeForLog(string? value)
     {

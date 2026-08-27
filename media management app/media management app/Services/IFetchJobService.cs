@@ -27,5 +27,11 @@ public interface IFetchJobService
         EpisodeFetchOptions? options = null,
         bool finalizeDebugLog = true);
 
-    Task FetchSeasonPacksAsync(long showId, IReadOnlyList<int> seasonNumbers, CancellationToken cancellationToken = default, int? maxCandidatesOverride = null);
+    Task FetchSeasonPacksAsync(
+        long showId,
+        IReadOnlyList<int> seasonNumbers,
+        CancellationToken cancellationToken = default,
+        int? maxCandidatesOverride = null,
+        string? recipeId = null);
+
 }

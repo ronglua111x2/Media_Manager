@@ -1366,7 +1366,8 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
             order.MediaId,
             [order.SeasonNumber.Value],
             cancellationToken,
-            Math.Clamp(MaxPackCandidates, 1, 50));
+            Math.Clamp(MaxPackCandidates, 1, 50),
+            recipe.RecipeId);
         if (!_fetchJobService.TryGetPackCandidates(order.MediaId, order.SeasonNumber.Value, out var candidates) ||
             candidates.Count == 0)
         {
