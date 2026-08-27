@@ -133,6 +133,50 @@ public class SearchPlanBuilderTests
         queries.Should().Contain(q => q.Contains("2020"));
     }
 
+    [Fact]
+    public void BuildEpisodeQueries_SkipsRetiredAudioTemplateAndKeepsValidRows()
+    {
+        var recipe = RecipeBuilder.TvEpisode()
+            .QueryTemplates(
+                "{title} S{season:00}E{episode:00} {quality} {audio}",
+                "{title} {year}")
+            .Build();
+
+        var queries = BuildEpisode(recipe);
+
+        queries.Should().NotContain(q => q.Contains("audio", StringComparison.OrdinalIgnoreCase));
+        queries.Should().Contain(q => q.Contains("2020", StringComparison.OrdinalIgnoreCase));
+        queries.Should().NotContain(q => q.Contains("S03E01", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void BuildEpisodeQueries_AllRejectedTemplates_FallBackToDefaults()
+    {
+        var recipe = RecipeBuilder.TvEpisode()
+            .QueryTemplates("{title} {audio}")
+            .Build();
+
+        var queries = BuildEpisode(recipe);
+
+        queries.Should().NotBeEmpty();
+        queries.Should().NotContain(q => q.Contains("{audio}", StringComparison.OrdinalIgnoreCase));
+        queries.Should().Contain(q => q.Contains("S03E01", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void BuildEpisodeQueries_DoesNotInsertQueryPreferredAudio()
+    {
+        var recipe = RecipeBuilder.TvEpisode()
+            .QueryTemplates("{title} S{season:00}E{episode:00} {quality}")
+            .Build();
+        recipe.Modules.First(module => module.BlockType == media_management_app.Models.RecipeBlockType.QueryBuilder)
+            .PreferredAudioCodec = "Atmos";
+
+        var queries = BuildEpisode(recipe);
+
+        queries.Should().OnlyContain(q => !q.Contains("Atmos", StringComparison.OrdinalIgnoreCase));
+    }
+
     private static IReadOnlyList<string> BuildEpisode(media_management_app.Models.SearchRecipe? recipe = null)
     {
         recipe ??= RecipeBuilder.TvEpisode().Build();

@@ -96,23 +96,24 @@ Legacy `PackExtrasPriority` modules are migrated into `Scoring.extensionData` on
 
 ## Query Template Placeholders
 
-Used in `QueryBuilder.queryTemplates`:
+Used in `QueryBuilder.queryTemplates`. Placeholders are defined in `QueryTokenCatalog`. Unknown tokens, retired tokens (`{audio}`), and tokens that do not apply to the recipe `targetKind` cause **that template to be skipped** at search time. `.rcp` files are not rewritten.
 
-| Placeholder | Source |
-|-------------|--------|
-| `{title}` | Resolved show/movie title (+ aliases) |
-| `{year}` | First air year / movie year |
-| `{season}` | Season number (unpadded) |
-| `{season:00}` | Season zero-padded |
-| `{episode}` | Episode number (unpadded) |
-| `{episode:00}` | Episode zero-padded |
-| `{quality}` | Target quality from filter/scoring |
-| `{audio}` | Preferred audio codec |
+| Placeholder | Source | Target kinds |
+|-------------|--------|----------------|
+| `{title}` | Resolved show/movie title (+ aliases) | all |
+| `{year}` | First air year / movie year | all |
+| `{season}` | Season number (unpadded) | TV episode, TV pack |
+| `{season:00}` | Season zero-padded | TV episode, TV pack |
+| `{episode}` | Episode number (unpadded) | TV episode |
+| `{episode:00}` | Episode zero-padded | TV episode |
+| `{quality}` | Each quality from the Query module allow list | all |
+
+`{audio}` was removed from Query. Preferred audio on the Quality (Candidate Filter) module still scores candidates. Until a recipe is edited, any template that still contains `{audio}` is skipped.
 
 ### Example templates (TV episode)
 
 ```
-{title} S{season:00}E{episode:00} {quality} {audio}
+{title} S{season:00}E{episode:00} {quality}
 {title} {year} S{season:00}E{episode:00} {quality}
 {title} {season}x{episode:00} {quality}
 ```
@@ -120,7 +121,7 @@ Used in `QueryBuilder.queryTemplates`:
 ### Example templates (TV pack)
 
 ```
-{title} S{season:00} complete {quality} {audio}
+{title} S{season:00} complete {quality}
 {title} season {season} {quality}
 {title} S{season:00} pack {quality}
 ```

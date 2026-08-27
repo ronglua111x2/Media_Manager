@@ -223,29 +223,7 @@ public sealed class RecipeService : IRecipeService
                     Order = 10,
                     DisplayName = "Query / Custom Query",
                     QualityAllowList = qualities.ToList(),
-                    QueryTemplates = targetKind switch
-                    {
-                        MediaKind.Movie =>
-                        [
-                            "{title} {year} {quality} {audio}",
-                            "{title} {quality}",
-                            "{title} {year}"
-                        ],
-                        MediaKind.TvSeasonPack =>
-                        [
-                            "{title} S{season:00} complete {quality} {audio}",
-                            "{title} season {season} {quality}",
-                            "{title} S{season:00} pack {quality}",
-                            "{title} {year} season {season} {quality}"
-                        ],
-                        _ =>
-                        [
-                            "{title} S{season:00}E{episode:00} {quality} {audio}",
-                            "{title} {year} S{season:00}E{episode:00} {quality}",
-                            "{title} {season}x{episode:00} {quality}",
-                            "{title} S{season:00}E{episode:00}"
-                        ]
-                    }
+                    QueryTemplates = QueryTokenCatalog.DefaultTemplates(targetKind).ToList()
                 },
                 new RecipeModuleConfig
                 {
@@ -346,6 +324,10 @@ public sealed class RecipeService : IRecipeService
             module.DisplayName = string.IsNullOrWhiteSpace(module.DisplayName) ? module.BlockType.ToString() : module.DisplayName.Trim();
             module.Aliases ??= [];
             module.QueryTemplates ??= [];
+            if (module.BlockType == RecipeBlockType.QueryBuilder)
+            {
+                module.QueryTemplates = QueryTokenCatalog.NormalizeTemplates(module.QueryTemplates);
+            }
             module.CustomQueries ??= [];
             if (module.BlockType == RecipeBlockType.QueryBuilder &&
                 module.CustomQueries.Count == 0 &&

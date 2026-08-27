@@ -1,12 +1,9 @@
-using System.Text.RegularExpressions;
 using media_management_app.Models;
 
 namespace media_management_app.Services;
 
 public sealed class SearchPlanBuilder : ISearchPlanBuilder
 {
-    private static readonly Regex NonSearchSafeCharacters = new(@"[^\p{L}\p{N}\s-]", RegexOptions.Compiled);
-
     private readonly ISearchTitleResolver _titleResolver;
 
     public SearchPlanBuilder(ISearchTitleResolver titleResolver)
@@ -17,94 +14,80 @@ public sealed class SearchPlanBuilder : ISearchPlanBuilder
     public IReadOnlyList<string> BuildEpisodeQueries(SearchRecipe recipe, TrackedShow show, TrackedEpisode episode)
     {
         var queryModule = GetModule(recipe, RecipeBlockType.QueryBuilder);
-        var templates = queryModule?.QueryTemplates.Count > 0
-            ? queryModule.QueryTemplates
-            : ["{title} S{season:00}E{episode:00} {quality}", "{title} {year} S{season:00}E{episode:00}", "{title} {season}x{episode:00}"];
-        templates = AppendCustomQueries(templates, queryModule).ToList();
+        var templates = QueryTemplateSelection.SelectSearchPatterns(recipe, showLevelOnly: false);
         var titles = ResolveTitles(recipe, show.Title, show.GetSearchableAlternativeTitles());
-        var qualities = GetQualities(queryModule).ToList();
-        var audio = queryModule?.PreferredAudioCodec ?? string.Empty;
+        var qualities = QueryTokenCatalog.GetQualityValues(queryModule);
         var queries = new List<string>();
 
         foreach (var template in templates)
-        foreach (var title in titles)
-        foreach (var quality in qualities)
         {
-            queries.Add(Render(template, new Dictionary<string, string>
+            foreach (var title in TitlesFor(template, titles))
+            foreach (var quality in QualitiesFor(template, qualities))
             {
-                ["title"] = title,
-                ["year"] = show.FirstAirYear?.ToString() ?? string.Empty,
-                ["season"] = episode.SeasonNumber.ToString(),
-                ["season:00"] = episode.SeasonNumber.ToString("00"),
-                ["episode"] = episode.EpisodeNumber.ToString(),
-                ["episode:00"] = episode.EpisodeNumber.ToString("00"),
-                ["quality"] = quality,
-                ["audio"] = audio
-            }));
+                queries.Add(QueryTemplateRenderer.Render(template, new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    [QueryTokenCatalog.TitleId] = title,
+                    [QueryTokenCatalog.YearId] = show.FirstAirYear?.ToString() ?? string.Empty,
+                    [QueryTokenCatalog.SeasonId] = episode.SeasonNumber.ToString(),
+                    [QueryTokenCatalog.SeasonPaddedId] = episode.SeasonNumber.ToString("00"),
+                    [QueryTokenCatalog.EpisodeId] = episode.EpisodeNumber.ToString(),
+                    [QueryTokenCatalog.EpisodePaddedId] = episode.EpisodeNumber.ToString("00"),
+                    [QueryTokenCatalog.QualityId] = quality
+                }));
+            }
         }
 
-        return NormalizeQueries(queries, RecipeRuntimeSettings.GetSanitizeQuery(queryModule));
+        return QueryTemplateRenderer.Normalize(queries, RecipeRuntimeSettings.GetSanitizeQuery(queryModule));
     }
 
     public IReadOnlyList<string> BuildMovieQueries(SearchRecipe recipe, TrackedMovie movie)
     {
         var queryModule = GetModule(recipe, RecipeBlockType.QueryBuilder);
-        var templates = queryModule?.QueryTemplates.Count > 0
-            ? queryModule.QueryTemplates
-            : ["{title} {year} {quality}", "{title} {quality}", "{title} {year}"];
-        templates = AppendCustomQueries(templates, queryModule).ToList();
+        var templates = QueryTemplateSelection.SelectSearchPatterns(recipe, showLevelOnly: false);
         var titles = ResolveTitles(recipe, movie.Title, movie.GetSearchableAlternativeTitles());
-        var qualities = GetQualities(queryModule).ToList();
-        var audio = queryModule?.PreferredAudioCodec ?? string.Empty;
+        var qualities = QueryTokenCatalog.GetQualityValues(queryModule);
         var queries = new List<string>();
 
         foreach (var template in templates)
-        foreach (var title in titles)
-        foreach (var quality in qualities)
         {
-            queries.Add(Render(template, new Dictionary<string, string>
+            foreach (var title in TitlesFor(template, titles))
+            foreach (var quality in QualitiesFor(template, qualities))
             {
-                ["title"] = title,
-                ["year"] = movie.ReleaseYear?.ToString() ?? string.Empty,
-                ["quality"] = quality,
-                ["audio"] = audio
-            }));
+                queries.Add(QueryTemplateRenderer.Render(template, new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    [QueryTokenCatalog.TitleId] = title,
+                    [QueryTokenCatalog.YearId] = movie.ReleaseYear?.ToString() ?? string.Empty,
+                    [QueryTokenCatalog.QualityId] = quality
+                }));
+            }
         }
 
-        return NormalizeQueries(queries, RecipeRuntimeSettings.GetSanitizeQuery(queryModule));
+        return QueryTemplateRenderer.Normalize(queries, RecipeRuntimeSettings.GetSanitizeQuery(queryModule));
     }
 
     public IReadOnlyList<string> BuildShowSnapshotQueries(SearchRecipe recipe, TrackedShow show)
     {
         var queryModule = GetModule(recipe, RecipeBlockType.QueryBuilder);
-        var templates = queryModule?.QueryTemplates.Count > 0
-            ? queryModule.QueryTemplates.Where(IsShowLevelTemplate).ToList()
-            : ["{title} {year}", "{title} {quality}", "{title}"];
-        if (templates.Count == 0)
-        {
-            templates = ["{title} {year}", "{title} {quality}", "{title}"];
-        }
-
-        templates = AppendCustomQueries(templates, queryModule).ToList();
+        var templates = QueryTemplateSelection.SelectSearchPatterns(recipe, showLevelOnly: true);
         var titles = ResolveTitles(recipe, show.Title, show.GetSearchableAlternativeTitles());
-        var qualities = GetQualities(queryModule).ToList();
-        var audio = queryModule?.PreferredAudioCodec ?? string.Empty;
+        var qualities = QueryTokenCatalog.GetQualityValues(queryModule);
         var queries = new List<string>();
 
         foreach (var template in templates)
-        foreach (var title in titles)
-        foreach (var quality in qualities)
         {
-            queries.Add(Render(template, new Dictionary<string, string>
+            foreach (var title in TitlesFor(template, titles))
+            foreach (var quality in QualitiesFor(template, qualities))
             {
-                ["title"] = title,
-                ["year"] = show.FirstAirYear?.ToString() ?? string.Empty,
-                ["quality"] = quality,
-                ["audio"] = audio
-            }));
+                queries.Add(QueryTemplateRenderer.Render(template, new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    [QueryTokenCatalog.TitleId] = title,
+                    [QueryTokenCatalog.YearId] = show.FirstAirYear?.ToString() ?? string.Empty,
+                    [QueryTokenCatalog.QualityId] = quality
+                }));
+            }
         }
 
-        return NormalizeQueries(queries, RecipeRuntimeSettings.GetSanitizeQuery(queryModule));
+        return QueryTemplateRenderer.Normalize(queries, RecipeRuntimeSettings.GetSanitizeQuery(queryModule));
     }
 
     private IReadOnlyList<string> ResolveTitles(
@@ -116,87 +99,14 @@ public sealed class SearchPlanBuilder : ISearchPlanBuilder
             _titleResolver.CreateRequest(recipe, primaryTitle, libraryAlternativeTitles));
     }
 
-    private static bool IsShowLevelTemplate(string template)
-    {
-        return !template.Contains("{season", StringComparison.OrdinalIgnoreCase) &&
-               !template.Contains("{episode", StringComparison.OrdinalIgnoreCase);
-    }
-
     private static RecipeModuleConfig? GetModule(SearchRecipe recipe, RecipeBlockType blockType)
     {
         return recipe.Modules.FirstOrDefault(module => module.BlockType == blockType && module.IsEnabled);
     }
 
-    private static IEnumerable<string> GetQualities(RecipeModuleConfig? queryModule)
-    {
-        var qualities = queryModule?.QualityAllowList
-            .Where(quality => !string.IsNullOrWhiteSpace(quality))
-            .Select(quality => quality.Trim())
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-        return qualities is { Count: > 0 } ? qualities : [string.Empty];
-    }
+    private static IReadOnlyList<string> TitlesFor(string template, IReadOnlyList<string> titles) =>
+        QueryTokenCatalog.HasExpansion(template, QueryTokenExpansion.Title) ? titles : [string.Empty];
 
-    private static IEnumerable<string> AppendCustomQueries(
-        IEnumerable<string> templates,
-        RecipeModuleConfig? queryModule)
-    {
-        foreach (var template in templates)
-        {
-            yield return template;
-        }
-
-        if (queryModule is null)
-        {
-            yield break;
-        }
-
-        foreach (var customQuery in queryModule.CustomQueries.Where(query => !string.IsNullOrWhiteSpace(query)))
-        {
-            yield return customQuery.Trim();
-        }
-
-        if (queryModule.CustomQueries.Count == 0 &&
-            queryModule.ExtensionData.TryGetValue(RecipeRuntimeSettings.CustomQueryLegacyKey, out var legacyCustomQuery) &&
-            !string.IsNullOrWhiteSpace(legacyCustomQuery))
-        {
-            yield return legacyCustomQuery.Trim();
-        }
-    }
-
-    private static string Render(string template, IReadOnlyDictionary<string, string> values)
-    {
-        var rendered = template;
-        foreach (var pair in values)
-        {
-            rendered = rendered.Replace($"{{{pair.Key}}}", pair.Value, StringComparison.OrdinalIgnoreCase);
-        }
-
-        return string.Join(' ', rendered.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
-    }
-
-    private static string SanitizeQuery(string query)
-    {
-        var sanitized = NonSearchSafeCharacters.Replace(query, " ");
-        return string.Join(' ', sanitized.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
-    }
-
-    private static IReadOnlyList<string> NormalizeQueries(IEnumerable<string> queries, bool sanitize)
-    {
-        var seenKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var result = new List<string>();
-
-        foreach (var query in queries
-                     .Select(query => sanitize ? SanitizeQuery(query) : query)
-                     .Select(query => string.Join(' ', query.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)))
-                     .Where(query => !string.IsNullOrWhiteSpace(query)))
-        {
-            if (seenKeys.Add(EnglishAlternativeTitleFilter.NormalizeForSearchKey(query)))
-            {
-                result.Add(query);
-            }
-        }
-
-        return result;
-    }
+    private static IReadOnlyList<string> QualitiesFor(string template, IReadOnlyList<string> qualities) =>
+        QueryTokenCatalog.HasExpansion(template, QueryTokenExpansion.Quality) ? qualities : [string.Empty];
 }

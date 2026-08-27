@@ -3,7 +3,8 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
              xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
-             xmlns:models="clr-namespace:media_management_app.Models;assembly=MediaManager.Core">
+             xmlns:models="clr-namespace:media_management_app.Models;assembly=MediaManager.Core"
+             xmlns:views="clr-namespace:media_management_app.Views">
     <!-- #region Local resources and templates -->
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
@@ -108,6 +109,12 @@
                                Foreground="{StaticResource AppBrushText}"
                                TextWrapping="Wrap"
                                LineHeight="16" />
+                    <TextBlock Text="Affects hunt estimate."
+                               Margin="0,6,0,0"
+                               FontSize="11"
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource AppBrushAccent}"
+                               Visibility="{Binding AffectsHuntEstimate, Converter={StaticResource BooleanToVisibilityConverter}}" />
                 </StackPanel>
             </Border>
         </DataTemplate>
@@ -115,6 +122,23 @@
         <Style x:Key="RecipeLabelStyle" TargetType="TextBlock" BasedOn="{StaticResource MutedTextStyle}">
             <Setter Property="Margin" Value="0,6,0,6" />
             <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+
+        <Style x:Key="RecipeLinkButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="Focusable" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <ContentPresenter HorizontalAlignment="Left" VerticalAlignment="Center" />
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
         <Style x:Key="RecipeModuleFieldsStyle" TargetType="Border">
@@ -452,7 +476,7 @@
                                                                Margin="0,4,0,0" />
                                                 </StackPanel>
                                                 <TextBlock Text="Title aliases" Style="{StaticResource RecipeLabelStyle}" />
-                                                <TextBox Text="{Binding AliasesText, UpdateSourceTrigger=LostFocus}"
+                                                <TextBox Text="{Binding AliasesText, UpdateSourceTrigger=PropertyChanged}"
                                                          Style="{StaticResource RecipeMultilineTextBoxStyle}"
                                                          MinHeight="140" />
                                             </StackPanel>
@@ -487,15 +511,86 @@
                                                                       Margin="10,6,10,10" />
                                                     </Expander>
                                                 </Border>
-                                                <TextBlock Text="Preferred audio" Style="{StaticResource RecipeLabelStyle}" />
-                                                <TextBox Text="{Binding PreferredAudioCodec, UpdateSourceTrigger=PropertyChanged}"
-                                                         Style="{StaticResource RecipeTextBoxStyle}" />
-                                                <TextBlock Text="Query templates" Style="{StaticResource RecipeLabelStyle}" />
-                                                <TextBox Text="{Binding QueryTemplatesText, UpdateSourceTrigger=LostFocus}"
-                                                         Style="{StaticResource RecipeMultilineTextBoxStyle}"
-                                                         MinHeight="100" />
+                                                <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                                    <TextBlock Text="{Binding QueryTemplatesCountLabel, StringFormat=Query templates ({0})}"
+                                                               Style="{StaticResource RecipeLabelStyle}"
+                                                               Margin="0,0,8,0"
+                                                               VerticalAlignment="Center" />
+                                                    <Button Style="{StaticResource AppOutlinedButtonStyle}"
+                                                            Padding="8,4"
+                                                            VerticalAlignment="Center"
+                                                            ToolTip="Build templates"
+                                                            Command="{Binding ChooseQueryTemplatesCommand}">
+                                                        <iconPacks:PackIconLucide Kind="WandSparkles"
+                                                                                   Width="16"
+                                                                                   Height="16" />
+                                                    </Button>
+                                                </StackPanel>
+                                                <Button Style="{StaticResource RecipeLinkButtonStyle}"
+                                                        Margin="0,0,0,8"
+                                                        ToolTip="Refresh hunt estimate"
+                                                        Command="{Binding RequestQueryEstimateCommand}">
+                                                    <TextBlock Text="{Binding QueryEstimateDisplayText}"
+                                                               TextWrapping="Wrap"
+                                                               TextDecorations="Underline">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock" BasedOn="{StaticResource MutedTextStyle}">
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsQueryEstimateStale}" Value="True">
+                                                                        <Setter Property="Foreground" Value="{StaticResource AppBrushWarning}" />
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding IsQueryEstimateBusy}" Value="True">
+                                                                        <Setter Property="Foreground" Value="{StaticResource AppBrushMutedText}" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
+                                                </Button>
+                                                <Border Style="{StaticResource RecipeQualityChromeStyle}"
+                                                        Margin="0,0,0,12"
+                                                        Padding="4,2">
+                                                    <Grid>
+                                                        <ItemsControl ItemsSource="{Binding QueryTemplateItems}">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate>
+                                                                    <Border Background="{StaticResource AppBrushSurfaceRaised}"
+                                                                            BorderBrush="{StaticResource AppBrushBorder}"
+                                                                            BorderThickness="1"
+                                                                            CornerRadius="8"
+                                                                            Padding="12,10"
+                                                                            Margin="6,4"
+                                                                            Cursor="Hand">
+                                                                        <Border.InputBindings>
+                                                                            <MouseBinding MouseAction="LeftDoubleClick"
+                                                                                          Command="{Binding DataContext.ChooseQueryTemplatesCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}" />
+                                                                        </Border.InputBindings>
+                                                                        <views:QueryTemplateHighlightText Template="{Binding}"
+                                                                                                           TargetKind="{Binding DataContext.RecipeTargetKind, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                                                                           FontSize="15" />
+                                                                    </Border>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                        <TextBlock Text="No templates"
+                                                                   HorizontalAlignment="Left"
+                                                                   VerticalAlignment="Top">
+                                                            <TextBlock.Style>
+                                                                <Style TargetType="TextBlock" BasedOn="{StaticResource MutedTextStyle}">
+                                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                                    <Setter Property="Margin" Value="12,10" />
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding HasQueryTemplates}" Value="False">
+                                                                            <Setter Property="Visibility" Value="Visible" />
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </TextBlock.Style>
+                                                        </TextBlock>
+                                                    </Grid>
+                                                </Border>
                                                 <TextBlock Text="Custom queries" Style="{StaticResource RecipeLabelStyle}" />
-                                                <TextBox Text="{Binding CustomQueriesText, UpdateSourceTrigger=LostFocus}"
+                                                <TextBox Text="{Binding CustomQueriesText, UpdateSourceTrigger=PropertyChanged}"
                                                          Style="{StaticResource RecipeMultilineTextBoxStyle}"
                                                          MinHeight="72" />
                                                 <CheckBox Content="Skip default title"

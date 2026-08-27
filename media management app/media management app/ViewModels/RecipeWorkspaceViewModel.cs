@@ -163,6 +163,7 @@ public sealed partial class RecipeWorkspaceViewModel : ViewModelBase
 
         _recipeService.SaveRecipe(SelectedRecipe);
         SelectedRecipeItem?.Refresh();
+        RefreshQueryEstimate();
         StatusMessage = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] Saved recipe '{SelectedRecipeName}'.";
     }
 
@@ -245,6 +246,11 @@ public sealed partial class RecipeWorkspaceViewModel : ViewModelBase
     private void LoadModules(SearchRecipe? recipe)
     {
         var selectedBlockType = SelectedModule?.BlockType;
+        foreach (var module in Modules)
+        {
+            module.PropertyChanged -= OnModuleEditorPropertyChanged;
+        }
+
         Modules.Clear();
         if (recipe is null)
         {
@@ -259,18 +265,73 @@ public sealed partial class RecipeWorkspaceViewModel : ViewModelBase
                 continue;
             }
 
-            var moduleEditor = new RecipeModuleEditorViewModel(module, recipe.TargetKind, _searchPluginService);
+            var moduleEditor = new RecipeModuleEditorViewModel(module, recipe.TargetKind, _searchPluginService, recipe);
             if (!moduleEditor.IsApplicableToTarget)
             {
                 continue;
             }
 
+            moduleEditor.PropertyChanged += OnModuleEditorPropertyChanged;
             Modules.Add(moduleEditor);
         }
 
         SelectedModule = selectedBlockType is not null
             ? Modules.FirstOrDefault(module => module.BlockType == selectedBlockType) ?? Modules.FirstOrDefault()
             : Modules.FirstOrDefault();
+        RefreshQueryEstimate();
+    }
+
+    private bool _isRefreshingQueryEstimate;
+
+    private void OnModuleEditorPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == QueryHuntEstimateInputs.HuntEstimateInputChanged)
+        {
+            MarkQueryEstimateStale();
+            return;
+        }
+
+        if (e.PropertyName is nameof(RecipeModuleEditorViewModel.QueryEstimateText)
+            or nameof(RecipeModuleEditorViewModel.QueryEstimateDisplayText)
+            or nameof(RecipeModuleEditorViewModel.IsQueryEstimateStale)
+            or nameof(RecipeModuleEditorViewModel.IsQueryEstimateBusy)
+            or nameof(RecipeModuleEditorViewModel.QueryTemplatesCountLabel)
+            or nameof(RecipeModuleEditorViewModel.QueryTemplateItems)
+            or nameof(RecipeModuleEditorViewModel.HasQueryTemplates)
+            or nameof(RecipeModuleEditorViewModel.IsSelected)
+            or nameof(RecipeModuleEditorViewModel.ModuleSummaryLines))
+        {
+            return;
+        }
+    }
+
+    private void MarkQueryEstimateStale()
+    {
+        foreach (var module in Modules.Where(module => module.BlockType == RecipeBlockType.QueryBuilder))
+        {
+            module.MarkQueryEstimateStale();
+        }
+    }
+
+    private void RefreshQueryEstimate()
+    {
+        if (_isRefreshingQueryEstimate)
+        {
+            return;
+        }
+
+        _isRefreshingQueryEstimate = true;
+        try
+        {
+            foreach (var module in Modules.Where(module => module.BlockType == RecipeBlockType.QueryBuilder))
+            {
+                module.RefreshQueryEstimate();
+            }
+        }
+        finally
+        {
+            _isRefreshingQueryEstimate = false;
+        }
     }
 
     private bool CanDeleteSelectedRecipe()
@@ -362,21 +423,25 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
 
     private readonly RecipeModuleConfig _module;
     private readonly MediaKind _recipeTargetKind;
+    private readonly SearchRecipe? _recipe;
     private readonly IQbittorrentSearchPluginService _searchPluginService;
 
     public RecipeModuleEditorViewModel(
         RecipeModuleConfig module,
         MediaKind recipeTargetKind = MediaKind.TvEpisode,
-        IQbittorrentSearchPluginService? searchPluginService = null)
+        IQbittorrentSearchPluginService? searchPluginService = null,
+        SearchRecipe? recipe = null)
     {
         _module = module;
         _recipeTargetKind = recipeTargetKind;
+        _recipe = recipe;
         _searchPluginService = searchPluginService ?? throw new ArgumentNullException(nameof(searchPluginService));
         QualityOptions = new ObservableCollection<QualityOptionViewModel>(
             TorrentQuality.AllQualities.Select(label => new QualityOptionViewModel(
                 label,
                 _module.QualityAllowList.Any(quality => string.Equals(quality, label, StringComparison.OrdinalIgnoreCase)),
                 SyncQualitiesFromOptions)));
+        RefreshQueryEstimate();
     }
 
     public ObservableCollection<QualityOptionViewModel> QualityOptions { get; }
@@ -423,7 +488,7 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
     public string ModuleHint => _module.BlockType switch
     {
         RecipeBlockType.Identity => "Aliases and title matching for the media item.",
-        RecipeBlockType.QueryBuilder => "Query templates, custom queries, preferred quality, and audio tokens.",
+        RecipeBlockType.QueryBuilder => "Query templates, custom queries, and preferred quality tokens.",
         RecipeBlockType.SearchSource => IsMovieTarget
             ? "Movie search source settings and timeout."
             : "Choose TV parallel per-episode search or TV snapshot matching.",
@@ -454,7 +519,11 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
     public bool IsEnabled
     {
         get => _module.IsEnabled;
-        set => SetModuleValue(_module.IsEnabled, value, next => _module.IsEnabled = next);
+        set => SetModuleValue(
+            _module.IsEnabled,
+            value,
+            next => _module.IsEnabled = next,
+            QueryHuntEstimateInputs.AffectsModuleEnabled(_module.BlockType));
     }
 
     public string DisplayName
@@ -466,7 +535,7 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
     public string AliasesText
     {
         get => ToLines(_module.Aliases);
-        set => SetListValue(_module.Aliases, SplitTerms(value));
+        set => SetListValue(_module.Aliases, SplitTerms(value), affectsHuntEstimate: true);
     }
 
     public bool UseLibraryEnglishTitles
@@ -499,13 +568,137 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
     public string QueryTemplatesText
     {
         get => ToLines(_module.QueryTemplates);
-        set => SetListValue(_module.QueryTemplates, SplitLines(value));
+        set => SetListValue(_module.QueryTemplates, QueryTokenCatalog.NormalizeTemplates(SplitLines(value)), affectsHuntEstimate: true);
     }
+
+    public string QueryTemplatesCountLabel =>
+        $"{_module.QueryTemplates.Count:00}/ {QueryTokenCatalog.MaxTemplates}";
+
+    public IReadOnlyList<string> QueryTemplateItems => [.. _module.QueryTemplates];
+
+    public bool HasQueryTemplates => _module.QueryTemplates.Count > 0;
+
+    public MediaKind RecipeTargetKind => _recipeTargetKind;
+
+    private static readonly TimeSpan QueryEstimateRefreshDelay = TimeSpan.FromSeconds(1);
+
+    public string QueryEstimateText { get; private set; } = string.Empty;
+
+    public bool IsQueryEstimateStale { get; private set; }
+
+    public bool IsQueryEstimateBusy { get; private set; }
+
+    public string QueryEstimateDisplayText
+    {
+        get
+        {
+            if (IsQueryEstimateBusy)
+            {
+                return "Calculating...";
+            }
+
+            if (string.IsNullOrEmpty(QueryEstimateText))
+            {
+                return string.Empty;
+            }
+
+            return IsQueryEstimateStale
+                ? $"{QueryEstimateText} · outdated"
+                : QueryEstimateText;
+        }
+    }
+
+    public void MarkQueryEstimateStale()
+    {
+        if (_module.BlockType != RecipeBlockType.QueryBuilder || IsQueryEstimateStale || IsQueryEstimateBusy)
+        {
+            return;
+        }
+
+        IsQueryEstimateStale = true;
+        OnPropertyChanged(nameof(IsQueryEstimateStale));
+        OnPropertyChanged(nameof(QueryEstimateDisplayText));
+    }
+
+    public void RefreshQueryEstimate()
+    {
+        ApplyQueryEstimate();
+    }
+
+    private bool CanRequestQueryEstimate() =>
+        _recipe is not null &&
+        _module.BlockType == RecipeBlockType.QueryBuilder &&
+        !IsQueryEstimateBusy;
+
+    [RelayCommand(CanExecute = nameof(CanRequestQueryEstimate))]
+    private async Task RequestQueryEstimateAsync()
+    {
+        if (!CanRequestQueryEstimate())
+        {
+            return;
+        }
+
+        IsQueryEstimateBusy = true;
+        OnPropertyChanged(nameof(IsQueryEstimateBusy));
+        OnPropertyChanged(nameof(QueryEstimateDisplayText));
+        RequestQueryEstimateCommand.NotifyCanExecuteChanged();
+        try
+        {
+            await Task.Delay(QueryEstimateRefreshDelay).ConfigureAwait(true);
+            ApplyQueryEstimate();
+        }
+        finally
+        {
+            IsQueryEstimateBusy = false;
+            OnPropertyChanged(nameof(IsQueryEstimateBusy));
+            OnPropertyChanged(nameof(QueryEstimateDisplayText));
+            RequestQueryEstimateCommand.NotifyCanExecuteChanged();
+        }
+    }
+
+    private void ApplyQueryEstimate()
+    {
+        if (_recipe is null || _module.BlockType != RecipeBlockType.QueryBuilder)
+        {
+            return;
+        }
+
+        QueryEstimateText = QuerySearchEstimator.FormatHuntEstimate(QuerySearchEstimator.Estimate(_recipe));
+        IsQueryEstimateStale = false;
+        OnPropertyChanged(nameof(QueryEstimateText));
+        OnPropertyChanged(nameof(IsQueryEstimateStale));
+        OnPropertyChanged(nameof(QueryEstimateDisplayText));
+        OnPropertyChanged(nameof(QueryTemplatesCountLabel));
+        OnPropertyChanged(nameof(QueryTemplateItems));
+        OnPropertyChanged(nameof(HasQueryTemplates));
+    }
+
+    [RelayCommand]
+    private void ChooseQueryTemplates()
+    {
+        if (_recipe is null)
+        {
+            return;
+        }
+
+        var dialog = new Views.QueryTemplateBuilderDialog(_recipe, _module.QueryTemplates)
+        {
+            Owner = System.Windows.Application.Current.MainWindow
+        };
+        dialog.ShowDialog();
+        SetListValue(
+            _module.QueryTemplates,
+            QueryTokenCatalog.NormalizeTemplates(dialog.ResultTemplates),
+            affectsHuntEstimate: true);
+        RefreshQueryEstimate();
+    }
+
+    public bool ShowQueryTemplateBuilder => _module.BlockType == RecipeBlockType.QueryBuilder;
 
     public string CustomQueriesText
     {
         get => ToLines(_module.CustomQueries);
-        set => SetListValue(_module.CustomQueries, SplitLines(value));
+        set => SetListValue(_module.CustomQueries, SplitLines(value), affectsHuntEstimate: true);
     }
 
     public bool SkipDefaultTitle
@@ -523,7 +716,10 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
     public string QualityAllowListText
     {
         get => ToLines(_module.QualityAllowList);
-        set => SetListValue(_module.QualityAllowList, SplitTerms(value));
+        set => SetListValue(
+            _module.QualityAllowList,
+            SplitTerms(value),
+            affectsHuntEstimate: _module.BlockType == RecipeBlockType.QueryBuilder);
     }
 
     public string PreferredAudioCodec
@@ -1197,7 +1393,7 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
     [ObservableProperty]
     private bool isSelected;
 
-    private void SetModuleValue<T>(T currentValue, T newValue, Action<T> apply)
+    private void SetModuleValue<T>(T currentValue, T newValue, Action<T> apply, bool affectsHuntEstimate = false)
     {
         if (EqualityComparer<T>.Default.Equals(currentValue, newValue))
         {
@@ -1205,29 +1401,34 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
         }
 
         apply(newValue);
-        NotifyStateChanged();
+        NotifyStateChanged(affectsHuntEstimate);
     }
 
-    private void SetListValue(List<string> target, IReadOnlyList<string> values)
+    private void SetListValue(List<string> target, IReadOnlyList<string> values, bool affectsHuntEstimate = false)
     {
         target.Clear();
         target.AddRange(values);
-        NotifyStateChanged();
+        NotifyStateChanged(affectsHuntEstimate);
     }
 
     private void SyncQualitiesFromOptions()
     {
         SetListValue(
             _module.QualityAllowList,
-            QualityOptions.Where(option => option.IsSelected).Select(option => option.Label).ToList());
+            QualityOptions.Where(option => option.IsSelected).Select(option => option.Label).ToList(),
+            affectsHuntEstimate: _module.BlockType == RecipeBlockType.QueryBuilder);
         OnPropertyChanged(nameof(SelectedQualitiesSummary));
     }
 
-    private void NotifyStateChanged()
+    private void NotifyStateChanged(bool affectsHuntEstimate = false)
     {
         OnPropertyChanged(string.Empty);
         OnPropertyChanged(nameof(ModuleSummaryLines));
         OnPropertyChanged(nameof(SelectedQualitiesSummary));
+        if (affectsHuntEstimate)
+        {
+            OnPropertyChanged(QueryHuntEstimateInputs.HuntEstimateInputChanged);
+        }
     }
 
     private IReadOnlyList<string> BuildSummary() => _module.BlockType switch
@@ -1243,8 +1444,8 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
         [
             $"Enabled: {(IsEnabled ? "Yes" : "No")}",
             $"Qualities: {SelectedQualitiesSummary}",
-            $"Preferred audio: {DisplayOrEmpty(PreferredAudioCodec)}",
-            $"Query templates: {CountLines(QueryTemplatesText)}",
+            $"Query templates: {QueryTemplatesCountLabel}",
+            QueryEstimateText,
             $"Custom queries: {CountLines(CustomQueriesText)}",
             $"Skip default title: {(SkipDefaultTitle ? "Yes" : "No")}",
             $"Sanitize query: {(SanitizeQuery ? "Yes" : "No")}"
@@ -1417,14 +1618,14 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
         {
             if (_module.ExtensionData.Remove(key))
             {
-                NotifyStateChanged();
+                NotifyStateChanged(QueryHuntEstimateInputs.AffectsExtensionKey(key));
             }
 
             return;
         }
 
         _module.ExtensionData[key] = value.Trim();
-        NotifyStateChanged();
+        NotifyStateChanged(QueryHuntEstimateInputs.AffectsExtensionKey(key));
     }
 
     private static string ToLines(IEnumerable<string> values)
@@ -1458,6 +1659,8 @@ public sealed class ModuleFieldHelpItem
     public string Description { get; init; } = string.Empty;
 
     public string OutputImpact { get; init; } = string.Empty;
+
+    public bool AffectsHuntEstimate { get; init; }
 }
 
 internal static class ModuleFieldHelp
@@ -1470,18 +1673,18 @@ internal static class ModuleFieldHelp
         {
             RecipeBlockType.Identity =>
             [
-                new() { FieldName = "Enabled", Description = "Turns identity matching on or off for this recipe.", OutputImpact = "When disabled, only the primary library title is used. Aliases are ignored during search and candidate filtering." },
-                new() { FieldName = "Use library alternative titles", Description = "Include TMDB English and Japanese romaji alternative titles stored on the tracked show or movie.", OutputImpact = "Adds those library alternative titles to {title} expansion and torrent title matching. Works with Skip default title." },
-                new() { FieldName = "Max library alt titles for search", Description = "How many ranked TMDB library alternative titles to expand into search queries. Library UI may still show more.", OutputImpact = "Lower values run fewer snapshot and fetch queries. Titles are ranked by short romaji or abbreviations first; near-duplicate EN variants are skipped. 0 disables library alt expansion even when the checkbox above is enabled." },
-                new() { FieldName = "Title aliases", Description = "Alternative names for the show or movie.", OutputImpact = "Each alias is used as an extra {title} variant in queries and helps accept torrents that use abbreviations or alternate spellings." }
+                new() { FieldName = "Enabled", Description = "Turns identity matching on or off for this recipe.", OutputImpact = "When disabled, only the primary library title is used. Aliases are ignored during search and candidate filtering.", AffectsHuntEstimate = true },
+                new() { FieldName = "Use library alternative titles", Description = "Include TMDB English and Japanese romaji alternative titles stored on the tracked show or movie.", OutputImpact = "Adds those library alternative titles to {title} expansion and torrent title matching. Works with Skip default title.", AffectsHuntEstimate = true },
+                new() { FieldName = "Max library alt titles for search", Description = "How many ranked TMDB library alternative titles to expand into search queries. Library UI may still show more.", OutputImpact = "Lower values run fewer snapshot and fetch queries. Titles are ranked by short romaji or abbreviations first; near-duplicate EN variants are skipped. 0 disables library alt expansion even when the checkbox above is enabled.", AffectsHuntEstimate = true },
+                new() { FieldName = "Title aliases", Description = "Alternative names for the show or movie.", OutputImpact = "Each alias is used as an extra {title} variant in queries and helps accept torrents that use abbreviations or alternate spellings.", AffectsHuntEstimate = true }
             ],
             RecipeBlockType.QueryBuilder =>
             [
-                new() { FieldName = "Quality allow list", Description = "Accepted quality labels such as 1080p, 1440p, or 2160p.", OutputImpact = "Generates one search query per quality token. More qualities mean more queries and broader search coverage." },
-                new() { FieldName = "Preferred audio", Description = "Comma-separated audio labels to prefer, e.g. Dolby, DV, Atmos.", OutputImpact = "Inserted into query templates as {audio}. Each matching token in a candidate name adds a scoring boost." },
-                new() { FieldName = "Query templates", Description = "Patterns sent to qBittorrent search.", OutputImpact = "Each template is expanded with title, year, season, episode, quality, and audio. More templates increase candidate discovery at the cost of more searches." },
-                new() { FieldName = "Custom queries", Description = "Extra templates appended after the generated list, one entry per line.", OutputImpact = "Useful for manual search phrases that do not fit the standard templates. Each entry is expanded like a normal template." },
-                new() { FieldName = "Skip default title", Description = "Exclude the library show or movie title from {title} expansion.", OutputImpact = "When enabled, the primary library title is skipped. Identity aliases and library alternative titles (English and romaji, when enabled) are still used for {title}." },
+                new() { FieldName = "Enabled", Description = "Turns query templates and custom queries on or off for this recipe.", OutputImpact = "When disabled, hunt search patterns from this module are not used.", AffectsHuntEstimate = true },
+                new() { FieldName = "Quality allow list", Description = "Accepted quality labels such as 1080p, 1440p, or 2160p.", OutputImpact = "Generates one search query per quality token. More qualities mean more queries and broader search coverage.", AffectsHuntEstimate = true },
+                new() { FieldName = "Query templates", Description = "Patterns sent to qBittorrent search. Open Build templates to add, edit, or remove items (max 10).", OutputImpact = "Each accepted template is expanded with title, year, season, episode, and quality. Unknown or removed tokens such as {audio} skip that template. More templates increase candidate discovery at the cost of more searches.", AffectsHuntEstimate = true },
+                new() { FieldName = "Custom queries", Description = "Extra templates appended after the generated list, one entry per line.", OutputImpact = "Useful for manual search phrases that do not fit the standard templates. Each entry is expanded like a normal template.", AffectsHuntEstimate = true },
+                new() { FieldName = "Skip default title", Description = "Exclude the library show or movie title from {title} expansion.", OutputImpact = "When enabled, the primary library title is skipped. Identity aliases and library alternative titles (English and romaji, when enabled) are still used for {title}.", AffectsHuntEstimate = true },
                 new() { FieldName = "Sanitize special characters in query", Description = "Strip punctuation such as :, ,, ?, !, quotes, and parentheses from the rendered query before sending it to qBittorrent.", OutputImpact = "Keeps letters, digits, spaces, and hyphens. Prevents some search plugins that use punctuation as URL delimiters from truncating or corrupting the search. Recommended: on." }
             ],
             RecipeBlockType.SearchSource =>
