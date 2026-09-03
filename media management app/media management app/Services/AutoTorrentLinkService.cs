@@ -324,23 +324,10 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
         var providerId = show?.TmdbId.ToString();
         if (!string.IsNullOrWhiteSpace(providerId))
         {
-            var episodeItems = _databaseService.GetSourceItems()
-                .Where(item =>
-                    item.MediaKind == MediaKind.TvEpisode &&
-                    string.Equals(item.Provider, "tmdb", StringComparison.OrdinalIgnoreCase) &&
-                    string.Equals(item.ProviderId, providerId, StringComparison.OrdinalIgnoreCase))
-                .Where(item =>
-                {
-                    var key = GetOutputEpisodeKey(item);
-                    return key == (seasonNumber, episodeNumber);
-                })
-                .ToList();
-
-            foreach (var item in episodeItems)
-            {
-                _databaseService.DeleteSourceItem(item.Id);
-                result.Messages.Add($"Removed source item: {item.FileName}");
-            }
+            DeleteAcceptedTvSourceItems(
+                providerId,
+                item => GetOutputEpisodeKey(item) == (seasonNumber, episodeNumber),
+                result);
         }
 
         // Clear torrent hash and download state so the episode becomes Missing and re-searchable
@@ -366,30 +353,24 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
     {
         var result = new AutoTorrentLinkResult();
 
-        // Capture pack SourceItems before unlink clears their link fields.
-        var show = _databaseService.GetTrackedShow(showId);
-        var providerId = show?.TmdbId.ToString();
-        var packItems = string.IsNullOrWhiteSpace(providerId)
-            ? []
-            : _databaseService.GetSourceItems()
-                .Where(item =>
-                    item.MediaKind == MediaKind.TvEpisode &&
-                    string.Equals(item.Provider, "tmdb", StringComparison.OrdinalIgnoreCase) &&
-                    string.Equals(item.ProviderId, providerId, StringComparison.OrdinalIgnoreCase) &&
-                    item.AutoTorrentPackOwnerSeasonNumber == ownerSeasonNumber &&
-                    (item.AutoTorrentLinkKind == AutoTorrentLinkKind.SeasonPack ||
-                     item.IsOrphanPackSpecial))
-                .ToList();
-
         var unlinkResult = RemoveSeasonPackLinks(showId, ownerSeasonNumber);
         result.LinkedCount += unlinkResult.LinkedCount;
         result.SkippedCount += unlinkResult.SkippedCount;
         result.Messages.AddRange(unlinkResult.Messages);
 
-        foreach (var item in packItems)
+        // Delete by season/pack-owner key, not pack flags. Unlink clears those flags but
+        // leaves Parsed SourceItems that RefreshAvailability still counts as Available.
+        var show = _databaseService.GetTrackedShow(showId);
+        var providerId = show?.TmdbId.ToString();
+        var deletedCount = 0;
+        if (!string.IsNullOrWhiteSpace(providerId))
         {
-            _databaseService.DeleteSourceItem(item.Id);
-            result.Messages.Add($"Removed source item: {item.FileName}");
+            deletedCount = DeleteAcceptedTvSourceItems(
+                providerId,
+                item =>
+                    GetOutputEpisodeKey(item)?.SeasonNumber == ownerSeasonNumber ||
+                    item.AutoTorrentPackOwnerSeasonNumber == ownerSeasonNumber,
+                result);
         }
 
         _databaseService.ClearTrackedSeasonSelectedPack(showId, ownerSeasonNumber);
@@ -402,6 +383,9 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             _databaseService.DeleteTorrentCartOrder(order.Id);
         }
 
+        _logger.Info(
+            $"Pack cleanup for show id={showId} S{ownerSeasonNumber:00}: deleted {deletedCount} source item(s).",
+            LogTarget.File | LogTarget.Console);
         result.Messages.Add($"Reset season S{ownerSeasonNumber:00} pack: download state cleared.");
         return result;
     }
@@ -935,6 +919,29 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
         result.ErrorCount++;
         result.Messages.Add($"{item.FileName}: {errorMessage}");
         return result;
+    }
+
+    private int DeleteAcceptedTvSourceItems(
+        string providerId,
+        Func<SourceItem, bool> match,
+        AutoTorrentLinkResult result)
+    {
+        var items = _databaseService.GetSourceItems()
+            .Where(item =>
+                item.MediaKind == MediaKind.TvEpisode &&
+                string.Equals(item.Provider, "tmdb", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(item.ProviderId, providerId, StringComparison.OrdinalIgnoreCase) &&
+                match(item))
+            .ToList();
+
+        foreach (var item in items)
+        {
+            _databaseService.DeleteSourceItem(item.Id);
+            result.RemovedCount++;
+            result.Messages.Add($"Removed source item: {item.FileName}");
+        }
+
+        return items.Count;
     }
 
     private static (int SeasonNumber, int EpisodeNumber)? GetOutputEpisodeKey(SourceItem item)

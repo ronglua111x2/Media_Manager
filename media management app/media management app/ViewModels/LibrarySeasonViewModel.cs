@@ -105,7 +105,9 @@ public partial class LibrarySeasonViewModel : ObservableObject
     public bool CanUnlinkPack => IsPackMode && !IsCoveredByAnotherPack && IsPackLinked;
 
     public bool CanCleanupPack =>
-        IsPackMode && !IsCoveredByAnotherPack && (HasPackTorrent || IsPackLinked || IsPackInCart);
+        IsPackMode &&
+        !IsCoveredByAnotherPack &&
+        (HasPackTorrent || IsPackLinked || IsPackInCart || AvailableEpisodes > 0);
 
     public bool ShowPackLinkButtons => CanRuleLinkPack;
 
@@ -240,6 +242,8 @@ public partial class LibrarySeasonViewModel : ObservableObject
         OnPropertyChanged(nameof(SeasonStats));
         OnPropertyChanged(nameof(AvailableEpisodes));
         OnPropertyChanged(nameof(MissingEpisodes));
+        OnPropertyChanged(nameof(CanCleanupPack));
+        OnPropertyChanged(nameof(ShowPackCleanupButton));
     }
 
     private void SyncEpisodePackMode()

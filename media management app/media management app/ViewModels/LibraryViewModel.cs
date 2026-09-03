@@ -738,7 +738,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
         {
             StatusMessage = $"Cleaning up season {season.SeasonNumber:00} pack...";
             var result = _autoTorrentLinkService.ResetSeasonPackForRedownload(season.ShowId, season.SeasonNumber);
-            _trackedShowService.RefreshAvailability(season.ShowId);
+            RefreshLibrary();
             await ReloadSelectedDetailAsync();
             StatusMessage = $"Pack cleanup for S{season.SeasonNumber:00}: {result.Summary}.";
         }
