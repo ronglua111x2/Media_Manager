@@ -19,6 +19,7 @@ public sealed class QbittorrentViewerService : IQbittorrentViewerService
 {
     private readonly ISettingsService _settingsService;
     private readonly IAppLogger _logger;
+    private readonly ICrashLogService _crashLog;
     private readonly object _environmentLock = new();
     private Task<CoreWebView2Environment>? _environmentTask;
     private WebViewerWindow? _window;
@@ -28,10 +29,12 @@ public sealed class QbittorrentViewerService : IQbittorrentViewerService
     public QbittorrentViewerService(
         ISettingsService settingsService,
         IAppLogger logger,
+        ICrashLogService crashLog,
         IAppLifecycleService lifecycleService)
     {
         _settingsService = settingsService;
         _logger = logger;
+        _crashLog = crashLog;
         lifecycleService.AppModeChanged += OnAppModeChanged;
     }
 
@@ -124,6 +127,7 @@ public sealed class QbittorrentViewerService : IQbittorrentViewerService
 
             _webView.CoreWebView2.NewWindowRequested += OnNewWindowRequested;
             _webView.CoreWebView2.SourceChanged += OnSourceChanged;
+            _webView.CoreWebView2.ProcessFailed += OnProcessFailed;
             _webView.CoreWebView2.Navigate(uri.AbsoluteUri);
             _window.SetCurrentUrl(uri.AbsoluteUri);
         }
@@ -197,6 +201,11 @@ public sealed class QbittorrentViewerService : IQbittorrentViewerService
     private void OnSourceChanged(object? sender, CoreWebView2SourceChangedEventArgs e)
     {
         RunOnUi(() => _window?.SetCurrentUrl(_webView?.CoreWebView2?.Source));
+    }
+
+    private void OnProcessFailed(object? sender, CoreWebView2ProcessFailedEventArgs e)
+    {
+        _crashLog.LogWebViewProcessFailed("qBittorrent", e, _webView?.CoreWebView2?.Source);
     }
 
     private void OnWindowClosing(object? sender, CancelEventArgs e)
@@ -311,6 +320,7 @@ public sealed class QbittorrentViewerService : IQbittorrentViewerService
         {
             _webView.CoreWebView2.NewWindowRequested -= OnNewWindowRequested;
             _webView.CoreWebView2.SourceChanged -= OnSourceChanged;
+            _webView.CoreWebView2.ProcessFailed -= OnProcessFailed;
         }
 
         if (_webView.Parent is WpfPanel parent)

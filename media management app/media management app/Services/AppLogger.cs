@@ -151,14 +151,20 @@ public sealed class AppLogger : IAppLogger, IDisposable
 
     private void WriteUiLog(string line)
     {
-        var dispatcher = System.Windows.Application.Current?.Dispatcher;
-        if (dispatcher is null || dispatcher.CheckAccess())
+        try
         {
-            AddUiLogLine(line);
-            return;
-        }
+            var dispatcher = System.Windows.Application.Current?.Dispatcher;
+            if (dispatcher is null || dispatcher.CheckAccess())
+            {
+                AddUiLogLine(line);
+                return;
+            }
 
-        dispatcher.BeginInvoke(AddUiLogLine, line);
+            dispatcher.BeginInvoke(AddUiLogLine, line);
+        }
+        catch
+        {
+        }
     }
 
     private static void WriteConsoleLog(string line)

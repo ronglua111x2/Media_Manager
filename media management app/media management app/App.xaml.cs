@@ -1,9 +1,11 @@
 using System.Windows;
 using System.Net.Http;
 using System.Threading;
+using System.Windows.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Toolkit.Uwp.Notifications;
+using Microsoft.Win32;
 using media_management_app.Common;
 using media_management_app.Models;
 using media_management_app.Services;
@@ -46,6 +48,11 @@ public partial class App : System.Windows.Application
 
         var settings = _serviceProvider.GetRequiredService<ISettingsService>();
         settings.Load();
+
+        var crashLog = _serviceProvider.GetRequiredService<ICrashLogService>();
+        crashLog.ReportUncleanShutdownIfNeeded();
+        crashLog.MarkAlive();
+        StartCrashLoggingHooks();
 
         var geminiModelCatalog = _serviceProvider.GetRequiredService<IGeminiModelCatalogService>();
         geminiModelCatalog.ReloadFromDisk();
@@ -109,6 +116,15 @@ public partial class App : System.Windows.Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        StopCrashLoggingHooks();
+        try
+        {
+            _serviceProvider?.GetService<ICrashLogService>()?.ClearAlive();
+        }
+        catch (Exception)
+        {
+        }
+
         try
         {
             _serviceProvider?.GetService<IAutoTrackSchedulerService>()?.Dispose();
@@ -144,6 +160,7 @@ public partial class App : System.Windows.Application
         services.AddSingleton<ITrayIconService, TrayIconService>();
         services.AddSingleton<IWindowsNotificationService, WindowsNotificationService>();
         services.AddSingleton<IAppLogger, AppLogger>();
+        services.AddSingleton<ICrashLogService, CrashLogService>();
         services.AddSingleton<ILogCleanupService, LogCleanupService>();
         services.AddSingleton<IOperationProgressService, OperationProgressService>();
         services.AddSingleton<IDatabaseService, DatabaseService>();
@@ -265,6 +282,94 @@ public partial class App : System.Windows.Application
             settings.Current.Gemini.FallbackModels = modelCatalog.FallbackModels
                 .Where(model => !string.Equals(model, settings.Current.Gemini.Model, StringComparison.OrdinalIgnoreCase))
                 .ToArray();
+        }
+    }
+
+    private void StartCrashLoggingHooks()
+    {
+        AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
+        DispatcherUnhandledException += OnDispatcherUnhandledException;
+        TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
+        SystemEvents.PowerModeChanged += OnPowerModeChanged;
+        SystemEvents.SessionEnding += OnSessionEnding;
+    }
+
+    private void StopCrashLoggingHooks()
+    {
+        AppDomain.CurrentDomain.UnhandledException -= OnUnhandledException;
+        DispatcherUnhandledException -= OnDispatcherUnhandledException;
+        TaskScheduler.UnobservedTaskException -= OnUnobservedTaskException;
+        SystemEvents.PowerModeChanged -= OnPowerModeChanged;
+        SystemEvents.SessionEnding -= OnSessionEnding;
+    }
+
+    private void OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
+    {
+        try
+        {
+            _serviceProvider?.GetService<ICrashLogService>()?.LogUnhandled(
+                "UnhandledException",
+                "AppDomain unhandled exception.",
+                e.ExceptionObject as Exception,
+                terminating: e.IsTerminating);
+        }
+        catch
+        {
+        }
+    }
+
+    private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
+    {
+        try
+        {
+            _serviceProvider?.GetService<ICrashLogService>()?.LogUnhandled(
+                "DispatcherUnhandledException",
+                "Dispatcher unhandled exception.",
+                e.Exception);
+        }
+        catch
+        {
+        }
+    }
+
+    private void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
+    {
+        try
+        {
+            _serviceProvider?.GetService<ICrashLogService>()?.LogUnhandled(
+                "UnobservedTaskException",
+                "Unobserved task exception.",
+                e.Exception);
+            e.SetObserved();
+        }
+        catch
+        {
+        }
+    }
+
+    private void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e)
+    {
+        try
+        {
+            _serviceProvider?.GetService<IAppLogger>()?.Info(
+                $"Power mode changed: {e.Mode}.",
+                LogTarget.File | LogTarget.Console);
+        }
+        catch
+        {
+        }
+    }
+
+    private void OnSessionEnding(object sender, SessionEndingEventArgs e)
+    {
+        try
+        {
+            _serviceProvider?.GetService<IAppLogger>()?.Warning(
+                $"Windows session ending: {e.Reason}.",
+                LogTarget.File | LogTarget.Console);
+        }
+        catch
+        {
         }
     }
 }

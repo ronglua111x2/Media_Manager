@@ -160,7 +160,13 @@ public sealed class LogCleanupService : ILogCleanupService, IDisposable
         }
 
         var fileNameWithoutExtension = Path.GetFileNameWithoutExtension(filePath);
-        var baseSuffix = $"_{AppConstants.LogFileSuffix}";
+        return IsManagedLogSuffix(fileNameWithoutExtension, AppConstants.LogFileSuffix)
+            || IsManagedLogSuffix(fileNameWithoutExtension, AppConstants.CrashLogFileSuffix);
+    }
+
+    private static bool IsManagedLogSuffix(string fileNameWithoutExtension, string suffix)
+    {
+        var baseSuffix = $"_{suffix}";
         if (fileNameWithoutExtension.EndsWith(baseSuffix, StringComparison.OrdinalIgnoreCase))
         {
             return true;

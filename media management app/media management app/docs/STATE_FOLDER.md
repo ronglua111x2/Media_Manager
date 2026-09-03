@@ -14,7 +14,8 @@ The app stores all persistent runtime data under a single **state folder** (defa
 | `settings-load.log` | Append-only log of settings load/save events |
 | `media-manager.db` | Primary SQLite database |
 | `media-manager*.db` | Manual/automatic DB backups (naming varies) |
-| `logs/` | Rotating system logs (`YYYYMMDD_HHMMSS_mmm_systemlog.txt`) |
+| `logs/` | Rotating system logs (`YYYYMMDD_HHMMSS_mmm_systemlog.txt`) and crash reports (`YYYYMMDD_HHMMSS_mmm_crash.txt`) |
+| `session.alive` | Live-session sentinel (pid + last heartbeat). Present while the app is running; deleted on a clean exit. If it remains on the next start, the previous run did not shut down cleanly. |
 | `posters/` | Cached TMDB poster/still images (keyed by provider id) |
 | `Recipes/` | Torrent search recipe files (`*.rcp`, JSON) |
 | `GoogleDrive/` | Google Drive OAuth storage (see [Google Drive OAuth](#google-drive-oauth)) |

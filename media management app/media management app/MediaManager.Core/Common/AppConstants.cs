@@ -94,6 +94,9 @@ public static class AppConstants
     public const int MaxLogCleanupRetentionDays = 3650;
     public const int MaxUiLogLines = 500;
     public const string LogFileSuffix = "systemlog";
+    public const string CrashLogFileSuffix = "crash";
+    public const string SessionAliveFileName = "session.alive";
+    public static readonly TimeSpan CrashHeartbeatInterval = TimeSpan.FromSeconds(60);
     public const string LogFileExtension = ".txt";
     public const string LogTimestampFormat = "yyyy-MM-dd HH:mm:ss.fff";
     public const string LogFileTimestampFormat = "yyyyMMdd_HHmmss_fff";

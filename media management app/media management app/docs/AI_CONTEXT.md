@@ -167,6 +167,7 @@ core:
   - ISettingsService -> SettingsService
   - IDatabaseService -> DatabaseService
   - IAppLogger -> AppLogger
+  - ICrashLogService -> CrashLogService
   - IThemeService -> ThemeService
   - IOperationProgressService -> OperationProgressService
   - IAppLifecycleService -> AppLifecycleService

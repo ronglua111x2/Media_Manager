@@ -19,6 +19,7 @@ public sealed class JellyfinViewerService : IJellyfinViewerService
 {
     private readonly ISettingsService _settingsService;
     private readonly IAppLogger _logger;
+    private readonly ICrashLogService _crashLog;
     private readonly object _environmentLock = new();
     private Task<CoreWebView2Environment>? _environmentTask;
     private WebViewerWindow? _window;
@@ -28,10 +29,12 @@ public sealed class JellyfinViewerService : IJellyfinViewerService
     public JellyfinViewerService(
         ISettingsService settingsService,
         IAppLogger logger,
+        ICrashLogService crashLog,
         IAppLifecycleService lifecycleService)
     {
         _settingsService = settingsService;
         _logger = logger;
+        _crashLog = crashLog;
         lifecycleService.AppModeChanged += OnAppModeChanged;
     }
 
@@ -126,6 +129,7 @@ public sealed class JellyfinViewerService : IJellyfinViewerService
             _webView.CoreWebView2.DownloadStarting += OnDownloadStarting;
             _webView.CoreWebView2.ContainsFullScreenElementChanged += OnContainsFullScreenElementChanged;
             _webView.CoreWebView2.SourceChanged += OnSourceChanged;
+            _webView.CoreWebView2.ProcessFailed += OnProcessFailed;
             _webView.CoreWebView2.Navigate(uri.AbsoluteUri);
             _window.SetCurrentUrl(uri.AbsoluteUri);
         }
@@ -232,6 +236,11 @@ public sealed class JellyfinViewerService : IJellyfinViewerService
         RunOnUi(() => _window?.SetCurrentUrl(_webView?.CoreWebView2?.Source));
     }
 
+    private void OnProcessFailed(object? sender, CoreWebView2ProcessFailedEventArgs e)
+    {
+        _crashLog.LogWebViewProcessFailed("Jellyfin", e, _webView?.CoreWebView2?.Source);
+    }
+
     private void OnWindowClosed(object? sender, EventArgs e)
     {
         if (_window is not null)
@@ -323,6 +332,7 @@ public sealed class JellyfinViewerService : IJellyfinViewerService
             _webView.CoreWebView2.DownloadStarting -= OnDownloadStarting;
             _webView.CoreWebView2.ContainsFullScreenElementChanged -= OnContainsFullScreenElementChanged;
             _webView.CoreWebView2.SourceChanged -= OnSourceChanged;
+            _webView.CoreWebView2.ProcessFailed -= OnProcessFailed;
         }
 
         if (_webView.Parent is WpfPanel parent)
