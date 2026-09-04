@@ -412,7 +412,8 @@
                                              Foreground="{StaticResource AppBrushWarning}"
                                              Text="{Binding UserRatingText, UpdateSourceTrigger=LostFocus}"
                                              ToolTip="Personal episode rating 0.0–10.0. Clear to remove."
-                                             LostFocus="EpisodeRatingTextBox_OnLostFocus" />
+                                             LostFocus="EpisodeRatingTextBox_OnLostFocus"
+                                             KeyDown="EpisodeRatingTextBox_OnKeyDown" />
                                     <Button Style="{StaticResource AppCompactIconButtonStyle}"
                                             Width="24"
                                             Height="24"
@@ -1574,7 +1575,9 @@
                                                      HorizontalContentAlignment="Center"
                                                      Foreground="{StaticResource AppBrushWarning}"
                                                      Text="{Binding SelectedRatingText, UpdateSourceTrigger=LostFocus}"
-                                                     ToolTip="Personal rating 0.0–10.0" />
+                                                     ToolTip="Personal title rating 0.0–10.0. Clear to remove."
+                                                     LostFocus="TitleRatingTextBox_OnLostFocus"
+                                                     KeyDown="TitleRatingTextBox_OnKeyDown" />
                                             <Button Style="{StaticResource AppCompactIconButtonStyle}"
                                                     Width="24"
                                                     Height="24"

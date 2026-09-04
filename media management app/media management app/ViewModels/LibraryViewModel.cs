@@ -167,7 +167,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
     private int selectedWatchTotalEpisodes;
 
     [ObservableProperty]
-    private double selectedRating;
+    private double? selectedRating;
 
     [ObservableProperty]
     private string selectedThought = string.Empty;
@@ -234,15 +234,23 @@ public sealed partial class LibraryViewModel : ViewModelBase
     public bool CanDecrementWatchedEpisodes =>
         IsSelectedShow && SelectedWatchedEpisodes > 0;
 
-    public bool CanIncrementRating => HasSelectedMedia && SelectedRating < RatingMax;
+    public bool CanIncrementRating => HasSelectedMedia && SelectedRating.GetValueOrDefault() < RatingMax;
 
     public bool CanDecrementRating => HasSelectedMedia && SelectedRating > RatingMin;
 
     public string SelectedRatingText
     {
-        get => SelectedRating.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture);
+        get => SelectedRating is { } rating
+            ? rating.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)
+            : string.Empty;
         set
         {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                SelectedRating = null;
+                return;
+            }
+
             if (double.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var parsed)
                 || double.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.CurrentCulture, out parsed))
             {
@@ -1184,13 +1192,16 @@ public sealed partial class LibraryViewModel : ViewModelBase
         IncrementWatchedEpisodesCommand.NotifyCanExecuteChanged();
     }
 
-    partial void OnSelectedRatingChanged(double value)
+    partial void OnSelectedRatingChanged(double? value)
     {
-        var clamped = ClampRating(value);
-        if (Math.Abs(clamped - value) > 0.0001)
+        if (value is { } rating)
         {
-            SelectedRating = clamped;
-            return;
+            var clamped = ClampRating(rating);
+            if (Math.Abs(clamped - rating) > 0.0001)
+            {
+                SelectedRating = clamped;
+                return;
+            }
         }
 
         OnPropertyChanged(nameof(CanIncrementRating));
@@ -1280,7 +1291,10 @@ public sealed partial class LibraryViewModel : ViewModelBase
             return;
         }
 
-        SelectedRating = ClampRating(SelectedRating + RatingStep);
+        var next = SelectedRating is { } current
+            ? current + RatingStep
+            : RatingStep;
+        SelectedRating = ClampRating(next);
     }
 
     [RelayCommand(CanExecute = nameof(CanDecrementRating))]
@@ -1291,7 +1305,18 @@ public sealed partial class LibraryViewModel : ViewModelBase
             return;
         }
 
-        SelectedRating = ClampRating(SelectedRating - RatingStep);
+        SelectedRating = ClampRating(SelectedRating!.Value - RatingStep);
+    }
+
+    [RelayCommand(CanExecute = nameof(HasSelectedMedia))]
+    private void CommitTitleRating()
+    {
+        if (!HasSelectedMedia)
+        {
+            return;
+        }
+
+        PersistSelectedRatingAndThought();
     }
 
     [RelayCommand(CanExecute = nameof(HasSelectedMedia))]
@@ -1554,6 +1579,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
         StopAutoTrackCommand.NotifyCanExecuteChanged();
         IncrementRatingCommand.NotifyCanExecuteChanged();
         DecrementRatingCommand.NotifyCanExecuteChanged();
+        CommitTitleRatingCommand.NotifyCanExecuteChanged();
         BeginEditThoughtCommand.NotifyCanExecuteChanged();
         ToggleThoughtPopupCommand.NotifyCanExecuteChanged();
     }
@@ -2154,7 +2180,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
         _suppressRatingThoughtUpdate = true;
         IsThoughtPopupOpen = false;
         IsEditingThought = false;
-        SelectedRating = ClampRating(rating ?? 0);
+        SelectedRating = rating is { } value ? ClampRating(value) : null;
         SelectedThought = NormalizeThought(thought);
         OnPropertyChanged(nameof(SelectedRatingText));
         OnPropertyChanged(nameof(CanIncrementRating));
@@ -2165,6 +2191,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
         OnPropertyChanged(nameof(ThoughtDisplayText));
         IncrementRatingCommand.NotifyCanExecuteChanged();
         DecrementRatingCommand.NotifyCanExecuteChanged();
+        CommitTitleRatingCommand.NotifyCanExecuteChanged();
         BeginEditThoughtCommand.NotifyCanExecuteChanged();
         ToggleThoughtPopupCommand.NotifyCanExecuteChanged();
         _suppressRatingThoughtUpdate = false;
@@ -2177,9 +2204,12 @@ public sealed partial class LibraryViewModel : ViewModelBase
             return;
         }
 
-        var rating = ClampRating(SelectedRating);
+        double? rating = SelectedRating is { } value ? ClampRating(value) : null;
         var thought = NormalizeThought(SelectedThought);
         var thoughtForDb = string.IsNullOrWhiteSpace(thought) ? null : thought;
+        var status = rating.HasValue
+            ? $"Rating/thought updated: {rating.Value:0.0}."
+            : "Title rating cleared.";
 
         if (SelectedShow is not null)
         {
@@ -2187,7 +2217,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
             SelectedMediaCard?.ApplyRating(rating);
             SyncCardInAllMedia(SelectedMediaCard);
             ApplyMediaCardFilterAndSort();
-            StatusMessage = $"Rating/thought updated: {rating:0.0}.";
+            StatusMessage = status;
             return;
         }
 
@@ -2197,7 +2227,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
             SelectedMediaCard?.ApplyRating(rating);
             SyncCardInAllMedia(SelectedMediaCard);
             ApplyMediaCardFilterAndSort();
-            StatusMessage = $"Rating/thought updated: {rating:0.0}.";
+            StatusMessage = status;
         }
     }
 

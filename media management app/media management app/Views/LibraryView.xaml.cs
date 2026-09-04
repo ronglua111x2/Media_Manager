@@ -48,6 +48,45 @@ public partial class LibraryView : System.Windows.Controls.UserControl
         }
     }
 
+    private void EpisodeRatingTextBox_OnKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter
+            || sender is not System.Windows.Controls.TextBox box
+            || box.DataContext is not LibraryEpisodeRowViewModel row
+            || DataContext is not LibraryViewModel viewModel)
+        {
+            return;
+        }
+
+        CommitTextBoxText(box);
+        viewModel.CommitEpisodeRatingCommand.Execute(row);
+        e.Handled = true;
+    }
+
+    private void TitleRatingTextBox_OnLostFocus(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is LibraryViewModel viewModel)
+        {
+            viewModel.CommitTitleRatingCommand.Execute(null);
+        }
+    }
+
+    private void TitleRatingTextBox_OnKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter || DataContext is not LibraryViewModel viewModel)
+        {
+            return;
+        }
+
+        if (sender is System.Windows.Controls.TextBox box)
+        {
+            CommitTextBoxText(box);
+        }
+
+        viewModel.CommitTitleRatingCommand.Execute(null);
+        e.Handled = true;
+    }
+
     private void EpisodeThoughtTextBox_OnLostFocus(object sender, RoutedEventArgs e)
     {
         if (sender is System.Windows.Controls.TextBox box
@@ -137,5 +176,10 @@ public partial class LibraryView : System.Windows.Controls.UserControl
         {
             viewModel.SelectRatingCellCommand.Execute(cell);
         }
+    }
+
+    private static void CommitTextBoxText(System.Windows.Controls.TextBox box)
+    {
+        box.GetBindingExpression(System.Windows.Controls.TextBox.TextProperty)?.UpdateSource();
     }
 }
