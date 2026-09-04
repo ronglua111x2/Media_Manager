@@ -37,16 +37,12 @@ public partial class LibrarySeasonViewModel : ObservableObject
 
     public int SeasonNumber { get; }
 
-    public string Header => SeasonNumber == AppConstants.SpecialsSeasonNumber
-        ? $"Extras/Specials/OVAs | {SeasonStats}"
-        : $"Season {SeasonNumber:00} | {SeasonStats}";
+    public string Header => $"{AppConstants.FormatSeasonDisplayName(SeasonNumber)} | {SeasonStats}";
 
     public string SeasonStats =>
         $"{AvailableEpisodes}/{TrackedEpisodeCount} available | {MissingEpisodes} missing";
 
-    public string RatingHeader => SeasonNumber == AppConstants.SpecialsSeasonNumber
-        ? $"Extras/Specials/OVAs | {RatingStats}"
-        : $"Season {SeasonNumber:00} | {RatingStats}";
+    public string RatingHeader => $"{AppConstants.FormatSeasonDisplayName(SeasonNumber)} | {RatingStats}";
 
     public string RatingStats
     {

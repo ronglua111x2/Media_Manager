@@ -33,6 +33,15 @@ public static class AppConstants
     /// <summary>Jellyfin extras folder for unmatched pack orphans.</summary>
     public const string OrphanExtrasFolderName = "Season Unknown";
 
+    public static bool IsSpecialsSeason(int seasonNumber) =>
+        seasonNumber == SpecialsSeasonNumber;
+
+    public static string FormatSeasonShortLabel(int seasonNumber) =>
+        IsSpecialsSeason(seasonNumber) ? "SP" : $"S{seasonNumber}";
+
+    public static string FormatSeasonDisplayName(int seasonNumber) =>
+        IsSpecialsSeason(seasonNumber) ? "Extras/Specials/OVAs" : $"Season {seasonNumber:00}";
+
     #endregion
 
     #region Backup

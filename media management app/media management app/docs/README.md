@@ -18,6 +18,7 @@ Comprehensive documentation for the **Media Manager** Windows desktop applicatio
 | [planning/](./planning/) | Humans | Per-item deep dives (migrations, tests, splits, VM lifetime) |
 | [BUILD.md](./BUILD.md) | Humans / AI | **Build & test commands** — x64, MSBuild, Git Bash quirks, ThirdParty restore |
 | [AI_CONTEXT.md](./AI_CONTEXT.md) | AI / tooling | Structured machine-readable reference (modules, entities, flows, key files) |
+| [LUCIDE_ICONS.md](./LUCIDE_ICONS.md) | Humans / AI | **Valid `PackIconLucideKind` names** for MahApps Lucide 6.2.1 — grep before setting sidebar `IconKind` |
 | [STATE_FOLDER.md](./STATE_FOLDER.md) | Humans / AI | Live state folder layout, OAuth paths, FetchJobs purge, sensitive fields |
 | [RECIPE_SCHEMA.md](./RECIPE_SCHEMA.md) | Humans / AI | Recipe `.rcp` JSON schema with examples from real state files |
 | [debug/](./debug/) | Humans / AI | **Live issue investigations** — symptoms, log evidence, root cause |

@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Windows.Data;
 using System.Windows.Media;
+using media_management_app.Common;
 using media_management_app.ViewModels;
 
 namespace media_management_app.Converters;

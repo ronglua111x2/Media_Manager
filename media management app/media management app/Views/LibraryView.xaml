@@ -333,6 +333,12 @@
                                        Style="{StaticResource MutedTextStyle}"
                                        FontSize="11"
                                        Margin="0,2,0,0" />
+                            <TextBlock Text="{Binding UnrateableExtraHint}"
+                                       Style="{StaticResource MutedTextStyle}"
+                                       FontSize="11"
+                                       Margin="0,6,0,0"
+                                       TextWrapping="Wrap"
+                                       Visibility="{Binding ShowUnrateableExtraHint, Converter={StaticResource BooleanToVisibilityConverter}}" />
                             <StackPanel Orientation="Horizontal"
                                         Margin="0,8,0,0"
                                         VerticalAlignment="Center"

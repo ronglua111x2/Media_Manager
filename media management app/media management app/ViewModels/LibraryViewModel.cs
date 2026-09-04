@@ -34,6 +34,10 @@ public sealed partial class LibraryViewModel : ViewModelBase
     private readonly IGeminiLinkConfirmationService _geminiLinkConfirmationService;
 
     private IReadOnlyList<LibraryMediaCardViewModel> _allMediaCards = [];
+    private long? _pendingFocusMediaId;
+    private MediaKind? _pendingFocusMediaKind;
+    private int? _pendingFocusSeasonNumber;
+    private bool _pendingFocusActive;
     private long? _loadedDetailMediaId;
     private MediaKind? _loadedDetailMediaKind;
     private bool _suppressSeriesStatusUpdate;
@@ -315,7 +319,13 @@ public sealed partial class LibraryViewModel : ViewModelBase
         _allMediaCards = _mediaCardCatalogService.LoadCards();
         ApplyMediaCardFilterAndSort();
 
-        if (selectedId is not null && selectedKind is not null)
+        if (_pendingFocusActive &&
+            _pendingFocusMediaId is { } focusId &&
+            _pendingFocusMediaKind is { } focusKind)
+        {
+            SelectedMediaCard = MediaCards.FirstOrDefault(card => card.Id == focusId && card.MediaKind == focusKind);
+        }
+        else if (selectedId is not null && selectedKind is not null)
         {
             SelectedMediaCard = MediaCards.FirstOrDefault(card => card.Id == selectedId && card.MediaKind == selectedKind);
         }
@@ -331,6 +341,28 @@ public sealed partial class LibraryViewModel : ViewModelBase
             : MediaCards.Count == 0
                 ? "No media matches the current search/filter."
                 : $"Loaded {MediaCards.Count} media item(s).";
+    }
+
+    public void PrepareSelect(MediaKind kind, long id, int? seasonNumber = null)
+    {
+        _pendingFocusActive = true;
+        _pendingFocusMediaId = id;
+        _pendingFocusMediaKind = kind;
+        _pendingFocusSeasonNumber = seasonNumber;
+
+        MediaSearchQuery = string.Empty;
+        MediaSearchText = string.Empty;
+        _suppressWatchStatusFilterApply = true;
+        try
+        {
+            WatchStatusFilterOption.ClearAll(WatchStatusFilterOptions);
+        }
+        finally
+        {
+            _suppressWatchStatusFilterApply = false;
+        }
+
+        NotifyWatchStatusFilterPresentationChanged();
     }
 
     [RelayCommand]
@@ -1736,6 +1768,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
             _loadedDetailMediaKind = null;
             SetWatchProgressUi(UserWatchStatus.None, watchedEpisodes: 0, totalEpisodes: 0);
             SetRatingThoughtUi(rating: null, thought: null);
+            ClearPendingFocus();
             return;
         }
 
@@ -1747,6 +1780,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
             if (show is null)
             {
                 StatusMessage = "Selected show was not found.";
+                ClearPendingFocus();
                 return;
             }
 
@@ -1761,6 +1795,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
                 card.MediaKind,
                 card.TmdbId);
             StatusMessage = $"Viewing show: {show.DisplayTitle}";
+            ApplyPendingRatingFocus();
             return;
         }
 
@@ -1768,6 +1803,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
         if (movie is null)
         {
             StatusMessage = "Selected movie was not found.";
+            ClearPendingFocus();
             return;
         }
 
@@ -1779,6 +1815,42 @@ public sealed partial class LibraryViewModel : ViewModelBase
             card.MediaKind,
             card.TmdbId);
         StatusMessage = $"Viewing movie: {movie.DisplayTitle}";
+        ClearPendingFocus();
+    }
+
+    private void ApplyPendingRatingFocus()
+    {
+        if (!_pendingFocusActive)
+        {
+            return;
+        }
+
+        var seasonNumber = _pendingFocusSeasonNumber;
+        ClearPendingFocus();
+        if (seasonNumber is null || SelectedShow is null)
+        {
+            return;
+        }
+
+        if (SelectedShow.Seasons.All(season => season.SeasonNumber != seasonNumber.Value))
+        {
+            ShowHiddenSeasons = true;
+            RebuildSelectedShowDetail();
+        }
+
+        IsRatingChartVisible = true;
+        if (RatingSeasonTabs.Any(tab => tab.SeasonNumber == seasonNumber.Value))
+        {
+            SelectedRatingSeasonNumber = seasonNumber.Value;
+        }
+    }
+
+    private void ClearPendingFocus()
+    {
+        _pendingFocusActive = false;
+        _pendingFocusMediaId = null;
+        _pendingFocusMediaKind = null;
+        _pendingFocusSeasonNumber = null;
     }
 
     private void RefreshCartStateOnSelectedDetail()
@@ -1915,19 +1987,36 @@ public sealed partial class LibraryViewModel : ViewModelBase
                     seasonRows = AppendOrphanPackRows(show.Id, show.TmdbId, seasonRows, sourceItems);
                 }
 
-                return new LibrarySeasonViewModel(
+                return CreateSeasonViewModel(
                     show.Id,
                     group.Key,
                     seasonRows,
-                    UpdateSeasonManagementMode,
-                    seasonRecord)
-                {
-                    IsExpanded = expandedSeasons?.Contains(group.Key) == true,
-                    IsPackInCart = _torrentCartService.TryGetActiveSeasonPackOrder(show.Id, group.Key, out _),
-                    IsPackLinked = linkedPackOwnerSeasons.Contains(group.Key),
-                    IsGeminiLinkAvailable = geminiLinkAvailable
-                };
-            });
+                    seasonRecord,
+                    expandedSeasons,
+                    linkedPackOwnerSeasons,
+                    geminiLinkAvailable);
+            })
+            .ToList();
+
+        if (seasons.All(season => season.SeasonNumber != AppConstants.SpecialsSeasonNumber))
+        {
+            var orphanRows = AppendOrphanPackRows(show.Id, show.TmdbId, [], sourceItems);
+            if (orphanRows.Count > 0 &&
+                (ShowHiddenSeasons || !hiddenSeasonNumbers.Contains(AppConstants.SpecialsSeasonNumber)))
+            {
+                seasonRecords.TryGetValue(AppConstants.SpecialsSeasonNumber, out var specialsRecord);
+                seasons.Insert(
+                    0,
+                    CreateSeasonViewModel(
+                        show.Id,
+                        AppConstants.SpecialsSeasonNumber,
+                        orphanRows,
+                        specialsRecord,
+                        expandedSeasons,
+                        linkedPackOwnerSeasons,
+                        geminiLinkAvailable));
+            }
+        }
 
         return new LibraryShowDetailViewModel(show, seasons, hiddenSeasonNumbers.Count);
     }
@@ -2265,6 +2354,22 @@ public sealed partial class LibraryViewModel : ViewModelBase
         CleanupSeasonPackCommand.NotifyCanExecuteChanged();
         StatusMessage = $"Season {seasonNumber:00} set to {mode} mode.";
     }
+
+    private LibrarySeasonViewModel CreateSeasonViewModel(
+        long showId,
+        int seasonNumber,
+        IEnumerable<LibraryEpisodeRowViewModel> seasonRows,
+        TrackedSeason? seasonRecord,
+        IReadOnlySet<int>? expandedSeasons,
+        IReadOnlySet<int> linkedPackOwnerSeasons,
+        bool geminiLinkAvailable) =>
+        new(showId, seasonNumber, seasonRows, UpdateSeasonManagementMode, seasonRecord)
+        {
+            IsExpanded = expandedSeasons?.Contains(seasonNumber) == true,
+            IsPackInCart = _torrentCartService.TryGetActiveSeasonPackOrder(showId, seasonNumber, out _),
+            IsPackLinked = linkedPackOwnerSeasons.Contains(seasonNumber),
+            IsGeminiLinkAvailable = geminiLinkAvailable
+        };
 
     private List<LibraryEpisodeRowViewModel> AppendOrphanPackRows(
         long showId,

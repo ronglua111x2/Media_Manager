@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using media_management_app.Common;
 
 namespace media_management_app.ViewModels;
 
@@ -11,7 +12,7 @@ public sealed partial class EpisodeRatingSeasonTabViewModel : ObservableObject
 
     public int SeasonNumber { get; }
 
-    public string Label => $"S{SeasonNumber}";
+    public string Label => AppConstants.FormatSeasonShortLabel(SeasonNumber);
 
     [ObservableProperty]
     private bool isSelected;

@@ -1,4 +1,6 @@
 using System.Windows.Media;
+using media_management_app.Common;
+using media_management_app.Services;
 using MediaColor = System.Windows.Media.Color;
 using MediaBrush = System.Windows.Media.Brush;
 
@@ -29,23 +31,8 @@ public static class EpisodeRatingBandCatalog
     public static EpisodeRatingBandDefinition Get(EpisodeRatingBand band) =>
         All.First(entry => entry.Band == band);
 
-    public static EpisodeRatingBand FromRating(double? rating)
-    {
-        if (rating is null)
-        {
-            return EpisodeRatingBand.Unrated;
-        }
-
-        foreach (var entry in All)
-        {
-            if (entry.MinInclusive is { } min && rating.Value >= min)
-            {
-                return entry.Band;
-            }
-        }
-
-        return EpisodeRatingBand.Unrated;
-    }
+    public static EpisodeRatingBand FromRating(double? rating) =>
+        EpisodeRatingBandRules.FromRating(rating);
 
     public static MediaBrush ResolveBrush(EpisodeRatingBand band)
     {

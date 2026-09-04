@@ -15,10 +15,11 @@ Exhaustive list of user-facing and background features. Each entry includes purp
 - **DB:** None
 
 ### 1.2 Workspace Navigation
-- **What:** Seven workspaces (News, Auto, Find/Add, Library, Torrent, Recipe, System Settings)
+- **What:** Eight workspaces (News, Auto, Find/Add, Library, Stats, Torrent, Recipe, System Settings)
 - **User interaction:** Sidebar buttons; selection persisted visually
 - **Code:** `ViewModels/MainViewModel.cs` (`NavigateCommand`), `Common/AppWorkspaceKind.cs`, `Resources/ViewTemplates.xaml`
 - **DB:** None
+- **Notes:** Sidebar `IconKind` must be a `PackIconLucideKind` name from [LUCIDE_ICONS.md](./LUCIDE_ICONS.md). Unknown names render as a blank tile.
 
 ### 1.3 Status Bar — Job Progress
 - **What:** Shows current long-running operation text and active indicator
@@ -85,6 +86,13 @@ Exhaustive list of user-facing and background features. Each entry includes purp
 - **Code:** `ViewModels/NewsViewModel.cs`, `ViewModels/NewsShowCardViewModel.cs`, `Common/NewsTrackedShowViewMode.cs`
 - **DB:** `TrackedShows`, `TrackedEpisodes`
 - **Background:** Auto-refreshes when Auto-Track scheduler completes
+
+### 2.3 Stats Overview
+- **What:** Library-wide personal stats. First slice is personal scores: caption totals (mean show, movie, and episode scores), watch-status card (shows vs movies per status), title/episode band mix, movies then shows poster strips, TV heatmap wall, best/lowest episodes, show-vs-episode mismatch, best/lowest specials, empty opinions
+- **User interaction:** Open the Stats sidebar tab; click a poster, heatmap cell, or list row to jump to that title in Library
+- **Code:** `Views/StatsView.xaml`, `ViewModels/StatsViewModel.cs`, `ViewModels/StatsBandPieSeries.cs`, `MediaManager.Core/Services/PersonalRatingOverviewBuilder.cs`
+- **DB:** Reads `TrackedShows.Rating` / `WatchStatus`, `TrackedMovies.Rating` / `WatchStatus`, `TrackedEpisodes.UserRating` / `Thought` (no schema change; ignores TMDB `VoteAverage`)
+- **Notes:** Layout (top to bottom): Stats header, watch status, caption totals, title/episode bands (LiveCharts2 doughnut pies beside the lists, same `EpisodeRatingBandCatalog` colors; transparent canvas; hover tooltip sits in the doughnut hole; zero-count bands stay on the list only), movie strip, show strip, episode heatmap, best/lowest episodes, show score vs episode mean, best/lowest specials, empty opinions. Watch status is its own card (Library colors/icons: `Play`, `CircleCheck`, `Pause`, `CircleX`, `Bookmark`) with **N shows · M movies** per status; unset is omitted. Rated show/movie posters and heatmap show-score pills show that same status icon beside the band-colored score (hidden when status is unset). The Shows strip lists title-rated shows (covers), including those with no episode scores. Shows missing episode scores are listed only under empty opinions (`Show rated, no episode ratings`), not a separate section. The heatmap still requires at least one episode `UserRating`. Hidden seasons (`TrackedSeasons.IsHidden`) are included in means, bands, mismatch, and coverage. The heatmap keeps story seasons (`S>=1`) on the main strip; rated TMDB S00 extras/OVA sit in a compact `SP` tail (unrated specials omitted from the tail). Per-row `X/Y rated` counts story seasons only (S00/extras excluded). Best/lowest episode lists are story seasons only; specials have their own lists. Unmatched pack extras (`SourceItems.IsOrphanPackSpecial`) are not `TrackedEpisodes` and never appear on Stats. Stats plots the current `TrackedEpisodes` S/E numbering (including alternative episode-group order). Switching episode organization rebuilds season/episode rows and clears episode scores. Refresh on every `OnNavigatedTo`. Heatmap row `ScrollViewer`s must forward vertical mouse wheel to the page scroller (`Views/NestedScrollViewer.cs`); Shift+wheel pans the row.
 
 ---
 
@@ -302,14 +310,21 @@ Exhaustive list of user-facing and background features. Each entry includes purp
 - **User interaction:** Library Seasons has a session-wide Availability / Rating toggle. Availability keeps cart, link, missing labels, and pack mode. Rating rows stay compact (saved `★ 8.0` and thought text only). The star on the right opens both editors together (one row at a time). The editor uses the same 0.1 minus/value/plus stepper as the show rating. Clearing a field writes `NULL`
 - **Code:** `ViewModels/LibraryEpisodeRowViewModel.cs`, `ViewModels/LibraryViewModel.EpisodeRating.cs`, `Views/LibraryView.xaml` (`SeasonTemplate`, `EpisodeRowTemplate`)
 - **DB:** `TrackedEpisodes` (`UserRating`, `Thought`); migration `004_episode_rating_thought`
-- **Notes:** Orphan/separator rows never show rating UI. TMDB `VoteAverage` is unchanged and is not the personal score
+- **Notes:** Applies to TMDB story seasons and TMDB S00 extras/specials/OVAs. Unmatched pack extras (linked files not in TMDB order) never show the star editor; see §5.20. TMDB `VoteAverage` is unchanged and is not the personal score
 
 ### 5.19 Episode Rating Chart
 - **What:** Collapsible Library show-detail ratings for the selected season: column-chart episode bars from the baseline (default) or a color heatmap
-- **User interaction:** Show/Hide; S1/S2 underline tabs with previous/next; Chart vs Heatmap (only one visible). Season average (`☆ 6.5 Average`) sits above the plot. Episode labels use `E1`, `E2`, …
+- **User interaction:** Show/Hide; S1/S2/`SP` underline tabs with previous/next; Chart vs Heatmap (only one visible). Season average (`☆ 6.5 Average`) sits above the plot. Episode labels use `E1`, `E2`, …
 - **Code:** `ViewModels/LibraryViewModel.EpisodeRating.cs`, `ViewModels/EpisodeRatingCellViewModel.cs`, `ViewModels/EpisodeRatingBandCatalog.cs`, `Views/LibraryView.xaml`
 - **DB:** Reads `TrackedEpisodes.UserRating`
-- **Notes:** Personal ratings only (no TMDB). Unrated episodes show `—` / `N/A`. The dashed chart line is the season mean at the same height as a column of that score. Heatmap **Fair** is the 6.0–6.9 color band (not the season average). Colors come from `EpisodeRatingBandCatalog`. No chart NuGet.
+- **Notes:** Personal ratings only (no TMDB). Unrated episodes show `—` / `N/A`. The dashed chart line is the season mean at the same height as a column of that score. Heatmap **Fair** is the 6.0–6.9 color band (not the season average). Colors come from `EpisodeRatingBandCatalog`. No chart NuGet. Horizontal chart/heatmap scrollers use `NestedScrollViewer` so vertical mouse wheel still scrolls the Library page (Shift+wheel pans). The S00 tab uses `SP` / `Extras/Specials/OVAs` and plots TMDB specials only (unmatched extras excluded)
+
+### 5.20 Per-Specials Rating
+- **What:** Personal 0–10 + thought on TMDB extras/specials/OVAs (season 0), using the same Library Rating mode and chart as story episodes
+- **User interaction:** Open the show’s **Extras/Specials/OVAs** season (unhide it if it was hidden). Switch Seasons to Rating and use the star on `S00Exx` rows. The chart/heatmap `SP` tab is the same season. Stats includes those scores in means/bands and draws rated specials in the heatmap `SP` tail plus Best/Lowest specials
+- **Code:** `ViewModels/LibrarySeasonViewModel.cs`, `ViewModels/LibraryEpisodeRowViewModel.cs` (`CanRateEpisode`), `ViewModels/LibraryViewModel.cs` (`AppendOrphanPackRows`), `MediaManager.Core/Services/PersonalRatingOverviewBuilder.cs`
+- **DB:** `TrackedEpisodes` where `SeasonNumber = 0` (`AppConstants.SpecialsSeasonNumber`)
+- **Notes:** Rateable specials are TMDB episode rows (in the selected airing/DVD/episode-group order). Pack files that were hardlinked but **not** matched to a TMDB S00 episode (`SourceItems.IsOrphanPackSpecial`, Library “unmatched extras”) have no `TrackedEpisode` row, so they cannot be rated, do not appear on the chart or Stats, and show “Linked extra not in TMDB order — cannot rate.” If TMDB has no S00 but unmatched extras exist, Library still shows an Extras/Specials/OVAs section for those files
 
 ---
 

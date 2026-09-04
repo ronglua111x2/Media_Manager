@@ -37,7 +37,7 @@ Borderless WPF window with custom chrome:
 
 - **Title bar:** drag, minimize, maximize, close
 - **Workspace area:** hosts the active view via `ContentControl` + `ViewTemplates.xaml`
-- **Right sidebar:** seven workspace navigation buttons (collapsible 260px ↔ 72px)
+- **Right sidebar:** eight workspace navigation buttons (collapsible 260px ↔ 72px)
 - **Status bar:** job progress, drive storage pills, qBittorrent / WARP / Jellyfin / Google Drive status
 
 ### Workspaces
@@ -48,6 +48,7 @@ Borderless WPF window with custom chrome:
 | Auto | `AutoTrack` | | Manual Auto-Track control and per-show monitoring |
 | Find/Add | `FindAdd` | | TMDB search and library import |
 | Library | `Library` | | Full library browser, linking, import, metadata |
+| Stats | `Stats` | | Library-wide personal stats |
 | Torrent | `Torrent` | | Torrent cart acquisition pipeline |
 | Recipe | `Recipe` | | Search recipe editor |
 | System Settings | `SystemSettings` | | All configuration |
@@ -92,11 +93,11 @@ On exit: schedulers, symlink coordinator, Jellyfin refresh, log cleanup, and tra
 - **TrackedShows** — TMDB TV series with seasons, episodes, recipes, auto-track settings, watch status
 - **TrackedMovies** — TMDB movies with availability, torrent state, recipes
 - **TrackedSeasons** — per-season management: episode mode vs pack mode, download folder, pack torrent
-- **TrackedEpisodes** — episode metadata, availability, selected torrent candidate, download state
+- **TrackedEpisodes** — episode metadata, availability, selected torrent candidate, download state, personal `UserRating` / `Thought`
 
 ### Source Items & Linking
 
-- **SourceItems** — files discovered in configured source/download folders via scanner + parser
+- **SourceItems** — files discovered in configured source/download folders via scanner + parser. Pack extras that were linked but not matched to TMDB (`IsOrphanPackSpecial`) live here only; they cannot carry a personal episode rating
 - **Hardlinks** — NTFS hardlinks from source files into `MediaManagerLibrary` per drive
 - **Symlinks** — optional unified Jellyfin root (`SymlinkSettings.UnifiedRoot`) pointing at hardlinked files
 - **NFO files** — Kodi-style sidecars written for Jellyfin metadata
@@ -241,7 +242,7 @@ Prevents duplicate external process launches.
 ## UI Theming
 
 - Light/Dark themes via `ThemeService` and `AppThemeColors.*.xaml`
-- Material Design + WPF-UI + Lucide icon pack
+- Material Design + WPF-UI + Lucide icon pack (`MahApps.Metro.IconPacks.Lucide` 6.2.1). Valid `Kind` names: [LUCIDE_ICONS.md](./LUCIDE_ICONS.md).
 - Workspace UI state persisted in `UiSettings` (sort, filters, selected media)
 
 ---

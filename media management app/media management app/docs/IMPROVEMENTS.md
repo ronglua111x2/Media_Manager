@@ -196,7 +196,7 @@ flowchart LR
 
 ### Recently implemented
 
-- **Episode rating + thought + chart** — personal `UserRating`/`Thought` on `TrackedEpisodes`; IMDb-style per-season boxes + heatmap (`FEATURES.md` §5.18–5.19, migration `004_episode_rating_thought`)  
+- **Episode rating + thought + chart** — personal `UserRating`/`Thought` on `TrackedEpisodes`; IMDb-style per-season boxes + heatmap; per-specials rating on TMDB S00 (`FEATURES.md` §5.18–5.20, migration `004_episode_rating_thought`)  
 
 ---
 

@@ -25,9 +25,11 @@ public partial class MainViewModel : ViewModelBase
         NewsViewModel newsViewModel,
         FindAddViewModel findAddViewModel,
         LibraryViewModel libraryViewModel,
+        StatsViewModel statsViewModel,
         TorrentWorkspaceViewModel torrentWorkspaceViewModel,
         RecipeWorkspaceViewModel recipeWorkspaceViewModel,
         SystemSettingsViewModel systemSettingsViewModel,
+        IWorkspaceNavigator workspaceNavigator,
         IDeviceStatusService deviceStatusService,
         IConsoleWindowService consoleWindowService,
         IWarpCliService warpCliService,
@@ -44,12 +46,14 @@ public partial class MainViewModel : ViewModelBase
         _qbittorrentViewerService = qbittorrentViewerService;
         _jellyfinViewerService = jellyfinViewerService;
         _shellLaunchGuard = new ShellLaunchGuard(logger);
+        workspaceNavigator.Bind(NavigateTo);
         _workspaceMap = new Dictionary<AppWorkspaceKind, ViewModelBase>
         {
             [AppWorkspaceKind.AutoTrack] = autoTrackViewModel,
             [AppWorkspaceKind.News] = newsViewModel,
             [AppWorkspaceKind.FindAdd] = findAddViewModel,
             [AppWorkspaceKind.Library] = libraryViewModel,
+            [AppWorkspaceKind.Stats] = statsViewModel,
             [AppWorkspaceKind.Torrent] = torrentWorkspaceViewModel,
             [AppWorkspaceKind.Recipe] = recipeWorkspaceViewModel,
             [AppWorkspaceKind.SystemSettings] = systemSettingsViewModel
@@ -84,6 +88,13 @@ public partial class MainViewModel : ViewModelBase
                 Label = "Library",
                 Description = "Manage media and carts",
                 IconKind = "Library"
+            },
+            new ShellNavigationItem
+            {
+                Kind = AppWorkspaceKind.Stats,
+                Label = "Stats",
+                Description = "Library-wide personal stats",
+                IconKind = "ChartColumn"
             },
             new ShellNavigationItem
             {

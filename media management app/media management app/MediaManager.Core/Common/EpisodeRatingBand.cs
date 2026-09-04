@@ -1,4 +1,4 @@
-namespace media_management_app.ViewModels;
+namespace media_management_app.Common;
 
 public enum EpisodeRatingBand
 {

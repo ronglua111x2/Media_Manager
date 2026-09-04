@@ -226,10 +226,12 @@ public partial class App : System.Windows.Application
         services.AddSingleton<ITorrentBlacklistService, TorrentBlacklistService>();
         services.AddSingleton<ITorrentAddGateService, TorrentAddGateService>();
 
+        services.AddSingleton<IWorkspaceNavigator, WorkspaceNavigator>();
         services.AddSingleton<AutoTrackViewModel>();
         services.AddSingleton<NewsViewModel>();
         services.AddSingleton<FindAddViewModel>();
         services.AddSingleton<LibraryViewModel>();
+        services.AddSingleton<StatsViewModel>();
         services.AddSingleton<TorrentWorkspaceViewModel>();
         services.AddSingleton<RecipeWorkspaceViewModel>();
         services.AddSingleton<SystemSettingsViewModel>();

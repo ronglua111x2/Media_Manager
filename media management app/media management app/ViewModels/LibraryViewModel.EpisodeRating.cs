@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using media_management_app.Common;
 
 namespace media_management_app.ViewModels;
 
@@ -384,7 +385,9 @@ public sealed partial class LibraryViewModel
             RatingCells.Add(new EpisodeRatingCellViewModel(episode.EpisodeNumber, episode.UserRating));
         }
 
-        SelectedSeasonLabel = $"S{SelectedRatingSeasonNumber} Episodes";
+        SelectedSeasonLabel = AppConstants.IsSpecialsSeason(SelectedRatingSeasonNumber)
+            ? AppConstants.FormatSeasonDisplayName(SelectedRatingSeasonNumber)
+            : $"{AppConstants.FormatSeasonShortLabel(SelectedRatingSeasonNumber)} Episodes";
         var rated = episodes.Where(episode => episode.HasRating).Select(episode => episode.UserRating!.Value).ToList();
         if (rated.Count == 0)
         {

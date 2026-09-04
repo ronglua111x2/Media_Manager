@@ -156,6 +156,8 @@ public interface IDatabaseService
 
     IReadOnlyList<EpisodeRatingPoint> GetEpisodeRatingsForShow(long showId);
 
+    IReadOnlyList<EpisodeUserRatingRow> GetAllEpisodeUserRatings();
+
     void UpdateTrackedShowExcludedAlternativeTitles(long showId, string? excludedAlternativeTitlesJson);
 
     void UpdateTrackedShowEpisodeOrganization(long showId, string? episodeGroupId, string? episodeGroupName);

@@ -1,7 +1,5 @@
 using System.Windows;
-using System.Windows.Controls;
 using System.Windows.Input;
-using System.Windows.Media;
 using System.Windows.Threading;
 using media_management_app.ViewModels;
 
@@ -123,42 +121,7 @@ public partial class LibraryView : System.Windows.Controls.UserControl
 
     private void HorizontalScrollViewer_OnPreviewMouseWheel(object sender, MouseWheelEventArgs e)
     {
-        if (sender is not ScrollViewer scroller)
-        {
-            return;
-        }
-
-        if (Keyboard.Modifiers == ModifierKeys.Shift)
-        {
-            scroller.ScrollToHorizontalOffset(scroller.HorizontalOffset - e.Delta);
-            e.Handled = true;
-            return;
-        }
-
-        var parent = FindAncestorScrollViewer(scroller);
-        if (parent is null)
-        {
-            return;
-        }
-
-        parent.ScrollToVerticalOffset(parent.VerticalOffset - e.Delta);
-        e.Handled = true;
-    }
-
-    private static ScrollViewer? FindAncestorScrollViewer(DependencyObject current)
-    {
-        var parent = VisualTreeHelper.GetParent(current);
-        while (parent is not null)
-        {
-            if (parent is ScrollViewer viewer)
-            {
-                return viewer;
-            }
-
-            parent = VisualTreeHelper.GetParent(parent);
-        }
-
-        return null;
+        NestedScrollViewer.OnPreviewMouseWheel(sender, e);
     }
 
     private void ImdbChartScrollForward_OnClick(object sender, RoutedEventArgs e)

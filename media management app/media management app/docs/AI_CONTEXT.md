@@ -60,6 +60,10 @@ workspaces:
     enum_value: 2
     view: Views/LibraryView.xaml
     viewmodel: ViewModels/LibraryViewModel.cs
+  - kind: Stats
+    enum_value: 8
+    view: Views/StatsView.xaml
+    viewmodel: ViewModels/StatsViewModel.cs
   - kind: Torrent
     enum_value: 3
     view: Views/TorrentWorkspaceView.xaml
@@ -76,17 +80,22 @@ shell:
   main_window: MainWindow.xaml
   main_viewmodel: ViewModels/MainViewModel.cs
   view_templates: Resources/ViewTemplates.xaml
+  lucide_icons: docs/LUCIDE_ICONS.md
+  lucide_package: MahApps.Metro.IconPacks.Lucide 6.2.1
+  lucide_kind_rule: IconKind/Kind must match PackIconLucideKind exactly; unknown names render blank
+  nested_scroll: Views/NestedScrollViewer.cs — vertical wheel on nested horizontal ScrollViewer goes to page; Shift+wheel pans
   navigation_command: NavigateCommand
 navigation:
   contract: ViewModels/INavigationAware.cs
   base: ViewModels/ViewModelBase.cs (virtual OnNavigatedTo / OnNavigatedFrom)
   wiring: MainViewModel.NavigateTo — OnNavigatedFrom(previous) then swap then OnNavigatedTo(next); skip if same workspace
-  lifetime: all seven workspace VMs remain DI singletons (Phase 5 transient reserved)
+  lifetime: all eight workspace VMs remain DI singletons (Phase 5 transient reserved)
   refresh_policy:
     News: OnNavigatedTo UpdateDashboard if last load older than 2 minutes
     AutoTrack: OnNavigatedTo RefreshDashboard
     FindAdd: OnNavigatedTo RefreshExistingMedia + refresh SearchResults IsAlreadyAdded flags
     Library: OnNavigatedTo clear detail-load cache, RefreshLibrary, reload selected detail
+    Stats: OnNavigatedTo rebuild personal rating overview (no TTL)
     Torrent: OnNavigatedTo RefreshWorkspace; OnNavigatedFrom no-op — cart/search keep running while on other tabs (user Stop only)
     Recipe: OnNavigatedTo ReloadRecipes if RecipesChanged while away; OnNavigatedFrom mark inactive
     Settings: OnNavigatedTo settingsService.Load + LoadFromSettings (dirty-tracking Sprint 6)
@@ -103,7 +112,7 @@ navigation:
 ```yaml
 tables:
   SourceItems:
-    purpose: Scanned/imported media files from source folders
+    purpose: Scanned/imported media files from source folders; unmatched pack extras (IsOrphanPackSpecial) are linked files not in TMDB order and cannot be rated
     key_columns: [FilePath, MediaKind, State, LinkedPath, SymlinkPath, AutoTorrentTorrentHash]
     enums: [MediaKind, ParserPattern, ItemState, AutoTorrentLinkKind]
   SeriesMappings:
@@ -120,6 +129,7 @@ tables:
     purpose: Episode availability, torrent/candidate state, personal UserRating/Thought
     fk: ShowId -> TrackedShows CASCADE
     unique: [ShowId, SeasonNumber, EpisodeNumber]
+    notes: SeasonNumber 0 is TMDB extras/specials/OVAs (rateable). Unmatched pack extras are SourceItems, not rows here
   TrackedMovies:
     purpose: TMDB movie tracking
     key_columns: [TmdbId, RecipeId, TorrentHash]
@@ -413,7 +423,7 @@ key_enums:
   EpisodeAvailability: [Missing, Available]
   ShowSeriesStatus: [Unknown, Ongoing, Finished]
   AutoTorrentLinkKind: [Episode, SeasonPack, Movie]
-  AppWorkspaceKind: [AutoTrack=0, FindAdd=1, Library=2, Torrent=3, Recipe=5, SystemSettings=6, News=7]
+  AppWorkspaceKind: [AutoTrack=0, FindAdd=1, Library=2, Torrent=3, Recipe=5, SystemSettings=6, News=7, Stats=8]
   NotificationKind: see Common/NotificationCatalog.cs
   AppTheme: [Light, Dark]
 ```
@@ -499,6 +509,8 @@ ui_templates:
   - Resources/ViewTemplates.xaml
   - Resources/AppStyles.xaml
   - Resources/WorkspaceSharedTemplates.xaml
+  - docs/LUCIDE_ICONS.md
+  - Views/NestedScrollViewer.cs
 ```
 
 ---

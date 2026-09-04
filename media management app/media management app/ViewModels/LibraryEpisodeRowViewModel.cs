@@ -69,6 +69,10 @@ public sealed partial class LibraryEpisodeRowViewModel : ObservableObject
 
     public bool CanRateEpisode => IsTrackedEpisode && !IsOrphan && !IsOrphanSeparator;
 
+    public bool ShowUnrateableExtraHint => IsOrphan && !IsOrphanSeparator;
+
+    public string UnrateableExtraHint => "Linked extra not in TMDB order — cannot rate.";
+
     public bool HasRating => UserRating.HasValue;
 
     public bool HasThought => !string.IsNullOrWhiteSpace(Thought);

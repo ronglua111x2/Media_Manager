@@ -1663,6 +1663,39 @@ public sealed class DatabaseService : IDatabaseService
         return points;
     }
 
+    public IReadOnlyList<EpisodeUserRatingRow> GetAllEpisodeUserRatings()
+    {
+        var rows = new List<EpisodeUserRatingRow>();
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT e.ShowId, e.SeasonNumber, e.EpisodeNumber, e.Title, e.UserRating, e.Thought,
+                   COALESCE(s.IsHidden, 0)
+            FROM TrackedEpisodes e
+            LEFT JOIN TrackedSeasons s
+                ON s.ShowId = e.ShowId AND s.SeasonNumber = e.SeasonNumber
+            ORDER BY e.ShowId, e.SeasonNumber, e.EpisodeNumber;
+            """;
+
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            rows.Add(new EpisodeUserRatingRow
+            {
+                ShowId = reader.GetInt64(0),
+                SeasonNumber = reader.GetInt32(1),
+                EpisodeNumber = reader.GetInt32(2),
+                Title = reader.IsDBNull(3) ? string.Empty : reader.GetString(3),
+                UserRating = reader.IsDBNull(4) ? null : reader.GetDouble(4),
+                Thought = reader.IsDBNull(5) ? null : reader.GetString(5),
+                IsHidden = reader.GetInt32(6) != 0
+            });
+        }
+
+        return rows;
+    }
+
     public void UpdateTrackedShowExcludedAlternativeTitles(long showId, string? excludedAlternativeTitlesJson)
     {
         using var connection = new SqliteConnection(_connectionString);
