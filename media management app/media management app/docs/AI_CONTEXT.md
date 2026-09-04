@@ -117,7 +117,7 @@ tables:
     fk: ShowId -> TrackedShows CASCADE
     unique: [ShowId, SeasonNumber]
   TrackedEpisodes:
-    purpose: Episode availability and torrent/candidate state
+    purpose: Episode availability, torrent/candidate state, personal UserRating/Thought
     fk: ShowId -> TrackedShows CASCADE
     unique: [ShowId, SeasonNumber, EpisodeNumber]
   TrackedMovies:
@@ -147,6 +147,7 @@ migration_strategy:
     - 001_baseline
     - 002_fetchjobs_legacy_purge
     - 003_torrentblacklist_rebuild
+    - 004_episode_rating_thought
   init_file: Services/DatabaseService.cs
   methods: [MigrationRunner.ApplyPendingMigrations, CREATE TABLE IF NOT EXISTS, EnsureColumn]
   failure_policy: block_startup
@@ -512,7 +513,7 @@ startup_order:
   4: Gemini model catalog reload + normalize
   5: ThemeService.Apply()
   6: DatabaseService.Initialize(stateFolder)
-    side_effect: MigrationRunner applies pending SchemaMigrations (001_baseline, 002_fetchjobs_legacy_purge, 003_torrentblacklist_rebuild once)
+    side_effect: MigrationRunner applies pending SchemaMigrations (001_baseline, 002_fetchjobs_legacy_purge, 003_torrentblacklist_rebuild, 004_episode_rating_thought once)
     on_failure: DatabaseMigrationException + dialog; App.OnStartup Shutdown()
   7: LogCleanupService.Start()
   8: SymlinkCoordinatorService.Start()
@@ -567,7 +568,7 @@ core:
   sprint_2:
     runner: MediaManager.Core/Migrations/MigrationRunner.cs
     tests: MediaManager.Core.Tests/Migrations/MigrationRunnerTests.cs
-    migrations: [001_baseline, 002_fetchjobs_legacy_purge, 003_torrentblacklist_rebuild]
+    migrations: [001_baseline, 002_fetchjobs_legacy_purge, 003_torrentblacklist_rebuild, 004_episode_rating_thought]
   sprint_3_note: "003 TorrentBlacklist rebuild extracted from DatabaseService (C# conditional migration)"
 ```
 

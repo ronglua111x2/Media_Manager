@@ -297,6 +297,20 @@ Exhaustive list of user-facing and background features. Each entry includes purp
 - **Code:** `ViewModels/LibraryViewModel.cs`
 - **DB:** `TrackedSeasons` (`IsHidden`)
 
+### 5.18 Episode Rating & Thought
+- **What:** Personal 0–10 rating and optional thought (max 250 chars) on each tracked episode
+- **User interaction:** Library Seasons has a session-wide Availability / Rating toggle. Availability keeps cart, link, missing labels, and pack mode. Rating rows stay compact (saved `★ 8.0` and thought text only). The star on the right opens both editors together (one row at a time). The editor uses the same 0.1 minus/value/plus stepper as the show rating. Clearing a field writes `NULL`
+- **Code:** `ViewModels/LibraryEpisodeRowViewModel.cs`, `ViewModels/LibraryViewModel.EpisodeRating.cs`, `Views/LibraryView.xaml` (`SeasonTemplate`, `EpisodeRowTemplate`)
+- **DB:** `TrackedEpisodes` (`UserRating`, `Thought`); migration `004_episode_rating_thought`
+- **Notes:** Orphan/separator rows never show rating UI. TMDB `VoteAverage` is unchanged and is not the personal score
+
+### 5.19 Episode Rating Chart
+- **What:** Collapsible Library show-detail ratings for the selected season: column-chart episode bars from the baseline (default) or a color heatmap
+- **User interaction:** Show/Hide; S1/S2 underline tabs with previous/next; Chart vs Heatmap (only one visible). Season average (`☆ 6.5 Average`) sits above the plot. Episode labels use `E1`, `E2`, …
+- **Code:** `ViewModels/LibraryViewModel.EpisodeRating.cs`, `ViewModels/EpisodeRatingCellViewModel.cs`, `ViewModels/EpisodeRatingBandCatalog.cs`, `Views/LibraryView.xaml`
+- **DB:** Reads `TrackedEpisodes.UserRating`
+- **Notes:** Personal ratings only (no TMDB). Unrated episodes show `—` / `N/A`. The dashed chart line is the season mean at the same height as a column of that score. Heatmap **Fair** is the 6.0–6.9 color band (not the season average). Colors come from `EpisodeRatingBandCatalog`. No chart NuGet.
+
 ---
 
 ## 6. Torrent Workspace
@@ -690,7 +704,7 @@ Pack linking maps files inside a completed season-pack torrent to TMDB episodes.
 | `SeriesMappings` | Parsed title → TMDB mapping cache |
 | `TrackedShows` | TV show tracking, auto-track config, preferences |
 | `TrackedSeasons` | Season management, pack mode, pack torrent state |
-| `TrackedEpisodes` | Episode availability, torrent/candidate state |
+| `TrackedEpisodes` | Episode availability, torrent/candidate state, personal `UserRating`/`Thought` |
 | `TrackedMovies` | Movie tracking, torrent/candidate state |
 | `FetchJobs` | Background fetch job tracking (legacy rows purged on init) |
 | `TorrentCartOrders` | Cart acquisition orders |

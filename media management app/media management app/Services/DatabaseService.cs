@@ -1369,7 +1369,7 @@ public sealed class DatabaseService : IDatabaseService
                    TorrentHash, TorrentName, TorrentState, TorrentProgress, TorrentUpdatedUtc,
                    SelectedCandidateName, SelectedCandidateUrl, SelectedCandidatePlugin, SelectedCandidateFileSize,
                    SelectedCandidateSeeders, SelectedCandidateQuality, SelectedCandidateAudioCodec,
-                   CreatedUtc, UpdatedUtc, Overview, VoteAverage, StillPath
+                   CreatedUtc, UpdatedUtc, Overview, VoteAverage, StillPath, UserRating, Thought
             FROM TrackedEpisodes
             WHERE ShowId = $ShowId
             ORDER BY SeasonNumber, EpisodeNumber;
@@ -1613,6 +1613,54 @@ public sealed class DatabaseService : IDatabaseService
         command.Parameters.AddWithValue("$UpdatedUtc", DateTime.UtcNow.ToString("O"));
         command.Parameters.AddWithValue("$Id", movieId);
         command.ExecuteNonQuery();
+    }
+
+    public void UpdateTrackedEpisodeRating(long episodeId, double? rating, string? thought)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE TrackedEpisodes
+            SET UserRating = $UserRating,
+                Thought = $Thought,
+                UpdatedUtc = $UpdatedUtc
+            WHERE Id = $Id;
+            """;
+        command.Parameters.AddWithValue("$UserRating", (object?)rating ?? DBNull.Value);
+        command.Parameters.AddWithValue("$Thought", (object?)thought ?? DBNull.Value);
+        command.Parameters.AddWithValue("$UpdatedUtc", DateTime.UtcNow.ToString("O"));
+        command.Parameters.AddWithValue("$Id", episodeId);
+        command.ExecuteNonQuery();
+    }
+
+    public IReadOnlyList<EpisodeRatingPoint> GetEpisodeRatingsForShow(long showId)
+    {
+        var points = new List<EpisodeRatingPoint>();
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT SeasonNumber, EpisodeNumber, UserRating, VoteAverage
+            FROM TrackedEpisodes
+            WHERE ShowId = $ShowId
+            ORDER BY SeasonNumber, EpisodeNumber;
+            """;
+        command.Parameters.AddWithValue("$ShowId", showId);
+
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            points.Add(new EpisodeRatingPoint
+            {
+                SeasonNumber = reader.GetInt32(0),
+                EpisodeNumber = reader.GetInt32(1),
+                UserRating = reader.IsDBNull(2) ? null : reader.GetDouble(2),
+                VoteAverage = reader.IsDBNull(3) ? null : reader.GetDouble(3)
+            });
+        }
+
+        return points;
     }
 
     public void UpdateTrackedShowExcludedAlternativeTitles(long showId, string? excludedAlternativeTitlesJson)
@@ -2482,6 +2530,8 @@ public sealed class DatabaseService : IDatabaseService
         EnsureColumn(connection, "TrackedEpisodes", "Overview", "TEXT NULL");
         EnsureColumn(connection, "TrackedEpisodes", "VoteAverage", "REAL NULL");
         EnsureColumn(connection, "TrackedEpisodes", "StillPath", "TEXT NULL");
+        EnsureColumn(connection, "TrackedEpisodes", "UserRating", "REAL NULL");
+        EnsureColumn(connection, "TrackedEpisodes", "Thought", "TEXT NULL");
     }
 
     private static void InitializeTrackedMovies(SqliteConnection connection)
@@ -2748,7 +2798,9 @@ public sealed class DatabaseService : IDatabaseService
             UpdatedUtc = DateTime.Parse(reader.GetString(20), null, System.Globalization.DateTimeStyles.RoundtripKind),
             Overview = reader.IsDBNull(21) ? null : reader.GetString(21),
             VoteAverage = reader.IsDBNull(22) ? null : reader.GetDouble(22),
-            StillPath = reader.IsDBNull(23) ? null : reader.GetString(23)
+            StillPath = reader.IsDBNull(23) ? null : reader.GetString(23),
+            UserRating = reader.IsDBNull(24) ? null : reader.GetDouble(24),
+            Thought = reader.IsDBNull(25) ? null : reader.GetString(25)
         };
     }
 

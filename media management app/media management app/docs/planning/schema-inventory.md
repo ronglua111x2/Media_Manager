@@ -204,6 +204,13 @@ Columns: `cid | name | type | notnull | dflt_value | pk`
 
 **Constraints:** UNIQUE(`ShowId`, `SeasonNumber`, `EpisodeNumber`); FK `ShowId` → `TrackedShows(Id)` ON DELETE CASCADE
 
+**Added after baseline** (`004_episode_rating_thought`):
+
+| name | type | notes |
+| --- | --- | --- |
+| UserRating | REAL NULL | Personal 0–10 score; `NULL` = unset |
+| Thought | TEXT NULL | Personal note; `NULL` / empty = unset |
+
 ### FetchJobs *(legacy — purged in migration 002)*
 
 | cid | name | type | notnull | dflt_value | pk |

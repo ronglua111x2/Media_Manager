@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using media_management_app.Common;
 using media_management_app.Models;
@@ -42,6 +43,44 @@ public partial class LibrarySeasonViewModel : ObservableObject
 
     public string SeasonStats =>
         $"{AvailableEpisodes}/{TrackedEpisodeCount} available | {MissingEpisodes} missing";
+
+    public string RatingHeader => SeasonNumber == AppConstants.SpecialsSeasonNumber
+        ? $"Extras/Specials/OVAs | {RatingStats}"
+        : $"Season {SeasonNumber:00} | {RatingStats}";
+
+    public string RatingStats
+    {
+        get
+        {
+            var rated = RatedEpisodeCount;
+            var total = RateableEpisodeCount;
+            var progress = $"{rated}/{total} rated";
+            if (rated == 0)
+            {
+                return $"No ratings yet | {progress}";
+            }
+
+            return $"{SeasonAverageText} avg | {progress}";
+        }
+    }
+
+    public int RatedEpisodeCount => Episodes.Count(episode => episode.CanRateEpisode && episode.HasRating);
+
+    public int RateableEpisodeCount => Episodes.Count(episode => episode.CanRateEpisode);
+
+    public string SeasonAverageText
+    {
+        get
+        {
+            var rated = Episodes
+                .Where(episode => episode.CanRateEpisode && episode.HasRating)
+                .Select(episode => episode.UserRating!.Value)
+                .ToList();
+            return rated.Count == 0
+                ? string.Empty
+                : rated.Average().ToString("0.0", CultureInfo.InvariantCulture);
+        }
+    }
 
     public int TrackedEpisodeCount => Episodes.Count(episode => episode.IsTrackedEpisode);
 
@@ -240,6 +279,10 @@ public partial class LibrarySeasonViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(Header));
         OnPropertyChanged(nameof(SeasonStats));
+        OnPropertyChanged(nameof(RatingHeader));
+        OnPropertyChanged(nameof(RatingStats));
+        OnPropertyChanged(nameof(RatedEpisodeCount));
+        OnPropertyChanged(nameof(SeasonAverageText));
         OnPropertyChanged(nameof(AvailableEpisodes));
         OnPropertyChanged(nameof(MissingEpisodes));
         OnPropertyChanged(nameof(CanCleanupPack));

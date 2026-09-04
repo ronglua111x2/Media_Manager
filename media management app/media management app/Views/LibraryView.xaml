@@ -2,12 +2,14 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:common="clr-namespace:media_management_app.Common;assembly=MediaManager.Core"
+             xmlns:converters="clr-namespace:media_management_app.Converters"
              xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
              xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
              xmlns:views="clr-namespace:media_management_app.Views">
     <!-- #region Local resources and templates -->
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
+        <converters:EpisodeRatingBandToBrushConverter x:Key="EpisodeRatingBandToBrushConverter" />
 
         <Style x:Key="SeriesStatusChipBorderStyle" TargetType="Border">
             <Setter Property="CornerRadius" Value="10" />
@@ -65,6 +67,112 @@
             <Setter Property="VerticalContentAlignment" Value="Center" />
         </Style>
 
+        <Style x:Key="RatingSeasonTabButtonStyle" TargetType="Button" BasedOn="{StaticResource AppOutlinedButtonStyle}">
+            <Setter Property="MinWidth" Value="36" />
+            <Setter Property="Height" Value="28" />
+            <Setter Property="MinHeight" Value="28" />
+            <Setter Property="Padding" Value="8,2" />
+            <Setter Property="Margin" Value="0,0,4,0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0,0,0,2" />
+            <Setter Property="Foreground" Value="{StaticResource AppBrushMutedText}" />
+        </Style>
+
+        <Style x:Key="ImdbRatingColumnStyle" TargetType="Border">
+            <Setter Property="Height" Value="{Binding ColumnHeight}" />
+            <Setter Property="VerticalAlignment" Value="Bottom" />
+            <Setter Property="CornerRadius" Value="8,8,2,2" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BorderBrush" Value="{StaticResource AppBrushBorderStrong}" />
+            <Setter Property="Background" Value="{Binding Band, Converter={StaticResource EpisodeRatingBandToBrushConverter}}" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding HasRating}" Value="False">
+                    <Setter Property="Background" Value="Transparent" />
+                    <Setter Property="Opacity" Value="0.45" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                    <Setter Property="BorderBrush" Value="{StaticResource AppBrushText}" />
+                    <Setter Property="BorderThickness" Value="2" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="ImdbRatingBoxTextStyle" TargetType="TextBlock">
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="VerticalAlignment" Value="Top" />
+            <Setter Property="Margin" Value="0,4,0,0" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{StaticResource AppBrushOnAccent}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding HasRating}" Value="False">
+                    <Setter Property="Foreground" Value="{StaticResource AppBrushMutedText}" />
+                    <Setter Property="VerticalAlignment" Value="Center" />
+                    <Setter Property="Margin" Value="0" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="HeatmapCellBorderStyle" TargetType="Border">
+            <Setter Property="Width" Value="56" />
+            <Setter Property="Height" Value="52" />
+            <Setter Property="Margin" Value="0,0,6,6" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="ClipToBounds" Value="True" />
+            <Setter Property="BorderBrush" Value="{StaticResource AppBrushBorder}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Background" Value="{Binding Band, Converter={StaticResource EpisodeRatingBandToBrushConverter}}" />
+        </Style>
+
+        <Style x:Key="HeatmapCellHighlightStyle" TargetType="Border">
+            <Setter Property="Height" Value="10" />
+            <Setter Property="VerticalAlignment" Value="Top" />
+            <Setter Property="CornerRadius" Value="8,8,0,0" />
+            <Setter Property="Background" Value="#22FFFFFF" />
+            <Setter Property="IsHitTestVisible" Value="False" />
+        </Style>
+
+        <Style x:Key="HeatmapEpisodeLabelStyle" TargetType="TextBlock">
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="Opacity" Value="0.75" />
+            <Setter Property="Foreground" Value="{StaticResource AppBrushOnAccent}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding HasRating}" Value="False">
+                    <Setter Property="Foreground" Value="{StaticResource AppBrushMutedText}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="HeatmapScoreStyle" TargetType="TextBlock">
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="FontSize" Value="17" />
+            <Setter Property="FontWeight" Value="ExtraBold" />
+            <Setter Property="Foreground" Value="{StaticResource AppBrushOnAccent}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding HasRating}" Value="False">
+                    <Setter Property="FontSize" Value="11" />
+                    <Setter Property="FontWeight" Value="SemiBold" />
+                    <Setter Property="Opacity" Value="0.85" />
+                    <Setter Property="Foreground" Value="{StaticResource AppBrushMutedText}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <DataTemplate x:Key="HeatmapCellTemplate">
+            <Border Style="{StaticResource HeatmapCellBorderStyle}">
+                <Grid>
+                    <Border Style="{StaticResource HeatmapCellHighlightStyle}" />
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Label}" Style="{StaticResource HeatmapEpisodeLabelStyle}" />
+                        <TextBlock Text="{Binding HeatmapValueText}" Style="{StaticResource HeatmapScoreStyle}" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </DataTemplate>
+
         <DataTemplate x:Key="EpisodeRowTemplate">
             <Border Background="{StaticResource AppBrushSurface}"
                     BorderBrush="{StaticResource AppBrushBorder}"
@@ -84,126 +192,292 @@
                     </Style>
                 </Border.Style>
                 <StackPanel>
-                <Grid>
-                    <Grid.Style>
-                        <Style TargetType="Grid">
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding IsOrphanSeparator}" Value="True">
-                                    <Setter Property="Visibility" Value="Collapsed" />
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </Grid.Style>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="72" />
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="128" />
-                        <ColumnDefinition Width="98" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Text="{Binding EpisodeCode}"
-                               FontWeight="SemiBold"
-                               VerticalAlignment="Center" />
-                    <StackPanel Grid.Column="1" Margin="8,0,0,0">
-                        <TextBlock Text="{Binding Title}"
-                                   TextTrimming="CharacterEllipsis" />
-                        <TextBlock Text="{Binding AirDateDisplay}"
-                                   Style="{StaticResource MutedTextStyle}"
-                                   FontSize="11" />
-                    </StackPanel>
-                    <StackPanel Grid.Column="2" VerticalAlignment="Center">
-                        <TextBlock Text="{Binding AvailabilityLabel}"
+                    <Grid>
+                        <Grid.Style>
+                            <Style TargetType="Grid">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <MultiDataTrigger>
+                                        <MultiDataTrigger.Conditions>
+                                            <Condition Binding="{Binding IsOrphanSeparator}" Value="False" />
+                                            <Condition Binding="{Binding DataContext.IsSeasonAvailabilityView, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="True" />
+                                        </MultiDataTrigger.Conditions>
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </MultiDataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Grid.Style>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="72" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="128" />
+                            <ColumnDefinition Width="146" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="{Binding EpisodeCode}"
                                    FontWeight="SemiBold"
-                                   FontSize="12" />
-                        <TextBlock Text="{Binding CompactLinkStatus}"
-                                   Style="{StaticResource MutedTextStyle}"
-                                   FontSize="11"
-                                   TextTrimming="CharacterEllipsis" />
-                        <TextBlock Text="{Binding WorkflowStatusLabel}"
-                                   FontSize="11"
-                                   FontWeight="SemiBold">
-                            <TextBlock.Style>
-                                <Style TargetType="TextBlock" BasedOn="{StaticResource MutedTextStyle}">
-                                    <Setter Property="Visibility" Value="Collapsed" />
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding ShowWorkflowStatus}" Value="True">
-                                            <Setter Property="Visibility" Value="Visible" />
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </TextBlock.Style>
-                        </TextBlock>
-                    </StackPanel>
-                    <StackPanel Grid.Column="3"
-                                Orientation="Horizontal"
-                                HorizontalAlignment="Right"
-                                VerticalAlignment="Center">
-                        <Button Command="{Binding DataContext.AddEpisodeToCartCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                   VerticalAlignment="Center" />
+                        <StackPanel Grid.Column="1" Margin="8,0,0,0" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Title}"
+                                       TextTrimming="CharacterEllipsis" />
+                            <TextBlock Text="{Binding AirDateDisplay}"
+                                       Style="{StaticResource MutedTextStyle}"
+                                       FontSize="11" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding AvailabilityLabel}"
+                                       FontWeight="SemiBold"
+                                       FontSize="12" />
+                            <TextBlock Text="{Binding CompactLinkStatus}"
+                                       Style="{StaticResource MutedTextStyle}"
+                                       FontSize="11"
+                                       TextTrimming="CharacterEllipsis" />
+                            <TextBlock Text="{Binding WorkflowStatusLabel}"
+                                       FontSize="11"
+                                       FontWeight="SemiBold">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock" BasedOn="{StaticResource MutedTextStyle}">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding ShowWorkflowStatus}" Value="True">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </StackPanel>
+                        <StackPanel Grid.Column="3"
+                                    Orientation="Horizontal"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Center">
+                            <Button Command="{Binding DataContext.AddEpisodeToCartCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                    CommandParameter="{Binding}"
+                                    IsEnabled="{Binding CanAddToCart}"
+                                    ToolTip="Add to cart">
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource CompactPrimaryIconButtonStyle}">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding CanAddToCart}" Value="True">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                                <iconPacks:PackIconLucide Kind="ShoppingCart"
+                                                           Width="15"
+                                                           Height="15"
+                                                           Foreground="{StaticResource AppBrushOnAccent}"
+                                                           VerticalAlignment="Center" />
+                            </Button>
+                            <Button Style="{StaticResource CompactOutlinedIconButtonStyle}"
+                                    Command="{Binding DataContext.LinkEpisodeCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                    CommandParameter="{Binding}"
+                                    IsEnabled="{Binding CanLink}"
+                                    ToolTip="{Binding LinkActionToolTip}">
+                                <iconPacks:PackIconLucide Kind="{Binding LinkActionIconKind}"
+                                                           Width="15"
+                                                           Height="15"
+                                                           VerticalAlignment="Center" />
+                            </Button>
+                            <Button Command="{Binding DataContext.ResetEpisodeCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                    CommandParameter="{Binding}"
+                                    IsEnabled="{Binding CanReset}"
+                                    Margin="4,0,0,0"
+                                    ToolTip="Reset download/link state so this episode shows as Missing and can be searched again">
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource CompactOutlinedIconButtonStyle}">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding CanReset}" Value="True">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                                <iconPacks:PackIconLucide Kind="RotateCcw"
+                                                           Width="15"
+                                                           Height="15"
+                                                           VerticalAlignment="Center" />
+                            </Button>
+                        </StackPanel>
+                    </Grid>
+                    <Grid>
+                        <Grid.Style>
+                            <Style TargetType="Grid">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <MultiDataTrigger>
+                                        <MultiDataTrigger.Conditions>
+                                            <Condition Binding="{Binding IsOrphanSeparator}" Value="False" />
+                                            <Condition Binding="{Binding DataContext.IsSeasonRatingView, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="True" />
+                                        </MultiDataTrigger.Conditions>
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </MultiDataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Grid.Style>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="72" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="{Binding EpisodeCode}"
+                                   FontWeight="SemiBold"
+                                   VerticalAlignment="Top"
+                                   Margin="0,2,0,0" />
+                        <StackPanel Grid.Column="1" Margin="8,0,8,0">
+                            <TextBlock Text="{Binding Title}"
+                                       TextTrimming="CharacterEllipsis" />
+                            <TextBlock Text="{Binding AirDateDisplay}"
+                                       Style="{StaticResource MutedTextStyle}"
+                                       FontSize="11"
+                                       Margin="0,2,0,0" />
+                            <StackPanel Orientation="Horizontal"
+                                        Margin="0,8,0,0"
+                                        VerticalAlignment="Center"
+                                        Visibility="{Binding ShowRatingSummary, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                <iconPacks:PackIconLucide Kind="Star"
+                                                           Width="18"
+                                                           Height="18"
+                                                           VerticalAlignment="Center"
+                                                           Margin="0,0,6,0"
+                                                           Foreground="{StaticResource AppBrushWarning}" />
+                                <TextBlock Text="{Binding UserRatingText}"
+                                           VerticalAlignment="Center"
+                                           Foreground="{StaticResource AppBrushWarning}"
+                                           FontSize="20"
+                                           FontWeight="ExtraBold" />
+                            </StackPanel>
+                            <DockPanel Margin="0,6,0,0"
+                                       Visibility="{Binding ShowThoughtBody, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                <iconPacks:PackIconLucide Kind="MessageSquare"
+                                                           DockPanel.Dock="Left"
+                                                           Width="12"
+                                                           Height="12"
+                                                           VerticalAlignment="Top"
+                                                           Margin="0,2,6,0"
+                                                           Foreground="{StaticResource AppBrushShowAccent}" />
+                                <TextBlock Text="{Binding Thought}"
+                                           Foreground="{StaticResource AppBrushShowAccent}"
+                                           FontSize="12"
+                                           TextWrapping="Wrap"
+                                           TextTrimming="CharacterEllipsis"
+                                           MaxHeight="36"
+                                           ToolTip="{Binding Thought}" />
+                            </DockPanel>
+                            <StackPanel Margin="0,8,0,0"
+                                        Visibility="{Binding ShowRatingEditor, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <iconPacks:PackIconLucide Kind="Star"
+                                                               Width="14"
+                                                               Height="14"
+                                                               VerticalAlignment="Center"
+                                                               Margin="0,0,4,0"
+                                                               Foreground="{StaticResource AppBrushWarning}" />
+                                    <TextBlock Text="Rating:"
+                                               VerticalAlignment="Center"
+                                               Margin="0,0,6,0"
+                                               Foreground="{StaticResource AppBrushWarning}" />
+                                    <Button Style="{StaticResource AppCompactIconButtonStyle}"
+                                            Width="24"
+                                            Height="24"
+                                            MaxWidth="24"
+                                            MaxHeight="24"
+                                            MinWidth="24"
+                                            MinHeight="24"
+                                            VerticalAlignment="Center"
+                                            Command="{Binding DataContext.DecrementEpisodeRatingCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                            CommandParameter="{Binding}"
+                                            ToolTip="Decrease rating by 0.1">
+                                        <iconPacks:PackIconLucide Kind="Minus"
+                                                                   Width="12"
+                                                                   Height="12"
+                                                                   Foreground="{StaticResource AppBrushWarning}" />
+                                    </Button>
+                                    <TextBox Width="44"
+                                             Height="24"
+                                             MaxHeight="24"
+                                             Margin="4,0"
+                                             Padding="2,0"
+                                             VerticalAlignment="Center"
+                                             VerticalContentAlignment="Center"
+                                             HorizontalContentAlignment="Center"
+                                             Foreground="{StaticResource AppBrushWarning}"
+                                             Text="{Binding UserRatingText, UpdateSourceTrigger=LostFocus}"
+                                             ToolTip="Personal episode rating 0.0–10.0. Clear to remove."
+                                             LostFocus="EpisodeRatingTextBox_OnLostFocus" />
+                                    <Button Style="{StaticResource AppCompactIconButtonStyle}"
+                                            Width="24"
+                                            Height="24"
+                                            MaxWidth="24"
+                                            MaxHeight="24"
+                                            MinWidth="24"
+                                            MinHeight="24"
+                                            VerticalAlignment="Center"
+                                            Command="{Binding DataContext.IncrementEpisodeRatingCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                            CommandParameter="{Binding}"
+                                            ToolTip="Increase rating by 0.1">
+                                        <iconPacks:PackIconLucide Kind="Plus"
+                                                                   Width="12"
+                                                                   Height="12"
+                                                                   Foreground="{StaticResource AppBrushWarning}" />
+                                    </Button>
+                                </StackPanel>
+                                <TextBox Margin="0,8,0,0"
+                                         AcceptsReturn="True"
+                                         TextWrapping="Wrap"
+                                         MaxLength="250"
+                                         MinHeight="48"
+                                         materialDesign:HintAssist.Hint="Add a thought"
+                                         materialDesign:HintAssist.HintOpacity="0.55"
+                                         Text="{Binding Thought, UpdateSourceTrigger=PropertyChanged}"
+                                         ToolTip="Personal episode thought (max 250 characters). Clear to remove."
+                                         LostFocus="EpisodeThoughtTextBox_OnLostFocus"
+                                         KeyDown="EpisodeThoughtTextBox_OnKeyDown" />
+                            </StackPanel>
+                        </StackPanel>
+                        <Button Grid.Column="2"
+                                Command="{Binding DataContext.ToggleEpisodeNotesCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                 CommandParameter="{Binding}"
-                                IsEnabled="{Binding CanAddToCart}"
-                                ToolTip="Add to cart">
-                            <Button.Style>
-                                <Style TargetType="Button" BasedOn="{StaticResource CompactPrimaryIconButtonStyle}">
-                                    <Setter Property="Visibility" Value="Collapsed" />
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding CanAddToCart}" Value="True">
-                                            <Setter Property="Visibility" Value="Visible" />
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </Button.Style>
-                            <iconPacks:PackIconLucide Kind="ShoppingCart"
-                                                       Width="15"
-                                                       Height="15"
-                                                       Foreground="{StaticResource AppBrushOnAccent}"
-                                                       VerticalAlignment="Center" />
-                        </Button>
-                        <Button Style="{StaticResource CompactOutlinedIconButtonStyle}"
-                                Command="{Binding DataContext.LinkEpisodeCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                CommandParameter="{Binding}"
-                                IsEnabled="{Binding CanLink}"
-                                ToolTip="{Binding LinkActionToolTip}">
-                            <iconPacks:PackIconLucide Kind="{Binding LinkActionIconKind}"
-                                                       Width="15"
-                                                       Height="15"
-                                                       VerticalAlignment="Center" />
-                        </Button>
-                        <Button Command="{Binding DataContext.ResetEpisodeCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                CommandParameter="{Binding}"
-                                IsEnabled="{Binding CanReset}"
-                                Margin="4,0,0,0"
-                                ToolTip="Reset download/link state so this episode shows as Missing and can be searched again">
+                                VerticalAlignment="Top"
+                                ToolTip="{Binding NotesToggleToolTip}">
                             <Button.Style>
                                 <Style TargetType="Button" BasedOn="{StaticResource CompactOutlinedIconButtonStyle}">
                                     <Setter Property="Visibility" Value="Collapsed" />
                                     <Style.Triggers>
-                                        <DataTrigger Binding="{Binding CanReset}" Value="True">
+                                        <DataTrigger Binding="{Binding CanRateEpisode}" Value="True">
                                             <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding IsNotesPanelOpen}" Value="True">
+                                            <Setter Property="FontWeight" Value="SemiBold" />
+                                            <Setter Property="BorderBrush" Value="{StaticResource AppBrushWarning}" />
                                         </DataTrigger>
                                     </Style.Triggers>
                                 </Style>
                             </Button.Style>
-                            <iconPacks:PackIconLucide Kind="RotateCcw"
+                            <iconPacks:PackIconLucide Kind="Star"
                                                        Width="15"
                                                        Height="15"
-                                                       VerticalAlignment="Center" />
+                                                       VerticalAlignment="Center"
+                                                       Foreground="{StaticResource AppBrushWarning}" />
                         </Button>
-                    </StackPanel>
-                </Grid>
-                <TextBlock Text="{Binding Title}"
-                           Foreground="{StaticResource AppBrushWarning}"
-                           FontSize="12"
-                           TextWrapping="Wrap">
-                    <TextBlock.Style>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="Visibility" Value="Collapsed" />
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding IsOrphanSeparator}" Value="True">
-                                    <Setter Property="Visibility" Value="Visible" />
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </TextBlock.Style>
-                </TextBlock>
+                    </Grid>
+                    <TextBlock Text="{Binding Title}"
+                               Foreground="{StaticResource AppBrushWarning}"
+                               FontSize="12"
+                               TextWrapping="Wrap">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsOrphanSeparator}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
                 </StackPanel>
             </Border>
         </DataTemplate>
@@ -230,48 +504,55 @@
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <StackPanel>
-                                <StackPanel Orientation="Horizontal">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                     <iconPacks:PackIconLucide Kind="Layers"
                                                                Width="15"
                                                                Height="15"
                                                                Margin="0,0,8,0"
                                                                Foreground="{StaticResource AppBrushShowAccent}"
                                                                VerticalAlignment="Center" />
-                                    <TextBlock Text="{Binding Header}"
-                                               FontWeight="SemiBold"
-                                               Foreground="{StaticResource AppBrushText}">
+                                    <TextBlock FontWeight="SemiBold"
+                                               Foreground="{StaticResource AppBrushText}"
+                                               VerticalAlignment="Center">
                                         <TextBlock.Style>
                                             <Style TargetType="TextBlock">
                                                 <Setter Property="FontStyle" Value="Normal" />
+                                                <Setter Property="VerticalAlignment" Value="Center" />
+                                                <Setter Property="Text" Value="{Binding Header}" />
                                                 <Style.Triggers>
                                                     <DataTrigger Binding="{Binding IsHidden}" Value="True">
                                                         <Setter Property="FontStyle" Value="Italic" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding DataContext.IsSeasonRatingView, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="True">
+                                                        <Setter Property="Text" Value="{Binding RatingHeader}" />
                                                     </DataTrigger>
                                                 </Style.Triggers>
                                             </Style>
                                         </TextBlock.Style>
                                     </TextBlock>
                                 </StackPanel>
-                                <TextBlock Text="{Binding PackModeBannerTitle}"
-                                           Style="{StaticResource MutedTextStyle}"
-                                           Margin="0,4,0,0"
-                                           TextWrapping="Wrap" />
-                                <TextBlock Text="{Binding PackContentWarning}"
-                                           Foreground="{StaticResource AppBrushWarning}"
-                                           FontSize="12"
-                                           Margin="0,6,0,0"
-                                           TextWrapping="Wrap">
-                                    <TextBlock.Style>
-                                        <Style TargetType="TextBlock">
-                                            <Setter Property="Visibility" Value="Collapsed" />
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding HasPackContentWarning}" Value="True">
-                                                    <Setter Property="Visibility" Value="Visible" />
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </TextBlock.Style>
-                                </TextBlock>
+                                <StackPanel Margin="0,4,0,0"
+                                            Visibility="{Binding DataContext.IsSeasonAvailabilityView, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                    <TextBlock Text="{Binding PackModeBannerTitle}"
+                                               Style="{StaticResource MutedTextStyle}"
+                                               TextWrapping="Wrap" />
+                                    <TextBlock Text="{Binding PackContentWarning}"
+                                               Foreground="{StaticResource AppBrushWarning}"
+                                               FontSize="12"
+                                               Margin="0,6,0,0"
+                                               TextWrapping="Wrap">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding HasPackContentWarning}" Value="True">
+                                                        <Setter Property="Visibility" Value="Visible" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </StackPanel>
                             </StackPanel>
                             <Button Grid.Column="1"
                                     Style="{StaticResource CompactOutlinedIconButtonStyle}"
@@ -289,11 +570,14 @@
                                       Content="Pack mode"
                                       VerticalAlignment="Center"
                                       Margin="12,0,0,0"
-                                      IsEnabled="{Binding CanTogglePackMode}" />
+                                      IsEnabled="{Binding CanTogglePackMode}"
+                                      Visibility="{Binding DataContext.IsSeasonAvailabilityView, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource BooleanToVisibilityConverter}}" />
                         </Grid>
                     </Expander.Header>
                     <StackPanel Margin="0,10,0,0">
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                        <StackPanel Orientation="Horizontal"
+                                    Margin="0,0,0,10"
+                                    Visibility="{Binding DataContext.IsSeasonAvailabilityView, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource BooleanToVisibilityConverter}}">
                             <Button Style="{StaticResource AppOutlinedButtonStyle}"
                                     Command="{Binding DataContext.AddAllMissingEpisodesToCartCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                     CommandParameter="{Binding}"
@@ -1574,6 +1858,303 @@
                                 </StackPanel>
                             </Border>
 
+                            <Border Style="{StaticResource LibraryPanelCardStyle}"
+                                    Margin="0,20,0,0"
+                                    Padding="14"
+                                    Visibility="{Binding ShowEpisodeRatingChartSection, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                <StackPanel>
+                                    <Grid Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <iconPacks:PackIconLucide Kind="Star"
+                                                                       Width="16"
+                                                                       Height="16"
+                                                                       Margin="0,0,8,0"
+                                                                       Foreground="{StaticResource AppBrushWarning}"
+                                                                       VerticalAlignment="Center" />
+                                            <TextBlock Text="Episode ratings"
+                                                       Style="{StaticResource SectionTitleStyle}"
+                                                       VerticalAlignment="Center" />
+                                        </StackPanel>
+                                        <Button Grid.Column="1"
+                                                Command="{Binding ToggleRatingChartCommand}"
+                                                ToolTip="Show or hide episode ratings">
+                                            <Button.Style>
+                                                <Style TargetType="Button" BasedOn="{StaticResource AppOutlinedButtonStyle}">
+                                                    <Setter Property="Content" Value="Show" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsRatingChartVisible}" Value="True">
+                                                            <Setter Property="Content" Value="Hide" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Button.Style>
+                                        </Button>
+                                    </Grid>
+                                    <StackPanel Visibility="{Binding ShowEpisodeRatingBody, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                        <DockPanel Margin="0,0,0,8">
+                                            <Button DockPanel.Dock="Left"
+                                                    Style="{StaticResource CompactOutlinedIconButtonStyle}"
+                                                    Width="32"
+                                                    MinWidth="32"
+                                                    Margin="0,0,6,0"
+                                                    Command="{Binding MoveRatingSeasonPreviousCommand}"
+                                                    ToolTip="Previous season">
+                                                <iconPacks:PackIconLucide Kind="ChevronLeft" Width="16" Height="16" />
+                                            </Button>
+                                            <Button DockPanel.Dock="Right"
+                                                    Style="{StaticResource CompactOutlinedIconButtonStyle}"
+                                                    Width="32"
+                                                    MinWidth="32"
+                                                    Margin="6,0,0,0"
+                                                    Command="{Binding MoveRatingSeasonNextCommand}"
+                                                    ToolTip="Next season">
+                                                <iconPacks:PackIconLucide Kind="ChevronRight" Width="16" Height="16" />
+                                            </Button>
+                                            <ScrollViewer x:Name="RatingSeasonTabScroller"
+                                                          HorizontalScrollBarVisibility="Hidden"
+                                                          VerticalScrollBarVisibility="Disabled"
+                                                          PreviewMouseWheel="HorizontalScrollViewer_OnPreviewMouseWheel">
+                                                <ItemsControl ItemsSource="{Binding RatingSeasonTabs}">
+                                                    <ItemsControl.ItemsPanel>
+                                                        <ItemsPanelTemplate>
+                                                            <StackPanel Orientation="Horizontal" />
+                                                        </ItemsPanelTemplate>
+                                                    </ItemsControl.ItemsPanel>
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <Button Content="{Binding Label}"
+                                                                    Command="{Binding DataContext.SelectRatingSeasonCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                                    CommandParameter="{Binding}">
+                                                                <Button.Style>
+                                                                    <Style TargetType="Button" BasedOn="{StaticResource RatingSeasonTabButtonStyle}">
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                                                <Setter Property="FontWeight" Value="SemiBold" />
+                                                                                <Setter Property="BorderBrush" Value="{StaticResource AppBrushShowAccent}" />
+                                                                                <Setter Property="Foreground" Value="{StaticResource AppBrushShowAccent}" />
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </Button.Style>
+                                                            </Button>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </ScrollViewer>
+                                        </DockPanel>
+                                        <StackPanel Orientation="Horizontal"
+                                                    Margin="0,0,0,10"
+                                                    VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding SelectedSeasonLabel}"
+                                                       Style="{StaticResource MutedTextStyle}"
+                                                       VerticalAlignment="Center"
+                                                       Margin="0,0,10,0" />
+                                            <iconPacks:PackIconLucide Kind="Star"
+                                                                       Width="14"
+                                                                       Height="14"
+                                                                       VerticalAlignment="Center"
+                                                                       Margin="0,0,4,0"
+                                                                       Foreground="{StaticResource AppBrushWarning}"
+                                                                       Visibility="{Binding HasSeasonAverage, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                            <TextBlock Text="{Binding SelectedSeasonAverageValue}"
+                                                       VerticalAlignment="Center"
+                                                       FontSize="16"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="{StaticResource AppBrushWarning}"
+                                                       Visibility="{Binding HasSeasonAverage, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                            <TextBlock Text="Average"
+                                                       Style="{StaticResource MutedTextStyle}"
+                                                       VerticalAlignment="Center"
+                                                       Margin="4,0,0,0"
+                                                       Visibility="{Binding HasSeasonAverage, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                            <TextBlock Text="No ratings yet"
+                                                       VerticalAlignment="Center">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock" BasedOn="{StaticResource MutedTextStyle}">
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                        <Style.Triggers>
+                                                            <MultiDataTrigger>
+                                                                <MultiDataTrigger.Conditions>
+                                                                    <Condition Binding="{Binding HasRatingSeasonEpisodes}" Value="True" />
+                                                                    <Condition Binding="{Binding HasSeasonAverage}" Value="False" />
+                                                                </MultiDataTrigger.Conditions>
+                                                                <Setter Property="Visibility" Value="Visible" />
+                                                            </MultiDataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                            <Button Command="{Binding SetEpisodeRatingChartViewCommand}"
+                                                    Margin="0,0,6,0"
+                                                    ToolTip="IMDb-style episode rating chart">
+                                                <Button.Style>
+                                                    <Style TargetType="Button" BasedOn="{StaticResource AppOutlinedButtonStyle}">
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsChartView}" Value="True">
+                                                                <Setter Property="FontWeight" Value="SemiBold" />
+                                                                <Setter Property="BorderBrush" Value="{StaticResource AppBrushWarning}" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Button.Style>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <iconPacks:PackIconLucide Kind="ChartLine"
+                                                                               Width="14"
+                                                                               Height="14"
+                                                                               Margin="0,0,6,0"
+                                                                               VerticalAlignment="Center" />
+                                                    <TextBlock Text="Chart" VerticalAlignment="Center" />
+                                                </StackPanel>
+                                            </Button>
+                                            <Button Command="{Binding SetEpisodeRatingHeatmapViewCommand}"
+                                                    ToolTip="Color heatmap for the selected season">
+                                                <Button.Style>
+                                                    <Style TargetType="Button" BasedOn="{StaticResource AppOutlinedButtonStyle}">
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsHeatmapView}" Value="True">
+                                                                <Setter Property="FontWeight" Value="SemiBold" />
+                                                                <Setter Property="BorderBrush" Value="{StaticResource AppBrushWarning}" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Button.Style>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <iconPacks:PackIconLucide Kind="LayoutGrid"
+                                                                               Width="14"
+                                                                               Height="14"
+                                                                               Margin="0,0,6,0"
+                                                                               VerticalAlignment="Center" />
+                                                    <TextBlock Text="Heatmap" VerticalAlignment="Center" />
+                                                </StackPanel>
+                                            </Button>
+                                        </StackPanel>
+                                        <TextBlock Text="No episodes in this season">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock" BasedOn="{StaticResource MutedTextStyle}">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding HasRatingSeasonEpisodes}" Value="False">
+                                                            <Setter Property="Visibility" Value="Visible" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                        <Border Background="{StaticResource AppBrushCanvas}"
+                                                BorderBrush="{StaticResource AppBrushBorder}"
+                                                BorderThickness="1"
+                                                CornerRadius="8"
+                                                Padding="10"
+                                                Visibility="{Binding ShowImdbChart, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                            <DockPanel>
+                                                <Button DockPanel.Dock="Right"
+                                                        Style="{StaticResource CompactOutlinedIconButtonStyle}"
+                                                        Width="32"
+                                                        MinWidth="32"
+                                                        Margin="8,0,0,0"
+                                                        VerticalAlignment="Center"
+                                                        Click="ImdbChartScrollForward_OnClick"
+                                                        ToolTip="Scroll episodes">
+                                                    <iconPacks:PackIconLucide Kind="ChevronRight" Width="16" Height="16" />
+                                                </Button>
+                                                <Grid Height="130">
+                                                    <Grid Height="96"
+                                                          VerticalAlignment="Top"
+                                                          IsHitTestVisible="False">
+                                                        <Rectangle Height="1"
+                                                                   VerticalAlignment="Top"
+                                                                   Stroke="{StaticResource AppBrushMutedText}"
+                                                                   StrokeDashArray="4 3"
+                                                                   StrokeThickness="1"
+                                                                   Visibility="{Binding HasSeasonAverage, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                            <Rectangle.RenderTransform>
+                                                                <TranslateTransform Y="{Binding AverageGuideMargin}" />
+                                                            </Rectangle.RenderTransform>
+                                                        </Rectangle>
+                                                    </Grid>
+                                                    <ScrollViewer x:Name="ImdbChartScroller"
+                                                                  HorizontalScrollBarVisibility="Hidden"
+                                                                  VerticalScrollBarVisibility="Disabled"
+                                                                  PreviewMouseWheel="HorizontalScrollViewer_OnPreviewMouseWheel">
+                                                        <ItemsControl ItemsSource="{Binding RatingCells}">
+                                                            <ItemsControl.ItemsPanel>
+                                                                <ItemsPanelTemplate>
+                                                                    <StackPanel Orientation="Horizontal" />
+                                                                </ItemsPanelTemplate>
+                                                            </ItemsControl.ItemsPanel>
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate>
+                                                                    <StackPanel Width="44" Margin="3,0">
+                                                                        <Grid Height="96">
+                                                                            <Border Style="{StaticResource ImdbRatingColumnStyle}"
+                                                                                    MouseLeftButtonUp="ImdbRatingBox_OnMouseLeftButtonUp">
+                                                                                <TextBlock Text="{Binding RatingText}"
+                                                                                           Style="{StaticResource ImdbRatingBoxTextStyle}" />
+                                                                            </Border>
+                                                                        </Grid>
+                                                                        <TextBlock Text="{Binding Label}"
+                                                                                   HorizontalAlignment="Center"
+                                                                                   Margin="0,6,0,0"
+                                                                                   FontSize="11"
+                                                                                   FontWeight="SemiBold"
+                                                                                   Foreground="{StaticResource AppBrushText}" />
+                                                                    </StackPanel>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                    </ScrollViewer>
+                                                </Grid>
+                                            </DockPanel>
+                                        </Border>
+                                        <Border Background="{StaticResource AppBrushCanvas}"
+                                                BorderBrush="{StaticResource AppBrushBorder}"
+                                                BorderThickness="1"
+                                                CornerRadius="8"
+                                                Padding="10"
+                                                Visibility="{Binding ShowHeatmap, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                            <StackPanel>
+                                                <ItemsControl ItemsSource="{Binding RatingBandLegend}"
+                                                              Margin="0,0,0,10">
+                                                    <ItemsControl.ItemsPanel>
+                                                        <ItemsPanelTemplate>
+                                                            <WrapPanel />
+                                                        </ItemsPanelTemplate>
+                                                    </ItemsControl.ItemsPanel>
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <StackPanel Orientation="Horizontal" Margin="0,0,12,6">
+                                                                <Border Width="12"
+                                                                        Height="12"
+                                                                        CornerRadius="2"
+                                                                        Margin="0,0,4,0"
+                                                                        Background="{Binding Band, Converter={StaticResource EpisodeRatingBandToBrushConverter}}" />
+                                                                <TextBlock Text="{Binding Label}"
+                                                                           Style="{StaticResource MutedTextStyle}"
+                                                                           FontSize="11" />
+                                                            </StackPanel>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                                <ItemsControl ItemsSource="{Binding RatingCells}"
+                                                              ItemTemplate="{StaticResource HeatmapCellTemplate}">
+                                                    <ItemsControl.ItemsPanel>
+                                                        <ItemsPanelTemplate>
+                                                            <WrapPanel />
+                                                        </ItemsPanelTemplate>
+                                                    </ItemsControl.ItemsPanel>
+                                                </ItemsControl>
+                                            </StackPanel>
+                                        </Border>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
                             <StackPanel Margin="0,20,0,0"
                                         Visibility="{Binding IsSelectedShow, Converter={StaticResource BooleanToVisibilityConverter}}">
                                 <Grid Margin="0,0,0,12">
@@ -1581,14 +2162,60 @@
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <StackPanel Orientation="Horizontal">
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                         <iconPacks:PackIconLucide Kind="Tv"
                                                                    Width="16"
                                                                    Height="16"
                                                                    Margin="0,0,8,0"
                                                                    Foreground="{StaticResource AppBrushShowAccent}"
                                                                    VerticalAlignment="Center" />
-                                        <TextBlock Text="Seasons" Style="{StaticResource SectionTitleStyle}" />
+                                        <TextBlock Text="Seasons"
+                                                   Style="{StaticResource SectionTitleStyle}"
+                                                   VerticalAlignment="Center" />
+                                        <Button Command="{Binding SetSeasonAvailabilityViewCommand}"
+                                                Margin="12,0,0,0"
+                                                ToolTip="Show availability, cart, and link actions">
+                                            <Button.Style>
+                                                <Style TargetType="Button" BasedOn="{StaticResource AppOutlinedButtonStyle}">
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsSeasonAvailabilityView}" Value="True">
+                                                            <Setter Property="FontWeight" Value="SemiBold" />
+                                                            <Setter Property="BorderBrush" Value="{StaticResource AppBrushShowAccent}" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Button.Style>
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconLucide Kind="ListChecks"
+                                                                           Width="14"
+                                                                           Height="14"
+                                                                           Margin="0,0,6,0"
+                                                                           VerticalAlignment="Center" />
+                                                <TextBlock Text="Availability" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Command="{Binding SetSeasonRatingViewCommand}"
+                                                Margin="6,0,0,0"
+                                                ToolTip="Show personal rating and thought per episode">
+                                            <Button.Style>
+                                                <Style TargetType="Button" BasedOn="{StaticResource AppOutlinedButtonStyle}">
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsSeasonRatingView}" Value="True">
+                                                            <Setter Property="FontWeight" Value="SemiBold" />
+                                                            <Setter Property="BorderBrush" Value="{StaticResource AppBrushWarning}" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Button.Style>
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconLucide Kind="Star"
+                                                                           Width="14"
+                                                                           Height="14"
+                                                                           Margin="0,0,6,0"
+                                                                           VerticalAlignment="Center" />
+                                                <TextBlock Text="Rating" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </Button>
                                     </StackPanel>
                                     <Button Grid.Column="1"
                                             Style="{StaticResource AppOutlinedButtonStyle}"

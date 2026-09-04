@@ -1,3 +1,4 @@
+using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using media_management_app.Common;
 using media_management_app.Models;
@@ -22,6 +23,9 @@ public sealed partial class LibraryEpisodeRowViewModel : ObservableObject
         TorrentHash = episode.TorrentHash ?? string.Empty;
         TorrentState = episode.TorrentState ?? string.Empty;
         TorrentProgress = episode.TorrentProgress;
+        VoteAverage = episode.VoteAverage;
+        UserRating = episode.UserRating;
+        Thought = episode.Thought ?? string.Empty;
         IsTrackedEpisode = true;
     }
 
@@ -60,6 +64,48 @@ public sealed partial class LibraryEpisodeRowViewModel : ObservableObject
     public string TorrentState { get; private init; } = string.Empty;
 
     public double TorrentProgress { get; private init; }
+
+    public double? VoteAverage { get; private init; }
+
+    public bool CanRateEpisode => IsTrackedEpisode && !IsOrphan && !IsOrphanSeparator;
+
+    public bool HasRating => UserRating.HasValue;
+
+    public bool HasThought => !string.IsNullOrWhiteSpace(Thought);
+
+    public bool ShowRatingSummary => CanRateEpisode && HasRating && !IsNotesPanelOpen;
+
+    public bool ShowThoughtBody => CanRateEpisode && HasThought && !IsNotesPanelOpen;
+
+    public bool ShowRatingEditor => CanRateEpisode && IsNotesPanelOpen;
+
+    public string NotesToggleToolTip => IsNotesPanelOpen
+        ? "Hide episode rating and thought"
+        : "Add or edit episode rating and thought";
+
+    public string UserRatingText
+    {
+        get => UserRating.HasValue
+            ? UserRating.Value.ToString("0.0", CultureInfo.InvariantCulture)
+            : string.Empty;
+        set
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                UserRating = null;
+                return;
+            }
+
+            if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
+                || double.TryParse(value, NumberStyles.Float, CultureInfo.CurrentCulture, out parsed))
+            {
+                UserRating = Math.Clamp(Math.Round(parsed, 1, MidpointRounding.AwayFromZero), 0.0, 10.0);
+                return;
+            }
+
+            OnPropertyChanged(nameof(UserRatingText));
+        }
+    }
 
     public bool HasTorrent => !string.IsNullOrWhiteSpace(TorrentHash);
 
@@ -166,6 +212,25 @@ public sealed partial class LibraryEpisodeRowViewModel : ObservableObject
             return IsInCart ? "In cart" : string.Empty;
         }
     }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasRating))]
+    [NotifyPropertyChangedFor(nameof(UserRatingText))]
+    [NotifyPropertyChangedFor(nameof(ShowRatingSummary))]
+    [NotifyPropertyChangedFor(nameof(ShowRatingEditor))]
+    private double? userRating;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasThought))]
+    [NotifyPropertyChangedFor(nameof(ShowThoughtBody))]
+    private string thought = string.Empty;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowRatingSummary))]
+    [NotifyPropertyChangedFor(nameof(ShowThoughtBody))]
+    [NotifyPropertyChangedFor(nameof(ShowRatingEditor))]
+    [NotifyPropertyChangedFor(nameof(NotesToggleToolTip))]
+    private bool isNotesPanelOpen;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsLinked))]

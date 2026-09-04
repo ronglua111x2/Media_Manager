@@ -196,7 +196,7 @@ Full layout documented in [STATE_FOLDER.md](./STATE_FOLDER.md). Summary:
 
 `SourceItems`, `SeriesMappings`, `TrackedShows`, `TrackedSeasons`, `TrackedEpisodes`, `TrackedMovies`, `FetchJobs`, `TorrentCartOrders`, `TorrentCartOrderCandidates`, `TorrentBlacklist`
 
-Schema uses additive `ALTER TABLE` migrations — no version table. **`FetchJobs` rows are deleted on every DB init** (`PurgeLegacyFetchJobs`); the table exists for compatibility but search state lives in `TorrentCartOrders` and in-memory caches.
+Schema is versioned via `SchemaMigrations` (`MigrationRunner` + numbered SQL). `DatabaseService` still runs `CREATE TABLE IF NOT EXISTS` + `EnsureColumn` as a safety net. **`TrackedEpisodes`** stores personal `UserRating` / `Thought` (migration `004_episode_rating_thought`) in addition to TMDB `VoteAverage`. **`FetchJobs`** is legacy; search state lives in `TorrentCartOrders` and in-memory caches.
 
 See [FEATURES.md](./FEATURES.md) for column details.
 

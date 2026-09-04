@@ -1685,6 +1685,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
         OnPropertyChanged(nameof(CanDecrementWatchedEpisodes));
         IncrementWatchedEpisodesCommand.NotifyCanExecuteChanged();
         DecrementWatchedEpisodesCommand.NotifyCanExecuteChanged();
+        HandleSelectedShowForRatingChart();
     }
 
     partial void OnSelectedMovieChanged(LibraryMovieDetailViewModel? value)

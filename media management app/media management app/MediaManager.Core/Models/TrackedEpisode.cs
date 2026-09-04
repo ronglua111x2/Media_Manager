@@ -22,6 +22,10 @@ public sealed class TrackedEpisode
 
     public double? VoteAverage { get; set; }
 
+    public double? UserRating { get; set; }
+
+    public string? Thought { get; set; }
+
     public string? StillPath { get; set; }
 
     public EpisodeAvailability Availability { get; set; } = EpisodeAvailability.Missing;

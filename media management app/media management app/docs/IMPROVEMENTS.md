@@ -192,7 +192,11 @@ flowchart LR
 **Phase 1 (Stability):** Migrations, tests, remove FetchJobs purge  
 **Phase 2 (Maintainability):** Split large classes, transient VMs  
 **Phase 3 (UX):** Error service, run history, local export  
-**Phase 4 (Features):** Bulk ops, movie auto-track, notification grouping  
+**Phase 4 (Features):** Bulk ops, movie auto-track, notification grouping
+
+### Recently implemented
+
+- **Episode rating + thought + chart** — personal `UserRating`/`Thought` on `TrackedEpisodes`; IMDb-style per-season boxes + heatmap (`FEATURES.md` §5.18–5.19, migration `004_episode_rating_thought`)  
 
 ---
 

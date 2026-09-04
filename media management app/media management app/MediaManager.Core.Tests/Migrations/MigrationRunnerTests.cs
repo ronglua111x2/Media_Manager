@@ -30,8 +30,11 @@ public class MigrationRunnerTests
         GetAppliedNames(db.Connection).Should().Equal(
             "001_baseline",
             "002_fetchjobs_legacy_purge",
-            "003_torrentblacklist_rebuild");
+            "003_torrentblacklist_rebuild",
+            "004_episode_rating_thought");
         GetUserTableNames(db.Connection).Should().Contain(ApplicationTables);
+        HasColumn(db.Connection, "TrackedEpisodes", "UserRating").Should().BeTrue();
+        HasColumn(db.Connection, "TrackedEpisodes", "Thought").Should().BeTrue();
         GetUserTableNames(db.Connection).Should().Contain(MigrationRunner.HistoryTableName);
         GetAppliedUtcValues(db.Connection).Should().OnlyContain(value => IsRoundtripDateTime(value));
     }
@@ -67,7 +70,8 @@ public class MigrationRunnerTests
         GetAppliedNames(db.Connection).Should().Equal(
             "001_baseline",
             "002_fetchjobs_legacy_purge",
-            "003_torrentblacklist_rebuild");
+            "003_torrentblacklist_rebuild",
+            "004_episode_rating_thought");
     }
 
     [Fact]

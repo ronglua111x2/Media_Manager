@@ -76,6 +76,8 @@ public interface ITrackedShowService
 
     void UpdateRating(long showId, double? rating, string? thought);
 
+    void UpdateEpisodeRating(long episodeId, double? rating, string? thought);
+
     void SetAlternativeTitleExcludedFromSearch(long showId, string title, bool excluded);
 
     IReadOnlyList<TrackedShow> GetAutoTrackedShows();
