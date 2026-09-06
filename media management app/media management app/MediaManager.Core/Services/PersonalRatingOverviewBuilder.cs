@@ -6,12 +6,14 @@ namespace media_management_app.Services;
 public static class PersonalRatingOverviewBuilder
 {
     public const int HallOfFameSize = 10;
+    public const int BillboardHighlightSize = 8;
     public const int MismatchMinEpisodeRatings = 3;
 
     public static PersonalRatingOverview Build(
         IReadOnlyList<TrackedShow> shows,
         IReadOnlyList<TrackedMovie> movies,
-        IReadOnlyList<EpisodeUserRatingRow> episodes)
+        IReadOnlyList<EpisodeUserRatingRow> episodes,
+        Random? shuffle = null)
     {
         var episodeList = episodes.ToList();
         var episodesByShow = episodeList
@@ -35,6 +37,7 @@ public static class PersonalRatingOverviewBuilder
 
         var titleRatings = showRatings.Concat(movieRatings).ToList();
         var heatmapRows = BuildHeatmapRows(shows, episodesByShow);
+        var (highlights, random) = BuildBillboard(shows, movies, episodeList, shuffle);
 
         return new PersonalRatingOverview
         {
@@ -70,7 +73,9 @@ public static class PersonalRatingOverviewBuilder
             TopSpecials = BuildHallOfFame(shows, episodeList.Where(IsSpecials), descending: true),
             BottomSpecials = BuildHallOfFame(shows, episodeList.Where(IsSpecials), descending: false),
             Mismatches = BuildMismatches(shows, episodesByShow),
-            EmptyOpinions = BuildEmptyOpinions(shows, movies, episodesByShow)
+            EmptyOpinions = BuildEmptyOpinions(shows, movies, episodesByShow),
+            BillboardHighlights = highlights,
+            BillboardRandom = random
         };
     }
 
@@ -184,6 +189,112 @@ public static class PersonalRatingOverviewBuilder
                 Thought = episode.Thought
             })
             .ToList();
+    }
+
+    private static (IReadOnlyList<StatsBillboardItem> Highlights, IReadOnlyList<StatsBillboardItem> Random)
+        BuildBillboard(
+            IReadOnlyList<TrackedShow> shows,
+            IReadOnlyList<TrackedMovie> movies,
+            IReadOnlyList<EpisodeUserRatingRow> episodes,
+            Random? shuffle)
+    {
+        var showsById = shows.ToDictionary(show => show.Id);
+        var pool = new List<StatsBillboardItem>();
+
+        foreach (var show in shows.Where(item => item.Rating.HasValue))
+        {
+            pool.Add(FromShow(show));
+        }
+
+        foreach (var movie in movies.Where(item => item.Rating.HasValue))
+        {
+            pool.Add(FromMovie(movie));
+        }
+
+        foreach (var episode in episodes.Where(item => item.UserRating.HasValue && !IsSpecials(item)))
+        {
+            if (!showsById.TryGetValue(episode.ShowId, out var show))
+            {
+                continue;
+            }
+
+            pool.Add(FromEpisode(show, episode));
+        }
+
+        var ordered = pool
+            .OrderByDescending(item => item.Rating)
+            .ThenBy(item => item.Kind)
+            .ThenBy(item => item.Headline, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(item => item.SeasonNumber)
+            .ThenBy(item => item.EpisodeNumber)
+            .ToList();
+
+        var highlightCount = Math.Min(BillboardHighlightSize, ordered.Count);
+        var highlights = ordered.Take(highlightCount).ToList();
+        var randomSource = ordered.Count <= BillboardHighlightSize
+            ? ordered
+            : ordered.Skip(highlightCount).ToList();
+        var random = Shuffle(randomSource, shuffle ?? new Random());
+        return (highlights, random);
+    }
+
+    private static StatsBillboardItem FromShow(TrackedShow show) =>
+        new()
+        {
+            Kind = StatsBillboardKind.Show,
+            MediaKind = MediaKind.TvEpisode,
+            MediaId = show.Id,
+            TmdbId = show.TmdbId,
+            PosterPath = show.PosterPath,
+            Headline = show.DisplayTitle,
+            Rating = show.Rating!.Value,
+            Band = EpisodeRatingBandRules.FromRating(show.Rating),
+            Thought = show.Thought
+        };
+
+    private static StatsBillboardItem FromMovie(TrackedMovie movie) =>
+        new()
+        {
+            Kind = StatsBillboardKind.Movie,
+            MediaKind = MediaKind.Movie,
+            MediaId = movie.Id,
+            TmdbId = movie.TmdbId,
+            PosterPath = movie.PosterPath,
+            Headline = movie.DisplayTitle,
+            Rating = movie.Rating!.Value,
+            Band = EpisodeRatingBandRules.FromRating(movie.Rating),
+            Thought = movie.Thought
+        };
+
+    private static StatsBillboardItem FromEpisode(TrackedShow show, EpisodeUserRatingRow episode) =>
+        new()
+        {
+            Kind = StatsBillboardKind.Episode,
+            MediaKind = MediaKind.TvEpisode,
+            MediaId = show.Id,
+            TmdbId = show.TmdbId,
+            PosterPath = show.PosterPath,
+            Headline = show.DisplayTitle,
+            Subtitle = $"S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00} · {episode.Title}",
+            Rating = episode.UserRating!.Value,
+            Band = EpisodeRatingBandRules.FromRating(episode.UserRating),
+            Thought = episode.Thought,
+            SeasonNumber = episode.SeasonNumber,
+            EpisodeNumber = episode.EpisodeNumber
+        };
+
+    private static IReadOnlyList<StatsBillboardItem> Shuffle(
+        IReadOnlyList<StatsBillboardItem> source,
+        Random random)
+    {
+        var list = source.ToList();
+        for (var i = list.Count - 1; i > 0; i--)
+        {
+            var j = random.Next(i + 1);
+            (list[i], list[j]) = (list[j], list[i]);
+        }
+
+        return list;
     }
 
     private static IReadOnlyList<TitleEpisodeMismatch> BuildMismatches(

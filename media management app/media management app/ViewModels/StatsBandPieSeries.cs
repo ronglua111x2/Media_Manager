@@ -28,8 +28,8 @@ public static class StatsBandPieSeries
                 Name = slice.Label,
                 Fill = new SolidColorPaint(ToSkColor(slice.Band)),
                 Stroke = new SolidColorPaint(gap) { StrokeThickness = 2 },
-                InnerRadius = 56,
-                MaxRadialColumnWidth = 22,
+                InnerRadius = 90,
+                MaxRadialColumnWidth = 24,
                 HoverPushout = 4,
                 ToolTipLabelFormatter = _ =>
                 {

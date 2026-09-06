@@ -201,6 +201,8 @@ public class PersonalRatingOverviewBuilderTests
         overview.MeanEpisodeRating.Should().BeNull();
         overview.WatchStatusStats.Should().BeEmpty();
         overview.RatedShows.Should().BeEmpty();
+        overview.BillboardHighlights.Should().BeEmpty();
+        overview.BillboardRandom.Should().BeEmpty();
     }
 
     [Fact]
@@ -279,32 +281,85 @@ public class PersonalRatingOverviewBuilderTests
         overview.WatchStatusStats.Should().NotContain(stat => stat.Status == UserWatchStatus.PlanToWatch);
     }
 
+    [Fact]
+    public void Billboard_MixesTitlesAndStoryEpisodes_ExcludesSpecials()
+    {
+        var shows = new[]
+        {
+            Show(1, "Alpha", rating: 9.5, thought: "Best show"),
+            Show(2, "Beta")
+        };
+        var movies = new[]
+        {
+            Movie(1, "Film", rating: 8.0, thought: "Solid film")
+        };
+        var episodes = new[]
+        {
+            Episode(1, 1, 1, rating: 9.0, thought: "Great ep"),
+            Episode(1, AppConstants.SpecialsSeasonNumber, 1, rating: 10.0, thought: "Special"),
+            Episode(2, 1, 1, rating: 7.0)
+        };
+
+        var overview = PersonalRatingOverviewBuilder.Build(shows, movies, episodes, new Random(1));
+
+        overview.BillboardHighlights.Should().NotContain(item =>
+            item.Kind == StatsBillboardKind.Episode && item.SeasonNumber == AppConstants.SpecialsSeasonNumber);
+        overview.BillboardHighlights[0].Kind.Should().Be(StatsBillboardKind.Show);
+        overview.BillboardHighlights[0].Thought.Should().Be("Best show");
+        overview.BillboardHighlights.Should().Contain(item =>
+            item.Kind == StatsBillboardKind.Episode && item.Thought == "Great ep" && item.Subtitle!.StartsWith("S01E01"));
+        overview.BillboardHighlights.Should().Contain(item =>
+            item.Kind == StatsBillboardKind.Movie && item.Thought == "Solid film");
+        overview.BillboardRandom.Select(item => item.IdentityKey)
+            .Should()
+            .BeEquivalentTo(overview.BillboardHighlights.Select(item => item.IdentityKey));
+    }
+
+    [Fact]
+    public void Billboard_RandomIsRemainderWhenPoolExceedsHighlightSize()
+    {
+        var shows = Enumerable.Range(1, 10)
+            .Select(index => Show(index, $"Show {index:00}", rating: 10.0 - index * 0.1))
+            .ToArray();
+
+        var overview = PersonalRatingOverviewBuilder.Build(shows, [], [], new Random(1));
+
+        overview.BillboardHighlights.Should().HaveCount(PersonalRatingOverviewBuilder.BillboardHighlightSize);
+        overview.BillboardRandom.Should().HaveCount(2);
+        overview.BillboardHighlights.Select(item => item.MediaId).Should().Equal(1, 2, 3, 4, 5, 6, 7, 8);
+        overview.BillboardRandom.Select(item => item.MediaId).Should().BeEquivalentTo([9L, 10L]);
+    }
+
     private static TrackedShow Show(
         long id,
         string title,
         double? rating = null,
-        UserWatchStatus watchStatus = UserWatchStatus.None) =>
+        UserWatchStatus watchStatus = UserWatchStatus.None,
+        string? thought = null) =>
         new()
         {
             Id = id,
             TmdbId = (int)id,
             Title = title,
             Rating = rating,
-            WatchStatus = watchStatus
+            WatchStatus = watchStatus,
+            Thought = thought
         };
 
     private static TrackedMovie Movie(
         long id,
         string title,
         double? rating = null,
-        UserWatchStatus watchStatus = UserWatchStatus.None) =>
+        UserWatchStatus watchStatus = UserWatchStatus.None,
+        string? thought = null) =>
         new()
         {
             Id = id,
             TmdbId = (int)id,
             Title = title,
             Rating = rating,
-            WatchStatus = watchStatus
+            WatchStatus = watchStatus,
+            Thought = thought
         };
 
     private static EpisodeUserRatingRow Episode(
@@ -312,7 +367,8 @@ public class PersonalRatingOverviewBuilderTests
         int season,
         int episode,
         double? rating,
-        bool isHidden = false) =>
+        bool isHidden = false,
+        string? thought = null) =>
         new()
         {
             ShowId = showId,
@@ -320,6 +376,7 @@ public class PersonalRatingOverviewBuilderTests
             EpisodeNumber = episode,
             Title = $"E{episode}",
             UserRating = rating,
-            IsHidden = isHidden
+            IsHidden = isHidden,
+            Thought = thought
         };
 }

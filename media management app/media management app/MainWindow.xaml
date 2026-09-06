@@ -258,7 +258,8 @@
                 <!-- #region Current workspace host -->
                 <Border Grid.Column="0"
                         Background="{StaticResource AppBrushSurfaceRaised}">
-                    <ContentControl Content="{Binding CurrentView}" />
+                    <controls:WorkspaceViewCache Workspace="{Binding CurrentView}"
+                                                 ContentTemplate="{x:Null}" />
                 </Border>
                 <!-- #endregion -->
 

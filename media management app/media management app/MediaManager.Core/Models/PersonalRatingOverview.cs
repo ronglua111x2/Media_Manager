@@ -50,6 +50,10 @@ public sealed class PersonalRatingOverview
 
     public IReadOnlyList<EmptyOpinion> EmptyOpinions { get; init; } = [];
 
+    public IReadOnlyList<StatsBillboardItem> BillboardHighlights { get; init; } = [];
+
+    public IReadOnlyList<StatsBillboardItem> BillboardRandom { get; init; } = [];
+
     public bool HasLibrary => ShowCount > 0 || MovieCount > 0;
 }
 
@@ -213,4 +217,53 @@ public sealed class EmptyOpinion
     public string Title { get; init; } = string.Empty;
 
     public string Reason { get; init; } = string.Empty;
+}
+
+public sealed class StatsBillboardItem
+{
+    public StatsBillboardKind Kind { get; init; }
+
+    public MediaKind MediaKind { get; init; }
+
+    public long MediaId { get; init; }
+
+    public int TmdbId { get; init; }
+
+    public string? PosterPath { get; init; }
+
+    public string Headline { get; init; } = string.Empty;
+
+    public string? Subtitle { get; init; }
+
+    public double Rating { get; init; }
+
+    public EpisodeRatingBand Band { get; init; }
+
+    public string? Thought { get; init; }
+
+    public int SeasonNumber { get; init; }
+
+    public int EpisodeNumber { get; init; }
+
+    public bool IsEpisode => Kind == StatsBillboardKind.Episode;
+
+    public bool HasSubtitle => !string.IsNullOrWhiteSpace(Subtitle);
+
+    public bool HasThought => !string.IsNullOrWhiteSpace(Thought);
+
+    public string KindLabel => Kind switch
+    {
+        StatsBillboardKind.Episode => "Episode",
+        StatsBillboardKind.Show => "Show",
+        StatsBillboardKind.Movie => "Movie",
+        _ => "Title"
+    };
+
+    public string IdentityKey => Kind switch
+    {
+        StatsBillboardKind.Episode => $"e:{MediaId}:{SeasonNumber}:{EpisodeNumber}",
+        StatsBillboardKind.Show => $"s:{MediaId}",
+        StatsBillboardKind.Movie => $"m:{MediaId}",
+        _ => $"x:{MediaId}"
+    };
 }
