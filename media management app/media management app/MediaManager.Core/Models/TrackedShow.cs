@@ -35,6 +35,8 @@ public sealed class TrackedShow
 
     public string? CartPackOverridesJson { get; set; }
 
+    public string? AutoTrackEpisodeOverridesJson { get; set; }
+
     public string PreferredQuality { get; set; } = "1080p";
 
     public string PreferredAudioCodec { get; set; } = string.Empty;

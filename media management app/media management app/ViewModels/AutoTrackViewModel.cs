@@ -16,6 +16,9 @@ public sealed partial class AutoTrackViewModel : ViewModelBase
     private readonly IAutoTrackSchedulerService _autoTrackSchedulerService;
     private readonly IDownloadFolderCatalogService _downloadFolderCatalogService;
     private readonly IPosterImageService _posterImageService;
+    private readonly IRecipeService _recipeService;
+
+    private readonly HashSet<long> _expandedRecipeShowIds = [];
 
     public AutoTrackViewModel(
         ISettingsService settingsService,
@@ -24,7 +27,8 @@ public sealed partial class AutoTrackViewModel : ViewModelBase
         IAutoTrackService autoTrackService,
         IAutoTrackSchedulerService autoTrackSchedulerService,
         IDownloadFolderCatalogService downloadFolderCatalogService,
-        IPosterImageService posterImageService)
+        IPosterImageService posterImageService,
+        IRecipeService recipeService)
     {
         _settingsService = settingsService;
         _trackedShowService = trackedShowService;
@@ -33,6 +37,7 @@ public sealed partial class AutoTrackViewModel : ViewModelBase
         _autoTrackSchedulerService = autoTrackSchedulerService;
         _downloadFolderCatalogService = downloadFolderCatalogService;
         _posterImageService = posterImageService;
+        _recipeService = recipeService;
 
         _autoTrackSchedulerService.RunCompleted += (_, _) =>
         {
@@ -44,7 +49,12 @@ public sealed partial class AutoTrackViewModel : ViewModelBase
 
     public ObservableCollection<AutoTrackShowCardViewModel> TrackedShows { get; } = [];
 
+    public ObservableCollection<AutoTrackShowCardViewModel> FilteredTrackedShows { get; } = [];
+
     public ObservableCollection<AutoTrackNewEpisodeViewModel> NewEpisodesThisWeek { get; } = [];
+
+    public string RecipeHelpTooltip { get; } =
+        "Episode recipe is assigned in Cart Order. Auto-Track cannot change it. Overrides here apply only to Auto-Track hunts, not Run Cart.";
 
     [ObservableProperty]
     private string lastRunSummary = "No runs yet.";
@@ -54,6 +64,9 @@ public sealed partial class AutoTrackViewModel : ViewModelBase
 
     [ObservableProperty]
     private bool isRunning;
+
+    [ObservableProperty]
+    private string statusLabel = "Idle";
 
     [ObservableProperty]
     private int trackedShowCount;
@@ -66,6 +79,20 @@ public sealed partial class AutoTrackViewModel : ViewModelBase
 
     [ObservableProperty]
     private string statusMessage = string.Empty;
+
+    [ObservableProperty]
+    private string showSearchText = string.Empty;
+
+    [ObservableProperty]
+    private string showSearchQuery = string.Empty;
+
+    public bool HasShowSearchText => !string.IsNullOrEmpty(ShowSearchText);
+
+    public bool HasAppliedShowSearch => !string.IsNullOrWhiteSpace(ShowSearchQuery);
+
+    public bool HasNoShowSearchResults => HasAppliedShowSearch && FilteredTrackedShows.Count == 0;
+
+    public string ShowsPendingLabel => $"{TrackedShowCount} · {TotalPendingEpisodes} pending";
 
     [RelayCommand(CanExecute = nameof(CanRunNow))]
     private async Task RunNow()
@@ -144,7 +171,11 @@ public sealed partial class AutoTrackViewModel : ViewModelBase
                 autoTrack,
                 folderOptions,
                 _trackedShowService,
-                GetLastHuntFailureDetail(show.Id));
+                _recipeService,
+                _settingsService.Current.AutoTorrent,
+                GetLastHuntFailureDetail(show.Id),
+                overviewExpanded: _expandedRecipeShowIds.Contains(show.Id),
+                onOverviewExpandedChanged: expanded => UpdateExpandedRecipe(show.Id, expanded));
             TrackedShows.Add(card);
             _ = LoadShowPosterAsync(card, show);
 
@@ -163,6 +194,81 @@ public sealed partial class AutoTrackViewModel : ViewModelBase
         TotalPendingEpisodes = pendingTotal;
         IsRunning = _autoTrackService.IsRunning;
         RunNowCommand.NotifyCanExecuteChanged();
+        ApplyShowFilter();
+    }
+
+    [RelayCommand]
+    private void SearchShows()
+    {
+        ShowSearchText = (ShowSearchText ?? string.Empty).Trim();
+        ShowSearchQuery = ShowSearchText;
+    }
+
+    [RelayCommand(CanExecute = nameof(CanClearShowSearch))]
+    private void ClearShowSearch()
+    {
+        ShowSearchText = string.Empty;
+        ShowSearchQuery = string.Empty;
+    }
+
+    private bool CanClearShowSearch() => HasAppliedShowSearch;
+
+    [RelayCommand]
+    private void ExpandAllRecipes()
+    {
+        foreach (var card in TrackedShows)
+        {
+            card.EpisodeRecipeSummary.IsOverviewExpanded = true;
+            _expandedRecipeShowIds.Add(card.ShowId);
+        }
+    }
+
+    [RelayCommand]
+    private void CollapseAllRecipes()
+    {
+        _expandedRecipeShowIds.Clear();
+        foreach (var card in TrackedShows)
+        {
+            card.EpisodeRecipeSummary.IsOverviewExpanded = false;
+        }
+    }
+
+    partial void OnShowSearchTextChanged(string value) =>
+        OnPropertyChanged(nameof(HasShowSearchText));
+
+    partial void OnShowSearchQueryChanged(string value)
+    {
+        ApplyShowFilter();
+        OnPropertyChanged(nameof(HasAppliedShowSearch));
+        OnPropertyChanged(nameof(HasNoShowSearchResults));
+        ClearShowSearchCommand.NotifyCanExecuteChanged();
+    }
+
+    private void ApplyShowFilter()
+    {
+        FilteredTrackedShows.Clear();
+        var query = ShowSearchQuery.Trim();
+        var source = string.IsNullOrWhiteSpace(query)
+            ? TrackedShows.AsEnumerable()
+            : TrackedShows.Where(card =>
+                card.Title.Contains(query, StringComparison.OrdinalIgnoreCase));
+        foreach (var card in source)
+        {
+            FilteredTrackedShows.Add(card);
+        }
+
+        OnPropertyChanged(nameof(HasNoShowSearchResults));
+    }
+
+    private void UpdateExpandedRecipe(long showId, bool expanded)
+    {
+        if (expanded)
+        {
+            _expandedRecipeShowIds.Add(showId);
+            return;
+        }
+
+        _expandedRecipeShowIds.Remove(showId);
     }
 
     [RelayCommand]
@@ -229,7 +335,7 @@ public sealed partial class AutoTrackViewModel : ViewModelBase
         var budget = autoTrack.DailyBudget ?? new TmdbDailyBudget();
         var remaining = budget.Remaining(max, nowLocal);
         var used = budget.IsExpiredFor(nowLocal) ? 0 : Math.Max(0, budget.Used);
-        return $"TMDB refreshes left today: {remaining} ({used}/{max} used)";
+        return $"{remaining} left today ({used}/{max} used)";
     }
 
     private string? GetLastHuntFailureDetail(long showId)
@@ -244,6 +350,15 @@ public sealed partial class AutoTrackViewModel : ViewModelBase
     }
 
     private bool CanRunNow() => !IsRunning && !_autoTrackService.IsRunning;
+
+    partial void OnIsRunningChanged(bool value)
+    {
+        StatusLabel = value ? "Running" : "Idle";
+    }
+
+    partial void OnTrackedShowCountChanged(int value) => OnPropertyChanged(nameof(ShowsPendingLabel));
+
+    partial void OnTotalPendingEpisodesChanged(int value) => OnPropertyChanged(nameof(ShowsPendingLabel));
 
     private async Task LoadShowPosterAsync(AutoTrackShowCardViewModel card, TrackedShow show)
     {

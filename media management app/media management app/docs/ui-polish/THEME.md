@@ -19,7 +19,7 @@ Source of truth for dark values: [`Resources/AppThemeColors.Dark.xaml`](../../Re
 | Primary / success | `AppBrushAccent` | `#4fa88f` | Run Cart, Run Now, active nav, healthy status |
 | Text on primary | `AppBrushOnAccent` | `#ffffff` | Icons/text on filled accent buttons |
 | Accent well | `AppBrushAccentSoft` | `#1e3a32` | Icon wells, selected list row |
-| Override / caution | `AppBrushWarning` | `#d99a3a` | Cart override titles and values only |
+| Override / caution | `AppBrushWarning` | `#d99a3a` | Cart and Auto-Track recipe override titles and values |
 | Error | `AppBrushDanger` | `#e05555` | Destructive actions, failed status |
 | Error well | `AppBrushStatusErrorBg` | `#3d2020` | Failed status chips |
 | Muted well | `AppBrushStatusMutedBg` | `#252d3d` | Neutral status chips |
@@ -27,7 +27,7 @@ Source of truth for dark values: [`Resources/AppThemeColors.Dark.xaml`](../../Re
 ## Rules
 
 - **Green (`AppBrushAccent`)** is the primary action and healthy status color (Run Cart, Run Now, Idle, Candidates found, selected sidebar icon).
-- **Orange (`AppBrushWarning`)** is **user override / warning**, not a second primary. Use it when a cart recipe property is overridden, not for generic highlights.
+- **Orange (`AppBrushWarning`)** is **user override / warning**, not a second primary. Use it when a cart or Auto-Track recipe property is overridden, not for generic highlights.
 - **Muted grey** for labels; **near-white** for the value the user should read first.
 - Primary buttons: filled accent background + `AppBrushOnAccent` foreground. Secondary: outlined surface + `AppBrushBorder` (Stop, Reset week, Clear Cart).
 - Brand status dots stay `AppBrushWarpBrand` (qBittorrent) and `AppBrushJellyfinBrand` (Jellyfin). Watch status stays `AppBrushWatch*`.

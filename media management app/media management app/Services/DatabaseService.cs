@@ -529,7 +529,7 @@ public sealed class DatabaseService : IDatabaseService
 
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT s.Id, s.TmdbId, s.Title, s.FirstAirYear, s.Overview, s.PosterPath, s.RecipeId, s.PackRecipeId, s.PreferredQuality, s.PreferredAudioCodec, s.MinimumSeeders, s.SeriesStatus, s.WatchStatus, s.WatchedEpisodes, s.PlannedEpisodeCount, s.AutoTrackFromSeason, s.AutoTrackFromEpisode, s.AutoTrackDownloadFolder, s.AutoTrackAutoReconcileAndLink, s.AutoTrackAnchorDayOfWeek, s.AutoTrackAnchorTimeLocal, s.AutoTrackLastTmdbWeekKey, s.AutoTrackLastTmdbRefreshLocal, s.AutoTrackTmdbState, s.AutoTrackMinQuality, s.AutoTrackMinSeeders, s.AutoTrackMinFileSizeMb, s.AutoTrackMaxFileSizeMb, s.AutoTrackAllowedQualities, s.AlternativeTitlesJson, s.ExcludedAlternativeTitlesJson, s.EpisodeGroupId, s.EpisodeGroupName, s.CreatedUtc, s.UpdatedUtc, s.Rating, s.Thought, s.CartEpisodeOverridesJson, s.CartPackOverridesJson,
+            SELECT s.Id, s.TmdbId, s.Title, s.FirstAirYear, s.Overview, s.PosterPath, s.RecipeId, s.PackRecipeId, s.PreferredQuality, s.PreferredAudioCodec, s.MinimumSeeders, s.SeriesStatus, s.WatchStatus, s.WatchedEpisodes, s.PlannedEpisodeCount, s.AutoTrackFromSeason, s.AutoTrackFromEpisode, s.AutoTrackDownloadFolder, s.AutoTrackAutoReconcileAndLink, s.AutoTrackAnchorDayOfWeek, s.AutoTrackAnchorTimeLocal, s.AutoTrackLastTmdbWeekKey, s.AutoTrackLastTmdbRefreshLocal, s.AutoTrackTmdbState, s.AutoTrackMinQuality, s.AutoTrackMinSeeders, s.AutoTrackMinFileSizeMb, s.AutoTrackMaxFileSizeMb, s.AutoTrackAllowedQualities, s.AlternativeTitlesJson, s.ExcludedAlternativeTitlesJson, s.EpisodeGroupId, s.EpisodeGroupName, s.CreatedUtc, s.UpdatedUtc, s.Rating, s.Thought, s.CartEpisodeOverridesJson, s.CartPackOverridesJson, s.AutoTrackEpisodeOverridesJson,
                    COUNT(e.Id), SUM(CASE WHEN e.Availability = 1 THEN 1 ELSE 0 END)
             FROM TrackedShows s
             LEFT JOIN TrackedEpisodes e ON e.ShowId = s.Id
@@ -554,7 +554,7 @@ public sealed class DatabaseService : IDatabaseService
 
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT s.Id, s.TmdbId, s.Title, s.FirstAirYear, s.Overview, s.PosterPath, s.RecipeId, s.PackRecipeId, s.PreferredQuality, s.PreferredAudioCodec, s.MinimumSeeders, s.SeriesStatus, s.WatchStatus, s.WatchedEpisodes, s.PlannedEpisodeCount, s.AutoTrackFromSeason, s.AutoTrackFromEpisode, s.AutoTrackDownloadFolder, s.AutoTrackAutoReconcileAndLink, s.AutoTrackAnchorDayOfWeek, s.AutoTrackAnchorTimeLocal, s.AutoTrackLastTmdbWeekKey, s.AutoTrackLastTmdbRefreshLocal, s.AutoTrackTmdbState, s.AutoTrackMinQuality, s.AutoTrackMinSeeders, s.AutoTrackMinFileSizeMb, s.AutoTrackMaxFileSizeMb, s.AutoTrackAllowedQualities, s.AlternativeTitlesJson, s.ExcludedAlternativeTitlesJson, s.EpisodeGroupId, s.EpisodeGroupName, s.CreatedUtc, s.UpdatedUtc, s.Rating, s.Thought, s.CartEpisodeOverridesJson, s.CartPackOverridesJson,
+            SELECT s.Id, s.TmdbId, s.Title, s.FirstAirYear, s.Overview, s.PosterPath, s.RecipeId, s.PackRecipeId, s.PreferredQuality, s.PreferredAudioCodec, s.MinimumSeeders, s.SeriesStatus, s.WatchStatus, s.WatchedEpisodes, s.PlannedEpisodeCount, s.AutoTrackFromSeason, s.AutoTrackFromEpisode, s.AutoTrackDownloadFolder, s.AutoTrackAutoReconcileAndLink, s.AutoTrackAnchorDayOfWeek, s.AutoTrackAnchorTimeLocal, s.AutoTrackLastTmdbWeekKey, s.AutoTrackLastTmdbRefreshLocal, s.AutoTrackTmdbState, s.AutoTrackMinQuality, s.AutoTrackMinSeeders, s.AutoTrackMinFileSizeMb, s.AutoTrackMaxFileSizeMb, s.AutoTrackAllowedQualities, s.AlternativeTitlesJson, s.ExcludedAlternativeTitlesJson, s.EpisodeGroupId, s.EpisodeGroupName, s.CreatedUtc, s.UpdatedUtc, s.Rating, s.Thought, s.CartEpisodeOverridesJson, s.CartPackOverridesJson, s.AutoTrackEpisodeOverridesJson,
                    COUNT(e.Id), SUM(CASE WHEN e.Availability = 1 THEN 1 ELSE 0 END)
             FROM TrackedShows s
             LEFT JOIN TrackedEpisodes e ON e.ShowId = s.Id
@@ -581,7 +581,7 @@ public sealed class DatabaseService : IDatabaseService
 
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT s.Id, s.TmdbId, s.Title, s.FirstAirYear, s.Overview, s.PosterPath, s.RecipeId, s.PackRecipeId, s.PreferredQuality, s.PreferredAudioCodec, s.MinimumSeeders, s.SeriesStatus, s.WatchStatus, s.WatchedEpisodes, s.PlannedEpisodeCount, s.AutoTrackFromSeason, s.AutoTrackFromEpisode, s.AutoTrackDownloadFolder, s.AutoTrackAutoReconcileAndLink, s.AutoTrackAnchorDayOfWeek, s.AutoTrackAnchorTimeLocal, s.AutoTrackLastTmdbWeekKey, s.AutoTrackLastTmdbRefreshLocal, s.AutoTrackTmdbState, s.AutoTrackMinQuality, s.AutoTrackMinSeeders, s.AutoTrackMinFileSizeMb, s.AutoTrackMaxFileSizeMb, s.AutoTrackAllowedQualities, s.AlternativeTitlesJson, s.ExcludedAlternativeTitlesJson, s.EpisodeGroupId, s.EpisodeGroupName, s.CreatedUtc, s.UpdatedUtc, s.Rating, s.Thought, s.CartEpisodeOverridesJson, s.CartPackOverridesJson,
+            SELECT s.Id, s.TmdbId, s.Title, s.FirstAirYear, s.Overview, s.PosterPath, s.RecipeId, s.PackRecipeId, s.PreferredQuality, s.PreferredAudioCodec, s.MinimumSeeders, s.SeriesStatus, s.WatchStatus, s.WatchedEpisodes, s.PlannedEpisodeCount, s.AutoTrackFromSeason, s.AutoTrackFromEpisode, s.AutoTrackDownloadFolder, s.AutoTrackAutoReconcileAndLink, s.AutoTrackAnchorDayOfWeek, s.AutoTrackAnchorTimeLocal, s.AutoTrackLastTmdbWeekKey, s.AutoTrackLastTmdbRefreshLocal, s.AutoTrackTmdbState, s.AutoTrackMinQuality, s.AutoTrackMinSeeders, s.AutoTrackMinFileSizeMb, s.AutoTrackMaxFileSizeMb, s.AutoTrackAllowedQualities, s.AlternativeTitlesJson, s.ExcludedAlternativeTitlesJson, s.EpisodeGroupId, s.EpisodeGroupName, s.CreatedUtc, s.UpdatedUtc, s.Rating, s.Thought, s.CartEpisodeOverridesJson, s.CartPackOverridesJson, s.AutoTrackEpisodeOverridesJson,
                    COUNT(e.Id), SUM(CASE WHEN e.Availability = 1 THEN 1 ELSE 0 END)
             FROM TrackedShows s
             LEFT JOIN TrackedEpisodes e ON e.ShowId = s.Id
@@ -1547,6 +1547,18 @@ public sealed class DatabaseService : IDatabaseService
         command.ExecuteNonQuery();
     }
 
+    public void UpdateTrackedShowAutoTrackRecipeOverridesJson(long showId, string? overridesJson)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE TrackedShows SET AutoTrackEpisodeOverridesJson = $OverridesJson, UpdatedUtc = $UpdatedUtc WHERE Id = $Id;";
+        command.Parameters.AddWithValue("$OverridesJson", string.IsNullOrWhiteSpace(overridesJson) ? DBNull.Value : overridesJson);
+        command.Parameters.AddWithValue("$UpdatedUtc", DateTime.UtcNow.ToString("O"));
+        command.Parameters.AddWithValue("$Id", showId);
+        command.ExecuteNonQuery();
+    }
+
     public void UpdateTrackedShowSeriesStatus(long showId, ShowSeriesStatus seriesStatus)
     {
         using var connection = new SqliteConnection(_connectionString);
@@ -2478,6 +2490,7 @@ public sealed class DatabaseService : IDatabaseService
         EnsureColumn(connection, "TrackedShows", "CartPackMaxCandidatesOverride", "INTEGER NULL");
         EnsureColumn(connection, "TrackedShows", "CartEpisodeOverridesJson", "TEXT NULL");
         EnsureColumn(connection, "TrackedShows", "CartPackOverridesJson", "TEXT NULL");
+        EnsureColumn(connection, "TrackedShows", "AutoTrackEpisodeOverridesJson", "TEXT NULL");
         EnsureColumn(connection, "TrackedShows", "PreferredAudioCodec", "TEXT NOT NULL DEFAULT ''");
         EnsureColumn(connection, "TrackedShows", "MinimumSeeders", "INTEGER NOT NULL DEFAULT 0");
         EnsureColumn(connection, "TrackedShows", "SeriesStatus", "INTEGER NOT NULL DEFAULT 0");
@@ -2779,7 +2792,7 @@ public sealed class DatabaseService : IDatabaseService
 
         using var command = connection.CreateCommand();
         command.CommandText = $"""
-            SELECT s.Id, s.TmdbId, s.Title, s.FirstAirYear, s.Overview, s.PosterPath, s.RecipeId, s.PackRecipeId, s.PreferredQuality, s.PreferredAudioCodec, s.MinimumSeeders, s.SeriesStatus, s.WatchStatus, s.WatchedEpisodes, s.PlannedEpisodeCount, s.AutoTrackFromSeason, s.AutoTrackFromEpisode, s.AutoTrackDownloadFolder, s.AutoTrackAutoReconcileAndLink, s.AutoTrackAnchorDayOfWeek, s.AutoTrackAnchorTimeLocal, s.AutoTrackLastTmdbWeekKey, s.AutoTrackLastTmdbRefreshLocal, s.AutoTrackTmdbState, s.AutoTrackMinQuality, s.AutoTrackMinSeeders, s.AutoTrackMinFileSizeMb, s.AutoTrackMaxFileSizeMb, s.AutoTrackAllowedQualities, s.AlternativeTitlesJson, s.ExcludedAlternativeTitlesJson, s.EpisodeGroupId, s.EpisodeGroupName, s.CreatedUtc, s.UpdatedUtc, s.Rating, s.Thought, s.CartEpisodeOverridesJson, s.CartPackOverridesJson,
+            SELECT s.Id, s.TmdbId, s.Title, s.FirstAirYear, s.Overview, s.PosterPath, s.RecipeId, s.PackRecipeId, s.PreferredQuality, s.PreferredAudioCodec, s.MinimumSeeders, s.SeriesStatus, s.WatchStatus, s.WatchedEpisodes, s.PlannedEpisodeCount, s.AutoTrackFromSeason, s.AutoTrackFromEpisode, s.AutoTrackDownloadFolder, s.AutoTrackAutoReconcileAndLink, s.AutoTrackAnchorDayOfWeek, s.AutoTrackAnchorTimeLocal, s.AutoTrackLastTmdbWeekKey, s.AutoTrackLastTmdbRefreshLocal, s.AutoTrackTmdbState, s.AutoTrackMinQuality, s.AutoTrackMinSeeders, s.AutoTrackMinFileSizeMb, s.AutoTrackMaxFileSizeMb, s.AutoTrackAllowedQualities, s.AlternativeTitlesJson, s.ExcludedAlternativeTitlesJson, s.EpisodeGroupId, s.EpisodeGroupName, s.CreatedUtc, s.UpdatedUtc, s.Rating, s.Thought, s.CartEpisodeOverridesJson, s.CartPackOverridesJson, s.AutoTrackEpisodeOverridesJson,
                    COUNT(e.Id), SUM(CASE WHEN e.Availability = 1 THEN 1 ELSE 0 END)
             FROM TrackedShows s
             LEFT JOIN TrackedEpisodes e ON e.ShowId = s.Id
@@ -2836,8 +2849,9 @@ public sealed class DatabaseService : IDatabaseService
             Thought = reader.IsDBNull(36) ? null : reader.GetString(36),
             CartEpisodeOverridesJson = reader.IsDBNull(37) ? null : reader.GetString(37),
             CartPackOverridesJson = reader.IsDBNull(38) ? null : reader.GetString(38),
-            TotalEpisodes = reader.IsDBNull(39) ? 0 : Convert.ToInt32(reader.GetValue(39)),
-            AvailableEpisodes = reader.IsDBNull(40) ? 0 : Convert.ToInt32(reader.GetValue(40))
+            AutoTrackEpisodeOverridesJson = reader.IsDBNull(39) ? null : reader.GetString(39),
+            TotalEpisodes = reader.IsDBNull(40) ? 0 : Convert.ToInt32(reader.GetValue(40)),
+            AvailableEpisodes = reader.IsDBNull(41) ? 0 : Convert.ToInt32(reader.GetValue(41))
         };
     }
 

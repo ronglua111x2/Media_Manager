@@ -121,4 +121,17 @@ public sealed class CartRecipeOverrideSet
         gb <= 0
             ? "0"
             : gb.ToString("0.##", CultureInfo.InvariantCulture);
+
+    public static CartRecipeOverrideSet FromLegacyAutoTrackQuality(int? minSeeders, int? minFileSizeMb)
+    {
+        return new CartRecipeOverrideSet
+        {
+            MinSeeders = minSeeders is null
+                ? null
+                : new CartIntOverride { Enabled = true, Value = minSeeders.Value },
+            MinSizeGb = minFileSizeMb is > 0
+                ? new CartDoubleOverride { Enabled = true, Value = minFileSizeMb.Value / 1024d }
+                : null
+        };
+    }
 }

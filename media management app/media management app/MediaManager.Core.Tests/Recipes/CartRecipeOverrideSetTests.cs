@@ -88,4 +88,18 @@ public class CartRecipeOverrideSetTests
         runtime!.OverrideMinSize.Should().BeTrue();
         runtime.MinSizeBytes.Should().BeNull();
     }
+
+    [Fact]
+    public void FromLegacyAutoTrackQuality_ConvertsMegabytesToFractionalGb()
+    {
+        var set = CartRecipeOverrideSet.FromLegacyAutoTrackQuality(minSeeders: 10, minFileSizeMb: 800);
+
+        set.MinSeeders.Should().NotBeNull();
+        set.MinSeeders!.Enabled.Should().BeTrue();
+        set.MinSeeders.Value.Should().Be(10);
+        set.MinSizeGb.Should().NotBeNull();
+        set.MinSizeGb!.Enabled.Should().BeTrue();
+        set.MinSizeGb.Value.Should().BeApproximately(800d / 1024d, 0.0001);
+        CartRecipeOverrideSet.FormatGb(set.MinSizeGb.Value).Should().Be("0.78");
+    }
 }

@@ -120,7 +120,7 @@ tables:
     unique: [NormalizedParsedTitle, ParserPattern]
   TrackedShows:
     purpose: TMDB TV series tracking and auto-track config
-    key_columns: [TmdbId, RecipeId, PackRecipeId, CartEpisodeOverridesJson, CartPackOverridesJson, AutoTrackFromSeason, AutoTrackFromEpisode]
+    key_columns: [TmdbId, RecipeId, PackRecipeId, CartEpisodeOverridesJson, CartPackOverridesJson, AutoTrackEpisodeOverridesJson, AutoTrackFromSeason, AutoTrackFromEpisode]
   TrackedSeasons:
     purpose: Per-season pack/episode mode and pack torrent state
     fk: ShowId -> TrackedShows CASCADE
@@ -159,6 +159,8 @@ migration_strategy:
     - 003_torrentblacklist_rebuild
     - 004_episode_rating_thought
     - 005_cart_recipe_max_candidate_overrides
+    - 006_cart_recipe_override_sets
+    - 007_auto_track_episode_overrides
   init_file: Services/DatabaseService.cs
   methods: [MigrationRunner.ApplyPendingMigrations, CREATE TABLE IF NOT EXISTS, EnsureColumn]
   failure_policy: block_startup
@@ -315,7 +317,7 @@ services:
   persist: TorrentCartService
   add: TorrentAddGateService -> QbittorrentClient
   reconcile: TorrentReconciliationService
-recipe_overrides: "Per-media Cart override JSON (maxCandidates 1–20, minSeeders, minSizeGb, candidateDebug). Each property stores enabled+value so toggling off keeps the last value. Manual Run Cart only; Auto-Track is unchanged. Overview UI: Views/TorrentWorkspaceView.xaml CartRecipeSummaryTemplate. Enter-commit and OneWay Run/TextBlock rules: docs/ui-polish/."
+recipe_overrides: "Per-media override JSON (maxCandidates 1–20, minSeeders, minSizeGb, candidateDebug). Each property stores enabled+value so toggling off keeps the last value. Cart JSON (CartEpisodeOverridesJson / CartPackOverridesJson / CartOverridesJson) is manual Run Cart only. Auto-Track hunt uses AutoTrackEpisodeOverridesJson independently and cannot change RecipeId. Overview UI: Resources/WorkspaceSharedTemplates.xaml CartRecipeSummaryTemplate. Enter-commit and OneWay Run/TextBlock rules: docs/ui-polish/."
 order_status_enum: TorrentOrderStatus
   values: [Draft, Searching, CandidateSelected, Adding, Downloading, Completed, Failed, Canceled, ...]
 ```
@@ -528,7 +530,7 @@ startup_order:
   4: Gemini model catalog reload + normalize
   5: ThemeService.Apply()
   6: DatabaseService.Initialize(stateFolder)
-    side_effect: MigrationRunner applies pending SchemaMigrations (001_baseline through 005_cart_recipe_max_candidate_overrides once)
+    side_effect: MigrationRunner applies pending SchemaMigrations (001_baseline through 007_auto_track_episode_overrides once)
     on_failure: DatabaseMigrationException + dialog; App.OnStartup Shutdown()
   7: LogCleanupService.Start()
   8: SymlinkCoordinatorService.Start()

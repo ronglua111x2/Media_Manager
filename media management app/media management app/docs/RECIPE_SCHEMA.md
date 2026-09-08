@@ -232,12 +232,12 @@ From live state — `604977d8bdb0487a8642fbe4987373f3.rcp` ("Common Anime no Pro
 
 ## Cart overview and overrides
 
-Per-media cart overrides live in SQLite JSON, not in the `.rcp` file:
+Per-media recipe overrides live in SQLite JSON, not in the `.rcp` file:
 
-- `TrackedShows.CartEpisodeOverridesJson` / `CartPackOverridesJson`
-- `TrackedMovies.CartOverridesJson`
+- Cart (manual **Run Cart**): `TrackedShows.CartEpisodeOverridesJson` / `CartPackOverridesJson`, `TrackedMovies.CartOverridesJson`
+- Auto-Track hunt: `TrackedShows.AutoTrackEpisodeOverridesJson` (episode recipe only; independent of cart JSON)
 
-Shape: `{ "<key>": { "enabled": true, "value": ... } }`. Toggling a property off keeps the last `value`. Manual **Run Cart** only; Auto-Track always uses the recipe.
+Shape: `{ "<key>": { "enabled": true, "value": ... } }`. Toggling a property off keeps the last `value`. Cart JSON is **Run Cart** only. Auto-Track hunt uses the Auto JSON via `EpisodeFetchOptions.Overrides`, then still applies Settings → Auto-Track Quality as a post-filter. Auto cannot change `RecipeId` (assignment stays in Cart Order).
 
 Current keys: `maxCandidates` (int 1–20), `minSeeders` (int 0–10000), `minSizeGb` (double 0–500, 0 = no floor), `candidateDebug` (bool).
 
@@ -252,7 +252,7 @@ Current keys: `maxCandidates` (int 1–20), `minSeeders` (int 0–10000), `minSi
 ### Adding a read-only overview row
 
 1. Add a summary string on [`CartRecipeSummaryViewModel`](../ViewModels/CartRecipeSummaryViewModel.cs).
-2. Add a 34px `RowDefinition` plus icon / label / value in `CartRecipeSummaryTemplate` in [`TorrentWorkspaceView.xaml`](../Views/TorrentWorkspaceView.xaml).
+2. Add a 34px `RowDefinition` plus icon / label / value in `CartRecipeSummaryTemplate` in [`WorkspaceSharedTemplates.xaml`](../Resources/WorkspaceSharedTemplates.xaml).
 3. Extra rows scroll inside the card. Do not wrap values (`NoWrap` + ellipsis).
 
 ### Making a row overrideable

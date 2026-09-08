@@ -99,22 +99,22 @@ Exhaustive list of user-facing and background features. Each entry includes purp
 ## 3. Auto-Track Workspace
 
 ### 3.1 Scheduler Dashboard
-- **What:** Shows scheduler status, last run summary, tracked show count, pending episodes, TMDB budget remaining
-- **User interaction:** Read-only summary area
+- **What:** Right-column Auto card: labeled rows for Status (Idle/Running), last run, shows · pending, TMDB budget remaining, plus a muted scheduler-interval line
+- **User interaction:** Read-only summary. `CircleQuestionMark` next to Auto is hover-only (not focusable/clickable) and shows the scheduler-interval tooltip. Long last-run text stays one line with ellipsis (full text on hover). Refresh reloads the dashboard. Icon-only Run Now (Play) is disabled while running
 - **Code:** `Views/AutoTrackView.xaml`, `ViewModels/AutoTrackViewModel.cs`
 - **DB:** `TrackedShows`; settings in `AutoTrackSettings`
 
 ### 3.2 Run Auto-Track Now
 - **What:** Manual trigger of full Auto-Track cycle (TMDB discovery + hunt + reconcile)
-- **User interaction:** Run Now button (disabled while running)
+- **User interaction:** Icon-only Run Now button (disabled while running)
 - **Code:** `ViewModels/AutoTrackViewModel.cs` → `Services/AutoTrackService.cs`
 - **DB:** All tracked media tables; creates `TorrentCartOrders`
 
 ### 3.3 Per-Show Auto-Track Cards
-- **What:** Inline editing of download folder, custom schedule, quality overrides per show
-- **User interaction:** Edit fields on show cards; saves on change
-- **Code:** `ViewModels/AutoTrackShowCardViewModel.cs`, `Services/TrackedShowService.cs`
-- **DB:** `TrackedShows` (AutoTrack* columns)
+- **What:** Inline editing of download folder, custom schedule, and episode-recipe hunt overrides per show
+- **User interaction:** Edit fields on show cards; saves on change. Recipe assignment stays in Cart Order; the recipe warning is a hover-only `CircleQuestionMark` tooltip next to Auto-Tracked Shows. Long show titles stay one line with ellipsis (full title on hover). Episode recipe cards start collapsed; expand per card or Expand all / Collapse all in the list header. Confirm-to-search (Enter or Search) filters by show title; Clear restores the full list. Click Min seeders, Min size, Debug, or Max candidates on an expanded recipe card to toggle an Auto-Track hunt override (orange `AppBrushWarning`). Search and expand state are session-only.
+- **Code:** `ViewModels/AutoTrackShowCardViewModel.cs`, `ViewModels/CartRecipeSummaryViewModel.cs`, `Views/AutoTrackView.xaml`, `Resources/WorkspaceSharedTemplates.xaml` (`CartRecipeSummaryTemplate`), `Services/TrackedShowService.cs`
+- **DB:** `TrackedShows` (`AutoTrack*` schedule/folder columns, `AutoTrackEpisodeOverridesJson`)
 
 ### 3.4 Stop Tracking Show
 - **What:** Disables auto-track for a show
@@ -363,9 +363,9 @@ Exhaustive list of user-facing and background features. Each entry includes purp
 ### 6.6 Per-Media Recipe Assignment
 - **What:** Episode, pack, and movie recipe ComboBoxes per selected media, with compact/expanded recipe summaries
 - **User interaction:** Compact mode shows recipe selection only. Expanded mode summarizes quality, seeders, size, search mode, plugins, debug, and title behavior in two synced overview cards (7 of 8 rows visible; scroll for Max candidates). Click Min seeders, Min size, Debug, or Max candidates to toggle a cart override (orange `AppBrushWarning` title). Editors appear only while overridden: NumericUpDown for seeders/candidates; GB text box for min size (Enter or leave the field to save); click Debug On/Off to flip from the current value (turns orange). Last override values stay in SQLite when toggled off.
-- **Code:** `ViewModels/TorrentWorkspaceViewModel.cs`, `ViewModels/CartRecipeSummaryViewModel.cs`, `Views/TorrentWorkspaceView.xaml` (`CartRecipeSummaryTemplate`), `Services/RecipeService.cs`
+- **Code:** `ViewModels/TorrentWorkspaceViewModel.cs`, `ViewModels/CartRecipeSummaryViewModel.cs`, `Views/TorrentWorkspaceView.xaml`, `Resources/WorkspaceSharedTemplates.xaml` (`CartRecipeSummaryTemplate`), `Services/RecipeService.cs`
 - **DB:** `TrackedShows.CartEpisodeOverridesJson` / `CartPackOverridesJson`, `TrackedMovies.CartOverridesJson`
-- **Notes:** Overrides affect manual Run Cart searches only; Auto-Track continues to use recipe values. Max candidates 1–20, min seeders 0–10000, min size 0–500 GB (0 = no floor). Candidate debug override can turn hunt logs on or off for that cart even when the recipe flag differs. See [RECIPE_SCHEMA.md](./RECIPE_SCHEMA.md) *Cart overview and overrides* to add a property. Layout and binding rules: [ui-polish](./ui-polish/README.md).
+- **Notes:** Cart overrides affect manual Run Cart searches only. Auto-Track hunts use a separate store (`TrackedShows.AutoTrackEpisodeOverridesJson`) with the same JSON shape and the same overview card; Auto cannot change `RecipeId`. Max candidates 1–20, min seeders 0–10000, min size 0–500 GB (0 = no floor). Candidate debug override can turn hunt logs on or off for that cart even when the recipe flag differs. See [RECIPE_SCHEMA.md](./RECIPE_SCHEMA.md) *Cart overview and overrides* to add a property. Layout and binding rules: [ui-polish](./ui-polish/README.md).
 
 ### 6.7 Candidate Picker Flyout
 - **What:** Ranked torrent candidates with quality, seeders, warnings, blacklist option
@@ -528,9 +528,9 @@ Setup details: [STATE_FOLDER.md](./STATE_FOLDER.md#google-drive-oauth)
 - **DB:** `TrackedShows`, `TrackedSeasons`, `TrackedEpisodes`
 
 ### 10.3 Torrent Hunt (Auto-Track)
-- **What:** Search qBittorrent for pending episodes, score candidates, create cart orders, add torrents
-- **Code:** `Services/AutoTrackService.cs` (`RunTorrentHuntAsync`)
-- **DB:** `TorrentCartOrders`, `TorrentCartOrderCandidates`
+- **What:** Search qBittorrent for pending episodes, score candidates, create cart orders, add torrents. Hunt applies the assigned episode recipe plus `AutoTrackEpisodeOverridesJson`, then the Settings Auto-Track Quality post-filter.
+- **Code:** `Services/AutoTrackService.cs` (`RunTorrentHuntAsync`), `Services/AutoTrackCandidatePolicyService.cs`
+- **DB:** `TorrentCartOrders`, `TorrentCartOrderCandidates`, `TrackedShows.AutoTrackEpisodeOverridesJson`
 - **External:** WARP connect, qBittorrent restart if WebUI down
 
 ### 10.4 Background Reconcile (Auto-Track)

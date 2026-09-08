@@ -17,10 +17,19 @@ public sealed partial class CartRecipeSummaryViewModel : ObservableObject
         SearchRecipe recipe,
         AutoTorrentSettings settings,
         CartRecipeOverrideSet? storedOverrides,
-        Action<CartRecipeOverrideSet> persist)
+        Action<CartRecipeOverrideSet> persist,
+        string overviewScrollGroupName = "CartRecipeOverview",
+        string overrideScopeLabel = "manual Run Cart",
+        bool canToggleOverview = false,
+        bool isOverviewExpanded = true,
+        Action<bool>? onOverviewExpandedChanged = null)
     {
         Recipe = recipe;
         _persist = persist;
+        OverviewScrollGroupName = overviewScrollGroupName;
+        OverrideScopeLabel = overrideScopeLabel;
+        CanToggleOverview = canToggleOverview;
+        _onOverviewExpandedChanged = onOverviewExpandedChanged;
         _overrides = storedOverrides ?? new CartRecipeOverrideSet();
         RecipeMaxCandidates = RecipeRuntimeSettings.GetMaxCandidatesPerFetch(recipe, settings);
         RecipeMinSeeders = GetModule(recipe, RecipeBlockType.CandidateFilter)?.MinimumSeeders ?? 0;
@@ -43,10 +52,29 @@ public sealed partial class CartRecipeSummaryViewModel : ObservableObject
         OverrideMinSizeGbText = CartRecipeOverrideSet.FormatGb(_overrides.MinSizeGb?.Value ?? RecipeMinSizeGb);
         IsCandidateDebugOverridden = _overrides.CandidateDebug?.Enabled == true;
         OverrideCandidateDebug = _overrides.CandidateDebug?.Value ?? RecipeCandidateDebug;
+        IsOverviewExpanded = isOverviewExpanded;
         _isInitializing = false;
     }
 
+    private readonly Action<bool>? _onOverviewExpandedChanged;
+
     public SearchRecipe Recipe { get; }
+
+    public bool CanToggleOverview { get; }
+
+    public string OverviewScrollGroupName { get; }
+
+    public string OverrideScopeLabel { get; }
+
+    public string MinSeedersOverrideToolTip => $"Override min seeders for {OverrideScopeLabel}";
+
+    public string MinSizeOverrideToolTip => $"Override min size for {OverrideScopeLabel}";
+
+    public string CandidateDebugOverrideToolTip => $"Override candidate debug log for {OverrideScopeLabel}";
+
+    public string CycleCandidateDebugToolTip => $"Toggle candidate debug On/Off for {OverrideScopeLabel}";
+
+    public string MaxCandidatesOverrideToolTip => $"Override max candidates for {OverrideScopeLabel}";
 
     public string Name => Recipe.Name;
 
@@ -89,6 +117,9 @@ public sealed partial class CartRecipeSummaryViewModel : ObservableObject
     public RecipeExecutionOverrides? ToExecutionOverrides() => _overrides.ToExecutionOverrides();
 
     [ObservableProperty]
+    private bool isOverviewExpanded = true;
+
+    [ObservableProperty]
     private bool isMaxCandidatesOverridden;
 
     [ObservableProperty]
@@ -111,6 +142,27 @@ public sealed partial class CartRecipeSummaryViewModel : ObservableObject
 
     [ObservableProperty]
     private bool overrideCandidateDebug;
+
+    [RelayCommand]
+    private void ToggleOverview()
+    {
+        if (!CanToggleOverview)
+        {
+            return;
+        }
+
+        IsOverviewExpanded = !IsOverviewExpanded;
+    }
+
+    partial void OnIsOverviewExpandedChanged(bool value)
+    {
+        if (_isInitializing)
+        {
+            return;
+        }
+
+        _onOverviewExpandedChanged?.Invoke(value);
+    }
 
     [RelayCommand]
     private void ToggleMaxCandidatesOverride() =>

@@ -846,7 +846,7 @@ public sealed class AutoTrackService : IAutoTrackService
         bool huntLeaseHeld,
         CancellationToken cancellationToken)
     {
-        var fetchOptions = new EpisodeFetchOptions
+        var fetchBaseOptions = new EpisodeFetchOptions
         {
             ForceParallelEpisodeSearch = settings.Search.ForceParallelEpisodeSearch,
             MaxParallelWorkers = settings.Search.MaxParallelWorkersPerShow
@@ -890,6 +890,12 @@ public sealed class AutoTrackService : IAutoTrackService
                 }
 
                 var recipe = _recipeService.GetRecipeOrDefault(show.RecipeId, MediaKind.TvEpisode);
+                var fetchOptions = new EpisodeFetchOptions
+                {
+                    ForceParallelEpisodeSearch = fetchBaseOptions.ForceParallelEpisodeSearch,
+                    MaxParallelWorkers = fetchBaseOptions.MaxParallelWorkers,
+                    Overrides = CartRecipeOverrideSet.Parse(show.AutoTrackEpisodeOverridesJson).ToExecutionOverrides()
+                };
                 var episodeIds = ordersNeedingSearch
                     .Where(order => order.EpisodeId is not null)
                     .Select(order => order.EpisodeId!.Value)

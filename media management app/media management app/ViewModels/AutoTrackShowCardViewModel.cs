@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Windows.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
+using media_management_app.Common;
 using media_management_app.Models;
 using media_management_app.Services;
 
@@ -19,8 +20,12 @@ public sealed partial class AutoTrackShowCardViewModel : ObservableObject
         AutoTrackSettings settings,
         IReadOnlyList<string> downloadFolderOptions,
         ITrackedShowService trackedShowService,
+        IRecipeService recipeService,
+        AutoTorrentSettings autoTorrentSettings,
         string? lastHuntFailureDetail = null,
-        Action? onSettingsSaved = null)
+        Action? onSettingsSaved = null,
+        bool overviewExpanded = false,
+        Action<bool>? onOverviewExpandedChanged = null)
     {
         _trackedShowService = trackedShowService;
         _onSettingsSaved = onSettingsSaved;
@@ -41,17 +46,21 @@ public sealed partial class AutoTrackShowCardViewModel : ObservableObject
         CustomAnchorTimeLocal = show.AutoTrackAnchorTimeLocal ?? settings.AnchorTimeLocal;
         CustomAnchorTime = AutoTrackWeekAnchor.ToTimePickerValue(CustomAnchorTimeLocal);
 
-        UseCustomQuality = show.AutoTrackMinQuality is not null ||
-                           show.AutoTrackMinSeeders is not null ||
-                           show.AutoTrackMinFileSizeMb is not null ||
-                           show.AutoTrackMaxFileSizeMb is not null ||
-                           !string.IsNullOrWhiteSpace(show.AutoTrackAllowedQualities);
-        CustomMinQuality = show.AutoTrackMinQuality ?? settings.Quality?.MinQuality ?? "1080p";
-        CustomMinSeeders = show.AutoTrackMinSeeders ?? settings.Quality?.MinSeeders ?? 0;
-        CustomMinFileSizeMb = show.AutoTrackMinFileSizeMb ?? settings.Quality?.MinFileSizeMb ?? 0;
-        CustomMaxFileSizeMb = show.AutoTrackMaxFileSizeMb ?? settings.Quality?.MaxFileSizeMb ?? 0;
-        CustomAllowedQualities = show.AutoTrackAllowedQualities ??
-                                 string.Join(", ", settings.Quality?.AllowedQualities ?? []);
+        var recipe = recipeService.GetRecipeOrDefault(show.RecipeId, MediaKind.TvEpisode);
+        EpisodeRecipeSummary = new CartRecipeSummaryViewModel(
+            recipe,
+            autoTorrentSettings,
+            CartRecipeOverrideSet.Parse(show.AutoTrackEpisodeOverridesJson),
+            value =>
+            {
+                _trackedShowService.UpdateAutoTrackRecipeOverrides(ShowId, value);
+                _onSettingsSaved?.Invoke();
+            },
+            overviewScrollGroupName: $"AutoTrackRecipe-{show.Id}",
+            overrideScopeLabel: "Auto-Track hunts",
+            canToggleOverview: true,
+            isOverviewExpanded: overviewExpanded,
+            onOverviewExpandedChanged: onOverviewExpandedChanged);
 
         TmdbStatusLine = BuildTmdbStatusLine(show, settings);
         HuntStatusLine = BuildHuntStatusLine(show, huntBatchEpisodes, lastHuntFailureDetail);
@@ -109,23 +118,7 @@ public sealed partial class AutoTrackShowCardViewModel : ObservableObject
     [ObservableProperty]
     private DateTime? customAnchorTime;
 
-    [ObservableProperty]
-    private bool useCustomQuality;
-
-    [ObservableProperty]
-    private string customMinQuality = "1080p";
-
-    [ObservableProperty]
-    private int customMinSeeders;
-
-    [ObservableProperty]
-    private int customMinFileSizeMb;
-
-    [ObservableProperty]
-    private int customMaxFileSizeMb;
-
-    [ObservableProperty]
-    private string customAllowedQualities = string.Empty;
+    public CartRecipeSummaryViewModel EpisodeRecipeSummary { get; }
 
     public bool HasDownloadFolder => !string.IsNullOrWhiteSpace(DownloadFolder);
 
@@ -234,64 +227,12 @@ public sealed partial class AutoTrackShowCardViewModel : ObservableObject
         _onSettingsSaved?.Invoke();
     }
 
-    partial void OnUseCustomQualityChanged(bool value)
-    {
-        if (_isInitializing)
-        {
-            return;
-        }
-
-        if (!value)
-        {
-            _trackedShowService.UpdateAutoTrackQualityOverrides(ShowId, null, null, null, null, null, clearOverrides: true);
-        }
-        else
-        {
-            SaveQualityOverrides();
-        }
-
-        _onSettingsSaved?.Invoke();
-    }
-
-    partial void OnCustomMinQualityChanged(string value) => SaveQualityIfEnabled();
-
-    partial void OnCustomMinSeedersChanged(int value) => SaveQualityIfEnabled();
-
-    partial void OnCustomMinFileSizeMbChanged(int value) => SaveQualityIfEnabled();
-
-    partial void OnCustomMaxFileSizeMbChanged(int value) => SaveQualityIfEnabled();
-
-    partial void OnCustomAllowedQualitiesChanged(string value) => SaveQualityIfEnabled();
-
-    private void SaveQualityIfEnabled()
-    {
-        if (_isInitializing || !UseCustomQuality)
-        {
-            return;
-        }
-
-        SaveQualityOverrides();
-        _onSettingsSaved?.Invoke();
-    }
-
     private void SaveScheduleOverrides()
     {
         _trackedShowService.UpdateAutoTrackScheduleOverrides(
             ShowId,
             CustomAnchorDay,
             string.IsNullOrWhiteSpace(CustomAnchorTimeLocal) ? "21:00" : CustomAnchorTimeLocal.Trim(),
-            clearOverrides: false);
-    }
-
-    private void SaveQualityOverrides()
-    {
-        _trackedShowService.UpdateAutoTrackQualityOverrides(
-            ShowId,
-            string.IsNullOrWhiteSpace(CustomMinQuality) ? null : CustomMinQuality.Trim(),
-            CustomMinSeeders,
-            CustomMinFileSizeMb > 0 ? CustomMinFileSizeMb : null,
-            CustomMaxFileSizeMb > 0 ? CustomMaxFileSizeMb : null,
-            string.IsNullOrWhiteSpace(CustomAllowedQualities) ? null : CustomAllowedQualities.Trim(),
             clearOverrides: false);
     }
 

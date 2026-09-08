@@ -22,251 +22,405 @@
             <Setter Property="Padding" Value="14" />
             <Setter Property="Margin" Value="0,0,0,12" />
         </Style>
+
+        <Style x:Key="SummaryLabelStyle" TargetType="TextBlock" BasedOn="{StaticResource MutedTextStyle}">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="VerticalAlignment" Value="Top" />
+            <Setter Property="Margin" Value="0,0,8,6" />
+        </Style>
+
+        <Style x:Key="SummaryValueStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Margin" Value="0,0,0,6" />
+            <Setter Property="Foreground" Value="{StaticResource AppBrushText}" />
+        </Style>
+
+        <Style x:Key="HelpTooltipHostStyle" TargetType="Border">
+            <Setter Property="Width" Value="28" />
+            <Setter Property="Height" Value="28" />
+            <Setter Property="Margin" Value="4,0,0,0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Cursor" Value="Help" />
+            <Setter Property="ToolTipService.ShowDuration" Value="20000" />
+            <Setter Property="ToolTipService.InitialShowDelay" Value="200" />
+        </Style>
     </UserControl.Resources>
 
     <Grid Margin="16">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="11*" />
+            <ColumnDefinition Width="12" />
+            <ColumnDefinition Width="9*" />
+        </Grid.ColumnDefinitions>
 
-        <materialDesign:Card Style="{StaticResource PanelCardStyle}" Margin="0,0,0,12">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <StackPanel>
-                    <TextBlock Text="Auto" Style="{StaticResource SectionTitleStyle}" />
-                    <TextBlock Text="{Binding SchedulerStatus}" Style="{StaticResource MutedTextStyle}" Margin="0,4,0,0" />
-                    <TextBlock Text="{Binding LastRunSummary, StringFormat=Last run: {0}}"
-                               Style="{StaticResource MutedTextStyle}"
-                               Margin="0,2,0,0" />
-                    <TextBlock Style="{StaticResource MutedTextStyle}" Margin="0,6,0,0">
-                        <Run Text="{Binding TrackedShowCount, Mode=OneWay}" />
-                        <Run Text=" tracked show(s) · " />
-                        <Run Text="{Binding TotalPendingEpisodes, Mode=OneWay}" />
-                        <Run Text=" pending episode(s)" />
-                    </TextBlock>
-                    <TextBlock Text="{Binding TmdbRefreshesRemainingLabel}"
-                               Style="{StaticResource MutedTextStyle}"
-                               Margin="0,2,0,0" />
-                </StackPanel>
-                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button Style="{StaticResource AppOutlinedButtonStyle}"
-                            Command="{Binding RefreshDashboardCommand}"
-                            Margin="0,0,8,0"
-                            ToolTip="Refresh dashboard">
-                        <iconPacks:PackIconLucide Kind="RefreshCw" Width="14" Height="14" />
-                    </Button>
-                    <Button Style="{StaticResource AppPrimaryButtonStyle}"
-                            Command="{Binding RunNowCommand}"
-                            Padding="12,8">
-                        <StackPanel Orientation="Horizontal">
-                            <iconPacks:PackIconLucide Kind="Play"
+        <materialDesign:Card Style="{StaticResource PanelCardStyle}" Margin="0">
+            <DockPanel>
+                <Grid DockPanel.Dock="Top" Margin="0,0,0,6">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" MinWidth="0" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="Auto-Tracked Shows"
+                                   Style="{StaticResource SectionTitleStyle}"
+                                   VerticalAlignment="Center" />
+                        <Border Style="{StaticResource HelpTooltipHostStyle}">
+                            <Border.ToolTip>
+                                <TextBlock Text="{Binding RecipeHelpTooltip, Mode=OneWay}"
+                                           TextWrapping="Wrap"
+                                           MaxWidth="360" />
+                            </Border.ToolTip>
+                            <iconPacks:PackIconLucide Kind="CircleQuestionMark"
                                                        Width="14"
                                                        Height="14"
-                                                       Margin="0,0,6,0"
-                                                       VerticalAlignment="Center" />
-                            <TextBlock Text="Run Now" VerticalAlignment="Center" />
-                        </StackPanel>
-                    </Button>
-                </StackPanel>
-            </Grid>
-        </materialDesign:Card>
-
-        <Grid Grid.Row="1">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="2*" />
-                <ColumnDefinition Width="12" />
-                <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-
-            <materialDesign:Card Style="{StaticResource PanelCardStyle}" Margin="0">
-                <DockPanel>
-                    <TextBlock DockPanel.Dock="Top"
-                               Text="Auto-Tracked Shows"
-                               Style="{StaticResource SectionTitleStyle}"
-                               Margin="0,0,0,10" />
+                                                       HorizontalAlignment="Center"
+                                                       VerticalAlignment="Center"
+                                                       Foreground="{StaticResource AppBrushMutedText}" />
+                        </Border>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1"
+                                Orientation="Horizontal"
+                                VerticalAlignment="Center">
+                        <Grid Width="180">
+                            <TextBox Text="{Binding ShowSearchText, UpdateSourceTrigger=PropertyChanged}"
+                                     MinHeight="34"
+                                     AcceptsReturn="False"
+                                     VerticalContentAlignment="Center">
+                                <TextBox.InputBindings>
+                                    <KeyBinding Key="Enter" Command="{Binding SearchShowsCommand}" />
+                                </TextBox.InputBindings>
+                                <TextBox.Style>
+                                    <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+                                        <Setter Property="Padding" Value="10,7" />
+                                        <Setter Property="Margin" Value="0" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding HasAppliedShowSearch}" Value="True">
+                                                <Setter Property="Padding" Value="10,7,32,7" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBox.Style>
+                            </TextBox>
+                            <StackPanel Orientation="Horizontal"
+                                        Margin="10,0,10,0"
+                                        VerticalAlignment="Center"
+                                        IsHitTestVisible="False">
+                                <StackPanel.Style>
+                                    <Style TargetType="StackPanel">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding HasShowSearchText}" Value="False">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </StackPanel.Style>
+                                <iconPacks:PackIconLucide Kind="Search"
+                                                           Width="14"
+                                                           Height="14"
+                                                           VerticalAlignment="Center"
+                                                           Foreground="{StaticResource AppBrushMutedText}" />
+                                <TextBlock Text="Search shows"
+                                           Margin="8,0,0,0"
+                                           VerticalAlignment="Center"
+                                           FontSize="13"
+                                           Foreground="{StaticResource AppBrushMutedText}" />
+                            </StackPanel>
+                            <Button Style="{StaticResource AppCompactIconButtonStyle}"
+                                    Width="22"
+                                    Height="22"
+                                    Margin="0,0,6,0"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Center"
+                                    Command="{Binding ClearShowSearchCommand}"
+                                    ToolTip="Clear search"
+                                    Visibility="{Binding HasAppliedShowSearch, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                <iconPacks:PackIconLucide Kind="CircleX"
+                                                           Width="14"
+                                                           Height="14"
+                                                           Foreground="{StaticResource AppBrushMutedText}" />
+                            </Button>
+                        </Grid>
+                        <Button Style="{StaticResource AppIconButtonStyle}"
+                                Margin="8,0,0,0"
+                                Command="{Binding SearchShowsCommand}"
+                                ToolTip="Search shows">
+                            <iconPacks:PackIconLucide Kind="Search" Width="14" Height="14" />
+                        </Button>
+                        <Button Style="{StaticResource AppIconButtonStyle}"
+                                Margin="4,0,0,0"
+                                Command="{Binding ExpandAllRecipesCommand}"
+                                ToolTip="Expand all recipes">
+                            <iconPacks:PackIconLucide Kind="ChevronsDown" Width="14" Height="14" />
+                        </Button>
+                        <Button Style="{StaticResource AppIconButtonStyle}"
+                                Margin="4,0,0,0"
+                                Command="{Binding CollapseAllRecipesCommand}"
+                                ToolTip="Collapse all recipes">
+                            <iconPacks:PackIconLucide Kind="ChevronsUp" Width="14" Height="14" />
+                        </Button>
+                    </StackPanel>
+                </Grid>
+                <Grid>
+                    <TextBlock Text="No shows match this search."
+                               TextAlignment="Center"
+                               TextWrapping="Wrap"
+                               Margin="8,12"
+                               VerticalAlignment="Top">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock" BasedOn="{StaticResource MutedTextStyle}">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasNoShowSearchResults}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
-                        <ItemsControl ItemsSource="{Binding TrackedShows}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Border Background="{StaticResource AppBrushSurface}"
-                                            BorderBrush="{StaticResource AppBrushBorder}"
-                                            BorderThickness="1"
-                                            CornerRadius="8"
-                                            Padding="10"
-                                            Margin="0,0,0,8">
-                                        <Grid>
-                                            <Grid.RowDefinitions>
-                                                <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="Auto" />
-                                            </Grid.RowDefinitions>
-                                            <Grid Grid.Row="0">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="56" />
-                                                    <ColumnDefinition Width="*" />
-                                                    <ColumnDefinition Width="Auto" />
-                                                </Grid.ColumnDefinitions>
-                                                <Border Width="48"
-                                                        Height="72"
-                                                        CornerRadius="4"
-                                                        Background="{StaticResource AppBrushChipMuted}"
-                                                        ClipToBounds="True">
-                                                    <Image Source="{Binding PosterImage}"
-                                                           Stretch="UniformToFill" />
-                                                </Border>
-                                                <StackPanel Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center">
-                                                    <TextBlock Text="{Binding Title}"
-                                                               FontWeight="SemiBold"
-                                                               TextTrimming="CharacterEllipsis" />
-                                                    <TextBlock Style="{StaticResource MutedTextStyle}" Margin="0,2,0,0">
-                                                        <Run Text="From " />
-                                                        <Run Text="{Binding CheckpointLabel, Mode=OneWay}" />
-                                                        <Run Text=" · " />
-                                                        <Run Text="{Binding SeriesStatusLabel, Mode=OneWay}" />
-                                                    </TextBlock>
-                                                    <TextBlock Text="{Binding PendingLabel}"
-                                                               Foreground="{StaticResource AppBrushAccent}"
-                                                               FontSize="12"
-                                                               Margin="0,4,0,0" />
-                                                    <TextBlock Text="{Binding ScheduleStatusLine}"
-                                                               Style="{StaticResource MutedTextStyle}"
-                                                               Margin="0,2,0,0" />
-                                                    <TextBlock Text="{Binding TmdbStatusLine}"
-                                                               Style="{StaticResource MutedTextStyle}"
-                                                               Margin="0,2,0,0" />
-                                                    <TextBlock Text="{Binding HuntStatusLine}"
-                                                               Style="{StaticResource MutedTextStyle}"
-                                                               Margin="0,2,0,0" />
-                                                </StackPanel>
-                                                <StackPanel Grid.Column="2"
-                                                            Orientation="Horizontal"
-                                                            VerticalAlignment="Center">
-                                                    <Button Style="{StaticResource AppOutlinedButtonStyle}"
-                                                            Command="{Binding DataContext.ResetWeekCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                            CommandParameter="{Binding}"
-                                                            Margin="0,0,8,0"
-                                                            Padding="10,6"
-                                                            Content="Reset week"
-                                                            ToolTip="Clear this week's TMDB satisfaction and release stuck auto-track cart orders (Searching / CandidatesFound / Approved) so hunt can run again." />
-                                                    <Button Style="{StaticResource AppOutlinedButtonStyle}"
-                                                            Command="{Binding DataContext.StopTrackingCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                            CommandParameter="{Binding}"
-                                                            Padding="10,6"
-                                                            Content="Stop" />
-                                                </StackPanel>
-                                            </Grid>
-                                            <StackPanel Grid.Row="1" Margin="0,10,0,0">
-                                                <TextBlock Text="Assign download folder (required)"
+                        <ScrollViewer.Style>
+                            <Style TargetType="ScrollViewer">
+                                <Setter Property="Visibility" Value="Visible" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasNoShowSearchResults}" Value="True">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ScrollViewer.Style>
+                        <ItemsControl ItemsSource="{Binding FilteredTrackedShows}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Background="{StaticResource AppBrushSurface}"
+                                        BorderBrush="{StaticResource AppBrushBorder}"
+                                        BorderThickness="1"
+                                        CornerRadius="8"
+                                        Padding="10"
+                                        Margin="0,0,0,8">
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <Grid Grid.Row="0">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="56" />
+                                                <ColumnDefinition Width="*" MinWidth="0" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <Border Width="48"
+                                                    Height="72"
+                                                    CornerRadius="4"
+                                                    Background="{StaticResource AppBrushChipMuted}"
+                                                    ClipToBounds="True">
+                                                <Image Source="{Binding PosterImage}"
+                                                       Stretch="UniformToFill" />
+                                            </Border>
+                                            <StackPanel Grid.Column="1" Margin="10,0,8,0" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding Title, Mode=OneWay}"
+                                                           FontWeight="SemiBold"
+                                                           TextWrapping="NoWrap"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           ToolTip="{Binding Title, Mode=OneWay}" />
+                                                <TextBlock Style="{StaticResource MutedTextStyle}" Margin="0,2,0,0">
+                                                    <Run Text="From " />
+                                                    <Run Text="{Binding CheckpointLabel, Mode=OneWay}" />
+                                                    <Run Text=" · " />
+                                                    <Run Text="{Binding SeriesStatusLabel, Mode=OneWay}" />
+                                                </TextBlock>
+                                                <TextBlock Text="{Binding PendingLabel, Mode=OneWay}"
+                                                           Foreground="{StaticResource AppBrushAccent}"
+                                                           FontSize="12"
+                                                           Margin="0,4,0,0" />
+                                                <TextBlock Text="{Binding ScheduleStatusLine, Mode=OneWay}"
                                                            Style="{StaticResource MutedTextStyle}"
-                                                           Margin="0,0,0,4" />
-                                                <ComboBox ItemsSource="{Binding DownloadFolderOptions}"
-                                                          SelectedItem="{Binding DownloadFolder, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                                                <TextBlock Text="Assign a download folder on Home before the next run."
-                                                           Foreground="{StaticResource AppBrushDanger}"
-                                                           FontSize="11"
-                                                           Margin="0,4,0,0"
-                                                           Visibility="{Binding NeedsDownloadFolder, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                                                <CheckBox IsChecked="{Binding AutoReconcileAndLink, Mode=TwoWay}"
-                                                          Margin="0,8,0,0"
-                                                          Content="Auto reconcile and hardlink" />
-                                                <CheckBox IsChecked="{Binding UseCustomSchedule, Mode=TwoWay}"
-                                                          Margin="0,8,0,0"
-                                                          Content="Use custom hunt schedule"
-                                                          ToolTip="Override global Day/Time for when this show may start hunting after TMDB finds a pending episode" />
-                                                <StackPanel Margin="0,6,0,0"
-                                                            MaxWidth="420"
-                                                            HorizontalAlignment="Left"
-                                                            Visibility="{Binding UseCustomSchedule, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                    <Grid>
-                                                        <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="*" />
-                                                            <ColumnDefinition Width="12" />
-                                                            <ColumnDefinition Width="Auto" />
-                                                        </Grid.ColumnDefinitions>
-                                                        <StackPanel>
-                                                            <TextBlock Text="Day"
-                                                                       Style="{StaticResource MutedTextStyle}"
-                                                                       Margin="0,0,0,4" />
-                                                            <ComboBox ItemsSource="{Binding AnchorDayOptions}"
-                                                                      SelectedItem="{Binding CustomAnchorDay, Mode=TwoWay}"
-                                                                      MaxWidth="160"
-                                                                      HorizontalAlignment="Left" />
-                                                        </StackPanel>
-                                                        <StackPanel Grid.Column="2">
-                                                            <TextBlock Text="Time"
-                                                                       Style="{StaticResource MutedTextStyle}"
-                                                                       Margin="0,0,0,4" />
-                                                            <materialDesign:TimePicker Is24Hours="True"
+                                                           Margin="0,2,0,0" />
+                                                <TextBlock Text="{Binding TmdbStatusLine, Mode=OneWay}"
+                                                           Style="{StaticResource MutedTextStyle}"
+                                                           Margin="0,2,0,0" />
+                                                <TextBlock Text="{Binding HuntStatusLine, Mode=OneWay}"
+                                                           Style="{StaticResource MutedTextStyle}"
+                                                           Margin="0,2,0,0" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2"
+                                                        Orientation="Horizontal"
+                                                        VerticalAlignment="Center">
+                                                <Button Style="{StaticResource AppOutlinedButtonStyle}"
+                                                        Command="{Binding DataContext.ResetWeekCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                        CommandParameter="{Binding}"
+                                                        Margin="0,0,8,0"
+                                                        Padding="10,6"
+                                                        Content="Reset week"
+                                                        ToolTip="Clear this week's TMDB satisfaction and release stuck auto-track cart orders (Searching / CandidatesFound / Approved) so hunt can run again." />
+                                                <Button Style="{StaticResource AppOutlinedButtonStyle}"
+                                                        Command="{Binding DataContext.StopTrackingCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                        CommandParameter="{Binding}"
+                                                        Padding="10,6"
+                                                        Content="Stop" />
+                                            </StackPanel>
+                                        </Grid>
+                                        <StackPanel Grid.Row="1" Margin="0,10,0,0">
+                                            <TextBlock Text="Assign download folder (required)"
+                                                       Style="{StaticResource MutedTextStyle}"
+                                                       Margin="0,0,0,4" />
+                                            <ComboBox ItemsSource="{Binding DownloadFolderOptions}"
+                                                      SelectedItem="{Binding DownloadFolder, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                            <TextBlock Text="Assign a download folder on Home before the next run."
+                                                       Foreground="{StaticResource AppBrushDanger}"
+                                                       FontSize="11"
+                                                       Margin="0,4,0,0"
+                                                       Visibility="{Binding NeedsDownloadFolder, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                            <CheckBox IsChecked="{Binding AutoReconcileAndLink, Mode=TwoWay}"
+                                                      Margin="0,8,0,0"
+                                                      Content="Auto reconcile and hardlink" />
+                                            <CheckBox IsChecked="{Binding UseCustomSchedule, Mode=TwoWay}"
+                                                      Margin="0,8,0,0"
+                                                      Content="Use custom hunt schedule"
+                                                      ToolTip="Override global Day/Time for when this show may start hunting after TMDB finds a pending episode" />
+                                            <StackPanel Margin="0,6,0,0"
+                                                        MaxWidth="420"
+                                                        HorizontalAlignment="Left"
+                                                        Visibility="{Binding UseCustomSchedule, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="12" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel>
+                                                        <TextBlock Text="Day"
+                                                                   Style="{StaticResource MutedTextStyle}"
+                                                                   Margin="0,0,0,4" />
+                                                        <ComboBox ItemsSource="{Binding AnchorDayOptions}"
+                                                                  SelectedItem="{Binding CustomAnchorDay, Mode=TwoWay}"
+                                                                  MaxWidth="160"
+                                                                  HorizontalAlignment="Left" />
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="2">
+                                                        <TextBlock Text="Time"
+                                                                   Style="{StaticResource MutedTextStyle}"
+                                                                   Margin="0,0,0,4" />
+                                                        <materialDesign:TimePicker Is24Hours="True"
                                                                                        SelectedTimeFormat="Short"
                                                                                        SelectedTime="{Binding CustomAnchorTime, Mode=TwoWay}"
                                                                                        Foreground="{StaticResource AppBrushText}"
                                                                                        FontSize="13"
                                                                                        MaxWidth="140"
                                                                                        HorizontalAlignment="Left" />
-                                                        </StackPanel>
-                                                    </Grid>
-                                                </StackPanel>
-                                                <CheckBox IsChecked="{Binding UseCustomQuality, Mode=TwoWay}"
-                                                          Margin="0,8,0,0"
-                                                          Content="Use custom quality" />
-                                                <StackPanel Margin="0,6,0,0"
-                                                            MaxWidth="420"
-                                                            HorizontalAlignment="Left"
-                                                            Visibility="{Binding UseCustomQuality, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                    <Grid>
-                                                        <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="*" MaxWidth="180" />
-                                                            <ColumnDefinition Width="12" />
-                                                            <ColumnDefinition Width="*" MaxWidth="180" />
-                                                        </Grid.ColumnDefinitions>
-                                                        <Grid.RowDefinitions>
-                                                            <RowDefinition Height="Auto" />
-                                                            <RowDefinition Height="Auto" />
-                                                        </Grid.RowDefinitions>
-                                                        <StackPanel Margin="0,0,0,6">
-                                                            <TextBlock Text="Min quality"
-                                                                       Style="{StaticResource MutedTextStyle}"
-                                                                       Margin="0,0,0,4" />
-                                                            <TextBox Text="{Binding CustomMinQuality, UpdateSourceTrigger=PropertyChanged}" />
-                                                        </StackPanel>
-                                                        <StackPanel Grid.Column="2" Margin="0,0,0,6">
-                                                            <TextBlock Text="Min seeders"
-                                                                       Style="{StaticResource MutedTextStyle}"
-                                                                       Margin="0,0,0,4" />
-                                                            <TextBox Text="{Binding CustomMinSeeders, UpdateSourceTrigger=PropertyChanged}" />
-                                                        </StackPanel>
-                                                        <StackPanel Grid.Row="1" Margin="0,0,0,6">
-                                                            <TextBlock Text="Min size MB (0=off)"
-                                                                       Style="{StaticResource MutedTextStyle}"
-                                                                       Margin="0,0,0,4" />
-                                                            <TextBox Text="{Binding CustomMinFileSizeMb, UpdateSourceTrigger=PropertyChanged}" />
-                                                        </StackPanel>
-                                                        <StackPanel Grid.Row="1" Grid.Column="2" Margin="0,0,0,6">
-                                                            <TextBlock Text="Max size MB (0=off)"
-                                                                       Style="{StaticResource MutedTextStyle}"
-                                                                       Margin="0,0,0,4" />
-                                                            <TextBox Text="{Binding CustomMaxFileSizeMb, UpdateSourceTrigger=PropertyChanged}" />
-                                                        </StackPanel>
-                                                    </Grid>
-                                                    <TextBlock Text="Allowed qualities (comma-separated)"
-                                                               Style="{StaticResource MutedTextStyle}"
-                                                               Margin="0,0,0,4" />
-                                                    <TextBox Text="{Binding CustomAllowedQualities, UpdateSourceTrigger=PropertyChanged}" />
-                                                </StackPanel>
+                                                    </StackPanel>
+                                                </Grid>
                                             </StackPanel>
-                                        </Grid>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
+                                            <ContentControl Content="{Binding EpisodeRecipeSummary}"
+                                                            ContentTemplate="{StaticResource CartRecipeSummaryTemplate}"
+                                                            Margin="0,12,0,0" />
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
                     </ScrollViewer>
-                </DockPanel>
+                </Grid>
+            </DockPanel>
+        </materialDesign:Card>
+
+        <Grid Grid.Column="2">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <materialDesign:Card Style="{StaticResource PanelCardStyle}">
+                <StackPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="Auto"
+                                       Style="{StaticResource SectionTitleStyle}"
+                                       VerticalAlignment="Center" />
+                            <Border Style="{StaticResource HelpTooltipHostStyle}">
+                                <Border.ToolTip>
+                                    <TextBlock Text="{Binding SchedulerStatus, Mode=OneWay}"
+                                               TextWrapping="Wrap"
+                                               MaxWidth="360" />
+                                </Border.ToolTip>
+                                <iconPacks:PackIconLucide Kind="CircleQuestionMark"
+                                                           Width="14"
+                                                           Height="14"
+                                                           HorizontalAlignment="Center"
+                                                           VerticalAlignment="Center"
+                                                           Foreground="{StaticResource AppBrushMutedText}" />
+                            </Border>
+                        </StackPanel>
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                            <Button Style="{StaticResource AppOutlinedButtonStyle}"
+                                    Command="{Binding RefreshDashboardCommand}"
+                                    Margin="0,0,8,0"
+                                    ToolTip="Refresh dashboard">
+                                <iconPacks:PackIconLucide Kind="RefreshCw" Width="14" Height="14" />
+                            </Button>
+                            <Button Style="{StaticResource AppPrimaryButtonStyle}"
+                                    Command="{Binding RunNowCommand}"
+                                    Width="34"
+                                    Height="34"
+                                    MinHeight="34"
+                                    Padding="0"
+                                    ToolTip="Run Now">
+                                <iconPacks:PackIconLucide Kind="Play" Width="14" Height="14" />
+                            </Button>
+                        </StackPanel>
+                    </Grid>
+                    <Grid Margin="0,10,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="72" />
+                            <ColumnDefinition Width="*" MinWidth="0" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <TextBlock Text="Status" Style="{StaticResource SummaryLabelStyle}" />
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding StatusLabel, Mode=OneWay}"
+                                   Style="{StaticResource SummaryValueStyle}"
+                                   Foreground="{StaticResource AppBrushAccent}" />
+                        <TextBlock Grid.Row="1" Text="Last run" Style="{StaticResource SummaryLabelStyle}" />
+                        <TextBlock Grid.Row="1"
+                                   Grid.Column="1"
+                                   Text="{Binding LastRunSummary, Mode=OneWay}"
+                                   Style="{StaticResource SummaryValueStyle}"
+                                   TextWrapping="NoWrap"
+                                   TextTrimming="CharacterEllipsis">
+                            <TextBlock.ToolTip>
+                                <TextBlock Text="{Binding LastRunSummary, Mode=OneWay}"
+                                           TextWrapping="Wrap"
+                                           MaxWidth="420" />
+                            </TextBlock.ToolTip>
+                        </TextBlock>
+                        <TextBlock Grid.Row="2" Text="Shows" Style="{StaticResource SummaryLabelStyle}" />
+                        <TextBlock Grid.Row="2"
+                                   Grid.Column="1"
+                                   Text="{Binding ShowsPendingLabel, Mode=OneWay}"
+                                   Style="{StaticResource SummaryValueStyle}" />
+                        <TextBlock Grid.Row="3" Text="TMDB" Style="{StaticResource SummaryLabelStyle}" />
+                        <TextBlock Grid.Row="3"
+                                   Grid.Column="1"
+                                   Text="{Binding TmdbRefreshesRemainingLabel, Mode=OneWay}"
+                                   Style="{StaticResource SummaryValueStyle}" />
+                    </Grid>
+                </StackPanel>
             </materialDesign:Card>
 
-            <materialDesign:Card Grid.Column="2" Style="{StaticResource PanelCardStyle}">
+            <materialDesign:Card Grid.Row="1" Style="{StaticResource PanelCardStyle}" Margin="0">
                 <DockPanel>
                     <TextBlock DockPanel.Dock="Top"
                                Text="New This Week"
@@ -281,10 +435,10 @@
                                             Padding="0,0,0,8"
                                             Margin="0,0,0,8">
                                         <StackPanel>
-                                            <TextBlock Text="{Binding DisplayLine}"
+                                            <TextBlock Text="{Binding DisplayLine, Mode=OneWay}"
                                                        FontSize="12"
                                                        TextWrapping="Wrap" />
-                                            <TextBlock Text="{Binding EpisodeTitle}"
+                                            <TextBlock Text="{Binding EpisodeTitle, Mode=OneWay}"
                                                        Style="{StaticResource MutedTextStyle}"
                                                        Margin="0,2,0,0"
                                                        TextTrimming="CharacterEllipsis" />

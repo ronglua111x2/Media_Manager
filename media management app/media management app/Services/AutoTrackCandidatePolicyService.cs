@@ -49,17 +49,17 @@ public sealed class AutoTrackCandidatePolicyService
 
     public ResolvedAutoTrackQualityPolicy ResolvePolicy(TrackedShow show, AutoTrackSettings settings)
     {
+        _ = show;
         var global = settings.Quality ?? new AutoTrackQualityPolicy();
         return new ResolvedAutoTrackQualityPolicy
         {
-            MinQuality = show.AutoTrackMinQuality ?? global.MinQuality,
-            MinSeeders = show.AutoTrackMinSeeders ?? global.MinSeeders,
-            MinFileSizeMb = show.AutoTrackMinFileSizeMb ?? global.MinFileSizeMb,
-            MaxFileSizeMb = show.AutoTrackMaxFileSizeMb ?? global.MaxFileSizeMb,
-            AllowedQualities = ParseAllowedQualities(show.AutoTrackAllowedQualities) ??
-                               global.AllowedQualities?.Where(quality => !string.IsNullOrWhiteSpace(quality))
-                                   .Select(quality => quality.Trim())
-                                   .ToList()
+            MinQuality = global.MinQuality,
+            MinSeeders = global.MinSeeders,
+            MinFileSizeMb = global.MinFileSizeMb,
+            MaxFileSizeMb = global.MaxFileSizeMb,
+            AllowedQualities = global.AllowedQualities?.Where(quality => !string.IsNullOrWhiteSpace(quality))
+                .Select(quality => quality.Trim())
+                .ToList()
         };
     }
 
@@ -84,18 +84,6 @@ public sealed class AutoTrackCandidatePolicyService
         return candidates
             .OrderByDescending(candidate => candidate.TotalScore)
             .ThenByDescending(candidate => TorrentQuality.GetRank(candidate.QualityLabel))
-            .ToList();
-    }
-
-    private static List<string>? ParseAllowedQualities(string? csv)
-    {
-        if (string.IsNullOrWhiteSpace(csv))
-        {
-            return null;
-        }
-
-        return csv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Where(quality => !string.IsNullOrWhiteSpace(quality))
             .ToList();
     }
 

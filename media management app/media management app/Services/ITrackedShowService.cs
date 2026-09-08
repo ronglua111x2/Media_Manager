@@ -73,6 +73,8 @@ public interface ITrackedShowService
 
     void UpdateCartOverrides(long showId, MediaKind targetKind, CartRecipeOverrideSet overrides);
 
+    void UpdateAutoTrackRecipeOverrides(long showId, CartRecipeOverrideSet overrides);
+
     void UpdateSeriesStatus(long showId, Common.ShowSeriesStatus seriesStatus);
 
     void UpdateWatchProgress(long showId, Common.UserWatchStatus watchStatus, int watchedEpisodes);

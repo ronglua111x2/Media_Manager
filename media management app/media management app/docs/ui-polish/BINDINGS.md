@@ -8,7 +8,7 @@ WPF defaults some properties to **TwoWay**. Binding a **get-only** view-model pr
 - TwoWay only on **editable** fields (`OverrideMinSeeders`, `OverrideMinSizeGbText`, ComboBox `SelectedValue`, CheckBox `IsChecked`, and similar).
 - If the property has no setter, never TwoWay.
 
-Example in [`Views/TorrentWorkspaceView.xaml`](../../Views/TorrentWorkspaceView.xaml): recipe max candidates uses `Mode=OneWay` because `RecipeMaxCandidates` is get-only.
+Example in [`Resources/WorkspaceSharedTemplates.xaml`](../../Resources/WorkspaceSharedTemplates.xaml): recipe max candidates uses `Mode=OneWay` because `RecipeMaxCandidates` is get-only.
 
 ```xml
 <TextBlock Text="{Binding RecipeMaxCandidates, Mode=OneWay}" />

@@ -148,6 +148,8 @@ public interface IDatabaseService
 
     void UpdateTrackedShowCartOverridesJson(long showId, MediaKind targetKind, string? overridesJson);
 
+    void UpdateTrackedShowAutoTrackRecipeOverridesJson(long showId, string? overridesJson);
+
     void UpdateTrackedShowSeriesStatus(long showId, ShowSeriesStatus seriesStatus);
 
     void UpdateTrackedShowWatchProgress(long showId, UserWatchStatus watchStatus, int watchedEpisodes);
