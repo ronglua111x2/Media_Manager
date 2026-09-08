@@ -7,6 +7,7 @@ public sealed class AutoTrackSchedulerService : IAutoTrackSchedulerService
 {
     private static readonly TimeSpan ShutdownWaitTimeout = TimeSpan.FromSeconds(8);
     private static readonly TimeSpan ReconcileArmPollInterval = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan StartupDelay = TimeSpan.FromMinutes(5);
 
     private readonly ISettingsService _settingsService;
     private readonly IAutoTrackService _autoTrackService;
@@ -101,6 +102,23 @@ public sealed class AutoTrackSchedulerService : IAutoTrackSchedulerService
 
     private async Task RunTmdbDiscoveryLoopAsync()
     {
+        if (IsDisposed())
+        {
+            return;
+        }
+
+        try
+        {
+            _logger.Info(
+                $"Auto-track delayed {StartupDelay.TotalMinutes:0} minutes after startup.",
+                LogTarget.File | LogTarget.Console);
+            await Task.Delay(StartupDelay, _shutdown.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
         if (IsDisposed())
         {
             return;

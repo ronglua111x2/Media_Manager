@@ -1,5 +1,6 @@
 using System.Drawing;
 using System.Windows;
+using media_management_app.Common;
 using media_management_app.Models;
 using WinForms = System.Windows.Forms;
 
@@ -12,14 +13,16 @@ public sealed class TrayIconService : ITrayIconService
     private const string BackgroundModeTrayTooltip = $"{AppName} - Background Mode";
 
     private readonly IAppLifecycleService _lifecycleService;
+    private readonly ISettingsService _settingsService;
 
     private MainWindow? _window;
     private WinForms.NotifyIcon? _notifyIcon;
     private bool _disposed;
 
-    public TrayIconService(IAppLifecycleService lifecycleService)
+    public TrayIconService(IAppLifecycleService lifecycleService, ISettingsService settingsService)
     {
         _lifecycleService = lifecycleService;
+        _settingsService = settingsService;
         _lifecycleService.AppModeChanged += OnAppModeChanged;
     }
 
@@ -135,6 +138,14 @@ public sealed class TrayIconService : ITrayIconService
             result.LinkedCount == 0 &&
             result.Failed == 0 &&
             result.Succeeded)
+        {
+            UpdateTrayTooltip();
+            return;
+        }
+
+        if (!NotificationCatalog.IsEnabled(
+                _settingsService.Current.Notifications,
+                NotificationKind.AutoTrackRunSummary))
         {
             UpdateTrayTooltip();
             return;

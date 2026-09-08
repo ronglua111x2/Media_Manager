@@ -72,6 +72,9 @@ public partial class App : System.Windows.Application
         }
 
         _serviceProvider.GetRequiredService<ILogCleanupService>().Start();
+        PublishJunkCleanup.Run(
+            AppContext.BaseDirectory,
+            _serviceProvider.GetRequiredService<IAppLogger>());
 
         var symlinkCoordinator = _serviceProvider.GetRequiredService<ISymlinkCoordinatorService>();
         symlinkCoordinator.Start();
