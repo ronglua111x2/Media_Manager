@@ -19,7 +19,7 @@ Exhaustive list of user-facing and background features. Each entry includes purp
 - **User interaction:** Sidebar buttons; selection persisted visually
 - **Code:** `ViewModels/MainViewModel.cs` (`NavigateCommand`), `Common/AppWorkspaceKind.cs`, `Resources/ViewTemplates.xaml`
 - **DB:** None
-- **Notes:** Sidebar `IconKind` must be a `PackIconLucideKind` name from [LUCIDE_ICONS.md](./LUCIDE_ICONS.md). Unknown names render as a blank tile.
+- **Notes:** Sidebar `IconKind` must be a `PackIconLucideKind` name from [ui-polish/LUCIDE_ICONS.md](./ui-polish/LUCIDE_ICONS.md). Unknown names render as a blank tile.
 
 ### 1.3 Status Bar — Job Progress
 - **What:** Shows current long-running operation text and active indicator
@@ -361,10 +361,11 @@ Exhaustive list of user-facing and background features. Each entry includes purp
 - **DB:** `TorrentCartOrders`; updates torrent state on episodes/movies/seasons
 
 ### 6.6 Per-Media Recipe Assignment
-- **What:** Episode, pack, and movie recipe ComboBoxes per selected media
-- **User interaction:** Dropdown selection; Max Pack Candidates numeric
-- **Code:** `ViewModels/TorrentWorkspaceViewModel.cs`, `Services/RecipeService.cs`
-- **DB:** `TrackedShows`/`TrackedMovies` (`RecipeId`, `PackRecipeId`)
+- **What:** Episode, pack, and movie recipe ComboBoxes per selected media, with compact/expanded recipe summaries
+- **User interaction:** Compact mode shows recipe selection only. Expanded mode summarizes quality, seeders, size, search mode, plugins, debug, and title behavior in two synced overview cards (7 of 8 rows visible; scroll for Max candidates). Click Min seeders, Min size, Debug, or Max candidates to toggle a cart override (orange `AppBrushWarning` title). Editors appear only while overridden: NumericUpDown for seeders/candidates; GB text box for min size (Enter or leave the field to save); click Debug On/Off to flip from the current value (turns orange). Last override values stay in SQLite when toggled off.
+- **Code:** `ViewModels/TorrentWorkspaceViewModel.cs`, `ViewModels/CartRecipeSummaryViewModel.cs`, `Views/TorrentWorkspaceView.xaml` (`CartRecipeSummaryTemplate`), `Services/RecipeService.cs`
+- **DB:** `TrackedShows.CartEpisodeOverridesJson` / `CartPackOverridesJson`, `TrackedMovies.CartOverridesJson`
+- **Notes:** Overrides affect manual Run Cart searches only; Auto-Track continues to use recipe values. Max candidates 1–20, min seeders 0–10000, min size 0–500 GB (0 = no floor). Candidate debug override can turn hunt logs on or off for that cart even when the recipe flag differs. See [RECIPE_SCHEMA.md](./RECIPE_SCHEMA.md) *Cart overview and overrides* to add a property. Layout and binding rules: [ui-polish](./ui-polish/README.md).
 
 ### 6.7 Candidate Picker Flyout
 - **What:** Ranked torrent candidates with quality, seeders, warnings, blacklist option

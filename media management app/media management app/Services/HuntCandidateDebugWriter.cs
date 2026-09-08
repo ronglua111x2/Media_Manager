@@ -8,9 +8,10 @@ public static class HuntCandidateDebugWriter
     public static CartCandidateDebugSession? TryCreateSession(
         SearchRecipe recipe,
         ISettingsService settingsService,
-        IAppLogger logger)
+        IAppLogger logger,
+        RecipeExecutionOverrides? overrides = null)
     {
-        if (!RecipeRuntimeSettings.GetEnableCandidateDebugLog(recipe))
+        if (!RecipeRuntimeSettings.GetEnableCandidateDebugLog(recipe, overrides))
         {
             return null;
         }

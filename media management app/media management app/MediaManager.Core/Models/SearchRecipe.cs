@@ -72,6 +72,37 @@ public sealed class RecipeModuleConfig
     public bool Paused { get; set; }
 
     public Dictionary<string, string> ExtensionData { get; set; } = [];
+
+    public RecipeModuleConfig Clone() => new()
+    {
+        ModuleId = ModuleId,
+        BlockType = BlockType,
+        Order = Order,
+        SchemaVersion = SchemaVersion,
+        IsEnabled = IsEnabled,
+        DisplayName = DisplayName,
+        Aliases = [.. Aliases],
+        QueryTemplates = [.. QueryTemplates],
+        CustomQueries = [.. CustomQueries],
+        QualityAllowList = [.. QualityAllowList],
+        PreferredAudioCodec = PreferredAudioCodec,
+        MinimumSeeders = MinimumSeeders,
+        MinimumSizeBytes = MinimumSizeBytes,
+        MaximumSizeBytes = MaximumSizeBytes,
+        IncludeTerms = [.. IncludeTerms],
+        ExcludeTerms = [.. ExcludeTerms],
+        PreferTerms = [.. PreferTerms],
+        PreferredReleaseGroups = [.. PreferredReleaseGroups],
+        BlockedReleaseGroups = [.. BlockedReleaseGroups],
+        Plugins = Plugins,
+        Category = Category,
+        ResultLimit = ResultLimit,
+        SavePath = SavePath,
+        TorrentCategory = TorrentCategory,
+        Tags = Tags,
+        Paused = Paused,
+        ExtensionData = new Dictionary<string, string>(ExtensionData)
+    };
 }
 
 public enum RecipeBlockType

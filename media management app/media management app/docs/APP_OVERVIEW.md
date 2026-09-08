@@ -241,8 +241,8 @@ Prevents duplicate external process launches.
 
 ## UI Theming
 
-- Light/Dark themes via `ThemeService` and `AppThemeColors.*.xaml`
-- Material Design + WPF-UI + Lucide icon pack (`MahApps.Metro.IconPacks.Lucide` 6.2.1). Valid `Kind` names: [LUCIDE_ICONS.md](./LUCIDE_ICONS.md).
+- Light/Dark themes via `ThemeService` and `AppThemeColors.*.xaml`. Token guide: [ui-polish/THEME.md](./ui-polish/THEME.md).
+- Material Design + WPF-UI + Lucide icon pack (`MahApps.Metro.IconPacks.Lucide` 6.2.1). Valid `Kind` names: [ui-polish/LUCIDE_ICONS.md](./ui-polish/LUCIDE_ICONS.md).
 - Workspace UI state persisted in `UiSettings` (sort, filters, selected media)
 
 ---

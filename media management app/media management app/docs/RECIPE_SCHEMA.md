@@ -157,6 +157,9 @@ All values are **strings** in JSON (parsed to int/bool at runtime). Keys defined
 | `paginationMaxPagesTvParallel` | 1 | 1–10 | Max pages (TV parallel) |
 | `paginationMaxPagesTvSnapshot` | 2 | 1–10 | Max pages (TV snapshot) |
 | `searchIdleTimeoutSecondsTvParallel` | 8 | 0–120 | Idle timeout between results |
+| `enableCandidateDebugLog` | `False` | bool | Write candidate debug logs under the state logs folder |
+
+See [Cart overview and overrides](#cart-overview-and-overrides) for JSON shape, UI controls, and how to add a property.
 
 ### Identity / QueryBuilder modules
 
@@ -227,8 +230,66 @@ From live state — `604977d8bdb0487a8642fbe4987373f3.rcp` ("Common Anime no Pro
 
 ---
 
+## Cart overview and overrides
+
+Per-media cart overrides live in SQLite JSON, not in the `.rcp` file:
+
+- `TrackedShows.CartEpisodeOverridesJson` / `CartPackOverridesJson`
+- `TrackedMovies.CartOverridesJson`
+
+Shape: `{ "<key>": { "enabled": true, "value": ... } }`. Toggling a property off keeps the last `value`. Manual **Run Cart** only; Auto-Track always uses the recipe.
+
+Current keys: `maxCandidates` (int 1–20), `minSeeders` (int 0–10000), `minSizeGb` (double 0–500, 0 = no floor), `candidateDebug` (bool).
+
+### Interaction
+
+- Click the **property title** to enable/disable the override. Enabled titles (and recipe name if any override is on) use `AppBrushWarning` (orange).
+- The value editor is visible only while the override is enabled. Toggling the title off restores the recipe summary text and keeps the last JSON `value`.
+- `candidateDebug`: clickable **On/Off** text. Click the value to flip from whatever is showing (turns orange). No switch.
+- Min size GB `TextBox`: saves on LostFocus and on **Enter** (`views:CommitTextBoxOnEnter.IsEnabled` on `CartMinSizeTextBoxStyle`; [`CommitTextBoxOnEnter.cs`](../Views/CommitTextBoxOnEnter.cs)).
+- Overview cards: 8 rows × 34px. Viewport `CartRecipeOverviewScrollStyle` height 238 (7 rows). Episode and Pack scroll together (`SyncedScrollViewer` group `CartRecipeOverview`). Overlay `Hidden`/`Visible`, not `Collapsed`. Values `NoWrap` + ellipsis.
+
+### Adding a read-only overview row
+
+1. Add a summary string on [`CartRecipeSummaryViewModel`](../ViewModels/CartRecipeSummaryViewModel.cs).
+2. Add a 34px `RowDefinition` plus icon / label / value in `CartRecipeSummaryTemplate` in [`TorrentWorkspaceView.xaml`](../Views/TorrentWorkspaceView.xaml).
+3. Extra rows scroll inside the card. Do not wrap values (`NoWrap` + ellipsis).
+
+### Making a row overrideable
+
+1. Add a typed field on `CartRecipeOverrideSet` (`CartIntOverride` / `CartDoubleOverride` / `CartBoolOverride`) and map it in `HasAnyEnabled`, `ToExecutionOverrides()`, `Serialize()`.
+2. Add the matching field on `RecipeExecutionOverrides`.
+3. On the VM: `IsXOverridden`, `OverrideX`, `ToggleXOverrideCommand`, persist on editor change. Init from stored value or the recipe. Clicking the **title** toggles `enabled`; the editor is visible only while enabled.
+4. In XAML: `RecipeOverrideTitleButtonStyle` (orange when overridden) + `CartOverrideValueHostStyle` overlay (`Hidden`/`Visible`, not `Collapsed`) so the 34px row does not jump.
+
+Do **not** add a new INTEGER column for a JSON field. Layout and TwoWay rules: [ui-polish](./ui-polish/README.md).
+
+### Control cheat sheet
+
+| Value type | Control |
+|------------|---------|
+| `bool` | Clickable On/Off text (orange while overridden; click flips from the current value) |
+| Small int with range | `NumericUpDown` |
+| Decimal + unit | `TextBox` + suffix (min size GB); Enter and LostFocus commit |
+| Enum / short list | `ComboBox` |
+| Long text (plugins, titles) | Read-only + ellipsis unless there is a real editor |
+
+### Runtime wiring
+
+| Kind | Apply how |
+|------|-----------|
+| Candidate filter (seeders, size) | Clone in `RecipeRuntimeSettings.WithCartOverrides` |
+| Search-module flags (candidate debug) | Clone onto `SearchSource.extensionData` **and** pass `RecipeExecutionOverrides` into any **early** reader (`HuntCandidateDebugWriter.TryCreateSession`) |
+| Max candidates | `GetMaxCandidatesPerFetch(recipe, settings, overrides)` — not cloned onto the recipe |
+
+`HasRecipeCloneOverrides` is true when a filter or debug override is set; `WithCartOverrides` then clones instead of returning the original recipe.
+
+---
+
 ## Related Docs
 
 - [STATE_FOLDER.md](./STATE_FOLDER.md) — where recipes live on disk
+- [FEATURES.md](./FEATURES.md) §6.6 — cart recipe assignment and overrides (user-facing)
 - [FEATURES.md](./FEATURES.md) §7 — Recipe workspace UI
+- [ui-polish/README.md](./ui-polish/README.md) — dark theme tokens, layout stability, TwoWay binding rules
 - [APP_OVERVIEW.md](./APP_OVERVIEW.md) — recipe role in acquisition flow

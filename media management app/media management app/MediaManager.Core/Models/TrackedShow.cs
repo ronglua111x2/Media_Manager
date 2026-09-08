@@ -31,6 +31,10 @@ public sealed class TrackedShow
 
     public string? PackRecipeId { get; set; }
 
+    public string? CartEpisodeOverridesJson { get; set; }
+
+    public string? CartPackOverridesJson { get; set; }
+
     public string PreferredQuality { get; set; } = "1080p";
 
     public string PreferredAudioCodec { get; set; } = string.Empty;

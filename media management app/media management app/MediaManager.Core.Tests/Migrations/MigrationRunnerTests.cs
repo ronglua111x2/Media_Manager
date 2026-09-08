@@ -31,10 +31,18 @@ public class MigrationRunnerTests
             "001_baseline",
             "002_fetchjobs_legacy_purge",
             "003_torrentblacklist_rebuild",
-            "004_episode_rating_thought");
+            "004_episode_rating_thought",
+            "005_cart_recipe_max_candidate_overrides",
+            "006_cart_recipe_override_sets");
         GetUserTableNames(db.Connection).Should().Contain(ApplicationTables);
         HasColumn(db.Connection, "TrackedEpisodes", "UserRating").Should().BeTrue();
         HasColumn(db.Connection, "TrackedEpisodes", "Thought").Should().BeTrue();
+        HasColumn(db.Connection, "TrackedShows", "CartEpisodeMaxCandidatesOverride").Should().BeTrue();
+        HasColumn(db.Connection, "TrackedShows", "CartPackMaxCandidatesOverride").Should().BeTrue();
+        HasColumn(db.Connection, "TrackedMovies", "CartMaxCandidatesOverride").Should().BeTrue();
+        HasColumn(db.Connection, "TrackedShows", "CartEpisodeOverridesJson").Should().BeTrue();
+        HasColumn(db.Connection, "TrackedShows", "CartPackOverridesJson").Should().BeTrue();
+        HasColumn(db.Connection, "TrackedMovies", "CartOverridesJson").Should().BeTrue();
         GetUserTableNames(db.Connection).Should().Contain(MigrationRunner.HistoryTableName);
         GetAppliedUtcValues(db.Connection).Should().OnlyContain(value => IsRoundtripDateTime(value));
     }
@@ -71,7 +79,9 @@ public class MigrationRunnerTests
             "001_baseline",
             "002_fetchjobs_legacy_purge",
             "003_torrentblacklist_rebuild",
-            "004_episode_rating_thought");
+            "004_episode_rating_thought",
+            "005_cart_recipe_max_candidate_overrides",
+            "006_cart_recipe_override_sets");
     }
 
     [Fact]

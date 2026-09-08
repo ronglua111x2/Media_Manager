@@ -146,6 +146,8 @@ public interface IDatabaseService
 
     void UpdateTrackedShowPackRecipe(long showId, string? packRecipeId);
 
+    void UpdateTrackedShowCartOverridesJson(long showId, MediaKind targetKind, string? overridesJson);
+
     void UpdateTrackedShowSeriesStatus(long showId, ShowSeriesStatus seriesStatus);
 
     void UpdateTrackedShowWatchProgress(long showId, UserWatchStatus watchStatus, int watchedEpisodes);
@@ -190,6 +192,8 @@ public interface IDatabaseService
     void UpdateTrackedMoviePreferences(long movieId, string preferredQuality, string preferredAudioCodec, int minimumSeeders);
 
     void UpdateTrackedMovieRecipe(long movieId, string? recipeId);
+
+    void UpdateTrackedMovieCartOverridesJson(long movieId, string? overridesJson);
 
     void UpdateTrackedMovieExcludedAlternativeTitles(long movieId, string? excludedAlternativeTitlesJson);
 

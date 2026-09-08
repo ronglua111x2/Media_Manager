@@ -32,6 +32,8 @@ public interface ITrackedMovieService
 
     void UpdateRecipe(long movieId, string? recipeId);
 
+    void UpdateCartOverrides(long movieId, CartRecipeOverrideSet overrides);
+
     void UpdateWatchStatus(long movieId, Common.UserWatchStatus watchStatus);
 
     void UpdateRating(long movieId, double? rating, string? thought);

@@ -23,6 +23,8 @@ public sealed class TrackedMovie
 
     public string? RecipeId { get; set; }
 
+    public string? CartOverridesJson { get; set; }
+
     public string PreferredQuality { get; set; } = "1080p";
 
     public string PreferredAudioCodec { get; set; } = string.Empty;

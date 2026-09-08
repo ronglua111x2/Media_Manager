@@ -5,6 +5,13 @@ namespace media_management_app.Services;
 
 public static class RecipeRuntimeSettings
 {
+    public const int MinCartMaxCandidatesOverride = 1;
+    public const int MaxCartMaxCandidatesOverride = 20;
+    public const int MinCartMinSeedersOverride = 0;
+    public const int MaxCartMinSeedersOverride = 10000;
+    public const double MinCartMinSizeGbOverride = 0;
+    public const double MaxCartMinSizeGbOverride = 500;
+
     public const string ParallelSearchCountKey = "parallelSearchCount";
     public const string MaxCandidatesPerFetchKey = "maxCandidatesPerFetch";
     public const string UseShowSnapshotSearchKey = "useShowSnapshotSearch";
@@ -88,6 +95,77 @@ public static class RecipeRuntimeSettings
     public static int GetMaxCandidatesPerFetch(SearchRecipe recipe, AutoTorrentSettings fallback) =>
         GetInt(GetSearchModule(recipe), MaxCandidatesPerFetchKey, fallback.MaxCandidatesPerFetch, 1, 10);
 
+    public static int GetMaxCandidatesPerFetch(
+        SearchRecipe recipe,
+        AutoTorrentSettings fallback,
+        RecipeExecutionOverrides? overrides) =>
+        overrides?.MaxCandidates is int maxCandidates
+            ? Math.Clamp(maxCandidates, MinCartMaxCandidatesOverride, MaxCartMaxCandidatesOverride)
+            : GetMaxCandidatesPerFetch(recipe, fallback);
+
+    public static SearchRecipe WithCartOverrides(SearchRecipe recipe, RecipeExecutionOverrides? overrides)
+    {
+        if (overrides is null || !overrides.HasRecipeCloneOverrides)
+        {
+            return recipe;
+        }
+
+        var clone = new SearchRecipe
+        {
+            RecipeId = recipe.RecipeId,
+            Version = recipe.Version,
+            MainFlowVersion = recipe.MainFlowVersion,
+            Name = recipe.Name,
+            TargetKind = recipe.TargetKind,
+            Modules = recipe.Modules.Select(module => module.Clone()).ToList()
+        };
+
+        if (overrides.HasFilterOverrides)
+        {
+            var filter = clone.Modules.FirstOrDefault(module =>
+                module.BlockType == RecipeBlockType.CandidateFilter && module.IsEnabled);
+            if (filter is null)
+            {
+                filter = new RecipeModuleConfig
+                {
+                    BlockType = RecipeBlockType.CandidateFilter,
+                    IsEnabled = true
+                };
+                clone.Modules.Add(filter);
+            }
+
+            if (overrides.MinSeeders is int minSeeders)
+            {
+                filter.MinimumSeeders = Math.Clamp(minSeeders, MinCartMinSeedersOverride, MaxCartMinSeedersOverride);
+            }
+
+            if (overrides.OverrideMinSize)
+            {
+                var gb = CartRecipeOverrideSet.BytesToGb(overrides.MinSizeBytes);
+                var clampedGb = Math.Clamp(gb, MinCartMinSizeGbOverride, MaxCartMinSizeGbOverride);
+                filter.MinimumSizeBytes = CartRecipeOverrideSet.GbToBytes(clampedGb);
+            }
+        }
+
+        if (overrides.EnableCandidateDebugLog is bool enableDebug)
+        {
+            var search = clone.Modules.FirstOrDefault(module => module.BlockType == RecipeBlockType.SearchSource);
+            if (search is null)
+            {
+                search = new RecipeModuleConfig
+                {
+                    BlockType = RecipeBlockType.SearchSource,
+                    IsEnabled = true
+                };
+                clone.Modules.Add(search);
+            }
+
+            search.ExtensionData[EnableCandidateDebugLogKey] = enableDebug ? bool.TrueString : bool.FalseString;
+        }
+
+        return clone;
+    }
+
     public static bool GetUseShowSnapshotSearch(SearchRecipe recipe, AutoTorrentSettings fallback) =>
         GetBool(GetSearchModule(recipe), UseShowSnapshotSearchKey, fallback.UseShowSnapshotSearch);
 
@@ -123,6 +201,9 @@ public static class RecipeRuntimeSettings
 
     public static bool GetEnableCandidateDebugLog(SearchRecipe recipe) =>
         GetBool(GetSearchModule(recipe), EnableCandidateDebugLogKey, false);
+
+    public static bool GetEnableCandidateDebugLog(SearchRecipe recipe, RecipeExecutionOverrides? overrides) =>
+        overrides?.EnableCandidateDebugLog ?? GetEnableCandidateDebugLog(recipe);
 
     public static bool GetEnableSearchPagination(SearchRecipe recipe) =>
         GetBool(GetSearchModule(recipe), EnableSearchPaginationKey, recipe.TargetKind != MediaKind.TvEpisode);

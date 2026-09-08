@@ -31,7 +31,7 @@ public interface IFetchJobService
         long showId,
         IReadOnlyList<int> seasonNumbers,
         CancellationToken cancellationToken = default,
-        int? maxCandidatesOverride = null,
+        RecipeExecutionOverrides? overrides = null,
         string? recipeId = null);
 
 }

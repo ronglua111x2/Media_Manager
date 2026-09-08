@@ -1,3 +1,4 @@
+using media_management_app.Common;
 using media_management_app.Models;
 
 namespace media_management_app.Services;
@@ -69,6 +70,8 @@ public interface ITrackedShowService
     void UpdateRecipe(long showId, string? recipeId);
 
     void UpdatePackRecipe(long showId, string? packRecipeId);
+
+    void UpdateCartOverrides(long showId, MediaKind targetKind, CartRecipeOverrideSet overrides);
 
     void UpdateSeriesStatus(long showId, Common.ShowSeriesStatus seriesStatus);
 

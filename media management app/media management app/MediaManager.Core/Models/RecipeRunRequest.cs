@@ -15,6 +15,8 @@ public sealed class RecipeRunRequest
     public int? EpisodeNumber { get; init; }
 
     public string? RecipeId { get; init; }
+
+    public RecipeExecutionOverrides? Overrides { get; init; }
 }
 
 public sealed class RecipeDryRunResult

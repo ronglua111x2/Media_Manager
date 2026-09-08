@@ -80,7 +80,7 @@ shell:
   main_window: MainWindow.xaml
   main_viewmodel: ViewModels/MainViewModel.cs
   view_templates: Resources/ViewTemplates.xaml
-  lucide_icons: docs/LUCIDE_ICONS.md
+  lucide_icons: docs/ui-polish/LUCIDE_ICONS.md
   lucide_package: MahApps.Metro.IconPacks.Lucide 6.2.1
   lucide_kind_rule: IconKind/Kind must match PackIconLucideKind exactly; unknown names render blank
   nested_scroll: Views/NestedScrollViewer.cs — vertical wheel on nested horizontal ScrollViewer goes to page; Shift+wheel pans
@@ -120,7 +120,7 @@ tables:
     unique: [NormalizedParsedTitle, ParserPattern]
   TrackedShows:
     purpose: TMDB TV series tracking and auto-track config
-    key_columns: [TmdbId, RecipeId, PackRecipeId, AutoTrackFromSeason, AutoTrackFromEpisode]
+    key_columns: [TmdbId, RecipeId, PackRecipeId, CartEpisodeOverridesJson, CartPackOverridesJson, AutoTrackFromSeason, AutoTrackFromEpisode]
   TrackedSeasons:
     purpose: Per-season pack/episode mode and pack torrent state
     fk: ShowId -> TrackedShows CASCADE
@@ -132,7 +132,7 @@ tables:
     notes: SeasonNumber 0 is TMDB extras/specials/OVAs (rateable). Unmatched pack extras are SourceItems, not rows here
   TrackedMovies:
     purpose: TMDB movie tracking
-    key_columns: [TmdbId, RecipeId, TorrentHash]
+    key_columns: [TmdbId, RecipeId, CartOverridesJson, TorrentHash]
   FetchJobs:
     purpose: Legacy fetch job table (schema kept; rows purged once in migration 002)
     purge: MediaManager.Core/Migrations/002_fetchjobs_legacy_purge.sql
@@ -158,6 +158,7 @@ migration_strategy:
     - 002_fetchjobs_legacy_purge
     - 003_torrentblacklist_rebuild
     - 004_episode_rating_thought
+    - 005_cart_recipe_max_candidate_overrides
   init_file: Services/DatabaseService.cs
   methods: [MigrationRunner.ApplyPendingMigrations, CREATE TABLE IF NOT EXISTS, EnsureColumn]
   failure_policy: block_startup
@@ -314,6 +315,7 @@ services:
   persist: TorrentCartService
   add: TorrentAddGateService -> QbittorrentClient
   reconcile: TorrentReconciliationService
+recipe_overrides: "Per-media Cart override JSON (maxCandidates 1–20, minSeeders, minSizeGb, candidateDebug). Each property stores enabled+value so toggling off keeps the last value. Manual Run Cart only; Auto-Track is unchanged. Overview UI: Views/TorrentWorkspaceView.xaml CartRecipeSummaryTemplate. Enter-commit and OneWay Run/TextBlock rules: docs/ui-polish/."
 order_status_enum: TorrentOrderStatus
   values: [Draft, Searching, CandidateSelected, Adding, Downloading, Completed, Failed, Canceled, ...]
 ```
@@ -509,7 +511,8 @@ ui_templates:
   - Resources/ViewTemplates.xaml
   - Resources/AppStyles.xaml
   - Resources/WorkspaceSharedTemplates.xaml
-  - docs/LUCIDE_ICONS.md
+  - docs/ui-polish/README.md
+  - docs/ui-polish/LUCIDE_ICONS.md
   - Views/NestedScrollViewer.cs
 ```
 
@@ -525,7 +528,7 @@ startup_order:
   4: Gemini model catalog reload + normalize
   5: ThemeService.Apply()
   6: DatabaseService.Initialize(stateFolder)
-    side_effect: MigrationRunner applies pending SchemaMigrations (001_baseline, 002_fetchjobs_legacy_purge, 003_torrentblacklist_rebuild, 004_episode_rating_thought once)
+    side_effect: MigrationRunner applies pending SchemaMigrations (001_baseline through 005_cart_recipe_max_candidate_overrides once)
     on_failure: DatabaseMigrationException + dialog; App.OnStartup Shutdown()
   7: LogCleanupService.Start()
   8: SymlinkCoordinatorService.Start()
@@ -580,7 +583,7 @@ core:
   sprint_2:
     runner: MediaManager.Core/Migrations/MigrationRunner.cs
     tests: MediaManager.Core.Tests/Migrations/MigrationRunnerTests.cs
-    migrations: [001_baseline, 002_fetchjobs_legacy_purge, 003_torrentblacklist_rebuild, 004_episode_rating_thought]
+    migrations: [001_baseline, 002_fetchjobs_legacy_purge, 003_torrentblacklist_rebuild, 004_episode_rating_thought, 005_cart_recipe_max_candidate_overrides]
   sprint_3_note: "003 TorrentBlacklist rebuild extracted from DatabaseService (C# conditional migration)"
 ```
 

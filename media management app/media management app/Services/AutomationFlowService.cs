@@ -88,7 +88,9 @@ public sealed class AutomationFlowService : IAutomationFlowService
         try
         {
             var (show, episode) = GetEpisode(request);
-            var recipe = _recipeService.GetRecipeOrDefault(request.RecipeId ?? show.RecipeId, MediaKind.TvEpisode);
+            var recipe = RecipeRuntimeSettings.WithCartOverrides(
+                _recipeService.GetRecipeOrDefault(request.RecipeId ?? show.RecipeId, MediaKind.TvEpisode),
+                request.Overrides);
             var queries = _searchPlanBuilder.BuildEpisodeQueries(recipe, show, episode);
             var results = await SearchAsync(recipe, queries, cancellationToken);
             _progressService.Report(0, "Filtering results...");
@@ -96,7 +98,11 @@ public sealed class AutomationFlowService : IAutomationFlowService
                 .Select(result => _candidateEvaluationService.EvaluateEpisode(recipe, show, episode, result))
                 .ToList();
             TryWriteCandidateDebugLog(recipe, show.DisplayTitle, MediaKind.TvEpisode, queries, results, evaluated);
-            return BuildDryRunResult(recipe, show.DisplayTitle, queries, evaluated);
+            var maxCandidates = RecipeRuntimeSettings.GetMaxCandidatesPerFetch(
+                recipe,
+                _settingsService.Current.AutoTorrent,
+                request.Overrides);
+            return BuildDryRunResult(recipe, show.DisplayTitle, queries, evaluated, maxCandidates);
         }
         finally
         {
@@ -110,7 +116,9 @@ public sealed class AutomationFlowService : IAutomationFlowService
         try
         {
             var movie = GetMovie(request);
-            var recipe = _recipeService.GetRecipeOrDefault(request.RecipeId ?? movie.RecipeId, MediaKind.Movie);
+            var recipe = RecipeRuntimeSettings.WithCartOverrides(
+                _recipeService.GetRecipeOrDefault(request.RecipeId ?? movie.RecipeId, MediaKind.Movie),
+                request.Overrides);
             var queries = _searchPlanBuilder.BuildMovieQueries(recipe, movie);
             var results = await SearchAsync(recipe, queries, cancellationToken);
             _progressService.Report(0, "Filtering results...");
@@ -118,7 +126,11 @@ public sealed class AutomationFlowService : IAutomationFlowService
                 .Select(result => _candidateEvaluationService.EvaluateMovie(recipe, movie, result))
                 .ToList();
             TryWriteCandidateDebugLog(recipe, movie.DisplayTitle, MediaKind.Movie, queries, results, evaluated);
-            return BuildDryRunResult(recipe, movie.DisplayTitle, queries, evaluated);
+            var maxCandidates = RecipeRuntimeSettings.GetMaxCandidatesPerFetch(
+                recipe,
+                _settingsService.Current.AutoTorrent,
+                request.Overrides);
+            return BuildDryRunResult(recipe, movie.DisplayTitle, queries, evaluated, maxCandidates);
         }
         finally
         {
@@ -449,7 +461,8 @@ public sealed class AutomationFlowService : IAutomationFlowService
         SearchRecipe recipe,
         string title,
         IReadOnlyList<string> queries,
-        IReadOnlyList<RecipeCandidateResult> evaluated)
+        IReadOnlyList<RecipeCandidateResult> evaluated,
+        int maxCandidates)
     {
         return new RecipeDryRunResult
         {
@@ -462,6 +475,7 @@ public sealed class AutomationFlowService : IAutomationFlowService
                 .ThenByDescending(candidate => candidate.AudioScore)
                 .ThenByDescending(candidate => candidate.PreferTermsScore)
                 .ThenByDescending(candidate => candidate.SizeScore)
+                .Take(maxCandidates)
                 .ToList(),
             RejectedCandidates = evaluated
                 .Where(candidate => !candidate.IsAccepted)

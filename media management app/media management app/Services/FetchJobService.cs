@@ -165,12 +165,16 @@ public sealed class FetchJobService : IFetchJobService
             LogTarget.All);
 
         _progressService.Start("Search: preparing…", 0);
-        _activeHuntDebugSession = HuntCandidateDebugWriter.TryCreateSession(recipe, _settingsService, _logger);
+        _activeHuntDebugSession = HuntCandidateDebugWriter.TryCreateSession(
+            recipe,
+            _settingsService,
+            _logger,
+            options?.Overrides);
         try
         {
             return useSnapshot
-                ? await FetchEpisodeCandidatesSnapshotAsync(show, targetEpisodes, recipe, statusChanged, cancellationToken)
-                : await FetchEpisodeCandidatesParallelAsync(show, targetEpisodes, recipe, statusChanged, cancellationToken, options?.MaxParallelWorkers);
+                ? await FetchEpisodeCandidatesSnapshotAsync(show, targetEpisodes, recipe, statusChanged, cancellationToken, options?.Overrides)
+                : await FetchEpisodeCandidatesParallelAsync(show, targetEpisodes, recipe, statusChanged, cancellationToken, options?.MaxParallelWorkers, options?.Overrides);
         }
         finally
         {
@@ -226,7 +230,7 @@ public sealed class FetchJobService : IFetchJobService
         long showId,
         IReadOnlyList<int> seasonNumbers,
         CancellationToken cancellationToken = default,
-        int? maxCandidatesOverride = null,
+        RecipeExecutionOverrides? overrides = null,
         string? recipeId = null)
     {
         var show = _databaseService.GetTrackedShow(showId) ?? throw new InvalidOperationException("Tracked show was not found.");
@@ -248,7 +252,11 @@ public sealed class FetchJobService : IFetchJobService
         try
         {
             var packRecipe = _recipeService.GetRecipeOrDefault(recipeId ?? show.PackRecipeId, MediaKind.TvSeasonPack);
-            var packDebugSession = HuntCandidateDebugWriter.TryCreateSession(packRecipe, _settingsService, _logger);
+            var packDebugSession = HuntCandidateDebugWriter.TryCreateSession(
+                packRecipe,
+                _settingsService,
+                _logger,
+                overrides);
             var snapshotResults = await _snapshotService.CaptureSnapshotAsync(
                 show,
                 _progressService,
@@ -261,7 +269,7 @@ public sealed class FetchJobService : IFetchJobService
                 selectedSeasons,
                 snapshotResults,
                 packRecipe,
-                maxCandidatesOverride,
+                overrides,
                 cancellationToken);
             var candidates = packSummary.Candidates;
             lock (_gate)
@@ -320,7 +328,8 @@ public sealed class FetchJobService : IFetchJobService
         SearchRecipe recipe,
         Action<long, string>? statusChanged,
         CancellationToken cancellationToken,
-        int? maxParallelWorkersOverride = null)
+        int? maxParallelWorkersOverride = null,
+        RecipeExecutionOverrides? overrides = null)
     {
         var parallelSearches = maxParallelWorkersOverride is > 0
             ? Math.Clamp(maxParallelWorkersOverride.Value, 1, 4)
@@ -348,7 +357,7 @@ public sealed class FetchJobService : IFetchJobService
                 _logger.Info($"Cart parallel worker {workerId} searching {label} with recipe '{recipe.Name}'.", LogTarget.All);
 
                 var queries = _searchPlanBuilder.BuildEpisodeQueries(recipe, show, episode).ToList();
-                var searchSummary = await SearchEpisodeCandidatesSequentialAsync(recipe, episode, show, queries, cancellationToken);
+                var searchSummary = await SearchEpisodeCandidatesSequentialAsync(recipe, episode, show, queries, cancellationToken, overrides);
                 lock (_gate)
                 {
                     _candidatesByEpisodeId[episode.Id] = searchSummary.Candidates;
@@ -394,7 +403,8 @@ public sealed class FetchJobService : IFetchJobService
         IReadOnlyList<TrackedEpisode> targetEpisodes,
         SearchRecipe recipe,
         Action<long, string>? statusChanged,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        RecipeExecutionOverrides? overrides)
     {
         foreach (var episode in targetEpisodes)
         {
@@ -463,7 +473,8 @@ public sealed class FetchJobService : IFetchJobService
                     titleVariants,
                     cartJob,
                     cancellationToken,
-                    recipe);
+                    recipe,
+                    overrides);
 
                 lock (_gate)
                 {
@@ -587,9 +598,11 @@ public sealed class FetchJobService : IFetchJobService
         TrackedEpisode episode,
         TrackedShow show,
         IReadOnlyList<string> queries,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        RecipeExecutionOverrides? overrides)
     {
-        var maxCandidates = RecipeRuntimeSettings.GetMaxCandidatesPerFetch(recipe, _settingsService.Current.AutoTorrent);
+        recipe = RecipeRuntimeSettings.WithCartOverrides(recipe, overrides);
+        var maxCandidates = RecipeRuntimeSettings.GetMaxCandidatesPerFetch(recipe, _settingsService.Current.AutoTorrent, overrides);
         var writeDebug = _activeHuntDebugSession is not null;
         var resultsByUrl = new Dictionary<string, TorrentSearchResult>(StringComparer.OrdinalIgnoreCase);
         var matchedCandidates = new List<(EpisodeFetchCandidate Candidate, RecipeCandidateResult Match)>();
@@ -1075,11 +1088,14 @@ public sealed class FetchJobService : IFetchJobService
         IReadOnlyList<string> titleVariants,
         FetchJob job,
         CancellationToken cancellationToken,
-        SearchRecipe? recipeOverride = null)
+        SearchRecipe? recipeOverride = null,
+        RecipeExecutionOverrides? overrides = null)
     {
         var matchedCandidates = new List<(EpisodeFetchCandidate Candidate, SnapshotMatchResult Match)>();
         var evaluated = new List<RecipeCandidateResult>();
-        var recipe = recipeOverride ?? _recipeService.GetRecipeOrDefault(show.RecipeId, MediaKind.TvEpisode);
+        var recipe = RecipeRuntimeSettings.WithCartOverrides(
+            recipeOverride ?? _recipeService.GetRecipeOrDefault(show.RecipeId, MediaKind.TvEpisode),
+            overrides);
         var scoringWeights = RecipeRuntimeSettings.GetCandidateScoringWeights(recipe);
         foreach (var candidate in snapshotCandidates)
         {
@@ -1123,7 +1139,7 @@ public sealed class FetchJobService : IFetchJobService
             matchedCandidates.Add((episodeCandidate, match));
         }
 
-        var maxCandidates = RecipeRuntimeSettings.GetMaxCandidatesPerFetch(recipe, _settingsService.Current.AutoTorrent);
+        var maxCandidates = RecipeRuntimeSettings.GetMaxCandidatesPerFetch(recipe, _settingsService.Current.AutoTorrent, overrides);
         if (RecipeRuntimeSettings.GetDeduplicateCandidates(recipe, _settingsService.Current.AutoTorrent))
         {
             var autoTorrent = _settingsService.Current.AutoTorrent;
@@ -1161,11 +1177,14 @@ public sealed class FetchJobService : IFetchJobService
         IReadOnlyList<int> selectedSeasons,
         IReadOnlyList<TorrentSearchResult> snapshotResults,
         SearchRecipe packRecipe,
-        int? maxCandidatesOverride,
+        RecipeExecutionOverrides? overrides,
         CancellationToken cancellationToken)
     {
-        var maxCandidates = maxCandidatesOverride ??
-            RecipeRuntimeSettings.GetMaxCandidatesPerFetch(packRecipe, _settingsService.Current.AutoTorrent);
+        packRecipe = RecipeRuntimeSettings.WithCartOverrides(packRecipe, overrides);
+        var maxCandidates = RecipeRuntimeSettings.GetMaxCandidatesPerFetch(
+            packRecipe,
+            _settingsService.Current.AutoTorrent,
+            overrides);
         var candidates = new List<SeasonPackCandidate>();
         var evaluated = new List<RecipeCandidateResult>();
         foreach (var result in snapshotResults)

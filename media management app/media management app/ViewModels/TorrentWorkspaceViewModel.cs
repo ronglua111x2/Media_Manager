@@ -147,7 +147,16 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
     private string? selectedMovieRecipeId;
 
     [ObservableProperty]
-    private int maxPackCandidates = 10;
+    private bool isRecipePanelExpanded;
+
+    [ObservableProperty]
+    private CartRecipeSummaryViewModel? episodeRecipeSummary;
+
+    [ObservableProperty]
+    private CartRecipeSummaryViewModel? packRecipeSummary;
+
+    [ObservableProperty]
+    private CartRecipeSummaryViewModel? movieRecipeSummary;
 
     public bool HasMedia => MediaCards.Count > 0;
 
@@ -193,6 +202,12 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
     public bool IsShowRecipePanel => SelectedMediaCard?.IsShow == true;
 
     public bool IsMovieRecipePanel => SelectedMediaCard?.MediaKind == MediaKind.Movie;
+
+    [RelayCommand]
+    private void ToggleRecipePanel()
+    {
+        IsRecipePanelExpanded = !IsRecipePanelExpanded;
+    }
 
     [RelayCommand]
     private void RefreshWorkspace()
@@ -974,6 +989,7 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         }
 
         _trackedShowService.UpdateRecipe(SelectedMediaCard.Id, value);
+        RefreshRecipeSummaries(SelectedMediaCard);
         StatusMessage = $"Episode recipe set to {GetRecipeName(value, MediaKind.TvEpisode)}.";
     }
 
@@ -985,6 +1001,7 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         }
 
         _trackedShowService.UpdatePackRecipe(SelectedMediaCard.Id, value);
+        RefreshRecipeSummaries(SelectedMediaCard);
         StatusMessage = $"Pack recipe set to {GetRecipeName(value, MediaKind.TvSeasonPack)}.";
     }
 
@@ -996,6 +1013,7 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         }
 
         _trackedMovieService.UpdateRecipe(SelectedMediaCard.Id, value);
+        RefreshRecipeSummaries(SelectedMediaCard);
         StatusMessage = $"Movie recipe set to {GetRecipeName(value, MediaKind.Movie)}.";
     }
 
@@ -1160,6 +1178,9 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
             SelectedEpisodeRecipeId = null;
             SelectedPackRecipeId = null;
             SelectedMovieRecipeId = null;
+            EpisodeRecipeSummary = null;
+            PackRecipeSummary = null;
+            MovieRecipeSummary = null;
 
             if (card is null)
             {
@@ -1186,17 +1207,92 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
                 var show = _databaseService.GetTrackedShow(card.Id);
                 SelectedEpisodeRecipeId = show?.RecipeId ?? _recipeService.GetDefaultRecipe(MediaKind.TvEpisode).RecipeId;
                 SelectedPackRecipeId = show?.PackRecipeId ?? _recipeService.GetDefaultRecipe(MediaKind.TvSeasonPack).RecipeId;
-                return;
+            }
+            else
+            {
+                var movie = _databaseService.GetTrackedMovie(card.Id);
+                SelectedMovieRecipeId = movie?.RecipeId ?? _recipeService.GetDefaultRecipe(MediaKind.Movie).RecipeId;
             }
 
-            var movie = _databaseService.GetTrackedMovie(card.Id);
-            SelectedMovieRecipeId = movie?.RecipeId ?? _recipeService.GetDefaultRecipe(MediaKind.Movie).RecipeId;
+            RefreshRecipeSummaries(card);
         }
         finally
         {
             _isLoadingRecipeAssignment = false;
         }
     }
+
+    private void RefreshRecipeSummaries(LibraryMediaCardViewModel? card)
+    {
+        EpisodeRecipeSummary = null;
+        PackRecipeSummary = null;
+        MovieRecipeSummary = null;
+        if (card is null)
+        {
+            return;
+        }
+
+        var settings = _settingsService.Current.AutoTorrent;
+        if (card.IsShow)
+        {
+            var show = _databaseService.GetTrackedShow(card.Id);
+            if (show is null)
+            {
+                return;
+            }
+
+            var episodeRecipe = _recipeService.GetRecipeOrDefault(SelectedEpisodeRecipeId ?? show.RecipeId, MediaKind.TvEpisode);
+            var packRecipe = _recipeService.GetRecipeOrDefault(SelectedPackRecipeId ?? show.PackRecipeId, MediaKind.TvSeasonPack);
+            EpisodeRecipeSummary = new CartRecipeSummaryViewModel(
+                episodeRecipe,
+                settings,
+                CartRecipeOverrideSet.Parse(show.CartEpisodeOverridesJson),
+                value => UpdateCartOverrides(MediaKind.TvEpisode, value));
+            PackRecipeSummary = new CartRecipeSummaryViewModel(
+                packRecipe,
+                settings,
+                CartRecipeOverrideSet.Parse(show.CartPackOverridesJson),
+                value => UpdateCartOverrides(MediaKind.TvSeasonPack, value));
+            return;
+        }
+
+        var movie = _databaseService.GetTrackedMovie(card.Id);
+        if (movie is null)
+        {
+            return;
+        }
+
+        var movieRecipe = _recipeService.GetRecipeOrDefault(SelectedMovieRecipeId ?? movie.RecipeId, MediaKind.Movie);
+        MovieRecipeSummary = new CartRecipeSummaryViewModel(
+            movieRecipe,
+            settings,
+            CartRecipeOverrideSet.Parse(movie.CartOverridesJson),
+            value => UpdateCartOverrides(MediaKind.Movie, value));
+    }
+
+    private void UpdateCartOverrides(MediaKind targetKind, CartRecipeOverrideSet overrides)
+    {
+        if (SelectedMediaCard is null)
+        {
+            return;
+        }
+
+        if (targetKind == MediaKind.Movie)
+        {
+            _trackedMovieService.UpdateCartOverrides(SelectedMediaCard.Id, overrides);
+        }
+        else
+        {
+            _trackedShowService.UpdateCartOverrides(SelectedMediaCard.Id, targetKind, overrides);
+        }
+
+        StatusMessage = overrides.HasAnyEnabled
+            ? $"{targetKind} cart overrides saved."
+            : $"{targetKind} cart overrides follow the selected recipe.";
+    }
+
+    private static RecipeExecutionOverrides? GetOverrides(CartRecipeSummaryViewModel? summary) =>
+        summary?.ToExecutionOverrides();
 
     private string GetRecipeName(string? recipeId, MediaKind targetKind)
     {
@@ -1238,7 +1334,8 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
                     _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.Searching, detail);
                 }
             },
-            cancellationToken);
+            cancellationToken,
+            new EpisodeFetchOptions { Overrides = GetOverrides(EpisodeRecipeSummary) });
 
         foreach (var (episodeId, order) in ordersByEpisodeId)
         {
@@ -1270,7 +1367,8 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
             {
                 TargetKind = MediaKind.Movie,
                 MovieId = order.MediaId,
-                RecipeId = recipe.RecipeId
+                RecipeId = recipe.RecipeId,
+                Overrides = GetOverrides(MovieRecipeSummary)
             }, cancellationToken);
             if (result.BestCandidate is null)
             {
@@ -1291,7 +1389,8 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
             ShowId = order.MediaId,
             SeasonNumber = order.SeasonNumber,
             EpisodeNumber = order.EpisodeNumber,
-            RecipeId = SelectedEpisodeRecipeId
+            RecipeId = SelectedEpisodeRecipeId,
+            Overrides = GetOverrides(EpisodeRecipeSummary)
         }, cancellationToken);
         if (episodeResult.BestCandidate is null)
         {
@@ -1366,7 +1465,7 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
             order.MediaId,
             [order.SeasonNumber.Value],
             cancellationToken,
-            Math.Clamp(MaxPackCandidates, 1, 50),
+            GetOverrides(PackRecipeSummary),
             recipe.RecipeId);
         if (!_fetchJobService.TryGetPackCandidates(order.MediaId, order.SeasonNumber.Value, out var candidates) ||
             candidates.Count == 0)

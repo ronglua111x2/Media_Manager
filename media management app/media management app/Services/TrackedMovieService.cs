@@ -153,6 +153,15 @@ public sealed class TrackedMovieService : ITrackedMovieService
         _logger.Info($"Updated recipe assignment for movie id={movieId}: {recipeId ?? "<default>"}", LogTarget.All);
     }
 
+    public void UpdateCartOverrides(long movieId, CartRecipeOverrideSet overrides)
+    {
+        var json = CartRecipeOverrideSet.Serialize(overrides);
+        _databaseService.UpdateTrackedMovieCartOverridesJson(movieId, json);
+        _logger.Info(
+            $"Updated Cart recipe overrides for movie id={movieId}: {json ?? "<none>"}",
+            LogTarget.All);
+    }
+
     public void UpdateWatchStatus(long movieId, UserWatchStatus watchStatus)
     {
         _databaseService.UpdateTrackedMovieWatchStatus(movieId, watchStatus);
@@ -208,6 +217,7 @@ public sealed class TrackedMovieService : ITrackedMovieService
             AlternativeTitlesJson = TrackedMovie.SerializeAlternativeTitles(details.AlternativeTitles),
             ExcludedAlternativeTitlesJson = existing?.ExcludedAlternativeTitlesJson,
             RecipeId = existing?.RecipeId,
+            CartOverridesJson = existing?.CartOverridesJson,
             PreferredQuality = existing?.PreferredQuality ?? "1080p",
             PreferredAudioCodec = existing?.PreferredAudioCodec ?? string.Empty,
             MinimumSeeders = existing?.MinimumSeeders ?? 0,

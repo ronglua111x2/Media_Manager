@@ -252,6 +252,15 @@ public sealed class TrackedShowService : ITrackedShowService
         _logger.Info($"Updated pack recipe assignment for show id={showId}: {packRecipeId ?? "<default>"}", LogTarget.All);
     }
 
+    public void UpdateCartOverrides(long showId, MediaKind targetKind, CartRecipeOverrideSet overrides)
+    {
+        var json = CartRecipeOverrideSet.Serialize(overrides);
+        _databaseService.UpdateTrackedShowCartOverridesJson(showId, targetKind, json);
+        _logger.Info(
+            $"Updated Cart recipe overrides for show id={showId}, target={targetKind}: {json ?? "<none>"}",
+            LogTarget.All);
+    }
+
     public void UpdateSeriesStatus(long showId, ShowSeriesStatus seriesStatus)
     {
         _databaseService.UpdateTrackedShowSeriesStatus(showId, seriesStatus);
@@ -343,6 +352,8 @@ public sealed class TrackedShowService : ITrackedShowService
             EpisodeGroupName = resolvedGroupName,
             RecipeId = existing?.RecipeId,
             PackRecipeId = existing?.PackRecipeId,
+            CartEpisodeOverridesJson = existing?.CartEpisodeOverridesJson,
+            CartPackOverridesJson = existing?.CartPackOverridesJson,
             PreferredQuality = existing?.PreferredQuality ?? preferredQuality,
             PreferredAudioCodec = existing?.PreferredAudioCodec ?? string.Empty,
             MinimumSeeders = existing?.MinimumSeeders ?? 0,
