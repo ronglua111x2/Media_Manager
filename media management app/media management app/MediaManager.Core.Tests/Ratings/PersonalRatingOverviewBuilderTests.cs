@@ -110,9 +110,9 @@ public class PersonalRatingOverviewBuilderTests
         overview.HeatmapRows[0].ExtraSeasons.Should().ContainSingle(season => season.Label == "SP");
         overview.HeatmapRows[0].ExtraSeasons[0].Cells.Should().ContainSingle(cell => cell.EpisodeNumber == 1 && cell.UserRating == 9.5);
         overview.TopEpisodes.Should().ContainSingle(entry => entry.UserRating == 8.0);
-        overview.BottomEpisodes.Should().ContainSingle(entry => entry.UserRating == 8.0);
+        overview.BottomEpisodes.Should().BeEmpty();
         overview.TopSpecials.Should().ContainSingle(entry => entry.UserRating == 9.5 && entry.SeasonNumber == 0);
-        overview.BottomSpecials.Should().ContainSingle(entry => entry.UserRating == 9.5);
+        overview.BottomSpecials.Should().BeEmpty();
     }
 
     [Fact]
@@ -132,7 +132,8 @@ public class PersonalRatingOverviewBuilderTests
         overview.HeatmapRows[0].Seasons.Should().BeEmpty();
         overview.HeatmapRows[0].ExtraSeasons.Should().ContainSingle();
         overview.TopEpisodes.Should().BeEmpty();
-        overview.TopSpecials.Should().ContainSingle(entry => entry.UserRating == 7.0);
+        overview.TopSpecials.Should().BeEmpty();
+        overview.BottomSpecials.Should().BeEmpty();
     }
 
     [Fact]
@@ -328,6 +329,64 @@ public class PersonalRatingOverviewBuilderTests
         overview.BillboardRandom.Should().HaveCount(2);
         overview.BillboardHighlights.Select(item => item.MediaId).Should().Equal(1, 2, 3, 4, 5, 6, 7, 8);
         overview.BillboardRandom.Select(item => item.MediaId).Should().BeEquivalentTo([9L, 10L]);
+    }
+
+    [Fact]
+    public void HallOfFame_IncludesBoundariesAndExcludesMidBand()
+    {
+        var shows = new[] { Show(1, "Bands") };
+        var episodes = new[]
+        {
+            Episode(1, 1, 1, rating: 10.0),
+            Episode(1, 1, 2, rating: 8.0),
+            Episode(1, 1, 3, rating: 7.9),
+            Episode(1, 1, 4, rating: 6.0),
+            Episode(1, 1, 5, rating: 5.9),
+            Episode(1, 1, 6, rating: 1.0)
+        };
+
+        var overview = PersonalRatingOverviewBuilder.Build(shows, [], episodes);
+
+        overview.TopEpisodes.Select(entry => entry.UserRating).Should().Equal(10.0, 8.0);
+        overview.BottomEpisodes.Select(entry => entry.UserRating).Should().Equal(1.0, 5.9);
+        overview.TopEpisodes.Should().NotContain(entry => entry.UserRating >= 6.0 && entry.UserRating <= 7.9);
+        overview.BottomEpisodes.Should().NotContain(entry => entry.UserRating >= 6.0 && entry.UserRating <= 7.9);
+    }
+
+    [Fact]
+    public void HallOfFame_ReturnsFullEligiblePoolBeyondTen()
+    {
+        var shows = new[] { Show(1, "Pool") };
+        var episodes = Enumerable.Range(1, 12)
+            .Select(index => Episode(1, 1, index, rating: 10.0 - index * 0.05))
+            .ToArray();
+
+        var overview = PersonalRatingOverviewBuilder.Build(shows, [], episodes);
+
+        overview.TopEpisodes.Should().HaveCount(12);
+        overview.TopEpisodes.Select(entry => entry.EpisodeNumber).Should().Equal(
+            Enumerable.Range(1, 12));
+        overview.TopEpisodes[0].UserRating.Should().BeGreaterThan(overview.TopEpisodes[^1].UserRating);
+        overview.BottomEpisodes.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void HallOfFame_SpecialsUseSameEligibilityGates()
+    {
+        var shows = new[] { Show(1, "OVA") };
+        var episodes = new[]
+        {
+            Episode(1, AppConstants.SpecialsSeasonNumber, 1, rating: 9.0),
+            Episode(1, AppConstants.SpecialsSeasonNumber, 2, rating: 7.0),
+            Episode(1, AppConstants.SpecialsSeasonNumber, 3, rating: 4.0)
+        };
+
+        var overview = PersonalRatingOverviewBuilder.Build(shows, [], episodes);
+
+        overview.TopSpecials.Should().ContainSingle(entry => entry.UserRating == 9.0);
+        overview.BottomSpecials.Should().ContainSingle(entry => entry.UserRating == 4.0);
+        overview.TopEpisodes.Should().BeEmpty();
+        overview.BottomEpisodes.Should().BeEmpty();
     }
 
     private static TrackedShow Show(

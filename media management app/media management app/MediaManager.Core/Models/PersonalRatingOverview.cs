@@ -186,6 +186,12 @@ public sealed class EpisodeHallOfFameEntry
     public string? Thought { get; init; }
 
     public string EpisodeCode => $"S{SeasonNumber:00}E{EpisodeNumber:00}";
+
+    public string EpisodeLine => $"{EpisodeCode} · {EpisodeTitle}";
+
+    public bool IsPlaceholder { get; init; }
+
+    public static EpisodeHallOfFameEntry Placeholder { get; } = new() { IsPlaceholder = true };
 }
 
 public sealed class TitleEpisodeMismatch

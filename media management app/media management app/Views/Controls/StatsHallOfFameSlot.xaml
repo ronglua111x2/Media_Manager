@@ -1,0 +1,22 @@
+<UserControl x:Class="media_management_app.Views.Controls.StatsHallOfFameSlot"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Height="440"
+             ClipToBounds="True">
+    <Grid x:Name="Viewport" ClipToBounds="True">
+        <ItemsControl x:Name="LayerA"
+                      HorizontalContentAlignment="Stretch">
+            <ItemsControl.RenderTransform>
+                <TranslateTransform x:Name="LayerATransform" />
+            </ItemsControl.RenderTransform>
+        </ItemsControl>
+        <ItemsControl x:Name="LayerB"
+                      HorizontalContentAlignment="Stretch"
+                      Opacity="0"
+                      IsHitTestVisible="False">
+            <ItemsControl.RenderTransform>
+                <TranslateTransform x:Name="LayerBTransform" />
+            </ItemsControl.RenderTransform>
+        </ItemsControl>
+    </Grid>
+</UserControl>

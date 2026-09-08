@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Windows.Media;
+using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using LiveChartsCore;
@@ -17,6 +18,11 @@ public sealed partial class StatsViewModel : ViewModelBase
     private readonly LibraryViewModel _libraryViewModel;
     private readonly IWorkspaceNavigator _workspaceNavigator;
     private readonly HashSet<long> _expandedHeatmapShowIds = [];
+    private readonly DispatcherTimer _hallOfFameTimer;
+    private readonly HallOfFamePager _topEpisodes = new();
+    private readonly HallOfFamePager _bottomEpisodes = new();
+    private readonly HallOfFamePager _topSpecials = new();
+    private readonly HallOfFamePager _bottomSpecials = new();
     private string _heatmapFingerprint = string.Empty;
     private string _showStripFingerprint = string.Empty;
     private string _movieStripFingerprint = string.Empty;
@@ -38,6 +44,12 @@ public sealed partial class StatsViewModel : ViewModelBase
             LoadPosterAsync(card, card.Card.PosterPath, card.MediaKind, card.Card.TmdbId));
         ShowStrip = new StatsPosterStripViewModel(card =>
             LoadPosterAsync(card, card.Card.PosterPath, card.MediaKind, card.Card.TmdbId));
+        _hallOfFameTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(8) };
+        _hallOfFameTimer.Tick += (_, _) => AdvanceHallOfFame();
+        HookPager(_topEpisodes, nameof(TopEpisodes));
+        HookPager(_bottomEpisodes, nameof(BottomEpisodes));
+        HookPager(_topSpecials, nameof(TopSpecials));
+        HookPager(_bottomSpecials, nameof(BottomSpecials));
     }
 
     public IReadOnlyList<EpisodeRatingBandDefinition> TitleBandLegend { get; }
@@ -50,13 +62,13 @@ public sealed partial class StatsViewModel : ViewModelBase
 
     public StatsPosterStripViewModel MovieStrip { get; }
 
-    public ObservableCollection<EpisodeHallOfFameEntry> TopEpisodes { get; } = [];
+    public IReadOnlyList<EpisodeHallOfFameEntry> TopEpisodes => _topEpisodes.Page;
 
-    public ObservableCollection<EpisodeHallOfFameEntry> BottomEpisodes { get; } = [];
+    public IReadOnlyList<EpisodeHallOfFameEntry> BottomEpisodes => _bottomEpisodes.Page;
 
-    public ObservableCollection<EpisodeHallOfFameEntry> TopSpecials { get; } = [];
+    public IReadOnlyList<EpisodeHallOfFameEntry> TopSpecials => _topSpecials.Page;
 
-    public ObservableCollection<EpisodeHallOfFameEntry> BottomSpecials { get; } = [];
+    public IReadOnlyList<EpisodeHallOfFameEntry> BottomSpecials => _bottomSpecials.Page;
 
     public ObservableCollection<TitleEpisodeMismatch> Mismatches { get; } = [];
 
@@ -160,15 +172,41 @@ public sealed partial class StatsViewModel : ViewModelBase
     [ObservableProperty]
     private bool isBillboardActive;
 
+    [ObservableProperty]
+    private bool isTopEpisodesPaused;
+
+    [ObservableProperty]
+    private bool isBottomEpisodesPaused;
+
+    [ObservableProperty]
+    private bool isTopSpecialsPaused;
+
+    [ObservableProperty]
+    private bool isBottomSpecialsPaused;
+
+    [ObservableProperty]
+    private bool canRotateTopEpisodes;
+
+    [ObservableProperty]
+    private bool canRotateBottomEpisodes;
+
+    [ObservableProperty]
+    private bool canRotateTopSpecials;
+
+    [ObservableProperty]
+    private bool canRotateBottomSpecials;
+
     public override void OnNavigatedTo()
     {
         RefreshOverview();
         IsBillboardActive = true;
+        UpdateHallOfFameTimer();
     }
 
     public override void OnNavigatedFrom()
     {
         IsBillboardActive = false;
+        UpdateHallOfFameTimer();
     }
 
     [RelayCommand]
@@ -204,10 +242,14 @@ public sealed partial class StatsViewModel : ViewModelBase
         EpisodeBandPieSeries = StatsBandPieSeries.FromBands(EpisodeBands);
         HasTitleBandPie = TitleBandPieSeries.Length > 0;
         HasEpisodeBandPie = EpisodeBandPieSeries.Length > 0;
-        Replace(TopEpisodes, overview.TopEpisodes);
-        Replace(BottomEpisodes, overview.BottomEpisodes);
-        Replace(TopSpecials, overview.TopSpecials);
-        Replace(BottomSpecials, overview.BottomSpecials);
+        _topEpisodes.SetPool(overview.TopEpisodes);
+        _bottomEpisodes.SetPool(overview.BottomEpisodes);
+        _topSpecials.SetPool(overview.TopSpecials);
+        _bottomSpecials.SetPool(overview.BottomSpecials);
+        CanRotateTopEpisodes = _topEpisodes.CanRotate;
+        CanRotateBottomEpisodes = _bottomEpisodes.CanRotate;
+        CanRotateTopSpecials = _topSpecials.CanRotate;
+        CanRotateBottomSpecials = _bottomSpecials.CanRotate;
         Replace(Mismatches, overview.Mismatches);
         Replace(EmptyOpinions, overview.EmptyOpinions);
 
@@ -246,19 +288,32 @@ public sealed partial class StatsViewModel : ViewModelBase
         HasHeatmapRows = HeatmapRows.Count > 0;
         HasShowStrip = ShowStrip.SourceCount > 0 || overview.UnratedShowCount > 0;
         HasMovieStrip = MovieStrip.SourceCount > 0 || overview.UnratedMovieCount > 0;
-        HasTopEpisodes = TopEpisodes.Count > 0;
-        HasBottomEpisodes = BottomEpisodes.Count > 0;
-        HasTopSpecials = TopSpecials.Count > 0;
-        HasBottomSpecials = BottomSpecials.Count > 0;
+        HasTopEpisodes = overview.TopEpisodes.Count > 0;
+        HasBottomEpisodes = overview.BottomEpisodes.Count > 0;
+        HasTopSpecials = overview.TopSpecials.Count > 0;
+        HasBottomSpecials = overview.BottomSpecials.Count > 0;
         HasMismatches = Mismatches.Count > 0;
         HasEmptyOpinions = EmptyOpinions.Count > 0;
         HasHighlightSlot = BillboardHighlights.Count > 0;
         HasRandomSlot = BillboardRandom.Count > 0;
         HasBillboard = HasHighlightSlot || HasRandomSlot;
+        UpdateHallOfFameTimer();
     }
 
     [RelayCommand]
     private void ToggleBillboardPause() => IsBillboardPaused = !IsBillboardPaused;
+
+    [RelayCommand]
+    private void ToggleTopEpisodesPause() => IsTopEpisodesPaused = !IsTopEpisodesPaused;
+
+    [RelayCommand]
+    private void ToggleBottomEpisodesPause() => IsBottomEpisodesPaused = !IsBottomEpisodesPaused;
+
+    [RelayCommand]
+    private void ToggleTopSpecialsPause() => IsTopSpecialsPaused = !IsTopSpecialsPaused;
+
+    [RelayCommand]
+    private void ToggleBottomSpecialsPause() => IsBottomSpecialsPaused = !IsBottomSpecialsPaused;
 
     [RelayCommand]
     private void OpenShow(long showId) => OpenLibrary(MediaKind.TvEpisode, showId, seasonNumber: null);
@@ -272,17 +327,6 @@ public sealed partial class StatsViewModel : ViewModelBase
         }
 
         OpenLibrary(card.MediaKind, card.MediaId, seasonNumber: null);
-    }
-
-    [RelayCommand]
-    private void OpenHallOfFame(EpisodeHallOfFameEntry? entry)
-    {
-        if (entry is null)
-        {
-            return;
-        }
-
-        OpenLibrary(MediaKind.TvEpisode, entry.ShowId, entry.SeasonNumber);
     }
 
     [RelayCommand]
@@ -339,6 +383,75 @@ public sealed partial class StatsViewModel : ViewModelBase
     private async Task LoadPosterAsync(StatsBillboardCardViewModel card, string? posterPath, MediaKind kind, int tmdbId)
     {
         card.PosterImage = await _posterImageService.LoadAsync(posterPath, kind, tmdbId, width: 342);
+    }
+
+    partial void OnIsBillboardActiveChanged(bool value) => UpdateHallOfFameTimer();
+
+    partial void OnIsTopEpisodesPausedChanged(bool value) => UpdateHallOfFameTimer();
+
+    partial void OnIsBottomEpisodesPausedChanged(bool value) => UpdateHallOfFameTimer();
+
+    partial void OnIsTopSpecialsPausedChanged(bool value) => UpdateHallOfFameTimer();
+
+    partial void OnIsBottomSpecialsPausedChanged(bool value) => UpdateHallOfFameTimer();
+
+    private void AdvanceHallOfFame()
+    {
+        if (!IsBillboardActive)
+        {
+            return;
+        }
+
+        if (!IsTopEpisodesPaused)
+        {
+            _topEpisodes.Advance();
+        }
+
+        if (!IsBottomEpisodesPaused)
+        {
+            _bottomEpisodes.Advance();
+        }
+
+        if (!IsTopSpecialsPaused)
+        {
+            _topSpecials.Advance();
+        }
+
+        if (!IsBottomSpecialsPaused)
+        {
+            _bottomSpecials.Advance();
+        }
+    }
+
+    private void UpdateHallOfFameTimer()
+    {
+        var anyCanRun =
+            (CanRotateTopEpisodes && !IsTopEpisodesPaused) ||
+            (CanRotateBottomEpisodes && !IsBottomEpisodesPaused) ||
+            (CanRotateTopSpecials && !IsTopSpecialsPaused) ||
+            (CanRotateBottomSpecials && !IsBottomSpecialsPaused);
+        if (IsBillboardActive && anyCanRun)
+        {
+            if (!_hallOfFameTimer.IsEnabled)
+            {
+                _hallOfFameTimer.Start();
+            }
+
+            return;
+        }
+
+        _hallOfFameTimer.Stop();
+    }
+
+    private void HookPager(HallOfFamePager pager, string propertyName)
+    {
+        pager.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(HallOfFamePager.Page))
+            {
+                OnPropertyChanged(propertyName);
+            }
+        };
     }
 
     private static void Replace<T>(ObservableCollection<T> target, IReadOnlyList<T> source)

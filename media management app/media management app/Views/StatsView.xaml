@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:converters="clr-namespace:media_management_app.Converters"
              xmlns:controls="clr-namespace:media_management_app.Views.Controls"
+             xmlns:views="clr-namespace:media_management_app.Views"
              xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
              xmlns:lvc="clr-namespace:LiveChartsCore.SkiaSharpView.WPF;assembly=LiveChartsCore.SkiaSharpView.WPF"
              xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes">
@@ -53,6 +54,64 @@
             <Setter Property="VerticalAlignment" Value="Center" />
             <Setter Property="Margin" Value="0,0,8,0" />
             <Setter Property="Foreground" Value="{StaticResource AppBrushMutedText}" />
+        </Style>
+
+        <Style x:Key="HallOfFamePauseButtonStyle" TargetType="Button" BasedOn="{StaticResource AppOutlinedButtonStyle}">
+            <Setter Property="Width" Value="28" />
+            <Setter Property="MinWidth" Value="28" />
+            <Setter Property="Height" Value="28" />
+            <Setter Property="MinHeight" Value="28" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="ToolTip" Value="Pause or resume list animation (this session only)" />
+        </Style>
+
+        <Style x:Key="StatsTocItemButtonStyle" TargetType="Button" BasedOn="{StaticResource AppOutlinedButtonStyle}">
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="Padding" Value="8,6" />
+            <Setter Property="Margin" Value="0,0,0,2" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="MinHeight" Value="28" />
+        </Style>
+
+        <Style x:Key="HallOfFamePauseIconBaseStyle" TargetType="iconPacks:PackIconLucide">
+            <Setter Property="Kind" Value="Pause" />
+            <Setter Property="Width" Value="14" />
+            <Setter Property="Height" Value="14" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Foreground" Value="{StaticResource AppBrushMutedText}" />
+        </Style>
+
+        <Style x:Key="TopEpisodesPauseIconStyle" TargetType="iconPacks:PackIconLucide" BasedOn="{StaticResource HallOfFamePauseIconBaseStyle}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsTopEpisodesPaused}" Value="True">
+                    <Setter Property="Kind" Value="Play" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="BottomEpisodesPauseIconStyle" TargetType="iconPacks:PackIconLucide" BasedOn="{StaticResource HallOfFamePauseIconBaseStyle}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsBottomEpisodesPaused}" Value="True">
+                    <Setter Property="Kind" Value="Play" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="TopSpecialsPauseIconStyle" TargetType="iconPacks:PackIconLucide" BasedOn="{StaticResource HallOfFamePauseIconBaseStyle}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsTopSpecialsPaused}" Value="True">
+                    <Setter Property="Kind" Value="Play" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="BottomSpecialsPauseIconStyle" TargetType="iconPacks:PackIconLucide" BasedOn="{StaticResource HallOfFamePauseIconBaseStyle}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsBottomSpecialsPaused}" Value="True">
+                    <Setter Property="Kind" Value="Play" />
+                </DataTrigger>
+            </Style.Triggers>
         </Style>
 
         <DataTemplate x:Key="PosterCardTemplate">
@@ -117,29 +176,38 @@
         </DataTemplate>
 
         <DataTemplate x:Key="BestHallOfFameTemplate">
-            <Button Command="{Binding DataContext.OpenHallOfFameCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                    CommandParameter="{Binding}"
-                    Background="Transparent"
-                    BorderThickness="0"
-                    Padding="0,4"
-                    HorizontalContentAlignment="Stretch"
-                    Cursor="Hand">
+            <Grid Height="44">
                 <Grid>
+                    <Grid.Style>
+                        <Style TargetType="Grid">
+                            <Setter Property="Visibility" Value="Visible" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsPlaceholder}" Value="True">
+                                    <Setter Property="Visibility" Value="Hidden" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Grid.Style>
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" MinWidth="0" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
-                    <StackPanel>
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
                         <TextBlock Text="{Binding ShowTitle}"
                                    FontWeight="SemiBold"
                                    Foreground="{StaticResource AppBrushText}"
+                                   TextWrapping="NoWrap"
                                    TextTrimming="CharacterEllipsis" />
-                        <TextBlock Style="{StaticResource MutedTextStyle}">
-                            <Run Text="{Binding EpisodeCode, Mode=OneWay}" />
-                            <Run Text=" · " />
-                            <Run Text="{Binding EpisodeTitle, Mode=OneWay}" />
-                        </TextBlock>
-                    </StackPanel>
+                        <TextBlock Grid.Row="1"
+                                   Text="{Binding EpisodeLine}"
+                                   Style="{StaticResource MutedTextStyle}"
+                                   TextWrapping="NoWrap"
+                                   TextTrimming="CharacterEllipsis" />
+                    </Grid>
                     <StackPanel Grid.Column="1"
                                 Orientation="Horizontal"
                                 VerticalAlignment="Center"
@@ -156,40 +224,90 @@
                                    Foreground="{StaticResource AppBrushWarning}" />
                     </StackPanel>
                 </Grid>
-            </Button>
+                <TextBlock Text="—"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           Foreground="{StaticResource AppBrushMutedText}"
+                           Opacity="0.45">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsPlaceholder}" Value="True">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+                <Border Height="1"
+                        VerticalAlignment="Bottom"
+                        Opacity="0.22"
+                        Background="{StaticResource AppBrushMutedText}" />
+            </Grid>
         </DataTemplate>
 
         <DataTemplate x:Key="LowestHallOfFameTemplate">
-            <Button Command="{Binding DataContext.OpenHallOfFameCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                    CommandParameter="{Binding}"
-                    Background="Transparent"
-                    BorderThickness="0"
-                    Padding="0,4"
-                    HorizontalContentAlignment="Stretch"
-                    Cursor="Hand">
+            <Grid Height="44">
                 <Grid>
+                    <Grid.Style>
+                        <Style TargetType="Grid">
+                            <Setter Property="Visibility" Value="Visible" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsPlaceholder}" Value="True">
+                                    <Setter Property="Visibility" Value="Hidden" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Grid.Style>
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" MinWidth="0" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
-                    <StackPanel>
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
                         <TextBlock Text="{Binding ShowTitle}"
                                    FontWeight="SemiBold"
                                    Foreground="{StaticResource AppBrushText}"
+                                   TextWrapping="NoWrap"
                                    TextTrimming="CharacterEllipsis" />
-                        <TextBlock Style="{StaticResource MutedTextStyle}">
-                            <Run Text="{Binding EpisodeCode, Mode=OneWay}" />
-                            <Run Text=" · " />
-                            <Run Text="{Binding EpisodeTitle, Mode=OneWay}" />
-                        </TextBlock>
-                    </StackPanel>
+                        <TextBlock Grid.Row="1"
+                                   Text="{Binding EpisodeLine}"
+                                   Style="{StaticResource MutedTextStyle}"
+                                   TextWrapping="NoWrap"
+                                   TextTrimming="CharacterEllipsis" />
+                    </Grid>
                     <TextBlock Grid.Column="1"
                                Text="{Binding UserRating, StringFormat=0.0}"
                                FontWeight="SemiBold"
                                VerticalAlignment="Center"
+                               Margin="8,0,0,0"
                                Foreground="{StaticResource AppBrushMutedText}" />
                 </Grid>
-            </Button>
+                <TextBlock Text="—"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           Foreground="{StaticResource AppBrushMutedText}"
+                           Opacity="0.45">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsPlaceholder}" Value="True">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+                <Border Height="1"
+                        VerticalAlignment="Bottom"
+                        Opacity="0.22"
+                        Background="{StaticResource AppBrushMutedText}" />
+            </Grid>
         </DataTemplate>
     </UserControl.Resources>
 
@@ -209,7 +327,8 @@
             </TextBlock.Style>
         </TextBlock>
 
-        <ScrollViewer VerticalScrollBarVisibility="Auto"
+        <ScrollViewer x:Name="StatsScroller"
+                      VerticalScrollBarVisibility="Auto"
                       HorizontalScrollBarVisibility="Disabled">
             <ScrollViewer.Style>
                 <Style TargetType="ScrollViewer">
@@ -221,8 +340,9 @@
                     </Style.Triggers>
                 </Style>
             </ScrollViewer.Style>
-            <StackPanel>
-                <materialDesign:Card Style="{StaticResource PanelCardStyle}">
+            <StackPanel x:Name="StatsScrollContent">
+                <materialDesign:Card Style="{StaticResource PanelCardStyle}"
+                                    views:StatsToc.Title="Stats">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
@@ -251,6 +371,7 @@
                 </materialDesign:Card>
 
                 <materialDesign:Card Style="{StaticResource PanelCardStyle}"
+                                    views:StatsToc.Title="Billboard"
                                     Visibility="{Binding HasBillboard, Converter={StaticResource BooleanToVisibilityConverter}}">
                     <StackPanel>
                         <Grid Margin="0,0,0,10">
@@ -264,40 +385,23 @@
                             </StackPanel>
                             <Button Grid.Column="1"
                                     Command="{Binding ToggleBillboardPauseCommand}"
-                                    Style="{StaticResource AppOutlinedButtonStyle}"
-                                    MinHeight="32"
-                                    Padding="10,6"
+                                    Style="{StaticResource HallOfFamePauseButtonStyle}"
                                     ToolTip="Pause or resume billboard animation (this session only)">
-                                <StackPanel Orientation="Horizontal">
-                                    <iconPacks:PackIconLucide Width="14"
-                                                              Height="14"
-                                                              VerticalAlignment="Center"
-                                                              Margin="0,0,6,0">
-                                        <iconPacks:PackIconLucide.Style>
-                                            <Style TargetType="iconPacks:PackIconLucide">
-                                                <Setter Property="Kind" Value="Pause" />
-                                                <Setter Property="Foreground" Value="{StaticResource AppBrushMutedText}" />
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding IsBillboardPaused}" Value="True">
-                                                        <Setter Property="Kind" Value="Play" />
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </iconPacks:PackIconLucide.Style>
-                                    </iconPacks:PackIconLucide>
-                                    <TextBlock VerticalAlignment="Center">
-                                        <TextBlock.Style>
-                                            <Style TargetType="TextBlock">
-                                                <Setter Property="Text" Value="Pause" />
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding IsBillboardPaused}" Value="True">
-                                                        <Setter Property="Text" Value="Play" />
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </TextBlock.Style>
-                                    </TextBlock>
-                                </StackPanel>
+                                <iconPacks:PackIconLucide Width="14"
+                                                          Height="14"
+                                                          VerticalAlignment="Center"
+                                                          Foreground="{StaticResource AppBrushMutedText}">
+                                    <iconPacks:PackIconLucide.Style>
+                                        <Style TargetType="iconPacks:PackIconLucide">
+                                            <Setter Property="Kind" Value="Pause" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsBillboardPaused}" Value="True">
+                                                    <Setter Property="Kind" Value="Play" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </iconPacks:PackIconLucide.Style>
+                                </iconPacks:PackIconLucide>
                             </Button>
                         </Grid>
                         <Grid>
@@ -334,6 +438,7 @@
                 </materialDesign:Card>
 
                 <materialDesign:Card Style="{StaticResource PanelCardStyle}"
+                                    views:StatsToc.Title="Watch status"
                                     Visibility="{Binding HasWatchStatusStats, Converter={StaticResource BooleanToVisibilityConverter}}">
                     <StackPanel>
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
@@ -442,6 +547,7 @@
                 </materialDesign:Card>
 
                 <materialDesign:Card Style="{StaticResource PanelCardStyle}"
+                                    views:StatsToc.Title="Title / Episode bands"
                                     ClipContent="False"
                                     ClipToBounds="False">
                     <Grid ClipToBounds="False">
@@ -532,7 +638,7 @@
                     </Grid>
                 </materialDesign:Card>
 
-                <Grid>
+                <Grid views:StatsToc.Title="Best / Lowest episodes">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="*" />
@@ -540,34 +646,61 @@
                     <materialDesign:Card Grid.Column="0"
                                         Style="{StaticResource PanelCardStyle}"
                                         Margin="0,0,6,12"
-                                        Visibility="{Binding HasTopEpisodes, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                        VerticalAlignment="Top">
                         <StackPanel>
-                            <StackPanel Orientation="Horizontal">
-                                <iconPacks:PackIconLucide Kind="Trophy" Style="{StaticResource SectionIconStyle}" />
-                                <TextBlock Text="Best episodes" Style="{StaticResource SectionTitleStyle}" />
-                            </StackPanel>
-                            <ItemsControl ItemsSource="{Binding TopEpisodes}"
-                                          ItemTemplate="{StaticResource BestHallOfFameTemplate}"
-                                          Margin="0,8,0,0" />
+                            <Grid Height="28">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" MinWidth="0" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <iconPacks:PackIconLucide Kind="Trophy" Style="{StaticResource SectionIconStyle}" />
+                                    <TextBlock Text="Best episodes" Style="{StaticResource SectionTitleStyle}" />
+                                </StackPanel>
+                                <Button Grid.Column="1"
+                                        Command="{Binding ToggleTopEpisodesPauseCommand}"
+                                        Style="{StaticResource HallOfFamePauseButtonStyle}"
+                                        IsEnabled="{Binding CanRotateTopEpisodes}">
+                                    <iconPacks:PackIconLucide Style="{StaticResource TopEpisodesPauseIconStyle}" />
+                                </Button>
+                            </Grid>
+                            <controls:StatsHallOfFameSlot ItemsSource="{Binding TopEpisodes}"
+                                                           ItemTemplate="{StaticResource BestHallOfFameTemplate}"
+                                                           CanAnimate="{Binding CanRotateTopEpisodes}"
+                                                           Margin="0,8,0,0" />
                         </StackPanel>
                     </materialDesign:Card>
                     <materialDesign:Card Grid.Column="1"
                                         Style="{StaticResource PanelCardStyle}"
                                         Margin="6,0,0,12"
-                                        Visibility="{Binding HasBottomEpisodes, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                        VerticalAlignment="Top">
                         <StackPanel>
-                            <StackPanel Orientation="Horizontal">
-                                <iconPacks:PackIconLucide Kind="TrendingDown" Style="{StaticResource SectionIconStyle}" />
-                                <TextBlock Text="Lowest episodes" Style="{StaticResource SectionTitleStyle}" />
-                            </StackPanel>
-                            <ItemsControl ItemsSource="{Binding BottomEpisodes}"
-                                          ItemTemplate="{StaticResource LowestHallOfFameTemplate}"
-                                          Margin="0,8,0,0" />
+                            <Grid Height="28">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" MinWidth="0" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <iconPacks:PackIconLucide Kind="TrendingDown" Style="{StaticResource SectionIconStyle}" />
+                                    <TextBlock Text="Lowest episodes" Style="{StaticResource SectionTitleStyle}" />
+                                </StackPanel>
+                                <Button Grid.Column="1"
+                                        Command="{Binding ToggleBottomEpisodesPauseCommand}"
+                                        Style="{StaticResource HallOfFamePauseButtonStyle}"
+                                        IsEnabled="{Binding CanRotateBottomEpisodes}">
+                                    <iconPacks:PackIconLucide Style="{StaticResource BottomEpisodesPauseIconStyle}" />
+                                </Button>
+                            </Grid>
+                            <controls:StatsHallOfFameSlot ItemsSource="{Binding BottomEpisodes}"
+                                                           ItemTemplate="{StaticResource LowestHallOfFameTemplate}"
+                                                           CanAnimate="{Binding CanRotateBottomEpisodes}"
+                                                           Margin="0,8,0,0" />
                         </StackPanel>
                     </materialDesign:Card>
                 </Grid>
 
                 <materialDesign:Card Style="{StaticResource PanelCardStyle}"
+                                    views:StatsToc.Title="Movies"
                                     Visibility="{Binding HasMovieStrip, Converter={StaticResource BooleanToVisibilityConverter}}">
                     <StackPanel>
                         <Grid>
@@ -635,6 +768,7 @@
                 </materialDesign:Card>
 
                 <materialDesign:Card Style="{StaticResource PanelCardStyle}"
+                                    views:StatsToc.Title="Shows"
                                     Visibility="{Binding HasShowStrip, Converter={StaticResource BooleanToVisibilityConverter}}">
                     <StackPanel>
                         <Grid>
@@ -702,6 +836,7 @@
                 </materialDesign:Card>
 
                 <materialDesign:Card Style="{StaticResource PanelCardStyle}"
+                                    views:StatsToc.Title="Episode heatmap"
                                     Visibility="{Binding HasHeatmapRows, Converter={StaticResource BooleanToVisibilityConverter}}">
                     <StackPanel>
                         <StackPanel Orientation="Horizontal">
@@ -969,6 +1104,7 @@
                 </materialDesign:Card>
 
                 <materialDesign:Card Style="{StaticResource PanelCardStyle}"
+                                    views:StatsToc.Title="Show score vs episode mean"
                                     Visibility="{Binding HasMismatches, Converter={StaticResource BooleanToVisibilityConverter}}">
                     <StackPanel>
                         <StackPanel Orientation="Horizontal">
@@ -1018,7 +1154,7 @@
                     </StackPanel>
                 </materialDesign:Card>
 
-                <Grid>
+                <Grid views:StatsToc.Title="Best / Lowest specials">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="*" />
@@ -1026,34 +1162,61 @@
                     <materialDesign:Card Grid.Column="0"
                                         Style="{StaticResource PanelCardStyle}"
                                         Margin="0,0,6,12"
-                                        Visibility="{Binding HasTopSpecials, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                        VerticalAlignment="Top">
                         <StackPanel>
-                            <StackPanel Orientation="Horizontal">
-                                <iconPacks:PackIconLucide Kind="Sparkles" Style="{StaticResource SectionIconStyle}" />
-                                <TextBlock Text="Best specials" Style="{StaticResource SectionTitleStyle}" />
-                            </StackPanel>
-                            <ItemsControl ItemsSource="{Binding TopSpecials}"
-                                          ItemTemplate="{StaticResource BestHallOfFameTemplate}"
-                                          Margin="0,8,0,0" />
+                            <Grid Height="28">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" MinWidth="0" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <iconPacks:PackIconLucide Kind="Sparkles" Style="{StaticResource SectionIconStyle}" />
+                                    <TextBlock Text="Best specials" Style="{StaticResource SectionTitleStyle}" />
+                                </StackPanel>
+                                <Button Grid.Column="1"
+                                        Command="{Binding ToggleTopSpecialsPauseCommand}"
+                                        Style="{StaticResource HallOfFamePauseButtonStyle}"
+                                        IsEnabled="{Binding CanRotateTopSpecials}">
+                                    <iconPacks:PackIconLucide Style="{StaticResource TopSpecialsPauseIconStyle}" />
+                                </Button>
+                            </Grid>
+                            <controls:StatsHallOfFameSlot ItemsSource="{Binding TopSpecials}"
+                                                           ItemTemplate="{StaticResource BestHallOfFameTemplate}"
+                                                           CanAnimate="{Binding CanRotateTopSpecials}"
+                                                           Margin="0,8,0,0" />
                         </StackPanel>
                     </materialDesign:Card>
                     <materialDesign:Card Grid.Column="1"
                                         Style="{StaticResource PanelCardStyle}"
                                         Margin="6,0,0,12"
-                                        Visibility="{Binding HasBottomSpecials, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                        VerticalAlignment="Top">
                         <StackPanel>
-                            <StackPanel Orientation="Horizontal">
-                                <iconPacks:PackIconLucide Kind="StarOff" Style="{StaticResource SectionIconStyle}" />
-                                <TextBlock Text="Lowest specials" Style="{StaticResource SectionTitleStyle}" />
-                            </StackPanel>
-                            <ItemsControl ItemsSource="{Binding BottomSpecials}"
-                                          ItemTemplate="{StaticResource LowestHallOfFameTemplate}"
-                                          Margin="0,8,0,0" />
+                            <Grid Height="28">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" MinWidth="0" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <iconPacks:PackIconLucide Kind="StarOff" Style="{StaticResource SectionIconStyle}" />
+                                    <TextBlock Text="Lowest specials" Style="{StaticResource SectionTitleStyle}" />
+                                </StackPanel>
+                                <Button Grid.Column="1"
+                                        Command="{Binding ToggleBottomSpecialsPauseCommand}"
+                                        Style="{StaticResource HallOfFamePauseButtonStyle}"
+                                        IsEnabled="{Binding CanRotateBottomSpecials}">
+                                    <iconPacks:PackIconLucide Style="{StaticResource BottomSpecialsPauseIconStyle}" />
+                                </Button>
+                            </Grid>
+                            <controls:StatsHallOfFameSlot ItemsSource="{Binding BottomSpecials}"
+                                                           ItemTemplate="{StaticResource LowestHallOfFameTemplate}"
+                                                           CanAnimate="{Binding CanRotateBottomSpecials}"
+                                                           Margin="0,8,0,0" />
                         </StackPanel>
                     </materialDesign:Card>
                 </Grid>
 
                 <materialDesign:Card Style="{StaticResource PanelCardStyle}"
+                                    views:StatsToc.Title="Empty opinions"
                                     Visibility="{Binding HasEmptyOpinions, Converter={StaticResource BooleanToVisibilityConverter}}">
                     <StackPanel>
                         <StackPanel Orientation="Horizontal">
@@ -1085,5 +1248,58 @@
                 </materialDesign:Card>
             </StackPanel>
         </ScrollViewer>
+
+        <Button x:Name="JumpToSectionButton"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Bottom"
+                Padding="0"
+                ToolTip="Jump to section"
+                Click="JumpToSectionButton_Click">
+            <Button.Style>
+                <Style TargetType="Button" BasedOn="{StaticResource HallOfFamePauseButtonStyle}">
+                    <Setter Property="Width" Value="36" />
+                    <Setter Property="MinWidth" Value="36" />
+                    <Setter Property="Visibility" Value="Visible" />
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding HasLibrary}" Value="False">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Button.Style>
+            <iconPacks:PackIconLucide Kind="ChevronsUpDown"
+                                      Width="16"
+                                      Height="16"
+                                      VerticalAlignment="Center"
+                                      Foreground="{StaticResource AppBrushMutedText}" />
+        </Button>
+        <Popup x:Name="TocPopup"
+               PlacementTarget="{Binding ElementName=JumpToSectionButton}"
+               Placement="Top"
+               StaysOpen="False"
+               AllowsTransparency="True"
+               VerticalOffset="-8">
+            <Border Background="{StaticResource AppBrushSurfaceRaised}"
+                    BorderBrush="{StaticResource AppBrushMutedText}"
+                    BorderThickness="1"
+                    CornerRadius="6"
+                    Padding="6"
+                    MinWidth="220"
+                    MaxHeight="360">
+                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled">
+                    <ItemsControl x:Name="TocList">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Button Content="{Binding Title}"
+                                        Tag="{Binding Target}"
+                                        Style="{StaticResource StatsTocItemButtonStyle}"
+                                        Click="TocItem_Click" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </Border>
+        </Popup>
     </Grid>
 </UserControl>

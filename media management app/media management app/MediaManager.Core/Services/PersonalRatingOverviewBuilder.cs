@@ -5,7 +5,9 @@ namespace media_management_app.Services;
 
 public static class PersonalRatingOverviewBuilder
 {
-    public const int HallOfFameSize = 10;
+    public const int HallOfFamePageSize = 10;
+    public const double BestEpisodeMinRating = 8.0;
+    public const double LowestEpisodeMaxRating = 5.9;
     public const int BillboardHighlightSize = 8;
     public const int MismatchMinEpisodeRatings = 3;
 
@@ -165,7 +167,8 @@ public static class PersonalRatingOverviewBuilder
         bool descending)
     {
         var titles = shows.ToDictionary(show => show.Id, show => show.DisplayTitle);
-        var rated = episodes.Where(episode => episode.UserRating.HasValue);
+        var rated = episodes.Where(episode =>
+            episode.UserRating.HasValue && IsHallOfFameEligible(episode.UserRating.Value, descending));
         var ordered = descending
             ? rated.OrderByDescending(episode => episode.UserRating)
                 .ThenBy(episode => titles.GetValueOrDefault(episode.ShowId, string.Empty), StringComparer.OrdinalIgnoreCase)
@@ -177,7 +180,6 @@ public static class PersonalRatingOverviewBuilder
                 .ThenBy(episode => episode.EpisodeNumber);
 
         return ordered
-            .Take(HallOfFameSize)
             .Select(episode => new EpisodeHallOfFameEntry
             {
                 ShowId = episode.ShowId,
@@ -190,6 +192,11 @@ public static class PersonalRatingOverviewBuilder
             })
             .ToList();
     }
+
+    private static bool IsHallOfFameEligible(double rating, bool descending) =>
+        descending
+            ? rating >= BestEpisodeMinRating
+            : rating <= LowestEpisodeMaxRating;
 
     private static (IReadOnlyList<StatsBillboardItem> Highlights, IReadOnlyList<StatsBillboardItem> Random)
         BuildBillboard(
