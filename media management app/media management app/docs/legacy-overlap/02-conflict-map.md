@@ -15,8 +15,9 @@ flowchart TD
   hunt --> forcePar{ForceParallelEpisodeSearch?}
   forcePar -->|true| recipeEval
   forcePar -->|false| snapFlag
-  leftover --> atPolicy{Hunt only: Auto-Track policy}
-  recipeEval --> atPolicy
+  leftover --> candidates[Candidates]
+  recipeEval --> candidates
+  movieEval --> candidates
 ```
 
 ---
@@ -46,10 +47,10 @@ Entry: [`AutoTrackService.RunFetchAndAddPhaseAsync`](../../Services/AutoTrackSer
 
 | Live `settings.json` | Effect on this machine |
 |----------------------|------------------------|
-| `ForceParallelEpisodeSearch: false` | Hunt uses recipe snapshot flag → **same leftover quality gate** as cart snapshot |
-| If user enables Force Parallel | Hunt uses `EvaluateEpisode` → **recipe** quality; cart snapshot still leftover |
+| `ForceParallelEpisodeSearch: false` | Hunt uses recipe snapshot flag. Snapshot matching uses the recipe Candidate Filter (not Settings Auto-Track Quality). |
+| If user enables Force Parallel | Hunt uses `EvaluateEpisode` → recipe quality; Cart still follows the recipe snapshot flag |
 
-After any matcher, hunt applies [`AutoTrackCandidatePolicyService`](../../Services/AutoTrackCandidatePolicyService.cs). That cannot resurrect 2160p already dropped by `PreferredQuality`.
+There is **no** Settings Auto-Track Quality post-filter. Hunt applies recipe + `AutoTrackEpisodeOverridesJson`. Override-kills (stock recipe would accept) are logged as `REJECT by=override` / `HuntOverride` and hunt fail **Rejected by override**.
 
 ---
 
@@ -83,6 +84,6 @@ Always **recipe** filter. Movie `PreferredQuality` unused.
 | TV cart, parallel | Recipe filter | No |
 | TV cart, snapshot | **Show `PreferredQuality`** | **Yes** |
 | TV pack cart | **Show `PreferredQuality`** | **Yes** |
-| Hunt, force parallel | Recipe filter, then Auto-Track policy | Prefs no; Auto-Track yes (policy) |
-| Hunt, snapshot (live default) | **Show `PreferredQuality`**, then Auto-Track policy | **Yes**, then Auto-Track |
+| Hunt, force parallel | Recipe filter | No |
+| Hunt, snapshot | Recipe filter (snapshot matcher) | Prefs unused for quality |
 | Recipe dry-run | Recipe filter | No |

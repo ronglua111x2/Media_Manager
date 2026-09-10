@@ -238,7 +238,6 @@ torrent:
 
 autotrack:
   - IAutoTrackService -> AutoTrackService
-  - AutoTrackCandidatePolicyService -> AutoTrackCandidatePolicyService
   - IAutoTrackSchedulerService -> AutoTrackSchedulerService
 
 integrations:

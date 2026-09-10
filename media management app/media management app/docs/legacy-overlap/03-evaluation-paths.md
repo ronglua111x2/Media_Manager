@@ -7,10 +7,10 @@ Three evaluators exist. Only one is “recipes as edited in the UI” for TV sna
 | Type | File | Quality source | Seeders / exclude / size |
 |------|------|----------------|---------------------------|
 | `CandidateEvaluationService` | [`MediaManager.Core/Services/CandidateEvaluationService.cs`](../../MediaManager.Core/Services/CandidateEvaluationService.cs) | Filter `QualityAllowList` | Filter module |
-| `SnapshotCandidateMatcher` | [`Services/SnapshotCandidateMatcher.cs`](../../Services/SnapshotCandidateMatcher.cs) | `selectedQualities` from **show** | `show.MinimumSeeders`; no exclude terms |
+| `SnapshotCandidateMatcher` | [`Services/SnapshotCandidateMatcher.cs`](../../Services/SnapshotCandidateMatcher.cs) | Recipe Candidate Filter (`qualityAllowList`) | Recipe filter (seeders/size); tests ignore `PreferredQuality` |
 | `CandidateMatcher` | [`Services/CandidateMatcher.cs`](../../Services/CandidateMatcher.cs) | Caller-supplied list (show prefs) | `show.MinimumSeeders` |
 
-`SnapshotCandidateMatcher` still takes recipe **scoring weights** and **prefer terms**. Mixed: score like a recipe, filter like 2010s Auto Torrent prefs.
+`SnapshotCandidateMatcher` uses recipe Candidate Filter plus recipe scoring weights and prefer terms.
 
 `CandidateMatcher` is only used from unused `MapEpisodeCandidates`.
 
@@ -30,9 +30,8 @@ Run Cart movies / recipe DryRun
 
 Hunt
   FetchEpisodeCandidatesAsync (same as cart; ForceParallel can disable snapshot)
+  WriteRecipeEvaluation (ACCEPT/REJECT, Overrides=on|off, by=override, HuntOverride)
   WriteHuntMatch
-  then AutoTrackCandidatePolicyService
-  WriteHuntPolicy if policy wipes matches
 ```
 
 ## Cart debug split
@@ -41,9 +40,8 @@ Hunt
 
 | Method | Used by | Output |
 |--------|---------|--------|
-| `WriteRecipeEvaluation` | `AutomationFlowService.TryWriteCandidateDebugLog` | All rows, reject summaries |
-| `WriteHuntMatch` | `FetchJobService.TryWriteHuntMatchDebug` | `SearchRows` + `MATCH` lines for **kept** candidates only |
-| `WriteHuntPolicy` | `AutoTrackService` | Policy rejects after recipe/snapshot match |
+| `WriteRecipeEvaluation` | `FetchJobService` / `AutomationFlowService` | All rows, reject summaries, `Overrides=on|off`, `by=override`, `HuntOverride` |
+| `WriteHuntMatch` | `FetchJobService.TryWriteCandidateDebug` | `SearchRows` + `MATCH` lines for **kept** candidates only |
 
 TV cart with debug enabled looks “too generic” because it uses `WriteHuntMatch`. Movie dry-run looks like the old full dump.
 

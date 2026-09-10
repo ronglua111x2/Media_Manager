@@ -30,8 +30,6 @@ public sealed class AutoTrackSettings
 
     public int MaxTmdbRefreshesPerDay { get; set; } = 20;
 
-    public AutoTrackQualityPolicy Quality { get; set; } = new();
-
     public AutoTrackSearchSettings Search { get; set; } = new();
 
     public JellyfinRefreshSettings Jellyfin { get; set; } = new();

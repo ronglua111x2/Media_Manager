@@ -16,6 +16,8 @@ public interface IFetchJobService
 
     int GetSearchRowCount(long episodeId);
 
+    IReadOnlyDictionary<CandidateRejectReason, int> GetOverrideRejectCounts(long episodeId);
+
     CartCandidateDebugSession? TakeHuntDebugSession();
 
     Task<IReadOnlyDictionary<long, IReadOnlyList<EpisodeFetchCandidate>>> FetchEpisodeCandidatesAsync(

@@ -23,7 +23,7 @@ TV **snapshot** and **season pack** matching do **not** use recipe `qualityAllow
 
 That column is leftover **per-show Auto Torrent** prefs from before recipes. There is **no Settings / Library / Cart editor**. Add/import hardcodes `"1080p"`. All 33 shows and 10 movies on the live DB are still that default.
 
-**This is not Auto-Track quality.** Auto-Track uses `AutoTrackMinQuality` / `AutoTrackAllowedQualities` (and global Settings) **after** matching. Breaking Bad has those Auto-Track fields empty.
+**This is not leftover Auto-Track Settings quality.** That post-filter (`AutoTrack.Quality` / `AutoTrackMinQuality`) has been removed. Hunt uses recipe Candidate Filter plus `AutoTrackEpisodeOverridesJson`. Breaking Bad's empty Auto-Track quality columns were never the 4K cart bug.
 
 **This is not a qBittorrent API regression.** Engines returned hundreds of rows.
 
@@ -39,7 +39,7 @@ Movie Run Cart uses `AutomationFlowService.DryRunMovieAsync` → `CandidateEvalu
 |-------|--------|--------------------|--------------------|------------|
 | Recipe Candidate Filter | Current core | **Ignored** for quality/seeders/audio | **Used** | **Used** |
 | `PreferredQuality` (+ audio, min seeders) | Leftover, no UI | **Wins** | Unused | Unused |
-| Auto-Track min/allowed quality | Current core, hunt only | After match | After match | N/A |
+| Auto-Track Settings quality | **Removed** | — | — | N/A |
 
 Live `settings.json` has `AutoTrack.Search.ForceParallelEpisodeSearch: false`. Hunt therefore follows the **recipe snapshot flag**. A snapshot recipe on this machine uses leftover show quality for **both cart and hunt**.
 

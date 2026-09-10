@@ -20,7 +20,6 @@ public sealed class AutoTrackService : IAutoTrackService
     private readonly IPosterImageService _posterImageService;
     private readonly ITorrentAddGateService _addGateService;
     private readonly ITorrentBlacklistService _blacklistService;
-    private readonly AutoTrackCandidatePolicyService _candidatePolicyService;
     private readonly IOperationProgressService _progressService;
     private readonly IAppLogger _logger;
     private readonly SemaphoreSlim _discoveryLock = new(1, 1);
@@ -42,7 +41,6 @@ public sealed class AutoTrackService : IAutoTrackService
         IPosterImageService posterImageService,
         ITorrentAddGateService addGateService,
         ITorrentBlacklistService blacklistService,
-        AutoTrackCandidatePolicyService candidatePolicyService,
         IOperationProgressService progressService,
         IAppLogger logger)
     {
@@ -60,7 +58,6 @@ public sealed class AutoTrackService : IAutoTrackService
         _posterImageService = posterImageService;
         _addGateService = addGateService;
         _blacklistService = blacklistService;
-        _candidatePolicyService = candidatePolicyService;
         _progressService = progressService;
         _logger = logger;
     }
@@ -935,18 +932,24 @@ public sealed class AutoTrackService : IAutoTrackService
 
                         var episodeLabel = BuildOrderEpisodeLabel(order);
                         var searchRows = _fetchJobService.GetSearchRowCount(order.EpisodeId.Value);
+                        var overrideRejects = _fetchJobService.GetOverrideRejectCounts(order.EpisodeId.Value);
 
                         if (!candidatesByEpisodeId.TryGetValue(order.EpisodeId.Value, out var candidates) ||
                             candidates.Count == 0)
                         {
                             result.Failed++;
+                            var rejectedByOverride = searchRows > 0 && overrideRejects.Count > 0;
                             var stage = searchRows > 0 ? HuntEpisodeStage.RecipeMatch : HuntEpisodeStage.Search;
-                            var failureReason = searchRows > 0
-                                ? "No recipe matches"
-                                : "Search returned no rows";
-                            var statusDetail = searchRows > 0
-                                ? $"No recipe matches from {searchRows} search row(s)."
-                                : "No candidates found.";
+                            var failureReason = rejectedByOverride
+                                ? HuntLogFormatter.FormatOverrideRejectFailure(overrideRejects)
+                                : searchRows > 0
+                                    ? "No recipe matches"
+                                    : "Search returned no rows";
+                            var statusDetail = rejectedByOverride
+                                ? $"{failureReason}."
+                                : searchRows > 0
+                                    ? $"No recipe matches from {searchRows} search row(s)."
+                                    : "No candidates found.";
                             _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.NoCandidates, statusDetail);
                             RecordAndLogEpisodeOutcome(
                                 result,
@@ -955,61 +958,24 @@ public sealed class AutoTrackService : IAutoTrackService
                                     show.DisplayTitle,
                                     episodeLabel,
                                     searchRows,
-                                    recipeMatched: 0,
+                                    recipeMatched: rejectedByOverride ? overrideRejects.Values.Sum() : 0,
                                     policyKept: 0,
                                     stage,
                                     failureReason));
                             continue;
                         }
 
-                        var policyResult = _candidatePolicyService.ApplyWithDiagnostics(show, settings, candidates);
-                        if (policyResult.Kept.Count == 0)
-                        {
-                            result.Failed++;
-                            var rejectSummary = HuntLogFormatter.FormatPolicyRejectSummary(policyResult.RejectCounts);
-                            var statusDetail = string.IsNullOrWhiteSpace(rejectSummary)
-                                ? "No candidates passed auto-track quality policy."
-                                : $"No candidates passed auto-track quality policy. {rejectSummary}.";
-                            _torrentCartService.UpdateOrderStatus(
-                                order.Id,
-                                TorrentOrderStatus.NoCandidates,
-                                statusDetail);
-                            NotifyStage(
-                                "Auto-Track",
-                                $"{show.DisplayTitle} — {order.Title}: no candidates passed quality policy.",
-                                show,
-                                NotificationKind.AutoTrackHuntProgress);
-                            var outcome = BuildEpisodeOutcome(
-                                order,
-                                show.DisplayTitle,
-                                episodeLabel,
-                                searchRows,
-                                candidates.Count,
-                                policyKept: 0,
-                                HuntEpisodeStage.AutoTrackPolicy,
-                                rejectSummary,
-                                policyResult);
-                            if (huntDebugSession is not null)
-                            {
-                                HuntCandidateDebugWriter.WriteHuntPolicy(huntDebugSession, outcome);
-                            }
-
-                            RecordAndLogEpisodeOutcome(result, outcome);
-                            continue;
-                        }
-
                         result.CandidatesFound++;
-                        _torrentCartService.ReplaceCandidates(order.Id, ToCartCandidates(policyResult.Kept));
+                        _torrentCartService.ReplaceCandidates(order.Id, ToCartCandidates(candidates));
                         approvedFetchOutcomes[order.Id] = BuildEpisodeOutcome(
                             order,
                             show.DisplayTitle,
                             episodeLabel,
                             searchRows,
                             candidates.Count,
-                            policyResult.Kept.Count,
+                            candidates.Count,
                             HuntEpisodeStage.Accept,
-                            failureReason: null,
-                            policyResult);
+                            failureReason: null);
                     }
 
                     if (huntDebugSession is not null)
@@ -1331,7 +1297,6 @@ public sealed class AutoTrackService : IAutoTrackService
         _settingsService.Current.AutoTrack ??= new AutoTrackSettings();
         var autoTrack = _settingsService.Current.AutoTrack;
         autoTrack.Search ??= new AutoTrackSearchSettings();
-        autoTrack.Quality ??= new AutoTrackQualityPolicy();
         return autoTrack;
     }
 
@@ -1527,10 +1492,9 @@ public sealed class AutoTrackService : IAutoTrackService
         int recipeMatched,
         int policyKept,
         HuntEpisodeStage stage,
-        string? failureReason,
-        AutoTrackCandidatePolicyService.AutoTrackPolicyApplyResult? policyResult = null)
+        string? failureReason)
     {
-        var outcome = new HuntEpisodeOutcome
+        return new HuntEpisodeOutcome
         {
             OrderId = order.Id,
             ShowTitle = showTitle,
@@ -1542,22 +1506,6 @@ public sealed class AutoTrackService : IAutoTrackService
             FailureReason = failureReason,
             FailureDetail = failureReason
         };
-
-        if (policyResult is null)
-        {
-            return outcome;
-        }
-
-        outcome.PolicyMinFileSizeMb = policyResult.Policy.MinFileSizeMb;
-        outcome.PolicyMinSeeders = policyResult.Policy.MinSeeders > 0 ? policyResult.Policy.MinSeeders : null;
-        outcome.PolicyMinQuality = policyResult.Policy.MinQuality;
-        outcome.BestRejectedFileSize = policyResult.BestRejected?.FileSize;
-        foreach (var (reason, count) in policyResult.RejectCounts)
-        {
-            outcome.PolicyRejectCounts[reason] = count;
-        }
-
-        return outcome;
     }
 
     private static string BuildOrderEpisodeLabel(TorrentCartOrder order)

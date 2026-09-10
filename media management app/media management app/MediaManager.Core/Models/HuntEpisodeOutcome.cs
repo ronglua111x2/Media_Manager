@@ -1,15 +1,12 @@
-using System.Collections.Generic;
-
 namespace media_management_app.Models;
 
 public enum HuntEpisodeStage
 {
     Search = 0,
     RecipeMatch = 1,
-    AutoTrackPolicy = 2,
-    Accept = 3,
-    Add = 4,
-    Succeeded = 5
+    Accept = 2,
+    Add = 3,
+    Succeeded = 4
 }
 
 public sealed class HuntEpisodeOutcome
@@ -31,16 +28,6 @@ public sealed class HuntEpisodeOutcome
     public string? FailureReason { get; set; }
 
     public string? FailureDetail { get; set; }
-
-    public Dictionary<CandidateRejectReason, int> PolicyRejectCounts { get; set; } = [];
-
-    public int? PolicyMinFileSizeMb { get; set; }
-
-    public int? PolicyMinSeeders { get; set; }
-
-    public string? PolicyMinQuality { get; set; }
-
-    public long? BestRejectedFileSize { get; set; }
 
     public string? AddedCandidateName { get; set; }
 

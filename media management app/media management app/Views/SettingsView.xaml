@@ -621,34 +621,6 @@
                                     <CheckBox IsChecked="{Binding AutoTrackForceParallelEpisodeSearch, Mode=TwoWay}"
                                               Margin="0,0,0,8"
                                               Content="Force parallel episode search (no snapshot)" />
-                                    <TextBlock Text="Auto-Track quality" Style="{StaticResource SettingsSectionTitleStyle}" Margin="0,8,0,8" />
-                                    <TextBlock Text="Min quality" Style="{StaticResource SettingsLabelStyle}" />
-                                    <TextBox Text="{Binding AutoTrackMinQuality, UpdateSourceTrigger=PropertyChanged}"
-                                             Margin="0,0,0,8" />
-                                    <TextBlock Text="Min seeders" Style="{StaticResource SettingsLabelStyle}" />
-                                    <Border Style="{StaticResource SettingsNumericChromeStyle}" Margin="0,0,0,8">
-                                        <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
-                                                                      Value="{Binding AutoTrackMinSeeders, UpdateSourceTrigger=PropertyChanged}"
-                                                                      Minimum="0"
-                                                                      Maximum="99999" />
-                                    </Border>
-                                    <TextBlock Text="Min file size (MB, 0 = off)" Style="{StaticResource SettingsLabelStyle}" />
-                                    <Border Style="{StaticResource SettingsNumericChromeStyle}" Margin="0,0,0,8">
-                                        <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
-                                                                      Value="{Binding AutoTrackMinFileSizeMb, UpdateSourceTrigger=PropertyChanged}"
-                                                                      Minimum="0"
-                                                                      Maximum="50000" />
-                                    </Border>
-                                    <TextBlock Text="Max file size (MB, 0 = off)" Style="{StaticResource SettingsLabelStyle}" />
-                                    <Border Style="{StaticResource SettingsNumericChromeStyle}" Margin="0,0,0,8">
-                                        <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
-                                                                      Value="{Binding AutoTrackMaxFileSizeMb, UpdateSourceTrigger=PropertyChanged}"
-                                                                      Minimum="0"
-                                                                      Maximum="50000" />
-                                    </Border>
-                                    <TextBlock Text="Allowed qualities (comma-separated, optional)" Style="{StaticResource SettingsLabelStyle}" />
-                                    <TextBox Text="{Binding AutoTrackAllowedQualities, UpdateSourceTrigger=PropertyChanged}"
-                                             Margin="0,0,0,8" />
                                 </StackPanel>
                             </materialDesign:Card>
 
@@ -786,8 +758,8 @@
                                 </Border>
                                 <Border Style="{StaticResource SettingsGuideItemStyle}">
                                     <StackPanel>
-                                        <TextBlock Text="Quality filters" Style="{StaticResource SettingsLabelStyle}" />
-                                        <TextBlock Text="Min quality, min seeders, min/max file size, and allowed qualities filter which torrent candidates Auto-Track accepts. Leave size at 0 or qualities empty to skip that filter. Force parallel search skips the single-best snapshot and searches all episodes at once."
+                                        <TextBlock Text="Force parallel episode search" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Hunt-only search-mode override. When on, Auto-Track always searches each episode in parallel and ignores the recipe's snapshot flag. Cart still follows the recipe. Quality, seeders, and size stay on the recipe and the Auto-Track recipe card."
                                                    Style="{StaticResource SettingsHintStyle}" />
                                     </StackPanel>
                                 </Border>

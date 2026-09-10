@@ -455,7 +455,6 @@ Settings organized in seven sections (`SettingsSection` enum). All saved to `set
 | Weekly anchor | Day + time | `Models/AutoTrackSettings.cs` |
 | Intervals | TMDB, hunt, reconcile intervals | `Services/AutoTrackSchedulerService.cs` |
 | TMDB daily budget | Max refreshes per day | `Services/AutoTrackService.cs` |
-| Quality policy | Min quality, seeders, file size | `Models/AutoTrackQualityPolicy.cs` |
 | Hunt limits | Max shows/episodes per cycle | `Models/AutoTrackSearchSettings.cs` |
 | Jellyfin refresh | Enable, WARP hold, log path | `Models/JellyfinRefreshSettings.cs` |
 
@@ -528,8 +527,8 @@ Setup details: [STATE_FOLDER.md](./STATE_FOLDER.md#google-drive-oauth)
 - **DB:** `TrackedShows`, `TrackedSeasons`, `TrackedEpisodes`
 
 ### 10.3 Torrent Hunt (Auto-Track)
-- **What:** Search qBittorrent for pending episodes, score candidates, create cart orders, add torrents. Hunt applies the assigned episode recipe plus `AutoTrackEpisodeOverridesJson`, then the Settings Auto-Track Quality post-filter.
-- **Code:** `Services/AutoTrackService.cs` (`RunTorrentHuntAsync`), `Services/AutoTrackCandidatePolicyService.cs`
+- **What:** Search qBittorrent for pending episodes, score candidates, create cart orders, add torrents. Hunt applies the assigned episode recipe plus `AutoTrackEpisodeOverridesJson`.
+- **Code:** `Services/AutoTrackService.cs` (`RunTorrentHuntAsync`)
 - **DB:** `TorrentCartOrders`, `TorrentCartOrderCandidates`, `TrackedShows.AutoTrackEpisodeOverridesJson`
 - **External:** WARP connect, qBittorrent restart if WebUI down
 

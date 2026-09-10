@@ -34,10 +34,14 @@ public static class HuntCandidateDebugWriter
         IReadOnlyList<string> queries,
         IReadOnlyList<TorrentSearchResult> searchResults,
         IReadOnlyList<RecipeCandidateResult> evaluated,
-        int timeoutSeconds)
+        int timeoutSeconds,
+        RecipeExecutionOverrides? overrides = null,
+        SearchRecipe? stockRecipe = null)
     {
+        var stock = stockRecipe ?? recipe;
+        var hasOverrides = overrides is not null;
         session.WriteLine(
-            $"Media='{SanitizeForLog(targetTitle)}' Recipe='{SanitizeForLog(recipe.Name)}' RecipeId='{recipe.RecipeId}' Target='{FormatTarget(targetKind)}'");
+            $"Media='{SanitizeForLog(targetTitle)}' Recipe='{SanitizeForLog(recipe.Name)}' RecipeId='{recipe.RecipeId}' Target='{FormatTarget(targetKind)}' Overrides={HuntOverrideDebugFormatter.FormatOverridesFlag(hasOverrides)}");
         session.WriteLine($"Queries={queries.Count} => {string.Join(" | ", queries.Select(SanitizeForLog))}");
         session.WriteLine(
             $"SearchResults={searchResults.Count} TimeoutSeconds={timeoutSeconds} Accepted={evaluated.Count(item => item.IsAccepted)} Rejected={evaluated.Count(item => !item.IsAccepted)}");
@@ -49,6 +53,16 @@ public static class HuntCandidateDebugWriter
             session.WriteLine($"RejectSummary reason={summary.Key} count={summary.Count()}");
         }
 
+        var overrideRejects = RecipeOverrideReject.CountOverrideRejects(evaluated, overrides, stock);
+        var huntOverride = HuntOverrideDebugFormatter.FormatHuntOverrideSummary(
+            evaluated.Count(item => item.IsAccepted) + overrideRejects.Values.Sum(),
+            evaluated.Count(item => item.IsAccepted),
+            overrideRejects);
+        if (huntOverride is not null)
+        {
+            session.WriteLine(huntOverride);
+        }
+
         foreach (var item in evaluated)
         {
             var result = item.SearchResult;
@@ -57,8 +71,15 @@ public static class HuntCandidateDebugWriter
                 : "unknown";
             var verdict = item.IsAccepted ? "ACCEPT" : "REJECT";
             var detail = item.IsAccepted ? "-" : SanitizeForLog(item.RejectDetail);
+            var rejectedByOverride = !item.IsAccepted &&
+                RecipeOverrideReject.IsOverrideReject(
+                    overrides,
+                    stock,
+                    item.RejectReason,
+                    result.Seeders,
+                    result.FileSize);
             session.WriteLine(
-                $"{verdict} reason={item.RejectReason} detail='{detail}' quality='{TorrentQuality.Detect(result.FileName)}' sizeGB={sizeGb} seeders={result.Seeders} " +
+                $"{verdict} reason={item.RejectReason}{HuntOverrideDebugFormatter.FormatRejectOverrideSuffix(rejectedByOverride)} detail='{detail}' quality='{TorrentQuality.Detect(result.FileName)}' sizeGB={sizeGb} seeders={result.Seeders} " +
                 $"Q={item.QualityScore} A={item.AudioScore} Pref={item.PreferTermsScore} Size={item.SizeScore} Total={item.TotalScore} " +
                 $"engine='{SanitizeForLog(result.EngineName)}' linkType='{result.LinkType}' name='{SanitizeForLog(result.FileName)}'");
         }
@@ -70,28 +91,17 @@ public static class HuntCandidateDebugWriter
         string showTitle,
         string episodeLabel,
         int searchRows,
-        IReadOnlyList<EpisodeFetchCandidate> recipeMatched)
+        IReadOnlyList<EpisodeFetchCandidate> recipeMatched,
+        RecipeExecutionOverrides? overrides = null)
     {
         session.WriteLine(
-            $"HuntMatch Media='{SanitizeForLog(showTitle)}' Episode='{SanitizeForLog(episodeLabel)}' Recipe='{SanitizeForLog(recipe.Name)}' RecipeId='{recipe.RecipeId}'");
+            $"HuntMatch Media='{SanitizeForLog(showTitle)}' Episode='{SanitizeForLog(episodeLabel)}' Recipe='{SanitizeForLog(recipe.Name)}' RecipeId='{recipe.RecipeId}' Overrides={HuntOverrideDebugFormatter.FormatOverridesFlag(overrides is not null)}");
         session.WriteLine($"SearchRows={searchRows} RecipeMatched={recipeMatched.Count}");
         foreach (var candidate in recipeMatched)
         {
             session.WriteLine(
                 $"MATCH size={HuntLogFormatter.FormatSizeMiB(candidate.FileSize)} seeders={candidate.Seeders} quality='{SanitizeForLog(candidate.QualityLabel)}' " +
                 $"engine='{SanitizeForLog(candidate.PluginName)}' name='{SanitizeForLog(candidate.FileName)}'");
-        }
-    }
-
-    public static void WriteHuntPolicy(CartCandidateDebugSession session, HuntEpisodeOutcome outcome)
-    {
-        var rejectSummary = HuntLogFormatter.FormatPolicyRejectSummary(outcome.PolicyRejectCounts);
-        session.WriteLine(
-            $"HuntPolicy Episode='{SanitizeForLog(outcome.EpisodeLabel)}' RecipeMatched={outcome.RecipeMatched} PolicyKept={outcome.PolicyKept} " +
-            $"Stage={outcome.Stage} Rejects={rejectSummary}");
-        if (outcome.PolicyMinFileSizeMb is > 0)
-        {
-            session.WriteLine($"PolicyThreshold MinFileSizeMb={outcome.PolicyMinFileSizeMb.Value} bestRejected={HuntLogFormatter.FormatSizeMiB(outcome.BestRejectedFileSize ?? 0)}");
         }
     }
 

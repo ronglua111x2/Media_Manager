@@ -25,10 +25,8 @@ public static class HuntLogFormatter
             ? outcome.FailureDetail
             : outcome.FailureReason;
         var funnel = $"search {outcome.SearchRows}, matched {outcome.RecipeMatched}, kept {outcome.PolicyKept}";
-        var extra = FormatPolicyExtra(outcome);
-        var detail = string.IsNullOrWhiteSpace(extra) ? string.Empty : $" ({extra})";
-        var reasonSuffix = string.IsNullOrWhiteSpace(extra) ? FormatReasonSuffix(reason) : string.Empty;
-        return $"[HUNT] {label}: FAILED ({stage}) — {funnel}{detail}{reasonSuffix}";
+        var reasonSuffix = FormatReasonSuffix(reason);
+        return $"[HUNT] {label}: FAILED ({stage}) — {funnel}{reasonSuffix}";
     }
 
     public static string FormatHumanSummary(string counterLine, IReadOnlyList<HuntEpisodeOutcome> outcomes)
@@ -64,7 +62,7 @@ public static class HuntLogFormatter
         return builder.ToString();
     }
 
-    public static string FormatPolicyRejectSummary(IReadOnlyDictionary<CandidateRejectReason, int> counts)
+    public static string FormatRejectSummary(IReadOnlyDictionary<CandidateRejectReason, int> counts)
     {
         if (counts.Count == 0)
         {
@@ -77,6 +75,14 @@ public static class HuntLogFormatter
                 .OrderByDescending(pair => pair.Value)
                 .ThenBy(pair => pair.Key.ToString(), StringComparer.Ordinal)
                 .Select(pair => $"{pair.Key}×{pair.Value}"));
+    }
+
+    public static string FormatOverrideRejectFailure(IReadOnlyDictionary<CandidateRejectReason, int> counts)
+    {
+        var summary = FormatRejectSummary(counts);
+        return string.IsNullOrWhiteSpace(summary)
+            ? "Rejected by override"
+            : $"Rejected by override. {summary}";
     }
 
     public static string FormatSizeMiB(long bytes)
@@ -110,38 +116,6 @@ public static class HuntLogFormatter
         return $"{label}: {reason}";
     }
 
-    private static string FormatPolicyExtra(HuntEpisodeOutcome outcome)
-    {
-        var parts = new List<string>();
-        var rejectSummary = FormatPolicyRejectSummary(outcome.PolicyRejectCounts);
-        if (!string.IsNullOrWhiteSpace(rejectSummary))
-        {
-            parts.Add(rejectSummary);
-        }
-
-        if (outcome.PolicyMinFileSizeMb is > 0)
-        {
-            parts.Add($"MinFileSizeMb={outcome.PolicyMinFileSizeMb.Value}");
-        }
-
-        if (outcome.BestRejectedFileSize is > 0)
-        {
-            parts.Add($"best={FormatSizeMiB(outcome.BestRejectedFileSize.Value)}");
-        }
-
-        if (outcome.PolicyMinSeeders is > 0)
-        {
-            parts.Add($"MinSeeders={outcome.PolicyMinSeeders.Value}");
-        }
-
-        if (!string.IsNullOrWhiteSpace(outcome.PolicyMinQuality))
-        {
-            parts.Add($"MinQuality={outcome.PolicyMinQuality}");
-        }
-
-        return string.Join(", ", parts);
-    }
-
     private static string FormatReasonSuffix(string? reason)
     {
         return string.IsNullOrWhiteSpace(reason) ? string.Empty : $": {reason}";
@@ -153,7 +127,6 @@ public static class HuntLogFormatter
         {
             HuntEpisodeStage.Search => "search",
             HuntEpisodeStage.RecipeMatch => "recipe",
-            HuntEpisodeStage.AutoTrackPolicy => "policy",
             HuntEpisodeStage.Accept => "accept",
             HuntEpisodeStage.Add => "add",
             HuntEpisodeStage.Succeeded => "added",

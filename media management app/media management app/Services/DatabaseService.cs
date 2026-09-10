@@ -748,54 +748,6 @@ public sealed class DatabaseService : IDatabaseService
         command.ExecuteNonQuery();
     }
 
-    public void UpdateTrackedShowAutoTrackQualityOverrides(
-        long showId,
-        string? minQuality,
-        int? minSeeders,
-        int? minFileSizeMb,
-        int? maxFileSizeMb,
-        string? allowedQualities,
-        bool clearOverrides)
-    {
-        using var connection = new SqliteConnection(_connectionString);
-        connection.Open();
-
-        using var command = connection.CreateCommand();
-        command.CommandText = clearOverrides
-            ? """
-              UPDATE TrackedShows
-              SET AutoTrackMinQuality = NULL,
-                  AutoTrackMinSeeders = NULL,
-                  AutoTrackMinFileSizeMb = NULL,
-                  AutoTrackMaxFileSizeMb = NULL,
-                  AutoTrackAllowedQualities = NULL,
-                  UpdatedUtc = $UpdatedUtc
-              WHERE Id = $ShowId;
-              """
-            : """
-              UPDATE TrackedShows
-              SET AutoTrackMinQuality = $MinQuality,
-                  AutoTrackMinSeeders = $MinSeeders,
-                  AutoTrackMinFileSizeMb = $MinFileSizeMb,
-                  AutoTrackMaxFileSizeMb = $MaxFileSizeMb,
-                  AutoTrackAllowedQualities = $AllowedQualities,
-                  UpdatedUtc = $UpdatedUtc
-              WHERE Id = $ShowId;
-              """;
-        command.Parameters.AddWithValue("$ShowId", showId);
-        if (!clearOverrides)
-        {
-            command.Parameters.AddWithValue("$MinQuality", string.IsNullOrWhiteSpace(minQuality) ? DBNull.Value : minQuality.Trim());
-            command.Parameters.AddWithValue("$MinSeeders", minSeeders.HasValue ? minSeeders.Value : DBNull.Value);
-            command.Parameters.AddWithValue("$MinFileSizeMb", minFileSizeMb.HasValue ? minFileSizeMb.Value : DBNull.Value);
-            command.Parameters.AddWithValue("$MaxFileSizeMb", maxFileSizeMb.HasValue ? maxFileSizeMb.Value : DBNull.Value);
-            command.Parameters.AddWithValue("$AllowedQualities", string.IsNullOrWhiteSpace(allowedQualities) ? DBNull.Value : allowedQualities.Trim());
-        }
-
-        command.Parameters.AddWithValue("$UpdatedUtc", DateTime.UtcNow.ToString("O"));
-        command.ExecuteNonQuery();
-    }
-
     public TrackedShow? GetTrackedShow(long id)
     {
         return GetTrackedShowCore("s.Id = $Value", id);

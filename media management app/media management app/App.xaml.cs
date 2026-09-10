@@ -219,7 +219,6 @@ public partial class App : System.Windows.Application
         services.AddSingleton<ITorrentReconciliationService, TorrentReconciliationService>();
         services.AddSingleton<ILibraryManagementService, LibraryManagementService>();
         services.AddSingleton<IAutoTrackService, AutoTrackService>();
-        services.AddSingleton<AutoTrackCandidatePolicyService>();
         services.AddSingleton<IAutoTrackSchedulerService, AutoTrackSchedulerService>();
         services.AddSingleton<IGoogleDriveClient, GoogleDriveClient>();
         services.AddSingleton<IBackupService, BackupService>();

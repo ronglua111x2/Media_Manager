@@ -261,7 +261,6 @@ public sealed class SettingsService : ISettingsService
             autoTrack.AnchorTimeLocal = "21:00";
         }
 
-        autoTrack.Quality ??= new AutoTrackQualityPolicy();
         autoTrack.Search ??= new AutoTrackSearchSettings();
         autoTrack.Jellyfin ??= new JellyfinRefreshSettings();
         if (autoTrack.Jellyfin.WarpHoldSecondsAfterNotify <= 0)

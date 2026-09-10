@@ -508,26 +508,6 @@ public sealed class TrackedShowService : ITrackedShowService
         _logger.Info($"Auto-track schedule overrides updated for show {showId}. Clear={clearOverrides}.", LogTarget.All);
     }
 
-    public void UpdateAutoTrackQualityOverrides(
-        long showId,
-        string? minQuality,
-        int? minSeeders,
-        int? minFileSizeMb,
-        int? maxFileSizeMb,
-        string? allowedQualities,
-        bool clearOverrides)
-    {
-        _databaseService.UpdateTrackedShowAutoTrackQualityOverrides(
-            showId,
-            minQuality,
-            minSeeders,
-            minFileSizeMb,
-            maxFileSizeMb,
-            allowedQualities,
-            clearOverrides);
-        _logger.Info($"Auto-track quality overrides updated for show {showId}. Clear={clearOverrides}.", LogTarget.All);
-    }
-
     public void StopAutoTrack(long showId)
     {
         _databaseService.UpdateTrackedShowAutoTrack(showId, null, null);

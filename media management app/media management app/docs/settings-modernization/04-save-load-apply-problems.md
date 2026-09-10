@@ -79,7 +79,7 @@ These make **"reload on navigate"** (Sprint 4) dangerous combined with unsaved e
 
 **Loaded but Apply write-back incomplete** (`ApplyAutoTrackSettings` clamps some fields back to VM, not all):
 
-- `AutoTrackMinQuality`, file size fields, `AutoTrackAllowedQualities`, `AutoTrackForceParallelEpisodeSearch` — written to JSON on save but not re-normalized into VM after clamp in Apply.
+- `AutoTrackForceParallelEpisodeSearch` — written to JSON on save but not re-normalized into VM after clamp in Apply.
 
 **Saved but never loaded in Settings VM:**
 

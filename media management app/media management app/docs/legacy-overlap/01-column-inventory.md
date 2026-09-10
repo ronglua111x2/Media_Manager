@@ -56,6 +56,15 @@ DB APIs with no UI:
 
 Do not drop in the first decouple pass.
 
+### Auto-Track quality columns (show + removed Settings)
+
+| Fields | Role |
+|--------|------|
+| Show: `AutoTrackMinQuality`, `AutoTrackMinSeeders`, `AutoTrackMinFileSizeMb`, `AutoTrackMaxFileSizeMb`, `AutoTrackAllowedQualities` | Dead leftover. `EnsureColumn` + SELECT still map them so old DBs open. No Settings UI, no hunt readers, no `UpdateAutoTrackQualityOverrides` API. |
+| Settings: `AutoTrack.Quality.*` | **Removed.** Next `settings.json` Save strips the object. Hunt uses recipe Candidate Filter + `AutoTrackEpisodeOverridesJson`. |
+
+Do not DROP these columns in this pass.
+
 ### Unused matching helpers (code, not columns)
 
 | Symbol | Note |
@@ -85,16 +94,6 @@ They are **fallbacks**, not a second quality allow list. Settings UI does **not*
 
 ## Current core (do not treat as leftover)
 
-### Auto-Track quality (show + global)
-
-| Fields | Role |
-|--------|------|
-| Show: `AutoTrackMinQuality`, `AutoTrackMinSeeders`, `AutoTrackMinFileSizeMb`, `AutoTrackMaxFileSizeMb`, `AutoTrackAllowedQualities` | Per-show override; UI on Auto-Track cards |
-| Settings: `AutoTrack.Quality.*` | Global hunt policy |
-| Code | [`AutoTrackCandidatePolicyService`](../../Services/AutoTrackCandidatePolicyService.cs) **after** fetch |
-
-Live: **11** shows have Auto-Track quality fields set; Breaking Bad does **not**. Hunt failures like President Curtis S01E05 (`MinFileSizeMb=600`) are this layer, not `PreferredQuality`.
-
 ### Recipe assignment
 
 `TrackedShows.RecipeId` / `PackRecipeId`, `TrackedMovies.RecipeId` — current. Cart recipe dropdowns write these.
@@ -105,4 +104,4 @@ Live: **11** shows have Auto-Track quality fields set; Breaking Bad does **not**
 
 ### `AutoTrack.Search.ForceParallelEpisodeSearch`
 
-Current hunt option (Settings). Live file: **`false`**. When `true`, hunt skips snapshot and uses recipe `EvaluateEpisode`. When `false`, hunt uses the recipe’s snapshot flag → leftover quality on snapshot recipes.
+Hunt-only search-mode override (Settings). When `true`, hunt always uses per-episode parallel search and ignores recipe `useShowSnapshotSearch`. When `false`, hunt follows the recipe Search Source flag (same as Cart). Cart never reads this flag. Quality/seeders/size stay on the recipe + Auto-Track recipe card; this is not a quality workaround.

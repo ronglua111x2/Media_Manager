@@ -24,6 +24,7 @@ public sealed class FetchJobService : IFetchJobService
     private readonly IAppLogger _logger;
     private readonly Dictionary<long, IReadOnlyList<EpisodeFetchCandidate>> _candidatesByEpisodeId = [];
     private readonly Dictionary<long, int> _searchRowsByEpisodeId = [];
+    private readonly Dictionary<long, Dictionary<CandidateRejectReason, int>> _overrideRejectsByEpisodeId = [];
     private readonly Dictionary<long, IReadOnlyList<EpisodeFetchCandidate>> _candidatesByMovieId = [];
     private readonly Dictionary<(long ShowId, int SeasonNumber), IReadOnlyList<SeasonPackCandidate>> _packCandidatesBySeason = [];
     private readonly object _gate = new();
@@ -70,6 +71,16 @@ public sealed class FetchJobService : IFetchJobService
         lock (_gate)
         {
             return _searchRowsByEpisodeId.TryGetValue(episodeId, out var rows) ? rows : 0;
+        }
+    }
+
+    public IReadOnlyDictionary<CandidateRejectReason, int> GetOverrideRejectCounts(long episodeId)
+    {
+        lock (_gate)
+        {
+            return _overrideRejectsByEpisodeId.TryGetValue(episodeId, out var counts)
+                ? new Dictionary<CandidateRejectReason, int>(counts)
+                : new Dictionary<CandidateRejectReason, int>();
         }
     }
 
@@ -198,7 +209,8 @@ public sealed class FetchJobService : IFetchJobService
         int timeoutSeconds,
         string? huntMatchTitle = null,
         string? huntMatchEpisodeLabel = null,
-        IReadOnlyList<EpisodeFetchCandidate>? huntMatched = null)
+        IReadOnlyList<EpisodeFetchCandidate>? huntMatched = null,
+        RecipeExecutionOverrides? overrides = null)
     {
         if (_activeHuntDebugSession is null)
         {
@@ -213,7 +225,9 @@ public sealed class FetchJobService : IFetchJobService
             queries,
             searchResults,
             evaluated,
-            timeoutSeconds);
+            timeoutSeconds,
+            overrides,
+            recipe);
         if (huntMatchTitle is not null && huntMatchEpisodeLabel is not null && huntMatched is not null)
         {
             HuntCandidateDebugWriter.WriteHuntMatch(
@@ -222,7 +236,8 @@ public sealed class FetchJobService : IFetchJobService
                 huntMatchTitle,
                 huntMatchEpisodeLabel,
                 searchResults.Count,
-                huntMatched);
+                huntMatched,
+                overrides);
         }
     }
 
@@ -293,7 +308,9 @@ public sealed class FetchJobService : IFetchJobService
                     packQueries,
                     snapshotResults,
                     packSummary.Evaluated,
-                    RecipeRuntimeSettings.GetSnapshotTimeoutSeconds(packRecipe, _settingsService.Current.AutoTorrent));
+                    RecipeRuntimeSettings.GetSnapshotTimeoutSeconds(packRecipe, _settingsService.Current.AutoTorrent),
+                    overrides,
+                    packRecipe);
                 HuntCandidateDebugWriter.LogSessionPath(_logger, packDebugSession);
             }
 
@@ -318,6 +335,7 @@ public sealed class FetchJobService : IFetchJobService
             {
                 _candidatesByEpisodeId[episode.Id] = [];
                 _searchRowsByEpisodeId[episode.Id] = 0;
+                _overrideRejectsByEpisodeId[episode.Id] = [];
             }
         }
     }
@@ -362,6 +380,8 @@ public sealed class FetchJobService : IFetchJobService
                 {
                     _candidatesByEpisodeId[episode.Id] = searchSummary.Candidates;
                     _searchRowsByEpisodeId[episode.Id] = searchSummary.SearchResults.Count;
+                    _overrideRejectsByEpisodeId[episode.Id] =
+                        RecipeOverrideReject.CountOverrideRejects(searchSummary.Evaluated, overrides, recipe);
                 }
 
                 lock (resultGate)
@@ -386,7 +406,8 @@ public sealed class FetchJobService : IFetchJobService
                     RecipeRuntimeSettings.GetParallelSearchTimeoutSeconds(recipe, _settingsService.Current.AutoTorrent),
                     show.DisplayTitle,
                     label,
-                    searchSummary.Candidates);
+                    searchSummary.Candidates,
+                    overrides);
                 await Task.Yield();
             }
         }
@@ -480,6 +501,8 @@ public sealed class FetchJobService : IFetchJobService
                 {
                     _candidatesByEpisodeId[episode.Id] = mapped.Candidates;
                     _searchRowsByEpisodeId[episode.Id] = snapshotCandidates.Count;
+                    _overrideRejectsByEpisodeId[episode.Id] =
+                        RecipeOverrideReject.CountOverrideRejects(mapped.Evaluated, overrides, recipe);
                 }
 
                 lock (resultGate)
@@ -501,7 +524,8 @@ public sealed class FetchJobService : IFetchJobService
                     RecipeRuntimeSettings.GetSnapshotTimeoutSeconds(recipe, _settingsService.Current.AutoTorrent),
                     show.DisplayTitle,
                     label,
-                    mapped.Candidates);
+                    mapped.Candidates,
+                    overrides);
                 await Task.Yield();
             }
         }

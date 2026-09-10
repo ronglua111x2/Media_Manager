@@ -224,21 +224,6 @@ public partial class SettingsViewModel : ViewModelBase
     private int autoTrackMaxTmdbRefreshesPerDay = 20;
 
     [ObservableProperty]
-    private string autoTrackMinQuality = "1080p";
-
-    [ObservableProperty]
-    private int autoTrackMinSeeders;
-
-    [ObservableProperty]
-    private int autoTrackMinFileSizeMb;
-
-    [ObservableProperty]
-    private int autoTrackMaxFileSizeMb;
-
-    [ObservableProperty]
-    private string autoTrackAllowedQualities = string.Empty;
-
-    [ObservableProperty]
     private int autoTrackMaxShowsPerHuntCycle = 3;
 
     [ObservableProperty]
@@ -1266,11 +1251,6 @@ public partial class SettingsViewModel : ViewModelBase
             AutoTrackHuntMinHoursAfterAirDate = autoTrack.HuntMinHoursAfterAirDate;
             AutoTrackReconcileIntervalMinutes = autoTrack.ReconcileIntervalMinutes;
             AutoTrackMaxTmdbRefreshesPerDay = autoTrack.MaxTmdbRefreshesPerDay;
-            AutoTrackMinQuality = autoTrack.Quality?.MinQuality ?? "1080p";
-            AutoTrackMinSeeders = autoTrack.Quality?.MinSeeders ?? 0;
-            AutoTrackMinFileSizeMb = autoTrack.Quality?.MinFileSizeMb ?? 0;
-            AutoTrackMaxFileSizeMb = autoTrack.Quality?.MaxFileSizeMb ?? 0;
-            AutoTrackAllowedQualities = string.Join(", ", autoTrack.Quality?.AllowedQualities ?? []);
             AutoTrackMaxShowsPerHuntCycle = autoTrack.Search?.MaxShowsPerHuntCycle ?? 3;
             AutoTrackMaxEpisodesPerShowPerHuntCycle = autoTrack.Search?.MaxEpisodesPerShowPerHuntCycle ?? 5;
             AutoTrackMaxParallelWorkersPerShow = autoTrack.Search?.MaxParallelWorkersPerShow ?? 1;
@@ -1797,14 +1777,6 @@ public partial class SettingsViewModel : ViewModelBase
         autoTrack.HuntMinHoursAfterAirDate = Math.Clamp(AutoTrackHuntMinHoursAfterAirDate, 0, 48);
         autoTrack.ReconcileIntervalMinutes = Math.Clamp(AutoTrackReconcileIntervalMinutes, 5, 1440);
         autoTrack.MaxTmdbRefreshesPerDay = Math.Clamp(AutoTrackMaxTmdbRefreshesPerDay, 1, 500);
-        autoTrack.Quality ??= new AutoTrackQualityPolicy();
-        autoTrack.Quality.MinQuality = string.IsNullOrWhiteSpace(AutoTrackMinQuality) ? null : AutoTrackMinQuality.Trim();
-        autoTrack.Quality.MinSeeders = Math.Max(0, AutoTrackMinSeeders);
-        autoTrack.Quality.MinFileSizeMb = AutoTrackMinFileSizeMb > 0 ? AutoTrackMinFileSizeMb : null;
-        autoTrack.Quality.MaxFileSizeMb = AutoTrackMaxFileSizeMb > 0 ? AutoTrackMaxFileSizeMb : null;
-        autoTrack.Quality.AllowedQualities = string.IsNullOrWhiteSpace(AutoTrackAllowedQualities)
-            ? null
-            : AutoTrackAllowedQualities.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
         autoTrack.Search ??= new AutoTrackSearchSettings();
         autoTrack.Search.MaxShowsPerHuntCycle = Math.Clamp(AutoTrackMaxShowsPerHuntCycle, 1, 20);
         autoTrack.Search.MaxEpisodesPerShowPerHuntCycle = Math.Clamp(AutoTrackMaxEpisodesPerShowPerHuntCycle, 1, 50);
@@ -1846,7 +1818,6 @@ public partial class SettingsViewModel : ViewModelBase
         AutoTrackHuntMinHoursAfterAirDate = autoTrack.HuntMinHoursAfterAirDate;
         AutoTrackReconcileIntervalMinutes = autoTrack.ReconcileIntervalMinutes;
         AutoTrackMaxTmdbRefreshesPerDay = autoTrack.MaxTmdbRefreshesPerDay;
-        AutoTrackMinSeeders = autoTrack.Quality.MinSeeders;
         AutoTrackMaxShowsPerHuntCycle = autoTrack.Search.MaxShowsPerHuntCycle;
         AutoTrackMaxEpisodesPerShowPerHuntCycle = autoTrack.Search.MaxEpisodesPerShowPerHuntCycle;
         AutoTrackMaxParallelWorkersPerShow = autoTrack.Search.MaxParallelWorkersPerShow;

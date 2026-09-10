@@ -62,7 +62,6 @@ Legend: **UI** = Settings page tab · **VM** = which code edits `Current` · **S
 | `AutoTrack.HuntMinHoursAfterAirDate` | Auto-Track | same |
 | `AutoTrack.ReconcileIntervalMinutes` | Auto-Track | same |
 | `AutoTrack.MaxTmdbRefreshesPerDay` | Auto-Track | same |
-| `AutoTrack.Quality.*` | Auto-Track | same |
 | `AutoTrack.Search.*` | Auto-Track (partial) | same — `MaxParallelWorkersPerShow` **no UI** |
 | `AutoTrack.Jellyfin.Enabled` | Auto-Track | same |
 | `AutoTrack.Jellyfin.WarpHoldSecondsAfterNotify` | Auto-Track | same |

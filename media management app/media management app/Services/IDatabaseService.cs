@@ -62,15 +62,6 @@ public interface IDatabaseService
         string? anchorTimeLocal,
         bool clearOverrides);
 
-    void UpdateTrackedShowAutoTrackQualityOverrides(
-        long showId,
-        string? minQuality,
-        int? minSeeders,
-        int? minFileSizeMb,
-        int? maxFileSizeMb,
-        string? allowedQualities,
-        bool clearOverrides);
-
     TrackedShow? GetTrackedShow(long id);
 
     TrackedShow? GetTrackedShowByTmdbId(int tmdbId);

@@ -237,7 +237,9 @@ Per-media recipe overrides live in SQLite JSON, not in the `.rcp` file:
 - Cart (manual **Run Cart**): `TrackedShows.CartEpisodeOverridesJson` / `CartPackOverridesJson`, `TrackedMovies.CartOverridesJson`
 - Auto-Track hunt: `TrackedShows.AutoTrackEpisodeOverridesJson` (episode recipe only; independent of cart JSON)
 
-Shape: `{ "<key>": { "enabled": true, "value": ... } }`. Toggling a property off keeps the last `value`. Cart JSON is **Run Cart** only. Auto-Track hunt uses the Auto JSON via `EpisodeFetchOptions.Overrides`, then still applies Settings → Auto-Track Quality as a post-filter. Auto cannot change `RecipeId` (assignment stays in Cart Order).
+Shape: `{ "<key>": { "enabled": true, "value": ... } }`. Toggling a property off keeps the last `value`. Cart JSON is **Run Cart** only. Auto-Track hunt uses the Auto JSON via `EpisodeFetchOptions.Overrides`. Auto cannot change `RecipeId` (assignment stays in Cart Order).
+
+Candidate debug logs (`cart-debug_*.txt`) print `Overrides=on|off` on evaluation and HuntMatch headers. A REJECT that the stock `.rcp` would have accepted but an enabled min-seeders / min-size override rejects is tagged `by=override`. When any of those override-kills exist, a `HuntOverride RecipeMatchedWithoutOverride=N Kept=M Rejects=…` summary line is written. Hunt fail copy uses **Rejected by override** (not a Settings quality policy).
 
 Current keys: `maxCandidates` (int 1–20), `minSeeders` (int 0–10000), `minSizeGb` (double 0–500, 0 = no floor), `candidateDebug` (bool).
 
