@@ -1,8 +1,10 @@
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Shell;
 using MahApps.Metro.IconPacks;
+using media_management_app.Common;
 
 namespace media_management_app.Views;
 
@@ -21,10 +23,10 @@ public partial class WebViewerWindow : Window
         InitializeComponent();
     }
 
-    public WebViewerWindow(string title, PackIconLucideKind iconKind, string brandBrushKey)
+    public WebViewerWindow(string title, PackIconLucideKind iconKind, string brandBrushKey, WindowIconKind windowIconKind)
         : this()
     {
-        ApplyIdentity(title, iconKind, brandBrushKey);
+        ApplyIdentity(title, iconKind, brandBrushKey, windowIconKind);
     }
 
     public event EventHandler? ReloadRequested;
@@ -71,11 +73,12 @@ public partial class WebViewerWindow : Window
         UpdateWindowChromeForState();
     }
 
-    private void ApplyIdentity(string title, PackIconLucideKind iconKind, string brandBrushKey)
+    private void ApplyIdentity(string title, PackIconLucideKind iconKind, string brandBrushKey, WindowIconKind windowIconKind)
     {
         Title = title;
         TitleLabel.Text = title;
         BrandIcon.Kind = iconKind;
+        Icon = BitmapFrame.Create(WindowIcons.GetPackUri(windowIconKind), BitmapCreateOptions.None, BitmapCacheOption.OnLoad);
         if (TryFindResource(brandBrushKey) is System.Windows.Media.Brush brandBrush)
         {
             BrandBadge.Background = brandBrush;

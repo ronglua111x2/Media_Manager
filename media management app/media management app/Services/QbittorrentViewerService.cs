@@ -162,7 +162,7 @@ public sealed class QbittorrentViewerService : IQbittorrentViewerService
 
         try
         {
-            _window = new WebViewerWindow("qBittorrent", PackIconLucideKind.Globe, "AppBrushAccent")
+            _window = new WebViewerWindow("qBittorrent", PackIconLucideKind.Globe, "AppBrushAccent", WindowIconKind.Qbittorrent)
             {
                 DataContext = chromeDataContext
             };

@@ -78,7 +78,9 @@
 
     <ItemGroup>
     <Resource Include="Assets\app-icon.ico" />
+    <Resource Include="Assets\window-icons\*.ico" />
     <None Include="Assets\*.svg" />
+    <None Include="Assets\window-icons\badges\*" />
     <Content Include="Assets\notifications\*.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>

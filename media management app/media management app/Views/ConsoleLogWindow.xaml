@@ -6,7 +6,8 @@
         Width="860"
         MinHeight="260"
         MinWidth="520"
-        WindowStartupLocation="CenterOwner">
+        WindowStartupLocation="CenterOwner"
+        Icon="pack://application:,,,/Assets/window-icons/console-log.ico">
     <!-- #region Console log layout -->
     <DockPanel Background="#111111">
         <!-- #region Header -->

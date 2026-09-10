@@ -118,7 +118,7 @@ public sealed class JellyfinViewerService : IJellyfinViewerService
     {
         try
         {
-            _window = new WebViewerWindow("Jellyfin", PackIconLucideKind.Tv, "AppBrushJellyfinBrand")
+            _window = new WebViewerWindow("Jellyfin", PackIconLucideKind.Tv, "AppBrushJellyfinBrand", WindowIconKind.Jellyfin)
             {
                 DataContext = ResolveChromeDataContext(chromeDataContext)
             };
