@@ -266,6 +266,19 @@ public sealed partial class FindAddViewModel : ViewModelBase
         StatusMessage = $"Adding '{SelectedResult.Title}' to library...";
         try
         {
+            var mediaTitle = SelectedResult.Year is null
+                ? SelectedResult.Title
+                : $"{SelectedResult.Title} ({SelectedResult.Year})";
+            var lockDialog = new AddMediaLockDialog(mediaTitle)
+            {
+                Owner = System.Windows.Application.Current.MainWindow
+            };
+            if (lockDialog.ShowDialog() != true)
+            {
+                StatusMessage = "Add cancelled.";
+                return;
+            }
+
             if (SelectedResult.MediaKind == MediaKind.Movie)
             {
                 var movie = await _trackedMovieService.AddMovieAsync(SelectedResult.ToMovieSearchResult());
