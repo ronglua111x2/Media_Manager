@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
@@ -128,6 +129,22 @@ public sealed class JellyfinClient : IJellyfinClient, IDisposable
         return tasks;
     }
 
+    public async Task<string?> FindEpisodeItemIdAsync(
+        int showTmdbId,
+        int seasonNumber,
+        int episodeNumber,
+        CancellationToken cancellationToken = default)
+    {
+        var settings = RequireConfiguredSettings();
+        var seriesId = await FindSeriesIdAsync(settings, showTmdbId, cancellationToken);
+        if (string.IsNullOrWhiteSpace(seriesId))
+        {
+            return null;
+        }
+
+        return await FindEpisodeIdAsync(settings, seriesId, seasonNumber, episodeNumber, cancellationToken);
+    }
+
     public void Dispose()
     {
         if (_disposed)
@@ -139,6 +156,152 @@ public sealed class JellyfinClient : IJellyfinClient, IDisposable
         _httpClient.Dispose();
     }
 
+    private async Task<string?> FindSeriesIdAsync(
+        JellyfinRefreshSettings settings,
+        int showTmdbId,
+        CancellationToken cancellationToken)
+    {
+        var tmdbId = showTmdbId.ToString(CultureInfo.InvariantCulture);
+        var path =
+            $"Items?Recursive=true&IncludeItemTypes=Series&Fields=ProviderIds&EnableImages=false&EnableUserData=false&HasTmdbId=true";
+        using var document = await GetJsonAsync(settings, path, cancellationToken);
+        foreach (var item in EnumerateItems(document.RootElement))
+        {
+            if (!ProviderIdsMatch(item, "Tmdb", tmdbId))
+            {
+                continue;
+            }
+
+            var id = TryGetString(item, "Id") ?? TryGetString(item, "id");
+            if (!string.IsNullOrWhiteSpace(id))
+            {
+                return id;
+            }
+        }
+
+        return null;
+    }
+
+    private async Task<string?> FindEpisodeIdAsync(
+        JellyfinRefreshSettings settings,
+        string seriesId,
+        int seasonNumber,
+        int episodeNumber,
+        CancellationToken cancellationToken)
+    {
+        var encodedSeriesId = Uri.EscapeDataString(seriesId);
+        var path =
+            $"Shows/{encodedSeriesId}/Episodes?season={seasonNumber.ToString(CultureInfo.InvariantCulture)}&Fields=IndexNumber,ParentIndexNumber&EnableImages=false&EnableUserData=false";
+        using var document = await GetJsonAsync(settings, path, cancellationToken);
+        foreach (var item in EnumerateItems(document.RootElement))
+        {
+            var indexNumber = TryGetInt32(item, "IndexNumber") ?? TryGetInt32(item, "indexNumber");
+            if (indexNumber != episodeNumber)
+            {
+                continue;
+            }
+
+            var parentIndex = TryGetInt32(item, "ParentIndexNumber") ?? TryGetInt32(item, "parentIndexNumber");
+            if (parentIndex is not null && parentIndex != seasonNumber)
+            {
+                continue;
+            }
+
+            var id = TryGetString(item, "Id") ?? TryGetString(item, "id");
+            if (!string.IsNullOrWhiteSpace(id))
+            {
+                return id;
+            }
+        }
+
+        return null;
+    }
+
+    private async Task<JsonDocument> GetJsonAsync(
+        JellyfinRefreshSettings settings,
+        string relativePath,
+        CancellationToken cancellationToken)
+    {
+        using var request = CreateRequest(HttpMethod.Get, settings, relativePath);
+        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            throw new InvalidOperationException(
+                $"Jellyfin request failed: {(int)response.StatusCode} {response.ReasonPhrase}. {TrimBody(body)}");
+        }
+
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        return await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+    }
+
+    private static IEnumerable<JsonElement> EnumerateItems(JsonElement root)
+    {
+        if (root.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var element in root.EnumerateArray())
+            {
+                yield return element;
+            }
+
+            yield break;
+        }
+
+        if (TryGetPropertyIgnoreCase(root, "Items", out var items) &&
+            items.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var element in items.EnumerateArray())
+            {
+                yield return element;
+            }
+        }
+    }
+
+    private static bool ProviderIdsMatch(JsonElement item, string providerName, string expectedId)
+    {
+        if (!TryGetPropertyIgnoreCase(item, "ProviderIds", out var ids) ||
+            ids.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+
+        foreach (var property in ids.EnumerateObject())
+        {
+            if (!property.Name.Equals(providerName, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var value = property.Value.ValueKind == JsonValueKind.String
+                ? property.Value.GetString()
+                : property.Value.ToString();
+            return string.Equals(value, expectedId, StringComparison.OrdinalIgnoreCase);
+        }
+
+        return false;
+    }
+
+    private static bool TryGetPropertyIgnoreCase(JsonElement element, string propertyName, out JsonElement property)
+    {
+        if (element.ValueKind != JsonValueKind.Object)
+        {
+            property = default;
+            return false;
+        }
+
+        foreach (var candidate in element.EnumerateObject())
+        {
+            if (candidate.Name.Equals(propertyName, StringComparison.OrdinalIgnoreCase))
+            {
+                property = candidate.Value;
+                return true;
+            }
+        }
+
+        property = default;
+        return false;
+    }
+
     private static string? TryGetString(JsonElement element, string propertyName)
     {
         if (!element.TryGetProperty(propertyName, out var property) ||
@@ -148,6 +311,28 @@ public sealed class JellyfinClient : IJellyfinClient, IDisposable
         }
 
         return property.GetString();
+    }
+
+    private static int? TryGetInt32(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var property) ||
+            property.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+        {
+            return null;
+        }
+
+        if (property.ValueKind == JsonValueKind.Number && property.TryGetInt32(out var number))
+        {
+            return number;
+        }
+
+        if (property.ValueKind == JsonValueKind.String &&
+            int.TryParse(property.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+        {
+            return parsed;
+        }
+
+        return null;
     }
 
     private JellyfinRefreshSettings RequireConfiguredSettings()

@@ -8,5 +8,7 @@ public interface IJellyfinViewerService
 
     void ShowOrActivate(object? chromeDataContext = null);
 
+    Task ShowOrNavigateAsync(Uri uri, object? chromeDataContext = null);
+
     void Close(bool skipConfirm = false);
 }

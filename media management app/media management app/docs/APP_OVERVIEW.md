@@ -145,7 +145,7 @@ Scheduler respects weekly anchor (day + time), per-show overrides, and hunt inte
 - REST API for connection test and path update notifications
 - **Library refresh service** debounces path notifications after symlinks
 - Optional **WARP hold** during refresh window; log tailer for early disconnect
-- Embedded WebViewer for Jellyfin UI
+- Embedded WebViewer for Jellyfin UI; News Available opens an episode details page in that same viewer
 
 ### TMDB
 

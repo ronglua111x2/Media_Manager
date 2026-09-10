@@ -244,6 +244,7 @@ integrations:
   - IJellyfinClient -> JellyfinClient
   - IJellyfinLibraryRefreshService -> JellyfinLibraryRefreshService
   - IJellyfinViewerService -> JellyfinViewerService
+  - IJellyfinMediaNavigationService -> JellyfinMediaNavigationService
   - IQbittorrentViewerService -> QbittorrentViewerService
   - IWarpCliService -> WarpCliService
   - IGeminiApiClient -> GeminiApiClient
@@ -445,7 +446,7 @@ integrations:
   jellyfin:
     client: Services/JellyfinClient.cs
     config: JellyfinRefreshSettings (BaseUrl, ApiKey)
-    features: [connection test, path notify, scheduled tasks]
+    features: [connection test, path notify, scheduled tasks, episode item lookup by TMDB + S/E]
   tmdb:
     provider: Services/TmdbMetadataProvider.cs
     config: AppSettings.TmdbReadAccessToken

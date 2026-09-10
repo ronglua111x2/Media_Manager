@@ -24,6 +24,7 @@ public sealed class JellyfinViewerService : IJellyfinViewerService
     private Task<CoreWebView2Environment>? _environmentTask;
     private WebViewerWindow? _window;
     private WebView2? _webView;
+    private Uri? _pendingNavigateUri;
     private bool _forceClose;
 
     public JellyfinViewerService(
@@ -47,6 +48,24 @@ public sealed class JellyfinViewerService : IJellyfinViewerService
         RunOnUi(() => ShowOrActivateCore(chromeDataContext));
     }
 
+    public Task ShowOrNavigateAsync(Uri uri, object? chromeDataContext = null)
+    {
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        RunOnUi(() =>
+        {
+            try
+            {
+                ShowOrNavigateCore(uri, chromeDataContext);
+                completion.TrySetResult();
+            }
+            catch (Exception ex)
+            {
+                completion.TrySetException(ex);
+            }
+        });
+        return completion.Task;
+    }
+
     public void Close(bool skipConfirm = false)
     {
         RunOnUi(() => CloseCore(skipConfirm));
@@ -62,21 +81,46 @@ public sealed class JellyfinViewerService : IJellyfinViewerService
 
         if (_window is not null)
         {
-            if (_window.WindowState == WpfWindowState.Minimized)
-            {
-                _window.WindowState = WpfWindowState.Normal;
-            }
-
-            _window.Show();
-            _window.Activate();
+            ActivateWindow(chromeDataContext);
             return;
         }
 
+        OpenWindow(uri, chromeDataContext);
+    }
+
+    private void ShowOrNavigateCore(Uri uri, object? chromeDataContext)
+    {
+        if (!IsConfiguredJellyfinUri(uri))
+        {
+            _logger.Warning("Jellyfin viewer: refused navigation to a non-Jellyfin URL.", LogTarget.All);
+            return;
+        }
+
+        if (_window is not null)
+        {
+            ActivateWindow(chromeDataContext);
+            if (_webView?.CoreWebView2 is not null)
+            {
+                _pendingNavigateUri = null;
+                _webView.CoreWebView2.Navigate(uri.AbsoluteUri);
+                _window.SetCurrentUrl(uri.AbsoluteUri);
+                return;
+            }
+
+            _pendingNavigateUri = uri;
+            return;
+        }
+
+        OpenWindow(uri, chromeDataContext);
+    }
+
+    private void OpenWindow(Uri uri, object? chromeDataContext)
+    {
         try
         {
             _window = new WebViewerWindow("Jellyfin", PackIconLucideKind.Tv, "AppBrushJellyfinBrand")
             {
-                DataContext = chromeDataContext
+                DataContext = ResolveChromeDataContext(chromeDataContext)
             };
         }
         catch (Exception ex)
@@ -91,7 +135,40 @@ public sealed class JellyfinViewerService : IJellyfinViewerService
         _window.ReloadRequested += OnReloadRequested;
         _window.Show();
         RaiseIsOpenChanged();
+        _pendingNavigateUri = uri;
         _ = InitializeWebViewAsync(uri, _window.BrowserHostPanel);
+    }
+
+    private void ActivateWindow(object? chromeDataContext)
+    {
+        if (_window is null)
+        {
+            return;
+        }
+
+        var resolvedChrome = ResolveChromeDataContext(chromeDataContext);
+        if (resolvedChrome is not null && _window.DataContext is null)
+        {
+            _window.DataContext = resolvedChrome;
+        }
+
+        if (_window.WindowState == WpfWindowState.Minimized)
+        {
+            _window.WindowState = WpfWindowState.Normal;
+        }
+
+        _window.Show();
+        _window.Activate();
+    }
+
+    private static object? ResolveChromeDataContext(object? chromeDataContext)
+    {
+        if (chromeDataContext is not null)
+        {
+            return chromeDataContext;
+        }
+
+        return WpfApplication.Current?.MainWindow?.DataContext;
     }
 
     private void CloseCore(bool skipConfirm)
@@ -130,8 +207,10 @@ public sealed class JellyfinViewerService : IJellyfinViewerService
             _webView.CoreWebView2.ContainsFullScreenElementChanged += OnContainsFullScreenElementChanged;
             _webView.CoreWebView2.SourceChanged += OnSourceChanged;
             _webView.CoreWebView2.ProcessFailed += OnProcessFailed;
-            _webView.CoreWebView2.Navigate(uri.AbsoluteUri);
-            _window.SetCurrentUrl(uri.AbsoluteUri);
+            var target = _pendingNavigateUri ?? uri;
+            _pendingNavigateUri = null;
+            _webView.CoreWebView2.Navigate(target.AbsoluteUri);
+            _window.SetCurrentUrl(target.AbsoluteUri);
         }
         catch (Exception ex)
         {
@@ -251,6 +330,7 @@ public sealed class JellyfinViewerService : IJellyfinViewerService
         }
 
         _window = null;
+        _pendingNavigateUri = null;
         _forceClose = false;
         RaiseIsOpenChanged();
     }
@@ -342,6 +422,7 @@ public sealed class JellyfinViewerService : IJellyfinViewerService
 
         _webView.Dispose();
         _webView = null;
+        _pendingNavigateUri = null;
     }
 
     private void RaiseIsOpenChanged() => IsOpenChanged?.Invoke(this, EventArgs.Empty);

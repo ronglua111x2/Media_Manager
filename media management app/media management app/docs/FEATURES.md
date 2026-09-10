@@ -76,8 +76,8 @@ Exhaustive list of user-facing and background features. Each entry includes purp
 
 ### 2.1 New Episodes This Week
 - **What:** Cards for episodes aired in current week from tracked shows
-- **User interaction:** Sort by air date, tracked show, or status; Update Dashboard button
-- **Code:** `Views/NewsView.xaml`, `ViewModels/NewsViewModel.cs`, `ViewModels/NewsEpisodeCardViewModel.cs`
+- **User interaction:** Sort by air date, tracked show, or status; Update Dashboard button; click an **Available** pill (ExternalLink icon) to open that episode's Jellyfin details page in the existing WebViewer
+- **Code:** `Views/NewsView.xaml`, `ViewModels/NewsViewModel.cs`, `ViewModels/NewsEpisodeCardViewModel.cs`, `Services/JellyfinMediaNavigationService.cs`
 - **DB:** `TrackedShows`, `TrackedEpisodes`
 
 ### 2.2 Tracked Shows Overview
@@ -506,10 +506,16 @@ Setup details: [STATE_FOLDER.md](./STATE_FOLDER.md#google-drive-oauth)
 - **Background:** Auto-close on background if configured; confirm on close
 
 ### 9.2 Jellyfin WebViewer
-- **What:** WebView2 window embedding Jellyfin web client
-- **User interaction:** Open from status bar pill
-- **Code:** `Services/JellyfinViewerService.cs`
+- **What:** WebView2 window embedding Jellyfin web client. One window/WebView at a time; a later episode request navigates the same viewer
+- **User interaction:** Open from status bar pill; News Available pill opens a specific episode details page (`/web/#/details?id=...`)
+- **Code:** `Services/JellyfinViewerService.cs` (`ShowOrActivate`, `ShowOrNavigateAsync`)
 - **Background:** Same lifecycle rules as qBittorrent viewer
+
+### 9.3 Jellyfin Episode Navigation
+- **What:** Reusable lookup + navigation: TMDB show id + season/episode → Jellyfin item id → details page in the embedded viewer. In-memory item-id cache only (no DB column)
+- **User interaction:** News Available action today; other workspaces can call the same service later
+- **Code:** `Services/IJellyfinMediaNavigationService.cs`, `Services/JellyfinMediaNavigationService.cs`, `Services/JellyfinClient.cs` (`FindEpisodeItemIdAsync`), `Models/JellyfinEpisodeTarget.cs`, `Models/JellyfinMediaNavigationResult.cs`
+- **Notes:** Opens the details page only (no autoplay). Logs distinguish **cache hit** vs **lookup**. If Jellyfin has not indexed the file yet, shows a warning. API key stays on REST calls and is never placed in the WebView URL
 
 ---
 

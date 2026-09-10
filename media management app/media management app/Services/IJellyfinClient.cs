@@ -9,4 +9,10 @@ public interface IJellyfinClient
     Task ReportMediaUpdatedAsync(IReadOnlyList<string> paths, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<JellyfinScheduledTaskInfo>> GetScheduledTasksAsync(CancellationToken cancellationToken = default);
+
+    Task<string?> FindEpisodeItemIdAsync(
+        int showTmdbId,
+        int seasonNumber,
+        int episodeNumber,
+        CancellationToken cancellationToken = default);
 }

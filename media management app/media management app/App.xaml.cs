@@ -193,6 +193,7 @@ public partial class App : System.Windows.Application
         services.AddSingleton<ITorrentAddDiskAssignmentService, TorrentAddDiskAssignmentService>();
         services.AddSingleton<IConsoleWindowService, ConsoleWindowService>();
         services.AddSingleton<IJellyfinViewerService, JellyfinViewerService>();
+        services.AddSingleton<IJellyfinMediaNavigationService, JellyfinMediaNavigationService>();
         services.AddSingleton<IQbittorrentViewerService, QbittorrentViewerService>();
         services.AddSingleton<ShowSearchSnapshotService>();
         services.AddSingleton<TmdbMetadataProvider>();

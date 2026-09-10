@@ -15,6 +15,7 @@ public sealed partial class NewsViewModel : ViewModelBase
     private readonly ITrackedShowService _trackedShowService;
     private readonly ITorrentCartService _torrentCartService;
     private readonly IPosterImageService _posterImageService;
+    private readonly IJellyfinMediaNavigationService _jellyfinMediaNavigationService;
     private readonly List<NewsEpisodeCardViewModel> _weekEpisodeSource = [];
     private bool _isRestoringUiState;
     private DateTime _lastDashboardUtc = DateTime.MinValue;
@@ -25,12 +26,14 @@ public sealed partial class NewsViewModel : ViewModelBase
         ITrackedShowService trackedShowService,
         ITorrentCartService torrentCartService,
         IAutoTrackSchedulerService autoTrackSchedulerService,
-        IPosterImageService posterImageService)
+        IPosterImageService posterImageService,
+        IJellyfinMediaNavigationService jellyfinMediaNavigationService)
     {
         _settingsService = settingsService;
         _trackedShowService = trackedShowService;
         _torrentCartService = torrentCartService;
         _posterImageService = posterImageService;
+        _jellyfinMediaNavigationService = jellyfinMediaNavigationService;
 
         autoTrackSchedulerService.RunCompleted += (_, _) =>
         {
@@ -160,6 +163,38 @@ public sealed partial class NewsViewModel : ViewModelBase
 
         UpdateDashboard();
     }
+
+    [RelayCommand(CanExecute = nameof(CanOpenEpisodeInJellyfin))]
+    private async Task OpenEpisodeInJellyfin(NewsEpisodeCardViewModel? card)
+    {
+        if (card is null || !card.IsAvailable)
+        {
+            return;
+        }
+
+        var result = await _jellyfinMediaNavigationService.OpenEpisodeAsync(new JellyfinEpisodeTarget
+        {
+            ShowTmdbId = card.ShowTmdbId,
+            SeasonNumber = card.SeasonNumber,
+            EpisodeNumber = card.EpisodeNumber
+        });
+
+        if (result.Succeeded)
+        {
+            return;
+        }
+
+        System.Windows.MessageBox.Show(
+            string.IsNullOrWhiteSpace(result.ErrorMessage)
+                ? "Could not open this episode in Jellyfin."
+                : result.ErrorMessage,
+            "Jellyfin",
+            MessageBoxButton.OK,
+            MessageBoxImage.Warning);
+    }
+
+    private static bool CanOpenEpisodeInJellyfin(NewsEpisodeCardViewModel? card)
+        => card is { IsAvailable: true };
 
     [RelayCommand]
     private void UpdateDashboard()
