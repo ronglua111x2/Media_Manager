@@ -24,12 +24,70 @@
         <Setter Property="HasDropShadow" Value="True" />
     </Style>
 
+    <ControlTemplate x:Key="AppContextMenuItemControlTemplate" TargetType="MenuItem">
+        <Border x:Name="Root"
+                Background="{TemplateBinding Background}"
+                Padding="{TemplateBinding Padding}"
+                SnapsToDevicePixels="True">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="22" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <ContentPresenter ContentSource="Icon"
+                                  VerticalAlignment="Center"
+                                  HorizontalAlignment="Center"
+                                  RecognizesAccessKey="False" />
+                <ContentPresenter Grid.Column="1"
+                                  ContentSource="Header"
+                                  Margin="10,0,4,0"
+                                  VerticalAlignment="Center"
+                                  RecognizesAccessKey="True" />
+            </Grid>
+        </Border>
+        <ControlTemplate.Triggers>
+            <Trigger Property="IsHighlighted" Value="True">
+                <Setter TargetName="Root" Property="Background" Value="{DynamicResource AppBrushAccentSoft}" />
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Foreground" Value="{DynamicResource AppBrushMutedText}" />
+                <Setter TargetName="Root" Property="Opacity" Value="0.5" />
+            </Trigger>
+        </ControlTemplate.Triggers>
+    </ControlTemplate>
+
+    <Style x:Key="AppContextMenuItemStyle" TargetType="MenuItem">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Foreground" Value="{DynamicResource AppBrushText}" />
+        <Setter Property="Padding" Value="8,7" />
+        <Setter Property="HorizontalContentAlignment" Value="Left" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="OverridesDefaultStyle" Value="True" />
+        <Setter Property="Template" Value="{StaticResource AppContextMenuItemControlTemplate}" />
+    </Style>
+
     <Style TargetType="ContextMenu">
-        <Setter Property="Background" Value="{StaticResource AppBrushSurfaceRaised}" />
-        <Setter Property="BorderBrush" Value="{StaticResource AppBrushBorder}" />
+        <Setter Property="Background" Value="{DynamicResource AppBrushSurfaceRaised}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource AppBrushBorder}" />
         <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="Foreground" Value="{StaticResource AppBrushText}" />
+        <Setter Property="Foreground" Value="{DynamicResource AppBrushText}" />
         <Setter Property="Padding" Value="4" />
+        <Setter Property="HasDropShadow" Value="True" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ContextMenu">
+                    <Border Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            Padding="{TemplateBinding Padding}"
+                            CornerRadius="6"
+                            SnapsToDevicePixels="True">
+                        <StackPanel IsItemsHost="True"
+                                    KeyboardNavigation.DirectionalNavigation="Cycle" />
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
     <Style TargetType="MenuItem">
@@ -37,6 +95,12 @@
         <Setter Property="Foreground" Value="{StaticResource AppBrushText}" />
         <Setter Property="Padding" Value="10,6" />
         <Style.Triggers>
+            <Trigger Property="Role" Value="SubmenuItem">
+                <Setter Property="OverridesDefaultStyle" Value="True" />
+                <Setter Property="Foreground" Value="{DynamicResource AppBrushText}" />
+                <Setter Property="Padding" Value="8,7" />
+                <Setter Property="Template" Value="{StaticResource AppContextMenuItemControlTemplate}" />
+            </Trigger>
             <Trigger Property="IsHighlighted" Value="True">
                 <Setter Property="Background" Value="{StaticResource AppBrushAccentSoft}" />
             </Trigger>
@@ -44,6 +108,21 @@
                 <Setter Property="Foreground" Value="{StaticResource AppBrushMutedText}" />
             </Trigger>
         </Style.Triggers>
+    </Style>
+
+    <Style x:Key="{x:Static MenuItem.SeparatorStyleKey}" TargetType="Separator">
+        <Setter Property="Background" Value="{DynamicResource AppBrushBorder}" />
+        <Setter Property="Margin" Value="8,4" />
+        <Setter Property="Height" Value="1" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Separator">
+                    <Border Height="{TemplateBinding Height}"
+                            Margin="{TemplateBinding Margin}"
+                            Background="{TemplateBinding Background}" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
     <ControlTemplate x:Key="AppButtonControlTemplate" TargetType="Button">

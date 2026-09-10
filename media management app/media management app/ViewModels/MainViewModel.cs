@@ -10,6 +10,7 @@ namespace media_management_app.ViewModels;
 
 public partial class MainViewModel : ViewModelBase
 {
+    private readonly AutoTrackViewModel _autoTrackViewModel;
     private readonly IDeviceStatusService _deviceStatusService;
     private readonly IConsoleWindowService _consoleWindowService;
     private readonly IWarpCliService _warpCliService;
@@ -39,6 +40,7 @@ public partial class MainViewModel : ViewModelBase
         IAppLogger logger,
         IAppLifecycleService lifecycleService)
     {
+        _autoTrackViewModel = autoTrackViewModel;
         _deviceStatusService = deviceStatusService;
         _consoleWindowService = consoleWindowService;
         _warpCliService = warpCliService;
@@ -137,6 +139,8 @@ public partial class MainViewModel : ViewModelBase
 
         lifecycleService.AppModeChanged += OnAppModeChanged;
     }
+
+    public IAsyncRelayCommand RunAutoTrackNowCommand => _autoTrackViewModel.RunNowCommand;
 
     public ObservableCollection<ShellNavigationItem> NavigationItems { get; }
 

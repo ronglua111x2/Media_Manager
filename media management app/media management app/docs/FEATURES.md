@@ -47,8 +47,11 @@ Exhaustive list of user-facing and background features. Each entry includes purp
 - **Background:** Auto-closes on background mode if configured
 
 ### 1.7 System Tray
-- **What:** Minimize/hide to tray; restore from tray; shutdown from tray menu
-- **User interaction:** Enabled via Settings → System → Startup (Start Minimized, Close to Tray)
+- **What:** Minimize/hide to tray; restore from tray; themed tray context menu (Dark/Light, Lucide icons)
+- **User interaction:** Enabled via Settings → System → Startup (Start Minimized, Close to Tray). Double-click restores the app. Right-click menu:
+  - Actions (do not restore the main window): Run Now (Auto-Track), Open Console Log, Open Jellyfin, Open qBittorrent
+  - Open screens: Open app, Open Find/Add, Open Cart (Torrent), Open Settings
+  - Exit
 - **Code:** `Services/TrayIconService.cs`, `MainWindow.xaml.cs`
 - **DB:** None
 

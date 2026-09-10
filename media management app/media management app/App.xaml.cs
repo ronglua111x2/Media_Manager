@@ -44,7 +44,11 @@ public partial class App : System.Windows.Application
 
         var services = new ServiceCollection();
         ConfigureServices(services);
-        _serviceProvider = services.BuildServiceProvider();
+        _serviceProvider = services.BuildServiceProvider(new ServiceProviderOptions
+        {
+            ValidateOnBuild = true,
+            ValidateScopes = true
+        });
 
         var settings = _serviceProvider.GetRequiredService<ISettingsService>();
         settings.Load();
