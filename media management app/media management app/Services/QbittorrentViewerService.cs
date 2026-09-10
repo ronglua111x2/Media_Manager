@@ -17,6 +17,94 @@ namespace media_management_app.Services;
 
 public sealed class QbittorrentViewerService : IQbittorrentViewerService
 {
+    private const string SearchUiGuardScript = """
+        (() => {
+          const guardKey = "__mediaManagerQbittorrentSearchGuard";
+          const styleId = "media-manager-qbittorrent-search-guard";
+          const classicSearchSelector = "#searchTabLink, #showSearchEngineLink";
+
+          const isSearchRoute = () =>
+            /^#\/search(?:[/?]|$)/i.test(window.location.hash);
+
+          const redirectFromSearch = () => {
+            if (!isSearchRoute()) {
+              return;
+            }
+
+            window.location.replace(
+              `${window.location.pathname}${window.location.search}#/`);
+          };
+
+          const ensureStyle = () => {
+            if (document.getElementById(styleId)) {
+              return;
+            }
+
+            const parent = document.head ?? document.documentElement;
+            if (!parent) {
+              return;
+            }
+
+            const style = document.createElement("style");
+            style.id = styleId;
+            style.textContent = `
+              #searchTabLink,
+              #showSearchEngineLink,
+              #searchTabColumn,
+              a[href="#/search"],
+              a[href="./#/search"],
+              a[href^="#/search/"],
+              a[href^="#/search?"],
+              a[href^="./#/search/"],
+              a[href^="./#/search?"] {
+                display: none !important;
+              }
+            `;
+            parent.appendChild(style);
+          };
+
+          const showTransfersIfSearchIsSelected = () => {
+            const searchTab = document.getElementById("searchTabLink");
+            if (!searchTab?.classList.contains("selected")) {
+              return;
+            }
+
+            document.getElementById("transfersTabLink")?.click();
+          };
+
+          const blockClassicSearchEntry = (event) => {
+            const target = event.target;
+            if (!(target instanceof Element)
+              || !target.closest(classicSearchSelector)) {
+              return;
+            }
+
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            document.getElementById("transfersTabLink")?.click();
+          };
+
+          const applyGuard = () => {
+            ensureStyle();
+            showTransfersIfSearchIsSelected();
+            redirectFromSearch();
+          };
+
+          if (window[guardKey]) {
+            applyGuard();
+            return;
+          }
+
+          window[guardKey] = true;
+          document.addEventListener("click", blockClassicSearchEntry, true);
+          document.addEventListener("DOMContentLoaded", applyGuard, { once: true });
+          window.addEventListener("hashchange", applyGuard);
+          window.addEventListener("popstate", applyGuard);
+          window.addEventListener("pageshow", applyGuard);
+          applyGuard();
+        })();
+        """;
+
     private readonly ISettingsService _settingsService;
     private readonly IAppLogger _logger;
     private readonly ICrashLogService _crashLog;
@@ -125,6 +213,7 @@ public sealed class QbittorrentViewerService : IQbittorrentViewerService
                 return;
             }
 
+            await _webView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(SearchUiGuardScript);
             _webView.CoreWebView2.NewWindowRequested += OnNewWindowRequested;
             _webView.CoreWebView2.SourceChanged += OnSourceChanged;
             _webView.CoreWebView2.ProcessFailed += OnProcessFailed;
