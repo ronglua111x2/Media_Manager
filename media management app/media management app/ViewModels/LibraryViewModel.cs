@@ -9,6 +9,7 @@ using CommunityToolkit.Mvvm.Input;
 using media_management_app.Common;
 using media_management_app.Models;
 using media_management_app.Services;
+using media_management_app.Services.Events;
 using media_management_app.Services.Gemini;
 using media_management_app.Views;
 using WinForms = System.Windows.Forms;
@@ -32,6 +33,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
     private readonly ISettingsService _settingsService;
     private readonly IDownloadFolderCatalogService _downloadFolderCatalogService;
     private readonly IGeminiLinkConfirmationService _geminiLinkConfirmationService;
+    private readonly IJellyfinMediaNavigationService _jellyfinMediaNavigationService;
 
     private IReadOnlyList<LibraryMediaCardViewModel> _allMediaCards = [];
     private long? _pendingFocusMediaId;
@@ -67,6 +69,8 @@ public sealed partial class LibraryViewModel : ViewModelBase
         ISettingsService settingsService,
         IDownloadFolderCatalogService downloadFolderCatalogService,
         IGeminiLinkConfirmationService geminiLinkConfirmationService,
+        IJellyfinMediaNavigationService jellyfinMediaNavigationService,
+        ILibraryLinkEventHub libraryLinkEventHub,
         IAppLifecycleService lifecycleService)
     {
         _trackedShowService = trackedShowService;
@@ -84,6 +88,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
         _settingsService = settingsService;
         _downloadFolderCatalogService = downloadFolderCatalogService;
         _geminiLinkConfirmationService = geminiLinkConfirmationService;
+        _jellyfinMediaNavigationService = jellyfinMediaNavigationService;
 
         _torrentCartService.CartChanged += (_, _) =>
         {
@@ -98,6 +103,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
         };
         _torrentReconciliationService.Reconciled += (_, _) => RunRefreshSelectedDetailAfterReconcileOnUiThread();
         packLinkCoordinatorService.PackReconciled += (_, _) => RunRefreshSelectedDetailAfterReconcileOnUiThread();
+        libraryLinkEventHub.SymlinkStateChanged += (_, _) => RunRefreshSelectedDetailAfterReconcileOnUiThread();
         lifecycleService.AppModeChanged += OnAppModeChanged;
         SubscribeWatchStatusFilterOptions();
         RestoreLibraryUiState();
@@ -222,6 +228,9 @@ public sealed partial class LibraryViewModel : ViewModelBase
     public bool IsSelectedShow => SelectedShow is not null;
 
     public bool IsSelectedMovie => SelectedMovie is not null;
+
+    public bool SelectedTitleHasJellyfinSymlink =>
+        SelectedMovie?.HasJellyfinSymlink == true || SelectedShow?.HasJellyfinSymlink == true;
 
     public bool ShowWatchEpisodeControls => IsSelectedShow;
 
@@ -735,6 +744,78 @@ public sealed partial class LibraryViewModel : ViewModelBase
     }
 
     private bool CanResetEpisode(LibraryEpisodeRowViewModel? episode) => episode?.CanReset == true;
+
+    [RelayCommand(CanExecute = nameof(CanOpenEpisodeInJellyfin))]
+    private async Task OpenEpisodeInJellyfin(LibraryEpisodeRowViewModel? episode)
+    {
+        if (episode is null || !episode.CanOpenInJellyfin)
+        {
+            return;
+        }
+
+        var result = await _jellyfinMediaNavigationService.OpenAsync(new JellyfinMediaTarget
+        {
+            Kind = JellyfinMediaKind.Episode,
+            TmdbId = episode.ShowTmdbId,
+            SeasonNumber = episode.SeasonNumber,
+            EpisodeNumber = episode.EpisodeNumber,
+            DisplayName = episode.EpisodeCode
+        });
+        ShowJellyfinNavigationError(result);
+    }
+
+    private static bool CanOpenEpisodeInJellyfin(LibraryEpisodeRowViewModel? episode) =>
+        episode?.CanOpenInJellyfin == true;
+
+    [RelayCommand(CanExecute = nameof(CanOpenSelectedTitleInJellyfin))]
+    private async Task OpenSelectedTitleInJellyfin()
+    {
+        JellyfinMediaTarget? target = null;
+        if (SelectedMovie is { HasJellyfinSymlink: true })
+        {
+            target = new JellyfinMediaTarget
+            {
+                Kind = JellyfinMediaKind.Movie,
+                TmdbId = SelectedMovie.TmdbId,
+                DisplayName = SelectedMovie.Title
+            };
+        }
+        else if (SelectedShow is { HasJellyfinSymlink: true })
+        {
+            target = new JellyfinMediaTarget
+            {
+                Kind = JellyfinMediaKind.Series,
+                TmdbId = SelectedShow.TmdbId,
+                DisplayName = SelectedShow.Title
+            };
+        }
+
+        if (target is null)
+        {
+            return;
+        }
+
+        var result = await _jellyfinMediaNavigationService.OpenAsync(target);
+        ShowJellyfinNavigationError(result);
+    }
+
+    private bool CanOpenSelectedTitleInJellyfin() => SelectedTitleHasJellyfinSymlink;
+
+    private static void ShowJellyfinNavigationError(JellyfinMediaNavigationResult result)
+    {
+        if (result.Succeeded)
+        {
+            return;
+        }
+
+        System.Windows.MessageBox.Show(
+            string.IsNullOrWhiteSpace(result.ErrorMessage)
+                ? "Could not open this title in Jellyfin."
+                : result.ErrorMessage,
+            "Jellyfin",
+            System.Windows.MessageBoxButton.OK,
+            System.Windows.MessageBoxImage.Warning);
+    }
 
     [RelayCommand(CanExecute = nameof(CanRuleLinkSeasonPack))]
     private Task RuleLinkSeasonPack(LibrarySeasonViewModel? season) =>
@@ -1741,14 +1822,18 @@ public sealed partial class LibraryViewModel : ViewModelBase
         OnPropertyChanged(nameof(ShowWatchEpisodeControls));
         OnPropertyChanged(nameof(CanIncrementWatchedEpisodes));
         OnPropertyChanged(nameof(CanDecrementWatchedEpisodes));
+        OnPropertyChanged(nameof(SelectedTitleHasJellyfinSymlink));
         IncrementWatchedEpisodesCommand.NotifyCanExecuteChanged();
         DecrementWatchedEpisodesCommand.NotifyCanExecuteChanged();
+        OpenSelectedTitleInJellyfinCommand.NotifyCanExecuteChanged();
         HandleSelectedShowForRatingChart();
     }
 
     partial void OnSelectedMovieChanged(LibraryMovieDetailViewModel? value)
     {
         OnPropertyChanged(nameof(ShowStopAutoTrackButton));
+        OnPropertyChanged(nameof(SelectedTitleHasJellyfinSymlink));
+        OpenSelectedTitleInJellyfinCommand.NotifyCanExecuteChanged();
     }
 
     [RelayCommand]
@@ -1977,15 +2062,18 @@ public sealed partial class LibraryViewModel : ViewModelBase
     {
         var linkedEpisodeStatuses = GetLinkedEpisodeStatuses(show.TmdbId, sourceItems);
         var linkedPackOwnerSeasons = GetLinkedPackOwnerSeasons(show.TmdbId, sourceItems);
+        var symlinkedEpisodeKeys = GetSymlinkedEpisodeKeys(show.TmdbId, sourceItems);
         var episodes = _trackedShowService.GetEpisodes(show.Id)
             .Select(episode => new LibraryEpisodeRowViewModel(episode)
             {
+                ShowTmdbId = show.TmdbId,
                 LibraryLinkStatus = linkedEpisodeStatuses.TryGetValue(
                     (episode.SeasonNumber, episode.EpisodeNumber),
                     out var status)
                     ? status
                     : "Not linked",
-                IsInCart = _torrentCartService.TryGetActiveEpisodeOrder(episode.Id, out _)
+                IsInCart = _torrentCartService.TryGetActiveEpisodeOrder(episode.Id, out _),
+                HasJellyfinSymlink = symlinkedEpisodeKeys.Contains((episode.SeasonNumber, episode.EpisodeNumber))
             })
             .ToList();
 
@@ -2044,7 +2132,10 @@ public sealed partial class LibraryViewModel : ViewModelBase
             }
         }
 
-        return new LibraryShowDetailViewModel(show, seasons, hiddenSeasonNumbers.Count);
+        return new LibraryShowDetailViewModel(show, seasons, hiddenSeasonNumbers.Count)
+        {
+            HasJellyfinSymlink = symlinkedEpisodeKeys.Count > 0
+        };
     }
 
     private void RebuildSelectedShowDetail()
@@ -2083,7 +2174,8 @@ public sealed partial class LibraryViewModel : ViewModelBase
         return new LibraryMovieDetailViewModel(movie)
         {
             LibraryLinkStatus = IsMovieLinked(movie.TmdbId, sourceItems) ? "Linked" : "Not linked",
-            IsInCart = _torrentCartService.TryGetActiveMovieOrder(movie.Id, out _)
+            IsInCart = _torrentCartService.TryGetActiveMovieOrder(movie.Id, out _),
+            HasJellyfinSymlink = IsMovieSymlinked(movie.TmdbId, sourceItems)
         };
     }
 
@@ -2473,6 +2565,35 @@ public sealed partial class LibraryViewModel : ViewModelBase
         return statuses;
     }
 
+    private static HashSet<(int SeasonNumber, int EpisodeNumber)> GetSymlinkedEpisodeKeys(
+        int tmdbId,
+        IReadOnlyList<SourceItem> sourceItems)
+    {
+        var providerId = tmdbId.ToString();
+        var keys = new HashSet<(int SeasonNumber, int EpisodeNumber)>();
+        foreach (var item in sourceItems
+                     .Where(item =>
+                         item.MediaKind == MediaKind.TvEpisode &&
+                         !item.IsOrphanPackSpecial &&
+                         item.MatchAccepted &&
+                         item.State == ItemState.Linked &&
+                         HasExistingSymlink(item) &&
+                         string.Equals(item.Provider, "tmdb", StringComparison.OrdinalIgnoreCase) &&
+                         string.Equals(item.ProviderId, providerId, StringComparison.OrdinalIgnoreCase)))
+        {
+            var season = item.MappedSeasonNumber ?? item.SeasonNumber;
+            var episode = item.MappedEpisodeNumber ?? item.EpisodeNumber;
+            if (season is null || episode is null)
+            {
+                continue;
+            }
+
+            keys.Add((season.Value, episode.Value));
+        }
+
+        return keys;
+    }
+
     private HashSet<int> GetLinkedPackOwnerSeasons(int tmdbId, IReadOnlyList<SourceItem> sourceItems)
     {
         var providerId = tmdbId.ToString();
@@ -2513,6 +2634,21 @@ public sealed partial class LibraryViewModel : ViewModelBase
             string.Equals(item.Provider, "tmdb", StringComparison.OrdinalIgnoreCase) &&
             string.Equals(item.ProviderId, providerId, StringComparison.OrdinalIgnoreCase));
     }
+
+    private static bool IsMovieSymlinked(int tmdbId, IReadOnlyList<SourceItem> sourceItems)
+    {
+        var providerId = tmdbId.ToString();
+        return sourceItems.Any(item =>
+            item.MediaKind == MediaKind.Movie &&
+            item.MatchAccepted &&
+            item.State == ItemState.Linked &&
+            HasExistingSymlink(item) &&
+            string.Equals(item.Provider, "tmdb", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(item.ProviderId, providerId, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool HasExistingSymlink(SourceItem item) =>
+        !string.IsNullOrWhiteSpace(item.SymlinkPath) && File.Exists(item.SymlinkPath);
 
     private bool CanAddMovieToCart(LibraryMovieDetailViewModel? movie) => movie?.CanAddToCart == true;
 

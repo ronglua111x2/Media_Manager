@@ -209,15 +209,15 @@ Exhaustive list of user-facing and background features. Each entry includes purp
 
 ### 5.2 Show Detail Pane
 - **What:** Seasons, episodes, poster, series status, watch progress, rating, thoughts, alt titles
-- **User interaction:** Expand seasons; per-episode actions
-- **Code:** `ViewModels/LibraryShowDetailViewModel.cs`, `ViewModels/LibrarySeasonViewModel.cs`, `ViewModels/LibraryEpisodeRowViewModel.cs`
-- **DB:** `TrackedShows`, `TrackedSeasons`, `TrackedEpisodes`
+- **User interaction:** Expand seasons; per-episode actions. When a Jellyfin symlink exists, the show title and that episode title turn News-Available green with an ExternalLink icon; click opens the series or episode in the embedded Jellyfin viewer (no library refresh). Availability and Rating episode lists both show the link
+- **Code:** `ViewModels/LibraryShowDetailViewModel.cs`, `ViewModels/LibrarySeasonViewModel.cs`, `ViewModels/LibraryEpisodeRowViewModel.cs`, `ViewModels/LibraryViewModel.cs` (`OpenEpisodeInJellyfinCommand`, `OpenSelectedTitleInJellyfinCommand`)
+- **DB:** `TrackedShows`, `TrackedSeasons`, `TrackedEpisodes`; symlink presence from `SourceItems.SymlinkPath`
 
 ### 5.3 Movie Detail Pane
 - **What:** Movie metadata, torrent/link state, preferences
-- **User interaction:** Link, reset, cart actions
+- **User interaction:** Link, reset, cart actions. When the movie symlink exists, the header title turns green with an ExternalLink icon; click opens the movie in Jellyfin (warning only if not indexed yet)
 - **Code:** `ViewModels/LibraryMovieDetailViewModel.cs`
-- **DB:** `TrackedMovies`
+- **DB:** `TrackedMovies`; symlink presence from `SourceItems.SymlinkPath`
 
 ### 5.4 Watch Status & Series Status
 - **What:** User watch status (Watching, Completed, On Hold, etc.) and series status (Ongoing/Finished)
@@ -511,11 +511,11 @@ Setup details: [STATE_FOLDER.md](./STATE_FOLDER.md#google-drive-oauth)
 - **Code:** `Services/JellyfinViewerService.cs` (`ShowOrActivate`, `ShowOrNavigateAsync`)
 - **Background:** Same lifecycle rules as qBittorrent viewer
 
-### 9.3 Jellyfin Episode Navigation
-- **What:** Reusable lookup + navigation: TMDB show id + season/episode → Jellyfin item id → details page in the embedded viewer. In-memory item-id cache only (no DB column)
-- **User interaction:** News Available action today; other workspaces can call the same service later
-- **Code:** `Services/IJellyfinMediaNavigationService.cs`, `Services/JellyfinMediaNavigationService.cs`, `Services/JellyfinClient.cs` (`FindEpisodeItemIdAsync`), `Models/JellyfinEpisodeTarget.cs`, `Models/JellyfinMediaNavigationResult.cs`
-- **Notes:** Opens the details page only (no autoplay). Logs distinguish **cache hit** vs **lookup**. If Jellyfin has not indexed the file yet, shows a warning. API key stays on REST calls and is never placed in the WebView URL
+### 9.3 Jellyfin Media Navigation
+- **What:** Reusable lookup + navigation: TMDB id + kind (Series, Movie, or Episode S/E) → Jellyfin item id → details page in the embedded viewer. Targeted `AnyProviderIdEquals=Tmdb.{id}` query with a type-scoped scan fallback. In-memory item-id cache only (no DB column)
+- **User interaction:** News Available pill opens an episode; Library show/movie header and episode titles open series, movie, or episode when a symlink exists. Click never refreshes Jellyfin; missing index shows a warning
+- **Code:** `Services/IJellyfinMediaNavigationService.cs` (`OpenAsync`, `OpenEpisodeAsync` wrapper), `Services/JellyfinMediaNavigationService.cs`, `Services/JellyfinClient.cs` (`FindSeriesItemIdAsync`, `FindMovieItemIdAsync`, `FindEpisodeItemIdAsync`), `Models/JellyfinMediaTarget.cs`, `Models/JellyfinEpisodeTarget.cs`, `Models/JellyfinMediaNavigationResult.cs`
+- **Notes:** Opens the details page only (no autoplay). Logs distinguish **cache hit** vs **lookup**. If Jellyfin has not indexed the file yet, shows a warning. API key stays on REST calls and is never placed in the WebView URL. In-memory item-id cache is cleared when the app enters background mode so the next News or Library open looks up again
 
 ---
 

@@ -129,6 +129,22 @@ public sealed class JellyfinClient : IJellyfinClient, IDisposable
         return tasks;
     }
 
+    public Task<string?> FindSeriesItemIdAsync(
+        int showTmdbId,
+        CancellationToken cancellationToken = default)
+    {
+        var settings = RequireConfiguredSettings();
+        return FindItemIdByTmdbAsync(settings, "Series", showTmdbId, cancellationToken);
+    }
+
+    public Task<string?> FindMovieItemIdAsync(
+        int movieTmdbId,
+        CancellationToken cancellationToken = default)
+    {
+        var settings = RequireConfiguredSettings();
+        return FindItemIdByTmdbAsync(settings, "Movie", movieTmdbId, cancellationToken);
+    }
+
     public async Task<string?> FindEpisodeItemIdAsync(
         int showTmdbId,
         int seasonNumber,
@@ -136,7 +152,7 @@ public sealed class JellyfinClient : IJellyfinClient, IDisposable
         CancellationToken cancellationToken = default)
     {
         var settings = RequireConfiguredSettings();
-        var seriesId = await FindSeriesIdAsync(settings, showTmdbId, cancellationToken);
+        var seriesId = await FindItemIdByTmdbAsync(settings, "Series", showTmdbId, cancellationToken);
         if (string.IsNullOrWhiteSpace(seriesId))
         {
             return null;
@@ -156,15 +172,34 @@ public sealed class JellyfinClient : IJellyfinClient, IDisposable
         _httpClient.Dispose();
     }
 
-    private async Task<string?> FindSeriesIdAsync(
+    private async Task<string?> FindItemIdByTmdbAsync(
         JellyfinRefreshSettings settings,
-        int showTmdbId,
+        string includeItemType,
+        int tmdbId,
         CancellationToken cancellationToken)
     {
-        var tmdbId = showTmdbId.ToString(CultureInfo.InvariantCulture);
-        var path =
-            $"Items?Recursive=true&IncludeItemTypes=Series&Fields=ProviderIds&EnableImages=false&EnableUserData=false&HasTmdbId=true";
-        using var document = await GetJsonAsync(settings, path, cancellationToken);
+        var tmdb = tmdbId.ToString(CultureInfo.InvariantCulture);
+        var providerQuery = Uri.EscapeDataString($"Tmdb.{tmdb}");
+        var targetedPath =
+            $"Items?Recursive=true&IncludeItemTypes={includeItemType}&AnyProviderIdEquals={providerQuery}&Fields=ProviderIds&EnableImages=false&EnableUserData=false&Limit=1";
+        var targetedId = await FindMatchingItemIdAsync(settings, targetedPath, tmdb, cancellationToken);
+        if (!string.IsNullOrWhiteSpace(targetedId))
+        {
+            return targetedId;
+        }
+
+        var fallbackPath =
+            $"Items?Recursive=true&IncludeItemTypes={includeItemType}&Fields=ProviderIds&EnableImages=false&EnableUserData=false&HasTmdbId=true";
+        return await FindMatchingItemIdAsync(settings, fallbackPath, tmdb, cancellationToken);
+    }
+
+    private async Task<string?> FindMatchingItemIdAsync(
+        JellyfinRefreshSettings settings,
+        string relativePath,
+        string tmdbId,
+        CancellationToken cancellationToken)
+    {
+        using var document = await GetJsonAsync(settings, relativePath, cancellationToken);
         foreach (var item in EnumerateItems(document.RootElement))
         {
             if (!ProviderIdsMatch(item, "Tmdb", tmdbId))

@@ -8,9 +8,13 @@ public interface ILibraryLinkEventHub
 
     event EventHandler<LibraryLinkEventArgs>? HardlinkRemoved;
 
+    event EventHandler? SymlinkStateChanged;
+
     void PublishHardlinkCreated(SourceItem item, string linkedPath);
 
     void PublishHardlinkRemoved(SourceItem item, string linkedPath);
+
+    void PublishSymlinkStateChanged();
 }
 
 public sealed class LibraryLinkEventArgs : EventArgs

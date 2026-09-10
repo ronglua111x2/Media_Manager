@@ -17,47 +17,63 @@ public sealed class JellyfinMediaNavigationService : IJellyfinMediaNavigationSer
         IJellyfinClient jellyfinClient,
         IJellyfinViewerService jellyfinViewerService,
         ISettingsService settingsService,
+        IAppLifecycleService lifecycleService,
         IAppLogger logger)
     {
         _jellyfinClient = jellyfinClient;
         _jellyfinViewerService = jellyfinViewerService;
         _settingsService = settingsService;
         _logger = logger;
+        lifecycleService.AppModeChanged += OnAppModeChanged;
     }
 
-    public async Task<JellyfinMediaNavigationResult> OpenEpisodeAsync(
+    public Task<JellyfinMediaNavigationResult> OpenEpisodeAsync(
         JellyfinEpisodeTarget target,
+        CancellationToken cancellationToken = default) =>
+        OpenAsync(JellyfinMediaTarget.FromEpisode(target), cancellationToken);
+
+    public void ClearCache()
+    {
+        var count = _itemIdCache.Count;
+        _itemIdCache.Clear();
+        _logger.Info(
+            $"Jellyfin media navigation: cleared {count} cached item id(s).",
+            LogTarget.All);
+    }
+
+    public async Task<JellyfinMediaNavigationResult> OpenAsync(
+        JellyfinMediaTarget target,
         CancellationToken cancellationToken = default)
     {
-        if (target.ShowTmdbId <= 0)
+        if (!TryValidateTarget(target, out var validationError))
         {
-            return JellyfinMediaNavigationResult.Fail("Episode is missing a TMDB show id.");
+            return JellyfinMediaNavigationResult.Fail(validationError);
         }
 
         if (!TryGetConfiguredBaseUri(out var baseUri, out var configError))
         {
-            _logger.Warning($"Jellyfin episode navigation: {configError}", LogTarget.All);
+            _logger.Warning($"Jellyfin {FormatKind(target.Kind)} navigation: {configError}", LogTarget.All);
             return JellyfinMediaNavigationResult.Fail(configError);
         }
 
         try
         {
             var cacheKey = BuildCacheKey(baseUri, target);
-            var episodeLabel = FormatEpisodeLabel(target);
+            var label = FormatLabel(target);
             string? itemId;
             if (_itemIdCache.TryGetValue(cacheKey, out itemId) &&
                 !string.IsNullOrWhiteSpace(itemId))
             {
                 _logger.Info(
-                    $"Jellyfin episode navigation: cache hit for TMDB {target.ShowTmdbId} {episodeLabel} (item {itemId}).",
+                    $"Jellyfin {FormatKind(target.Kind)} navigation: cache hit for TMDB {target.TmdbId} {label} (item {itemId}).",
                     LogTarget.All);
             }
             else
             {
-                itemId = await LookupAndCacheAsync(cacheKey, target, episodeLabel, cancellationToken);
+                itemId = await LookupAndCacheAsync(cacheKey, target, label, cancellationToken);
                 if (string.IsNullOrWhiteSpace(itemId))
                 {
-                    return FailNotIndexed(episodeLabel);
+                    return FailNotIndexed(target.Kind, label);
                 }
             }
 
@@ -72,7 +88,7 @@ public sealed class JellyfinMediaNavigationService : IJellyfinMediaNavigationSer
         }
         catch (Exception ex)
         {
-            _logger.Warning($"Jellyfin episode navigation failed: {ex.Message}", LogTarget.All);
+            _logger.Warning($"Jellyfin {FormatKind(target.Kind)} navigation failed: {ex.Message}", LogTarget.All);
             return JellyfinMediaNavigationResult.Fail(ex.Message);
         }
     }
@@ -102,18 +118,24 @@ public sealed class JellyfinMediaNavigationService : IJellyfinMediaNavigationSer
 
     private async Task<string?> LookupAndCacheAsync(
         string cacheKey,
-        JellyfinEpisodeTarget target,
-        string episodeLabel,
+        JellyfinMediaTarget target,
+        string label,
         CancellationToken cancellationToken)
     {
         _logger.Info(
-            $"Jellyfin episode navigation: lookup for TMDB {target.ShowTmdbId} {episodeLabel}.",
+            $"Jellyfin {FormatKind(target.Kind)} navigation: lookup for TMDB {target.TmdbId} {label}.",
             LogTarget.All);
-        var itemId = await _jellyfinClient.FindEpisodeItemIdAsync(
-            target.ShowTmdbId,
-            target.SeasonNumber,
-            target.EpisodeNumber,
-            cancellationToken);
+        var itemId = target.Kind switch
+        {
+            JellyfinMediaKind.Series => await _jellyfinClient.FindSeriesItemIdAsync(target.TmdbId, cancellationToken),
+            JellyfinMediaKind.Movie => await _jellyfinClient.FindMovieItemIdAsync(target.TmdbId, cancellationToken),
+            JellyfinMediaKind.Episode => await _jellyfinClient.FindEpisodeItemIdAsync(
+                target.TmdbId,
+                target.SeasonNumber!.Value,
+                target.EpisodeNumber!.Value,
+                cancellationToken),
+            _ => null
+        };
         if (string.IsNullOrWhiteSpace(itemId))
         {
             return null;
@@ -123,25 +145,77 @@ public sealed class JellyfinMediaNavigationService : IJellyfinMediaNavigationSer
         return itemId;
     }
 
-    private JellyfinMediaNavigationResult FailNotIndexed(string episodeLabel)
+    private JellyfinMediaNavigationResult FailNotIndexed(JellyfinMediaKind kind, string label)
     {
-        var missing = $"{episodeLabel} is available locally but has not been indexed by Jellyfin yet.";
-        _logger.Warning($"Jellyfin episode navigation: {missing}", LogTarget.All);
+        var missing = $"{label} is available locally but has not been indexed by Jellyfin yet.";
+        _logger.Warning($"Jellyfin {FormatKind(kind)} navigation: {missing}", LogTarget.All);
         return JellyfinMediaNavigationResult.Fail(missing);
     }
 
-    private static string FormatEpisodeLabel(JellyfinEpisodeTarget target)
-        => $"S{target.SeasonNumber:00}E{target.EpisodeNumber:00}";
+    private static bool TryValidateTarget(JellyfinMediaTarget target, out string errorMessage)
+    {
+        if (target.TmdbId <= 0)
+        {
+            errorMessage = target.Kind switch
+            {
+                JellyfinMediaKind.Movie => "Movie is missing a TMDB id.",
+                JellyfinMediaKind.Series => "Show is missing a TMDB id.",
+                _ => "Episode is missing a TMDB show id."
+            };
+            return false;
+        }
 
-    private static string BuildCacheKey(Uri baseUri, JellyfinEpisodeTarget target)
+        if (target.Kind == JellyfinMediaKind.Episode &&
+            (target.SeasonNumber is null || target.EpisodeNumber is null))
+        {
+            errorMessage = "Episode is missing a season or episode number.";
+            return false;
+        }
+
+        errorMessage = string.Empty;
+        return true;
+    }
+
+    private static string FormatKind(JellyfinMediaKind kind) => kind switch
+    {
+        JellyfinMediaKind.Series => "series",
+        JellyfinMediaKind.Movie => "movie",
+        _ => "episode"
+    };
+
+    private static string FormatLabel(JellyfinMediaTarget target)
+    {
+        if (target.Kind == JellyfinMediaKind.Episode &&
+            target.SeasonNumber is int season &&
+            target.EpisodeNumber is int episode)
+        {
+            return $"S{season:00}E{episode:00}";
+        }
+
+        return string.IsNullOrWhiteSpace(target.DisplayName)
+            ? $"TMDB {target.TmdbId}"
+            : target.DisplayName.Trim();
+    }
+
+    private static string BuildCacheKey(Uri baseUri, JellyfinMediaTarget target)
     {
         var origin = $"{baseUri.Scheme}://{baseUri.Host}:{baseUri.Port}";
-        return $"{origin}|{target.ShowTmdbId}|{target.SeasonNumber}|{target.EpisodeNumber}";
+        return $"{origin}|{target.Kind}|{target.TmdbId}|{target.SeasonNumber}|{target.EpisodeNumber}";
     }
 
     private static Uri BuildDetailsUri(Uri baseUri, string itemId)
     {
         var origin = baseUri.GetLeftPart(UriPartial.Authority).TrimEnd('/');
         return new Uri($"{origin}/web/#/details?id={Uri.EscapeDataString(itemId)}");
+    }
+
+    private void OnAppModeChanged(object? sender, AppMode mode)
+    {
+        if (mode != AppMode.Background)
+        {
+            return;
+        }
+
+        ClearCache();
     }
 }

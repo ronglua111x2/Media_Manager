@@ -173,6 +173,67 @@
             </Border>
         </DataTemplate>
 
+        <Style x:Key="LibraryJellyfinTitleTextStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource AppBrushText}" />
+            <Setter Property="TextWrapping" Value="NoWrap" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding HasJellyfinSymlink}" Value="True">
+                    <Setter Property="Foreground" Value="{StaticResource AppBrushAccent}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="LibraryJellyfinTitleHitStyle" TargetType="Border">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding HasJellyfinSymlink}" Value="True">
+                    <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="LibraryJellyfinTitleIconStyle" TargetType="iconPacks:PackIconLucide">
+            <Setter Property="Kind" Value="ExternalLink" />
+            <Setter Property="Width" Value="12" />
+            <Setter Property="Height" Value="12" />
+            <Setter Property="Foreground" Value="{StaticResource AppBrushAccent}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="Visibility" Value="Hidden" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding HasJellyfinSymlink}" Value="True">
+                    <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <DataTemplate x:Key="LibraryEpisodeJellyfinTitleTemplate">
+            <Grid x:Name="LibraryJellyfinTitleHost">
+                <Grid HorizontalAlignment="Left"
+                      MaxWidth="{Binding ActualWidth, ElementName=LibraryJellyfinTitleHost}">
+                    <DockPanel LastChildFill="True">
+                        <iconPacks:PackIconLucide DockPanel.Dock="Right"
+                                                   Margin="4,0,0,0"
+                                                   Style="{StaticResource LibraryJellyfinTitleIconStyle}" />
+                        <TextBlock Text="{Binding Title, Mode=OneWay}"
+                                   VerticalAlignment="Center"
+                                   Style="{StaticResource LibraryJellyfinTitleTextStyle}" />
+                    </DockPanel>
+                    <Border Style="{StaticResource LibraryJellyfinTitleHitStyle}"
+                            ToolTip="Open episode in Jellyfin">
+                        <Border.InputBindings>
+                            <MouseBinding MouseAction="LeftClick"
+                                          Command="{Binding DataContext.OpenEpisodeInJellyfinCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                          CommandParameter="{Binding}" />
+                        </Border.InputBindings>
+                    </Border>
+                </Grid>
+            </Grid>
+        </DataTemplate>
+
         <DataTemplate x:Key="EpisodeRowTemplate">
             <Border Background="{StaticResource AppBrushSurface}"
                     BorderBrush="{StaticResource AppBrushBorder}"
@@ -217,8 +278,10 @@
                                    FontWeight="SemiBold"
                                    VerticalAlignment="Center" />
                         <StackPanel Grid.Column="1" Margin="8,0,0,0" VerticalAlignment="Center">
-                            <TextBlock Text="{Binding Title}"
-                                       TextTrimming="CharacterEllipsis" />
+                            <ContentControl Content="{Binding}"
+                                            ContentTemplate="{StaticResource LibraryEpisodeJellyfinTitleTemplate}"
+                                            HorizontalContentAlignment="Stretch"
+                                            HorizontalAlignment="Stretch" />
                             <TextBlock Text="{Binding AirDateDisplay}"
                                        Style="{StaticResource MutedTextStyle}"
                                        FontSize="11" />
@@ -327,8 +390,10 @@
                                    VerticalAlignment="Top"
                                    Margin="0,2,0,0" />
                         <StackPanel Grid.Column="1" Margin="8,0,8,0">
-                            <TextBlock Text="{Binding Title}"
-                                       TextTrimming="CharacterEllipsis" />
+                            <ContentControl Content="{Binding}"
+                                            ContentTemplate="{StaticResource LibraryEpisodeJellyfinTitleTemplate}"
+                                            HorizontalContentAlignment="Stretch"
+                                            HorizontalAlignment="Stretch" />
                             <TextBlock Text="{Binding AirDateDisplay}"
                                        Style="{StaticResource MutedTextStyle}"
                                        FontSize="11"
@@ -1314,11 +1379,68 @@
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <TextBlock Text="{Binding SelectedMediaCard.Title}"
-                                                   FontSize="22"
-                                                   FontWeight="SemiBold"
-                                                   TextTrimming="CharacterEllipsis"
-                                                   VerticalAlignment="Center" />
+                                        <Grid x:Name="LibrarySelectedTitleHost"
+                                              VerticalAlignment="Center">
+                                            <Grid HorizontalAlignment="Left"
+                                                  MaxWidth="{Binding ActualWidth, ElementName=LibrarySelectedTitleHost}">
+                                                <DockPanel LastChildFill="True">
+                                                    <iconPacks:PackIconLucide DockPanel.Dock="Right"
+                                                                               Kind="ExternalLink"
+                                                                               Width="12"
+                                                                               Height="12"
+                                                                               Margin="6,0,0,0"
+                                                                               Foreground="{StaticResource AppBrushAccent}"
+                                                                               VerticalAlignment="Center">
+                                                        <iconPacks:PackIconLucide.Style>
+                                                            <Style TargetType="iconPacks:PackIconLucide">
+                                                                <Setter Property="Visibility" Value="Hidden" />
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding SelectedTitleHasJellyfinSymlink}" Value="True">
+                                                                        <Setter Property="Visibility" Value="Visible" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </iconPacks:PackIconLucide.Style>
+                                                    </iconPacks:PackIconLucide>
+                                                    <TextBlock Text="{Binding SelectedMediaCard.Title, Mode=OneWay}"
+                                                               FontSize="22"
+                                                               FontWeight="SemiBold"
+                                                               TextTrimming="CharacterEllipsis"
+                                                               TextWrapping="NoWrap"
+                                                               VerticalAlignment="Center">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock">
+                                                                <Setter Property="Foreground" Value="{StaticResource AppBrushText}" />
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding SelectedTitleHasJellyfinSymlink}" Value="True">
+                                                                        <Setter Property="Foreground" Value="{StaticResource AppBrushAccent}" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
+                                                </DockPanel>
+                                                <Border Background="Transparent"
+                                                        ToolTip="Open in Jellyfin">
+                                                    <Border.Style>
+                                                        <Style TargetType="Border">
+                                                            <Setter Property="Cursor" Value="Arrow" />
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding SelectedTitleHasJellyfinSymlink}" Value="True">
+                                                                    <Setter Property="Cursor" Value="Hand" />
+                                                                    <Setter Property="Visibility" Value="Visible" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Border.Style>
+                                                    <Border.InputBindings>
+                                                        <MouseBinding MouseAction="LeftClick"
+                                                                      Command="{Binding OpenSelectedTitleInJellyfinCommand}" />
+                                                    </Border.InputBindings>
+                                                </Border>
+                                            </Grid>
+                                        </Grid>
                                         <StackPanel Grid.Column="1"
                                                     Orientation="Horizontal"
                                                     Margin="12,0,0,0">

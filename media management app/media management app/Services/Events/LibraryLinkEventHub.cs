@@ -8,6 +8,8 @@ public sealed class LibraryLinkEventHub : ILibraryLinkEventHub
 
     public event EventHandler<LibraryLinkEventArgs>? HardlinkRemoved;
 
+    public event EventHandler? SymlinkStateChanged;
+
     public void PublishHardlinkCreated(SourceItem item, string linkedPath)
     {
         HardlinkCreated?.Invoke(this, new LibraryLinkEventArgs(item, linkedPath));
@@ -16,5 +18,10 @@ public sealed class LibraryLinkEventHub : ILibraryLinkEventHub
     public void PublishHardlinkRemoved(SourceItem item, string linkedPath)
     {
         HardlinkRemoved?.Invoke(this, new LibraryLinkEventArgs(item, linkedPath));
+    }
+
+    public void PublishSymlinkStateChanged()
+    {
+        SymlinkStateChanged?.Invoke(this, EventArgs.Empty);
     }
 }

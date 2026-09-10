@@ -37,6 +37,8 @@ public sealed partial class LibraryEpisodeRowViewModel : ObservableObject
 
     public int EpisodeNumber { get; }
 
+    public int ShowTmdbId { get; init; }
+
     public long? SourceItemId { get; private init; }
 
     public bool IsTrackedEpisode { get; private init; }
@@ -58,6 +60,8 @@ public sealed partial class LibraryEpisodeRowViewModel : ObservableObject
     public EpisodeAvailability Availability { get; private init; }
 
     public bool IsAvailable => IsOrphan || Availability == EpisodeAvailability.Available;
+
+    public bool CanOpenInJellyfin => IsTrackedEpisode && !IsOrphan && !IsOrphanSeparator && HasJellyfinSymlink;
 
     public string TorrentHash { get; private init; } = string.Empty;
 
@@ -181,6 +185,10 @@ public sealed partial class LibraryEpisodeRowViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(WorkflowStatusLabel))]
     [NotifyPropertyChangedFor(nameof(ShowWorkflowStatus))]
     private bool isInCart;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanOpenInJellyfin))]
+    private bool hasJellyfinSymlink;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanAddToCart))]

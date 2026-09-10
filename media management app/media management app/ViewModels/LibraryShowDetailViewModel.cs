@@ -38,6 +38,8 @@ public sealed partial class LibraryShowDetailViewModel : ObservableObject
 
     public int TmdbId { get; }
 
+    public bool HasJellyfinSymlink { get; init; }
+
     public string Title { get; }
 
     public string Overview { get; }

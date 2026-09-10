@@ -59,6 +59,8 @@ public sealed partial class LibraryMovieDetailViewModel : ObservableObject
 
     public bool IsAvailable => Availability == EpisodeAvailability.Available;
 
+    public bool CanOpenInJellyfin => HasJellyfinSymlink;
+
     public bool CanAddToCart => !IsAvailable && !IsInCart && !HasTorrent;
 
     public bool CanReset => HasTorrent || IsAvailable;
@@ -114,6 +116,10 @@ public sealed partial class LibraryMovieDetailViewModel : ObservableObject
     public string PosterUrl => string.IsNullOrWhiteSpace(PosterPath)
         ? string.Empty
         : $"https://image.tmdb.org/t/p/w342{PosterPath}";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanOpenInJellyfin))]
+    private bool hasJellyfinSymlink;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsLinked))]

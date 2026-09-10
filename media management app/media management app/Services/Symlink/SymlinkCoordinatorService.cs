@@ -65,6 +65,12 @@ public sealed class SymlinkCoordinatorService : ISymlinkCoordinatorService
             var result = await Task.Run(_symlinkSyncService.ReconcileAll, cancellationToken);
             await Task.Run(WriteAndCleanupEpisodeGroupNfos, cancellationToken);
             await NotifyJellyfinForTouchedPathsAsync(result, cancellationToken);
+            if (result.CreatedCount > 0 || result.RepairedCount > 0 || result.RemovedCount > 0 ||
+                result.TouchedSymlinkPaths.Count > 0)
+            {
+                _eventHub.PublishSymlinkStateChanged();
+            }
+
             return result;
         }
         finally
@@ -202,6 +208,7 @@ public sealed class SymlinkCoordinatorService : ISymlinkCoordinatorService
 
                 e.Item.SymlinkPath ??= ResolveSymlinkPath(e.Item);
                 _jellyfinLibraryRefreshService.EnqueueFromSourceItem(e.Item);
+                _eventHub.PublishSymlinkStateChanged();
             }
         }
         finally
@@ -333,6 +340,11 @@ public sealed class SymlinkCoordinatorService : ISymlinkCoordinatorService
             if (result.RemovedCount > 0 || result.ErrorCount > 0)
             {
                 _logger.Info($"Symlink event removal for {e.Item.FileName}. {result.Summary}", LogTarget.All);
+            }
+
+            if (result.RemovedCount > 0)
+            {
+                _eventHub.PublishSymlinkStateChanged();
             }
 
             foreach (var showFolder in showFolders)
