@@ -518,7 +518,7 @@ Setup details: [STATE_FOLDER.md](./STATE_FOLDER.md#google-drive-oauth)
 - **What:** Reusable lookup + navigation: TMDB id + kind (Series, Movie, or Episode S/E) → Jellyfin item id → details page in the embedded viewer. Targeted `AnyProviderIdEquals=Tmdb.{id}` query with a type-scoped scan fallback. In-memory item-id cache only (no DB column)
 - **User interaction:** News Available pill opens an episode; Library show/movie header and episode titles open series, movie, or episode when a symlink exists. Click never refreshes Jellyfin; missing index shows a warning
 - **Code:** `Services/IJellyfinMediaNavigationService.cs` (`OpenAsync`, `OpenEpisodeAsync` wrapper), `Services/JellyfinMediaNavigationService.cs`, `Services/JellyfinClient.cs` (`FindSeriesItemIdAsync`, `FindMovieItemIdAsync`, `FindEpisodeItemIdAsync`), `Models/JellyfinMediaTarget.cs`, `Models/JellyfinEpisodeTarget.cs`, `Models/JellyfinMediaNavigationResult.cs`
-- **Notes:** Opens the details page only (no autoplay). Logs distinguish **cache hit** vs **lookup**. If Jellyfin has not indexed the file yet, shows a warning. API key stays on REST calls and is never placed in the WebView URL. In-memory item-id cache is cleared when the app enters background mode so the next News or Library open looks up again
+- **Notes:** Opens the details page only (no autoplay). Logs distinguish **cache hit** vs **lookup**. If Jellyfin has not indexed the file yet, shows a warning. Lookup/open failures show a short popup (no HTTP status or HTML); the technical error stays in the log. API key stays on REST calls and is never placed in the WebView URL. In-memory item-id cache is cleared when the app enters background mode so the next News or Library open looks up again
 
 ---
 

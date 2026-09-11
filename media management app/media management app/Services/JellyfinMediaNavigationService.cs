@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Net.Http;
 using media_management_app.Common;
 using media_management_app.Models;
 using WpfApplication = System.Windows.Application;
@@ -89,7 +90,7 @@ public sealed class JellyfinMediaNavigationService : IJellyfinMediaNavigationSer
         catch (Exception ex)
         {
             _logger.Warning($"Jellyfin {FormatKind(target.Kind)} navigation failed: {ex.Message}", LogTarget.All);
-            return JellyfinMediaNavigationResult.Fail(ex.Message);
+            return JellyfinMediaNavigationResult.Fail(FormatUserMessage(ex));
         }
     }
 
@@ -174,6 +175,53 @@ public sealed class JellyfinMediaNavigationService : IJellyfinMediaNavigationSer
 
         errorMessage = string.Empty;
         return true;
+    }
+
+    private static string FormatUserMessage(Exception ex)
+    {
+        var text = CollectExceptionText(ex);
+        if (ContainsAny(text, "503", "Service Unavailable", "Jellyfin Startup"))
+        {
+            return "Jellyfin is still starting. Try again in a moment.";
+        }
+
+        if (ContainsAny(text, "401", "403", "Unauthorized", "Forbidden"))
+        {
+            return "Jellyfin rejected the API key. Check Integrations settings.";
+        }
+
+        if (ex is HttpRequestException or TimeoutException or IOException ||
+            ContainsAny(text, "timed out", "timeout", "connection refused", "actively refused", "No connection could be made"))
+        {
+            return "Could not reach Jellyfin. Check that it is running and the base URL is correct.";
+        }
+
+        return "Could not open this in Jellyfin. Details are in the log.";
+    }
+
+    private static string CollectExceptionText(Exception ex)
+    {
+        if (ex is AggregateException aggregate)
+        {
+            return string.Join(' ', aggregate.Flatten().InnerExceptions.Select(CollectExceptionText));
+        }
+
+        return string.IsNullOrWhiteSpace(ex.InnerException?.Message)
+            ? ex.Message
+            : $"{ex.Message} {ex.InnerException.Message}";
+    }
+
+    private static bool ContainsAny(string text, params string[] tokens)
+    {
+        foreach (var token in tokens)
+        {
+            if (text.Contains(token, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static string FormatKind(JellyfinMediaKind kind) => kind switch
