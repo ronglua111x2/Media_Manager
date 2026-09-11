@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Windows;
+using media_management_app.Common;
 using media_management_app.Models;
 
 namespace media_management_app.Views;
@@ -64,7 +65,7 @@ public partial class EpisodeOrganizationDialog : Window
     {
         if (SelectedOption is null)
         {
-            System.Windows.MessageBox.Show(
+            AppMessageBox.Show(
                 this,
                 "Select an episode organization.",
                 "Episode Organization",

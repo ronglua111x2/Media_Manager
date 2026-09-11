@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
+using media_management_app.Common;
 using media_management_app.Models;
 using media_management_app.Services;
 using media_management_app.ViewModels;
@@ -98,7 +99,7 @@ public partial class EnginePickerDialog : Window
     {
         if (!_viewModel.Validate(out var errorMessage))
         {
-            System.Windows.MessageBox.Show(this, errorMessage, "Engines", MessageBoxButton.OK, MessageBoxImage.Information);
+            AppMessageBox.Show(this, errorMessage ?? string.Empty, "Engines", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
 

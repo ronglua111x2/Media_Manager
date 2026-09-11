@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Windows;
+using media_management_app.Common;
 using media_management_app.Models;
 
 namespace media_management_app.Views;
@@ -79,7 +80,7 @@ public partial class SetAutoTrackDialog : Window
     {
         if (SelectedCheckpoint is null)
         {
-            System.Windows.MessageBox.Show(
+            AppMessageBox.Show(
                 this,
                 "Select a checkpoint episode.",
                 "Auto-Track",
@@ -90,7 +91,7 @@ public partial class SetAutoTrackDialog : Window
 
         if (string.IsNullOrWhiteSpace(SelectedDownloadFolder))
         {
-            System.Windows.MessageBox.Show(
+            AppMessageBox.Show(
                 this,
                 "Select a download folder for auto-track.",
                 "Auto-Track",

@@ -2652,7 +2652,7 @@ public sealed class DatabaseService : IDatabaseService
             $"2. Or restore a local snapshot created with CreateSafeSnapshot().{Environment.NewLine}{Environment.NewLine}" +
             $"Details: {details}";
 
-        System.Windows.MessageBox.Show(
+        AppMessageBox.Show(
             message,
             "Media Manager — Database migration failed",
             System.Windows.MessageBoxButton.OK,

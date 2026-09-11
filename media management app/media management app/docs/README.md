@@ -25,6 +25,7 @@ Comprehensive documentation for the **Media Manager** Windows desktop applicatio
 | [debug/torrent-hunt/](./debug/torrent-hunt/) | Humans / AI | Auto-Track torrent hunt pipeline debug notes |
 | [legacy-overlap/](./legacy-overlap/) | Humans / AI | **Leftover DB/code vs recipes** — show `PreferredQuality` vs cart/hunt matching; inventory; decouple outline (docs only, no DROP) |
 | [qbittorrent-webapi/](./qbittorrent-webapi/) | Humans / AI | **qBittorrent 5.1 vs 5.2 WebAPI** — architecture, app inventory, breaking changes, upgrade outline (docs only) |
+| [themed-messagebox/](./themed-messagebox/) | Humans / AI | **Themed AppMessageBox** — inventory of 26 former Win32 call sites; in-app helper follows Dark/Light |
 
 ## Quick Summary
 

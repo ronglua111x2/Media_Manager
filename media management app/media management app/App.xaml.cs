@@ -31,7 +31,7 @@ public partial class App : System.Windows.Application
         _singleInstanceMutex = new Mutex(true, SingleInstanceMutexName, out _ownsSingleInstanceMutex);
         if (!_ownsSingleInstanceMutex)
         {
-            System.Windows.MessageBox.Show(
+            AppMessageBox.Show(
                 "Media Manager is already running.",
                 "Media Manager",
                 MessageBoxButton.OK,

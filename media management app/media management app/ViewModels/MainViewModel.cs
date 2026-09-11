@@ -327,7 +327,7 @@ public partial class MainViewModel : ViewModelBase
 
     private static bool UserConfirmedWarpDisconnect()
     {
-        var result = System.Windows.MessageBox.Show(
+        var result = AppMessageBox.Show(
             "Auto-Track turned WARP on for a job that is still running. Disconnecting may break TMDB recover, torrent hunt, or Jellyfin refresh. Disconnect anyway?",
             "WARP",
             System.Windows.MessageBoxButton.YesNo,

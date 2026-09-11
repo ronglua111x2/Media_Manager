@@ -1,4 +1,5 @@
 using System.Windows;
+using media_management_app.Common;
 using media_management_app.Models;
 
 namespace media_management_app.Services.Gemini;
@@ -25,13 +26,13 @@ public sealed class GeminiLinkConfirmationService : IGeminiLinkConfirmationServi
             return true;
         }
 
-        var result = System.Windows.MessageBox.Show(
+        var result = AppMessageBox.Show(
             "Gemini AI is enabled. Linking will send special/OVA file names and TMDB episode data to Google for mapping. Continue?",
             "AI-assisted pack linking",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Question,
-            MessageBoxResult.No);
+            System.Windows.MessageBoxButton.YesNo,
+            System.Windows.MessageBoxImage.Question,
+            System.Windows.MessageBoxResult.No);
 
-        return result == MessageBoxResult.Yes;
+        return result == System.Windows.MessageBoxResult.Yes;
     }
 }

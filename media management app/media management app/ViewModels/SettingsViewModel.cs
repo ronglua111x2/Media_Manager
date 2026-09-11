@@ -1504,7 +1504,7 @@ public partial class SettingsViewModel : ViewModelBase
             return;
         }
 
-        var confirmed = System.Windows.MessageBox.Show(
+        var confirmed = AppMessageBox.Show(
             $"Restore database and recipes from '{SelectedBackupHistoryItem.DisplayLabel}'? This overwrites the current database and recipes on this machine. Settings from the backup will be saved separately for review, not applied automatically.",
             "Confirm restore",
             System.Windows.MessageBoxButton.YesNo,

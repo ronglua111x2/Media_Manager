@@ -184,7 +184,7 @@ public sealed partial class NewsViewModel : ViewModelBase
             return;
         }
 
-        System.Windows.MessageBox.Show(
+        AppMessageBox.Show(
             string.IsNullOrWhiteSpace(result.ErrorMessage)
                 ? "Could not open this episode in Jellyfin."
                 : result.ErrorMessage,

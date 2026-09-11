@@ -6,7 +6,6 @@ using Microsoft.Web.WebView2.Wpf;
 using media_management_app.Common;
 using media_management_app.Views;
 using WpfApplication = System.Windows.Application;
-using WpfMessageBox = System.Windows.MessageBox;
 using WpfMessageBoxButton = System.Windows.MessageBoxButton;
 using WpfMessageBoxImage = System.Windows.MessageBoxImage;
 using WpfMessageBoxResult = System.Windows.MessageBoxResult;
@@ -356,7 +355,7 @@ public sealed class JellyfinViewerService : IJellyfinViewerService
 
     private bool UserConfirmedClose()
     {
-        var result = WpfMessageBox.Show(
+        var result = AppMessageBox.Show(
             _window,
             "Close the Jellyfin window?",
             "Jellyfin",

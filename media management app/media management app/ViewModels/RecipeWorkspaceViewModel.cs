@@ -188,7 +188,7 @@ public sealed partial class RecipeWorkspaceViewModel : ViewModelBase
             return;
         }
 
-        var confirm = System.Windows.MessageBox.Show(
+        var confirm = AppMessageBox.Show(
             $"Delete recipe '{SelectedRecipe.Name}'?",
             "Delete Recipe",
             System.Windows.MessageBoxButton.YesNo,

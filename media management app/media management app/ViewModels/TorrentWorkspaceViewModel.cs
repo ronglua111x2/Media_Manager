@@ -805,7 +805,7 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
             return;
         }
 
-        var confirm = System.Windows.MessageBox.Show(
+        var confirm = AppMessageBox.Show(
             $"Clear all orders in {SelectedMediaCard.Title}'s cart?",
             "Clear Cart",
             System.Windows.MessageBoxButton.YesNo,
@@ -829,7 +829,7 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
             return;
         }
 
-        var confirm = System.Windows.MessageBox.Show(
+        var confirm = AppMessageBox.Show(
             $"Clear all candidates in {SelectedMediaCard.Title}'s cart?",
             "Clear Candidates",
             System.Windows.MessageBoxButton.YesNo,
@@ -848,7 +848,7 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
     [RelayCommand(CanExecute = nameof(HasAnyCartOrders))]
     private void ClearAllCarts()
     {
-        var confirm = System.Windows.MessageBox.Show(
+        var confirm = AppMessageBox.Show(
             "Clear all carts for every media item?",
             "Clear All Carts",
             System.Windows.MessageBoxButton.YesNo,
@@ -892,7 +892,7 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
             return;
         }
 
-        var confirm = System.Windows.MessageBox.Show(
+        var confirm = AppMessageBox.Show(
             $"Blacklist this listing for {order.Title}?\n\n{candidate.Name}\n{candidate.Url}",
             "Blacklist listing",
             System.Windows.MessageBoxButton.YesNo,
@@ -1770,7 +1770,7 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
 
         var affectedOrders = string.Join("\n", conflictingOrders.Select(conflict => $"- {conflict.Title}"));
         var coveredDisplay = string.Join(", ", coveredSeasons.Select(season => $"S{season:00}"));
-        var confirm = System.Windows.MessageBox.Show(
+        var confirm = AppMessageBox.Show(
             $"This multi-season pack covers {coveredDisplay}.\n\nAccepting will cancel these cart pack orders:\n{affectedOrders}\n\nCovered seasons will be managed from S{ownerSeason:00} in Library.",
             "Multi-Season Pack",
             MessageBoxButton.YesNo,

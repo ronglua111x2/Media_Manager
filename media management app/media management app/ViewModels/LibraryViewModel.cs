@@ -719,7 +719,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
             return;
         }
 
-        var confirm = System.Windows.MessageBox.Show(
+        var confirm = AppMessageBox.Show(
             $"Reset download/link state for {episode.EpisodeCode}?\n\nThis clears all download and link data so the episode shows as Missing and can be searched again. Files still on disk are not deleted.",
             "Reset Episode",
             System.Windows.MessageBoxButton.OKCancel,
@@ -808,7 +808,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
             return;
         }
 
-        System.Windows.MessageBox.Show(
+        AppMessageBox.Show(
             string.IsNullOrWhiteSpace(result.ErrorMessage)
                 ? "Could not open this title in Jellyfin."
                 : result.ErrorMessage,
@@ -1080,7 +1080,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
             return;
         }
 
-        var confirm = System.Windows.MessageBox.Show(
+        var confirm = AppMessageBox.Show(
             $"Reset download/link state for {movie.Title}?\n\nThis clears all download and link data so the movie shows as Missing and can be searched again. Files still on disk are not deleted.",
             "Reset Movie",
             System.Windows.MessageBoxButton.OKCancel,
@@ -1123,7 +1123,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
     [RelayCommand]
     private async Task RefreshAllFromTmdb()
     {
-        var confirm = System.Windows.MessageBox.Show(
+        var confirm = AppMessageBox.Show(
             "Refresh metadata from TMDB for all shows and movies?\n\nShow status and aired episodes will be updated from TMDB.",
             "Refresh Metadata from TMDB",
             System.Windows.MessageBoxButton.YesNo,
@@ -1525,7 +1525,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
             var episodeGroups = await _trackedShowService.GetEpisodeGroupsAsync(show.TmdbId);
             if (episodeGroups.Count == 0 && !show.UsesEpisodeGroup)
             {
-                System.Windows.MessageBox.Show(
+                AppMessageBox.Show(
                     "This show has no TMDB episode groups. Only default season organization is available.",
                     "Episode Organization",
                     System.Windows.MessageBoxButton.OK,
@@ -1553,7 +1553,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
             }
 
             var selectedGroupId = dialog.SelectedEpisodeGroupId;
-            var confirm = System.Windows.MessageBox.Show(
+            var confirm = AppMessageBox.Show(
                 $"This rebuilds season/episode structure for {show.DisplayTitle}.\n\n" +
                 "Hardlinks, torrent candidates, and pack links will be cleared.\n" +
                 "Watch status and watched-episode count are kept, but may no longer match the new numbering.\n\n" +
@@ -1589,7 +1589,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
             return;
         }
 
-        var confirm = System.Windows.MessageBox.Show(
+        var confirm = AppMessageBox.Show(
             $"Delete '{SelectedMediaCard.Title}' from library?\n\nThis removes hardlinks, seasons/episodes, your rating/review, and clears its cart.",
             "Delete Media",
             System.Windows.MessageBoxButton.YesNo,
@@ -1610,7 +1610,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
     [RelayCommand(CanExecute = nameof(HasLibraryMedia))]
     private void DeleteEntireLibrary()
     {
-        var confirm = System.Windows.MessageBox.Show(
+        var confirm = AppMessageBox.Show(
             "Delete the entire library?\n\nThis removes all hardlinks, tracked shows/movies, seasons, episodes, fetch jobs, and clears all carts.",
             "Delete Entire Library",
             System.Windows.MessageBoxButton.YesNo,
