@@ -46,7 +46,9 @@ public sealed class CartCandidateDebugSession
     private string BuildFilePath(int index)
     {
         var suffix = index == 0 ? string.Empty : $"_{index}";
-        return Path.Combine(_logsFolder, $"cart-debug_{_sessionTimestamp}{suffix}{AppConstants.LogFileExtension}");
+        return Path.Combine(
+            _logsFolder,
+            $"{_sessionTimestamp}_{AppConstants.CartDebugLogFileSuffix}{suffix}{AppConstants.LogFileExtension}");
     }
 
     private static int CountLines(string value)

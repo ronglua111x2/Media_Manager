@@ -123,6 +123,17 @@ public partial class App : System.Windows.Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        try
+        {
+            _serviceProvider?.GetService<ICrashLogService>()?.LogLifetime(
+                "CleanExit",
+                "Application OnExit: WPF shutdown completed.",
+                e.ApplicationExitCode);
+        }
+        catch (Exception)
+        {
+        }
+
         StopCrashLoggingHooks();
         try
         {
@@ -301,6 +312,7 @@ public partial class App : System.Windows.Application
         TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
         SystemEvents.PowerModeChanged += OnPowerModeChanged;
         SystemEvents.SessionEnding += OnSessionEnding;
+        AppDomain.CurrentDomain.ProcessExit += OnProcessExit;
     }
 
     private void StopCrashLoggingHooks()
@@ -310,6 +322,7 @@ public partial class App : System.Windows.Application
         TaskScheduler.UnobservedTaskException -= OnUnobservedTaskException;
         SystemEvents.PowerModeChanged -= OnPowerModeChanged;
         SystemEvents.SessionEnding -= OnSessionEnding;
+        AppDomain.CurrentDomain.ProcessExit -= OnProcessExit;
     }
 
     private void OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
@@ -373,9 +386,22 @@ public partial class App : System.Windows.Application
     {
         try
         {
-            _serviceProvider?.GetService<IAppLogger>()?.Warning(
-                $"Windows session ending: {e.Reason}.",
-                LogTarget.File | LogTarget.Console);
+            _serviceProvider?.GetService<ICrashLogService>()?.LogLifetime(
+                "SessionEnding",
+                $"Windows session ending: {e.Reason}.");
+        }
+        catch
+        {
+        }
+    }
+
+    private void OnProcessExit(object? sender, EventArgs e)
+    {
+        try
+        {
+            _serviceProvider?.GetService<ICrashLogService>()?.LogLifetime(
+                "ProcessExit",
+                "AppDomain ProcessExit (no WPF OnExit was recorded).");
         }
         catch
         {

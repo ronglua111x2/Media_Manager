@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using media_management_app.Common;
 
 namespace media_management_app.Services;
@@ -6,6 +7,12 @@ public sealed class LogCleanupService : ILogCleanupService, IDisposable
 {
     private static readonly TimeSpan CleanupInterval = TimeSpan.FromMinutes(10);
     private static readonly TimeSpan ShutdownWaitTimeout = TimeSpan.FromSeconds(5);
+    private static readonly Regex SessionLogFileName = new(
+        @"^\d{8}_\d{6}_\d{3}_[A-Za-z0-9]+(?:_[1-9]\d*)?$",
+        RegexOptions.CultureInvariant | RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex LegacyCartDebugFileName = new(
+        @"^cart-debug_\d{8}_\d{6}_\d{3}(?:_[1-9]\d*)?$",
+        RegexOptions.CultureInvariant | RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private readonly ISettingsService _settingsService;
     private readonly IAppLogger _logger;
@@ -125,7 +132,7 @@ public sealed class LogCleanupService : ILogCleanupService, IDisposable
                 return;
             }
 
-            if (!IsManagedLogFile(filePath) || IsActiveLogFile(filePath, activeLogFilePath))
+            if (!IsManagedLogFile(filePath) || IsProtectedLogFile(filePath, activeLogFilePath))
             {
                 continue;
             }
@@ -160,35 +167,22 @@ public sealed class LogCleanupService : ILogCleanupService, IDisposable
         }
 
         var fileNameWithoutExtension = Path.GetFileNameWithoutExtension(filePath);
-        return IsManagedLogSuffix(fileNameWithoutExtension, AppConstants.LogFileSuffix)
-            || IsManagedLogSuffix(fileNameWithoutExtension, AppConstants.CrashLogFileSuffix);
+        return SessionLogFileName.IsMatch(fileNameWithoutExtension)
+            || LegacyCartDebugFileName.IsMatch(fileNameWithoutExtension);
     }
 
-    private static bool IsManagedLogSuffix(string fileNameWithoutExtension, string suffix)
+    private bool IsProtectedLogFile(string filePath, string? activeLogFilePath)
     {
-        var baseSuffix = $"_{suffix}";
-        if (fileNameWithoutExtension.EndsWith(baseSuffix, StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        var rotationSuffixPrefix = $"{baseSuffix}_";
-        var rotationSuffixIndex = fileNameWithoutExtension.LastIndexOf(rotationSuffixPrefix, StringComparison.OrdinalIgnoreCase);
-        if (rotationSuffixIndex < 0)
-        {
-            return false;
-        }
-
-        var rotationNumber = fileNameWithoutExtension[(rotationSuffixIndex + rotationSuffixPrefix.Length)..];
-        return int.TryParse(rotationNumber, out var parsed) && parsed > 0;
+        return IsSamePath(filePath, activeLogFilePath)
+            || IsSamePath(filePath, _settingsService.ActiveSettingsLogFilePath);
     }
 
-    private static bool IsActiveLogFile(string filePath, string? activeLogFilePath)
+    private static bool IsSamePath(string filePath, string? otherPath)
     {
-        return !string.IsNullOrWhiteSpace(activeLogFilePath) &&
+        return !string.IsNullOrWhiteSpace(otherPath) &&
             string.Equals(
                 Path.GetFullPath(filePath),
-                Path.GetFullPath(activeLogFilePath),
+                Path.GetFullPath(otherPath),
                 StringComparison.OrdinalIgnoreCase);
     }
 }

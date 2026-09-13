@@ -7,10 +7,12 @@ namespace media_management_app.Services;
 public sealed class SettingsService : ISettingsService
 {
     private const string SettingsFileName = "settings.json";
-    private const string SettingsLoadLogFileName = "settings-load.log";
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
     private readonly object _saveLock = new();
+    private readonly object _bootstrapLogLock = new();
+    private string? _settingsLogTimestamp;
+    private string? _settingsLogFilePath;
 
     public SettingsService()
     {
@@ -20,6 +22,8 @@ public sealed class SettingsService : ISettingsService
     public AppSettings Current { get; private set; }
 
     public string SettingsFilePath => Path.Combine(Current.StateFolder, SettingsFileName);
+
+    public string? ActiveSettingsLogFilePath => _settingsLogFilePath;
 
     public void Load()
     {
@@ -320,7 +324,7 @@ public sealed class SettingsService : ISettingsService
         }
     }
 
-    private static void WriteBootstrapLog(string stateFolder, string message)
+    private void WriteBootstrapLog(string stateFolder, string message)
     {
         var line = $"[{DateTime.Now.ToString(AppConstants.LogTimestampFormat)}] [SET] [SettingsService.cs] {message}";
         Console.WriteLine(line);
@@ -328,12 +332,25 @@ public sealed class SettingsService : ISettingsService
 
         try
         {
-            Directory.CreateDirectory(stateFolder);
-            File.AppendAllText(Path.Combine(stateFolder, SettingsLoadLogFileName), line + Environment.NewLine);
+            File.AppendAllText(GetSettingsLogFilePath(stateFolder), line + Environment.NewLine);
         }
         catch
         {
             // Settings diagnostics must never prevent app startup.
+        }
+    }
+
+    private string GetSettingsLogFilePath(string stateFolder)
+    {
+        lock (_bootstrapLogLock)
+        {
+            _settingsLogTimestamp ??= DateTime.Now.ToString(AppConstants.LogFileTimestampFormat);
+            var folder = Path.Combine(stateFolder, AppConstants.LogFolderName);
+            Directory.CreateDirectory(folder);
+            _settingsLogFilePath = Path.Combine(
+                folder,
+                $"{_settingsLogTimestamp}_{AppConstants.SettingsLogFileSuffix}{AppConstants.LogFileExtension}");
+            return _settingsLogFilePath;
         }
     }
 }

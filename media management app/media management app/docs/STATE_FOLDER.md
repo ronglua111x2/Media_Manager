@@ -11,11 +11,11 @@ The app stores all persistent runtime data under a single **state folder** (defa
 | Path | Purpose |
 |------|---------|
 | `settings.json` | Full app configuration (integrations, UI prefs, backup IDs, etc.) |
-| `settings-load.log` | Append-only log of settings load/save events |
 | `media-manager.db` | Primary SQLite database |
 | `media-manager*.db` | Manual/automatic DB backups (naming varies) |
-| `logs/` | Rotating system logs (`YYYYMMDD_HHMMSS_mmm_systemlog.txt`) and crash reports (`YYYYMMDD_HHMMSS_mmm_crash.txt`) |
+| `logs/` | Session logs (see [Logs](#logs)) |
 | `session.alive` | Live-session sentinel (pid + last heartbeat). Present while the app is running; deleted on a clean exit. If it remains on the next start, the previous run did not shut down cleanly. |
+| `last-exit.json` | Last *documented* exit (`CleanExit`, `SessionEnding`, or `ProcessExit`). Missing/stale while `session.alive` remains means the process died without going through shutdown. |
 | `posters/` | Cached TMDB poster/still images (keyed by provider id) |
 | `Recipes/` | Torrent search recipe files (`*.rcp`, JSON) |
 | `GoogleDrive/` | Google Drive OAuth storage (see [Google Drive OAuth](#google-drive-oauth)) |
@@ -24,6 +24,32 @@ The app stores all persistent runtime data under a single **state folder** (defa
 | `gemini-mapping-cache.json` | Cached AI special-episode mapping results |
 | `Library/` | Optional output library path when `OutputLibraryFolder` points here |
 | `WebView2/` | Embedded browser user-data folder for qBittorrent/Jellyfin viewers |
+
+---
+
+## Logs
+
+All app-owned logs live under `{StateFolder}/logs/` and share one session name:
+
+`YYYYMMDD_HHmmss_fff_{kind}.txt`  
+Rotation: `YYYYMMDD_HHmmss_fff_{kind}_{n}.txt`
+
+| Kind | Writer | Contents |
+|------|--------|----------|
+| `systemlog` | `AppLogger` | Main session log |
+| `crash` | `CrashLogService` | Unhandled exceptions, WebView2 process failed, unclean shutdown. Clean exit and Windows shutdown/logoff are **not** crash files (`last-exit.json` + systemlog only). |
+| `settingslog` | `SettingsService` | Settings load/save bootstrap (replaces the old root `settings-load.log`) |
+| `cartdebug` | `CartCandidateDebugSession` | Optional per-run candidate debug when a recipe enables it |
+
+`LogCleanupService` deletes those files (and leftover `cart-debug_*.txt`) older than **Settings → Logs retention**. It does not delete `{StateFolder}/settings-load.log` if that old file is still present.
+
+Crash reports include a pointer to a Windows mini dump **if** WER captured one:
+
+`%LOCALAPPDATA%\CrashDumps\media management app.exe.<pid>.dmp`
+
+Enable LocalDumps once (admin): `scripts/enable-localdumps.ps1`. Disable: `scripts/disable-localdumps.ps1`. A missing `.dmp` means the process was killed or torn down, not a native crash.
+
+**Code:** `Services/AppLogger.cs`, `Services/CrashLogService.cs`, `Services/SettingsService.cs`, `Services/LogCleanupService.cs`, `Common/AppConstants.cs`
 
 ---
 

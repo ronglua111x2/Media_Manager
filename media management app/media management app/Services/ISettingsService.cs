@@ -8,6 +8,8 @@ public interface ISettingsService
 
     string SettingsFilePath { get; }
 
+    string? ActiveSettingsLogFilePath { get; }
+
     void Load();
 
     void Save();

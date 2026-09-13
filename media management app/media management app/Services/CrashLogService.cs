@@ -15,6 +15,7 @@ public sealed class CrashLogService : ICrashLogService, IDisposable
     private readonly object _aliveLock = new();
     private CancellationTokenSource? _heartbeatCts;
     private bool _disposed;
+    private bool _gracefulExitLogged;
     private DateTime _sessionStartedUtc;
 
     public CrashLogService(ISettingsService settingsService, IAppLogger logger)
@@ -48,7 +49,9 @@ public sealed class CrashLogService : ICrashLogService, IDisposable
             kind: "UncleanShutdown",
             note: note,
             extra: null,
-            exception: null);
+            exception: null,
+            nativeDumpPid: previous?.Pid);
+        WriteLastExit("UncleanShutdown", note, exitCode: null);
 
         try
         {
@@ -82,6 +85,7 @@ public sealed class CrashLogService : ICrashLogService, IDisposable
     {
         var extra = terminating ? "Terminating=true" : null;
         WriteCrashFile(kind, note, extra, exception);
+        WriteLastExit(kind, note, exitCode: null);
 
         try
         {
@@ -92,6 +96,43 @@ public sealed class CrashLogService : ICrashLogService, IDisposable
             else
             {
                 _logger.Critical(note, targets: LogTarget.File | LogTarget.Console);
+            }
+        }
+        catch
+        {
+        }
+    }
+
+    public void LogLifetime(string kind, string note, int? exitCode = null)
+    {
+        if (string.Equals(kind, "ProcessExit", StringComparison.Ordinal) && _gracefulExitLogged)
+        {
+            return;
+        }
+
+        var extra = exitCode is null ? null : $"ExitCode={exitCode.Value}";
+        if (!IsGracefulLifetime(kind))
+        {
+            WriteCrashFile(kind, note, extra, exception: null);
+        }
+
+        WriteLastExit(kind, note, exitCode);
+
+        if (kind is "CleanExit" or "SessionEnding" or "ProcessExit")
+        {
+            _gracefulExitLogged = true;
+        }
+
+        try
+        {
+            var line = exitCode is null ? note : $"{note} ExitCode={exitCode.Value}.";
+            if (string.Equals(kind, "SessionEnding", StringComparison.Ordinal))
+            {
+                _logger.Warning(line, LogTarget.File | LogTarget.Console);
+            }
+            else
+            {
+                _logger.Info(line, LogTarget.File | LogTarget.Console);
             }
         }
         catch
@@ -212,7 +253,15 @@ public sealed class CrashLogService : ICrashLogService, IDisposable
         }
     }
 
-    private void WriteCrashFile(string kind, string note, string? extra, Exception? exception)
+    private static bool IsGracefulLifetime(string kind)
+        => kind is "CleanExit" or "SessionEnding";
+
+    private void WriteCrashFile(
+        string kind,
+        string note,
+        string? extra,
+        Exception? exception,
+        int? nativeDumpPid = null)
     {
         lock (_writeLock)
         {
@@ -247,6 +296,11 @@ public sealed class CrashLogService : ICrashLogService, IDisposable
                     builder.AppendLine(exception.ToString());
                 }
 
+                AppendNativeDumpHint(
+                    builder,
+                    nativeDumpPid ?? (string.Equals(kind, "UncleanShutdown", StringComparison.Ordinal)
+                        ? null
+                        : Environment.ProcessId));
                 File.WriteAllText(path, builder.ToString());
             }
             catch
@@ -255,8 +309,47 @@ public sealed class CrashLogService : ICrashLogService, IDisposable
         }
     }
 
+    private static void AppendNativeDumpHint(StringBuilder builder, int? crashedPid)
+    {
+        var dumpFolder = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            AppConstants.CrashDumpFolderName);
+        var exeName = Path.GetFileName(Environment.ProcessPath);
+        if (string.IsNullOrWhiteSpace(exeName))
+        {
+            exeName = "media management app.exe";
+        }
+
+        builder.AppendLine("Native dump (if Windows WER captured one):");
+        builder.AppendLine(
+            crashedPid is int pid
+                ? $"  {Path.Combine(dumpFolder, $"{exeName}.{pid}.dmp")}"
+                : $"  {Path.Combine(dumpFolder, exeName + ".<pid>.dmp")}");
+        builder.AppendLine("  Missing file means the process was killed or torn down, not a native crash.");
+    }
+
     private string GetAliveFilePath()
         => Path.Combine(_settingsService.Current.StateFolder, AppConstants.SessionAliveFileName);
+
+    private void WriteLastExit(string kind, string note, int? exitCode)
+    {
+        try
+        {
+            var path = Path.Combine(_settingsService.Current.StateFolder, AppConstants.LastExitFileName);
+            var payload = new LastExitState
+            {
+                Kind = kind,
+                Note = note,
+                ExitCode = exitCode,
+                TimeUtc = DateTime.UtcNow,
+                Pid = Environment.ProcessId
+            };
+            File.WriteAllText(path, JsonSerializer.Serialize(payload, JsonOptions));
+        }
+        catch
+        {
+        }
+    }
 
     private static void TryDeleteFile(string path)
     {
@@ -279,5 +372,18 @@ public sealed class CrashLogService : ICrashLogService, IDisposable
         public DateTime StartedUtc { get; set; }
 
         public DateTime LastBeatUtc { get; set; }
+    }
+
+    private sealed class LastExitState
+    {
+        public string Kind { get; set; } = "";
+
+        public string Note { get; set; } = "";
+
+        public int? ExitCode { get; set; }
+
+        public DateTime TimeUtc { get; set; }
+
+        public int Pid { get; set; }
     }
 }
