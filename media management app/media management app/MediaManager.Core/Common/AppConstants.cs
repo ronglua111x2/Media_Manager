@@ -4,7 +4,26 @@ public static class AppConstants
 {
     #region Paths
 
-    public const string DefaultStateFolder = @"D:\MediaManagerState";
+    /// <summary>
+    /// Pre-bootstrap installs used this folder. Load still detects it once and writes the LocalAppData pointer.
+    /// Do not use as the default for new machines.
+    /// </summary>
+    public const string LegacyStateFolder = @"D:\MediaManagerState";
+
+    public const string PointerFileName = "state-path.txt";
+
+    public const string DefaultStateFolderName = "State";
+
+    public static string PointerDirectory =>
+        Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "MediaManager");
+
+    public static string PointerFilePath => Path.Combine(PointerDirectory, PointerFileName);
+
+    /// <summary>New installs: DB, logs, posters under %LocalAppData%\MediaManager\State.</summary>
+    public static string DefaultStateFolder => Path.Combine(PointerDirectory, DefaultStateFolderName);
+
     public const string DefaultLibraryFolderName = "MediaManagerLibrary";
     public const string DefaultSymlinkUnifiedRoot = @"C:\JellyfinLibrary";
     public const string ShowsFolderName = "Shows";
@@ -57,6 +76,7 @@ public static class AppConstants
     public const string BackupDatabaseEntryName = "media-manager.db";
     public const string BackupSettingsEntryName = "settings.json";
     public const string BackupRecipesEntryFolderName = "Recipes";
+    public const string BackupRestoredSettingsReviewFileName = "restored-settings.review.json";
     public const int MinDailyBackupHour = 0;
     public const int MaxDailyBackupHour = 23;
     public const int MinEventDebounceMinutes = 5;

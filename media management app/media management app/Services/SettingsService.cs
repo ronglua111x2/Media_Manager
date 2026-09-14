@@ -13,6 +13,7 @@ public sealed class SettingsService : ISettingsService
     private readonly object _bootstrapLogLock = new();
     private string? _settingsLogTimestamp;
     private string? _settingsLogFilePath;
+    private string? _pinnedStateFolder;
 
     public SettingsService()
     {
@@ -25,17 +26,43 @@ public sealed class SettingsService : ISettingsService
 
     public string? ActiveSettingsLogFilePath => _settingsLogFilePath;
 
-    public void Load()
+    public bool CreatedNewSettingsThisLoad { get; private set; }
+
+    public string BootstrapSource { get; private set; } = "default";
+
+    public void Load(string? bootstrapStateFolder = null)
     {
+        CreatedNewSettingsThisLoad = false;
+        BootstrapSource = "default";
+        ApplyBootstrapPin(bootstrapStateFolder);
+
+        if (string.IsNullOrWhiteSpace(_pinnedStateFolder))
+        {
+            Current.StateFolder = ResolveBootstrapFolder();
+        }
+        else
+        {
+            BootstrapSource = "cli-pin";
+        }
+
         var initialStateFolder = Current.StateFolder;
         var initialSettingsFilePath = SettingsFilePath;
-        WriteBootstrapLog(initialStateFolder, $"Starting settings load. InitialStateFolder='{initialStateFolder}', SettingsFilePath='{initialSettingsFilePath}'");
+        WriteBootstrapLog(
+            initialStateFolder,
+            $"Starting settings load. BootstrapSource={BootstrapSource}, InitialStateFolder='{initialStateFolder}', SettingsFilePath='{initialSettingsFilePath}'");
 
         Directory.CreateDirectory(Current.StateFolder);
 
         if (!File.Exists(initialSettingsFilePath))
         {
-            WriteBootstrapLog(initialStateFolder, $"Settings file does not exist. Creating default settings at '{initialSettingsFilePath}'.");
+            Current.Startup ??= new AppStartupSettings();
+            Current.Startup.SetupCompleted = false;
+            Current.AutoTrack ??= new AutoTrackSettings();
+            Current.AutoTrack.Enabled = false;
+            CreatedNewSettingsThisLoad = true;
+            WriteBootstrapLog(
+                initialStateFolder,
+                $"Settings file does not exist. Creating default settings at '{initialSettingsFilePath}' with SetupCompleted=false.");
             Save();
             return;
         }
@@ -56,10 +83,13 @@ public sealed class SettingsService : ISettingsService
                 Current = loaded;
             }
 
+            RestoreResolvedStateFolder(initialStateFolder);
             EnsureDefaults();
+            RestoreResolvedStateFolder(initialStateFolder);
+            ApplyLegacySetupCompleted();
             WriteBootstrapLog(
                 Current.StateFolder,
-                $"Loaded settings. StateFolder='{Current.StateFolder}', SourceFolders={Current.SourceFolders.Count}, DefaultLibraryFolderName='{Current.DefaultLibraryFolderName}', TokenConfigured={!string.IsNullOrWhiteSpace(Current.TmdbReadAccessToken)}.");
+                $"Loaded settings. StateFolder='{Current.StateFolder}', SourceFolders={Current.SourceFolders.Count}, DefaultLibraryFolderName='{Current.DefaultLibraryFolderName}', TokenConfigured={!string.IsNullOrWhiteSpace(Current.TmdbReadAccessToken)}, SetupCompleted={Current.Startup.SetupCompleted}.");
 
             foreach (var folder in Current.SourceFolders)
             {
@@ -85,6 +115,11 @@ public sealed class SettingsService : ISettingsService
         lock (_saveLock)
         {
             EnsureDefaults();
+            if (!string.IsNullOrWhiteSpace(_pinnedStateFolder))
+            {
+                Current.StateFolder = _pinnedStateFolder;
+            }
+
             Directory.CreateDirectory(Current.StateFolder);
             var json = JsonSerializer.Serialize(Current, JsonOptions);
             var targetPath = SettingsFilePath;
@@ -92,14 +127,144 @@ public sealed class SettingsService : ISettingsService
             File.WriteAllText(tempPath, json);
             File.Move(tempPath, targetPath, overwrite: true);
             WriteBootstrapLog(Current.StateFolder, $"Saved settings to '{targetPath}'. SourceFolders={Current.SourceFolders.Count}, TokenConfigured={!string.IsNullOrWhiteSpace(Current.TmdbReadAccessToken)}.");
+            WritePointer(Current.StateFolder);
         }
+    }
+
+    private void ApplyBootstrapPin(string? bootstrapStateFolder)
+    {
+        if (!string.IsNullOrWhiteSpace(bootstrapStateFolder))
+        {
+            _pinnedStateFolder = Path.GetFullPath(bootstrapStateFolder.Trim());
+        }
+
+        if (!string.IsNullOrWhiteSpace(_pinnedStateFolder))
+        {
+            Current.StateFolder = _pinnedStateFolder;
+        }
+    }
+
+    private void RestoreResolvedStateFolder(string loadedFromFolder)
+    {
+        if (string.IsNullOrWhiteSpace(_pinnedStateFolder))
+        {
+            if (!string.Equals(Current.StateFolder, loadedFromFolder, StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(Current.StateFolder))
+            {
+                WriteBootstrapLog(
+                    loadedFromFolder,
+                    $"Ignoring settings.json StateFolder '{Current.StateFolder}' this session; bootstrap resolved '{loadedFromFolder}'. Save in Settings to relocate and update the pointer.");
+            }
+
+            Current.StateFolder = loadedFromFolder;
+            return;
+        }
+
+        if (!string.Equals(Current.StateFolder, _pinnedStateFolder, StringComparison.OrdinalIgnoreCase))
+        {
+            WriteBootstrapLog(
+                _pinnedStateFolder,
+                $"Ignoring settings.json StateFolder '{Current.StateFolder}' because this process pinned '{_pinnedStateFolder}' (CLI --state-folder). Settings were read from '{loadedFromFolder}'.");
+        }
+
+        Current.StateFolder = _pinnedStateFolder;
+    }
+
+    private string ResolveBootstrapFolder()
+    {
+        if (TryReadPointer(out var pointed))
+        {
+            BootstrapSource = "pointer";
+            return pointed;
+        }
+
+        var legacySettings = Path.Combine(AppConstants.LegacyStateFolder, "settings.json");
+        if (File.Exists(legacySettings))
+        {
+            BootstrapSource = "legacy";
+            WritePointer(AppConstants.LegacyStateFolder);
+            WriteBootstrapLog(
+                AppConstants.LegacyStateFolder,
+                $"Legacy state folder found at '{AppConstants.LegacyStateFolder}'. Pointer written; settings.json was not saved.");
+            return AppConstants.LegacyStateFolder;
+        }
+
+        BootstrapSource = "default";
+        return AppConstants.DefaultStateFolder;
+    }
+
+    private static bool TryReadPointer(out string path)
+    {
+        path = string.Empty;
+        var pointerFile = AppConstants.PointerFilePath;
+        if (!File.Exists(pointerFile))
+        {
+            return false;
+        }
+
+        try
+        {
+            var line = File.ReadAllLines(pointerFile)
+                .Select(value => value.Trim())
+                .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+            if (string.IsNullOrWhiteSpace(line) || !Path.IsPathRooted(line))
+            {
+                return false;
+            }
+
+            path = Path.GetFullPath(line);
+            return !string.IsNullOrWhiteSpace(path);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private void WritePointer(string stateFolder)
+    {
+        if (!string.IsNullOrWhiteSpace(_pinnedStateFolder))
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(stateFolder))
+        {
+            return;
+        }
+
+        try
+        {
+            var full = Path.GetFullPath(stateFolder.Trim());
+            Directory.CreateDirectory(AppConstants.PointerDirectory);
+            File.WriteAllText(AppConstants.PointerFilePath, full + Environment.NewLine);
+            WriteBootstrapLog(full, $"Wrote state pointer '{AppConstants.PointerFilePath}' -> '{full}'.");
+        }
+        catch (Exception ex)
+        {
+            WriteBootstrapLog(stateFolder, $"Failed to write state pointer: {ex.Message}");
+        }
+    }
+
+    private void ApplyLegacySetupCompleted()
+    {
+        Current.Startup ??= new AppStartupSettings();
+        if (Current.Startup.SetupCompleted is not null)
+        {
+            return;
+        }
+
+        Current.Startup.SetupCompleted = true;
+        WriteBootstrapLog(
+            Current.StateFolder,
+            "Legacy settings.json has no Startup.SetupCompleted. Treating this install as already set up (not first-run). Will persist on the next Save.");
     }
 
     private void EnsureDefaults()
     {
         if (string.IsNullOrWhiteSpace(Current.StateFolder))
         {
-            Current.StateFolder = AppConstants.DefaultStateFolder;
+            Current.StateFolder = _pinnedStateFolder ?? AppConstants.DefaultStateFolder;
         }
 
         if (string.IsNullOrWhiteSpace(Current.DefaultLibraryFolderName))

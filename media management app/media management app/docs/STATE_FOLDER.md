@@ -1,8 +1,27 @@
 # Media Manager — State Folder Reference
 
-The app stores all persistent runtime data under a single **state folder** (default `D:\MediaManagerState`). The path is configured in `settings.json` → `StateFolder` and loaded at startup by `SettingsService`.
+The app stores all persistent runtime data under a single **state folder** (`settings.json`, SQLite, logs, posters, recipes). That folder is **not** discovered from `settings.json` alone (chicken-egg). A small **pointer** file under LocalAppData names the full path.
 
-**Code:** `Models/AppSettings.cs`, `Services/SettingsService.cs`, `Common/AppConstants.cs`
+**Code:** `Models/AppSettings.cs`, `Services/SettingsService.cs`, `MediaManager.Core/Common/AppConstants.cs`
+
+---
+
+## Pointer vs state folder
+
+| Layer | Path | Role |
+|-------|------|------|
+| Pointer | `%LocalAppData%\MediaManager\state-path.txt` | One UTF-8 line: full path of the state folder. Written on `Save()` when the process is **not** CLI-pinned. |
+| State folder | Pointer value, or legacy `D:\MediaManagerState`, or new default `%LocalAppData%\MediaManager\State` | DB, logs, posters, recipes, Drive, WebView2. Customizable in Settings → Browse. |
+| CLI pin | `--state-folder <path>` | Process uses that folder only. Does **not** read or write the pointer (test launches must not aim the live app at `D:\MediaManagerState_test`). |
+
+`SettingsService.Load()` when **unpinned**:
+
+1. `--state-folder` — pin; never create `D:\`; never touch the pointer.
+2. Else if the pointer file has a non-empty full path — use it (create the folder if missing).
+3. Else if `D:\MediaManagerState\settings.json` exists — use that folder, **write the pointer only**, do **not** `Save()` settings.json (no live mtime jump).
+4. Else — `%LocalAppData%\MediaManager\State` (new PC; no `D:\` required). Creating settings writes the pointer on `Save()`.
+
+This PC’s live library stays at `D:\MediaManagerState` via the pointer after the first unpinned launch. New machines never `CreateDirectory` on `D:\` unless that legacy file already exists.
 
 ---
 
@@ -97,6 +116,8 @@ Redacted example — **never commit real secrets**.
 - `Gemini.ApiKey`
 - `AutoTrack.Jellyfin.ApiKey`
 - `Backup.CredentialsFilePath` (path only; file itself is not in zip)
+
+Restore (Drive Settings or first-run local zip/folder) copies `media-manager.db` + `Recipes/` and writes `{StateFolder}/restored-settings.review.json`. It does not overwrite live `settings.json`. First-run may prompt to reuse secrets if the source still has them (copied state folder); Drive zips are already redacted.
 
 ---
 

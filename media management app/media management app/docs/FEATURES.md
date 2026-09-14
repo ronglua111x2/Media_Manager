@@ -73,6 +73,13 @@ Exhaustive list of user-facing and background features. Each entry includes purp
 - **Code:** `Services/WindowsStartupService.cs`, `Models/AppStartupSettings.cs`
 - **DB:** None
 
+### 1.11 First-run Host setup
+- **What:** Blocking sequential wizard until `Startup.SetupCompleted` is true; `--force-first-run` reopens it after setup
+- **User interaction:** Start (Fresh vs backup) then This PC (state folder + folders required) then Apps (WARP, qBit, TMDB and the rest can Skip; Test never crashes the wizard) then Library. Finish saves and restarts. Gated X quits. Forced-review Close returns to News. Skipped TMDB/qBit shows a News banner to open Settings.
+- **Code:** `Views/FirstRunWindow.xaml`, `ViewModels/FirstRunViewModel.cs`, `Services/HostScanService.cs` (logs only), `Services/SettingsService.cs`, `App.xaml.cs`, News reminder on `Startup.SetupReminderDismissed`
+- **DB:** None (settings.json). Background jobs stay off until `SetupCompleted`. Auto-Track defaults off on a new settings file
+- **Notes:** Existing live `settings.json` without `SetupCompleted` is treated as already set up. See [docs/first-run](./first-run/README.md).
+
 ---
 
 ## 2. News Workspace

@@ -16,7 +16,9 @@ meta:
   project_file: media management app.csproj
   core_library: MediaManager.Core/MediaManager.Core.csproj
   test_project: MediaManager.Core.Tests/MediaManager.Core.Tests.csproj
-  default_state_folder: D:\MediaManagerState
+  default_state_folder: "%LocalAppData%\\MediaManager\\State"
+  state_folder_pointer: "%LocalAppData%\\MediaManager\\state-path.txt"
+  legacy_state_folder: D:\MediaManagerState  # detect-only; live this-PC library stays here via pointer
   default_db: "{StateFolder}/media-manager.db"
   default_settings: "{StateFolder}/settings.json"
   initiative_status: "E1+E2+E3 done (Sprints 0–4). E4 Sprints 5–10 frozen/cancelled. Poster flash surgical fix shipped. Do not resume Sprint 5."
@@ -32,6 +34,7 @@ meta:
     Do not leave planning docs describing cancelled policies or stale DoD.
   known_debt:
     - library_reconcile_poster: "fixed — Reconciled/PackReconciled now RefreshSelectedDetailAfterReconcile (keep SelectedPosterImage; RebuildSelectedShowDetail / RebuildSelectedMovieDetail + cart). See docs/planning/sprint-plans/poster-flash-surgical-fix.md"
+    - first_run: "Phases 1–4: harness, silent host scan, SetupCompleted gate, Host setup shell (Start/This PC/Apps/Library; local Restore apply; WARP hold for TMDB Test). State bootstrap: LocalAppData pointer. docs/first-run/"
     - settings_ui_json_mismatch: "Settings UI tabs != JSON/Apply ownership — audit docs/settings-modernization/; 7-VM split cancelled with E4, do not resume Sprint 5"
     - settings_live_apply: "RefreshLibraryRootPreview and OnWarpExecutablePathChanged mutate ISettingsService.Current without Save"
     - settings_multi_writer: "UiSettings in settings.json written by Library/Torrent/News VMs — whole-file Save last-writer-wins"
@@ -371,6 +374,11 @@ contents:
   - recipes folder
   - manifest with checksums
 destination: Google Drive (IGoogleDriveClient)
+restore:
+  drive: RestoreAsync downloads zip then ApplyLocalBackup
+  local_first_run: ApplyLocalBackup from zip or copied folder; refuse live D:\\MediaManagerState when --state-folder is set
+  review_file: "{StateFolder}/restored-settings.review.json"
+  secrets: never silent-apply; first-run prompts if source still has tokens
 oauth:
   credentials: "{StateFolder}/GoogleDrive/credentials.json or Backup.CredentialsFilePath"
   token_store: "{StateFolder}/GoogleDrive/token/"
@@ -525,21 +533,29 @@ ui_templates:
 ```yaml
 startup_order:
   1: Single instance mutex check
-  2: DI container build (ConfigureServices)
-  3: SettingsService.Load()
-  4: Gemini model catalog reload + normalize
-  5: ThemeService.Apply()
-  6: DatabaseService.Initialize(stateFolder)
+  2: AppLaunchOptions.TryParse ( --state-folder / --force-first-run / --enable-background )
+  3: DI container build (ConfigureServices + singleton AppLaunchOptions)
+  4: SettingsService.Load(bootstrapStateFolder) — CLI pin (no pointer read/write) else pointer then legacy D:\\settings.json then %LocalAppData%\\MediaManager\\State; copied JSON StateFolder cannot redirect away from pin/pointer
+  5: Gemini model catalog reload + normalize
+  6: ThemeService.Apply()
+  7: DatabaseService.Initialize(stateFolder)
     side_effect: MigrationRunner applies pending SchemaMigrations (001_baseline through 007_auto_track_episode_overrides once)
     on_failure: DatabaseMigrationException + dialog; App.OnStartup Shutdown()
-  7: LogCleanupService.Start()
-  8: SymlinkCoordinatorService.Start()
-  9: AutoTrackSchedulerService.Start()
-  10: BackupSchedulerService.Start()
-  11: WindowsNotificationService.Initialize()
-  12: Poster cache warmup (background task)
-  13: MainWindow show (normal, minimized, or toast-activated)
-  14: TrayIconService.Initialize (if configured)
+  8: LogCleanupService.Start()
+  9: Unless SafeTestMode (--state-folder without --enable-background) AND SetupCompleted:
+      SymlinkCoordinatorService.Start()
+      AutoTrackSchedulerService.Start()
+      BackupSchedulerService.Start()
+      poster cache warmup
+    skip_if: SetupCompleted is not true (even without --state-folder); SafeTestMode
+  10: WindowsNotificationService.Initialize()
+  11: If SetupCompleted: MainWindow show (normal, minimized, or toast-activated)
+  12: FirstRunWindow when gated (SetupCompleted false / new settings) or --force-first-run
+      env-first shell (Start/This PC/Apps/Library); Apps Skip including TMDB/qBit; silent Host scan logs
+      gated: only surface, no MainWindow; Finish Save + restart (drop --force-first-run)
+      forced: overlay on MainWindow; Close returns to shell
+  13: TrayIconService.Initialize (if configured, after MainWindow)
+  doc: docs/first-run/
 
 shutdown_order:
   - AutoTrackSchedulerService.Dispose

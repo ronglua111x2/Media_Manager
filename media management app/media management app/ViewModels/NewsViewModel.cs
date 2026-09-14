@@ -16,6 +16,7 @@ public sealed partial class NewsViewModel : ViewModelBase
     private readonly ITorrentCartService _torrentCartService;
     private readonly IPosterImageService _posterImageService;
     private readonly IJellyfinMediaNavigationService _jellyfinMediaNavigationService;
+    private readonly IWorkspaceNavigator _workspaceNavigator;
     private readonly List<NewsEpisodeCardViewModel> _weekEpisodeSource = [];
     private bool _isRestoringUiState;
     private DateTime _lastDashboardUtc = DateTime.MinValue;
@@ -27,13 +28,15 @@ public sealed partial class NewsViewModel : ViewModelBase
         ITorrentCartService torrentCartService,
         IAutoTrackSchedulerService autoTrackSchedulerService,
         IPosterImageService posterImageService,
-        IJellyfinMediaNavigationService jellyfinMediaNavigationService)
+        IJellyfinMediaNavigationService jellyfinMediaNavigationService,
+        IWorkspaceNavigator workspaceNavigator)
     {
         _settingsService = settingsService;
         _trackedShowService = trackedShowService;
         _torrentCartService = torrentCartService;
         _posterImageService = posterImageService;
         _jellyfinMediaNavigationService = jellyfinMediaNavigationService;
+        _workspaceNavigator = workspaceNavigator;
 
         autoTrackSchedulerService.RunCompleted += (_, _) =>
         {
@@ -45,6 +48,7 @@ public sealed partial class NewsViewModel : ViewModelBase
         TrackedShowViewMode = _settingsService.Current.Ui?.NewsTrackedShowViewMode ?? NewsTrackedShowViewMode.Full;
         _isRestoringUiState = false;
 
+        RefreshSetupReminder();
         UpdateDashboard();
     }
 
@@ -54,6 +58,9 @@ public sealed partial class NewsViewModel : ViewModelBase
 
     [ObservableProperty]
     private string todaySummary = string.Empty;
+
+    [ObservableProperty]
+    private bool showSetupReminder;
 
     [ObservableProperty]
     private string newThisWeekTitle = "New This Week";
@@ -156,12 +163,34 @@ public sealed partial class NewsViewModel : ViewModelBase
 
     public override void OnNavigatedTo()
     {
+        RefreshSetupReminder();
         if (DateTime.UtcNow - _lastDashboardUtc < DashboardRefreshTtl)
         {
             return;
         }
 
         UpdateDashboard();
+    }
+
+    [RelayCommand]
+    private void OpenSettingsFromReminder()
+    {
+        _workspaceNavigator.NavigateTo(AppWorkspaceKind.SystemSettings);
+    }
+
+    [RelayCommand]
+    private void DismissSetupReminder()
+    {
+        _settingsService.Current.Startup ??= new AppStartupSettings();
+        _settingsService.Current.Startup.SetupReminderDismissed = true;
+        _settingsService.Save();
+        ShowSetupReminder = false;
+    }
+
+    private void RefreshSetupReminder()
+    {
+        var startup = _settingsService.Current.Startup;
+        ShowSetupReminder = startup?.SetupReminderDismissed == false;
     }
 
     [RelayCommand(CanExecute = nameof(CanOpenEpisodeInJellyfin))]

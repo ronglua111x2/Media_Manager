@@ -26,6 +26,7 @@ Comprehensive documentation for the **Media Manager** Windows desktop applicatio
 | [legacy-overlap/](./legacy-overlap/) | Humans / AI | **Leftover DB/code vs recipes** — show `PreferredQuality` vs cart/hunt matching; inventory; decouple outline (docs only, no DROP) |
 | [qbittorrent-webapi/](./qbittorrent-webapi/) | Humans / AI | **qBittorrent 5.1 vs 5.2 WebAPI** — architecture, app inventory, breaking changes, upgrade outline (docs only) |
 | [themed-messagebox/](./themed-messagebox/) | Humans / AI | **Themed AppMessageBox** — inventory of 26 former Win32 call sites; in-app helper follows Dark/Light |
+| [first-run/](./first-run/README.md) | Humans / AI | **First-run** — Phases 1–4 (CLI harness, silent host scan, `SetupCompleted` gate, sequential wizard) |
 
 ## Quick Summary
 
@@ -68,6 +69,8 @@ media management app/
 
 | Path | Purpose |
 |------|---------|
-| `D:\MediaManagerState` | Default state folder (`settings.json`, DB, logs, posters, recipes) |
+| `%LocalAppData%\MediaManager\state-path.txt` | Pointer to the state folder (not the library itself) |
+| `%LocalAppData%\MediaManager\State` | New-install default state folder (`settings.json`, DB, logs, posters, recipes) |
+| `D:\MediaManagerState` | Legacy / this-PC live library (found via pointer or `settings.json` there) |
 | `C:\JellyfinLibrary` | Default unified symlink root for Jellyfin |
 | Per-drive `MediaManagerLibrary` | Hardlink library roots (auto per drive) |

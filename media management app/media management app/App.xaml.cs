@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Windows;
 using System.Net.Http;
 using System.Threading;
@@ -15,6 +16,7 @@ using media_management_app.Services.Gemini;
 using media_management_app.Services.Symlink;
 using media_management_app.Migrations;
 using media_management_app.ViewModels;
+using media_management_app.Views;
 
 namespace media_management_app;
 
@@ -40,10 +42,21 @@ public partial class App : System.Windows.Application
             return;
         }
 
+        if (!AppLaunchOptions.TryParse(e.Args, out var launchOptions, out var parseError))
+        {
+            AppMessageBox.Show(
+                parseError ?? "Invalid launch arguments.",
+                "Media Manager",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+            Shutdown();
+            return;
+        }
+
         base.OnStartup(e);
 
         var services = new ServiceCollection();
-        ConfigureServices(services);
+        ConfigureServices(services, launchOptions);
         _serviceProvider = services.BuildServiceProvider(new ServiceProviderOptions
         {
             ValidateOnBuild = true,
@@ -51,7 +64,10 @@ public partial class App : System.Windows.Application
         });
 
         var settings = _serviceProvider.GetRequiredService<ISettingsService>();
-        settings.Load();
+        settings.Load(launchOptions.StateFolder);
+
+        var logger = _serviceProvider.GetRequiredService<IAppLogger>();
+        LogLaunchOptions(logger, launchOptions, settings);
 
         var crashLog = _serviceProvider.GetRequiredService<ICrashLogService>();
         crashLog.ReportUncleanShutdownIfNeeded();
@@ -76,25 +92,56 @@ public partial class App : System.Windows.Application
         }
 
         _serviceProvider.GetRequiredService<ILogCleanupService>().Start();
-        PublishJunkCleanup.Run(
-            AppContext.BaseDirectory,
-            _serviceProvider.GetRequiredService<IAppLogger>());
+        PublishJunkCleanup.Run(AppContext.BaseDirectory, logger);
 
-        var symlinkCoordinator = _serviceProvider.GetRequiredService<ISymlinkCoordinatorService>();
-        symlinkCoordinator.Start();
-
-        var autoTrackScheduler = _serviceProvider.GetRequiredService<IAutoTrackSchedulerService>();
+        var setupCompleted = settings.Current.Startup?.SetupCompleted == true;
+        var gated = !setupCompleted;
+        var startBackgroundJobs = !launchOptions.SafeTestMode && setupCompleted;
         var trayIconService = _serviceProvider.GetRequiredService<ITrayIconService>();
+        var autoTrackScheduler = _serviceProvider.GetRequiredService<IAutoTrackSchedulerService>();
         autoTrackScheduler.RunCompleted += (_, result) => trayIconService.ShowAutoTrackRunCompleted(result);
-        autoTrackScheduler.Start();
 
-        _serviceProvider.GetRequiredService<IBackupSchedulerService>().Start();
+        if (startBackgroundJobs)
+        {
+            _serviceProvider.GetRequiredService<ISymlinkCoordinatorService>().Start();
+            autoTrackScheduler.Start();
+            _serviceProvider.GetRequiredService<IBackupSchedulerService>().Start();
+            WarmupPosterCache();
+        }
+        else
+        {
+            if (gated)
+            {
+                logger.Info(
+                    "Setup is not completed: Auto-Track, Backup, symlink sync, and poster warmup were not started.",
+                    LogTarget.All);
+                if (launchOptions.EnableBackground)
+                {
+                    logger.Warning(
+                        "Launch --enable-background is ignored because setup is not completed.",
+                        LogTarget.All);
+                }
+            }
+
+            if (launchOptions.SafeTestMode)
+            {
+                logger.Info(
+                    "Safe test mode: Auto-Track, Backup, symlink sync, and poster warmup were not started. Pass --enable-background to start them.",
+                    LogTarget.All);
+            }
+        }
 
         _serviceProvider.GetRequiredService<IWindowsNotificationService>().Initialize();
-        WarmupPosterCache();
+
+        var showFirstRun = gated || launchOptions.ForceFirstRun;
+        if (gated)
+        {
+            ShowFirstRunWindow(logger, launchOptions, gated: true, owner: null);
+            return;
+        }
 
         var mainWindow = _serviceProvider.GetRequiredService<MainWindow>();
-        var startup = settings.Current.Startup;
+        var startup = settings.Current.Startup ?? new AppStartupSettings();
         var launchedFromToast = ToastNotificationManagerCompat.WasCurrentProcessToastActivated();
 
         if (startup.StartMinimized || startup.CloseToTray)
@@ -118,6 +165,11 @@ public partial class App : System.Windows.Application
         else
         {
             mainWindow.Show();
+        }
+
+        if (showFirstRun)
+        {
+            ShowFirstRunWindow(logger, launchOptions, gated: false, owner: mainWindow);
         }
     }
 
@@ -166,10 +218,11 @@ public partial class App : System.Windows.Application
         base.OnExit(e);
     }
 
-    private static void ConfigureServices(IServiceCollection services)
+    private static void ConfigureServices(IServiceCollection services, AppLaunchOptions launchOptions)
     {
         services.AddLogging(builder => builder.AddDebug());
         services.AddSingleton<HttpClient>();
+        services.AddSingleton(launchOptions);
 
         services.AddSingleton<ISettingsService, SettingsService>();
         services.AddSingleton<IThemeService, ThemeService>();
@@ -244,6 +297,10 @@ public partial class App : System.Windows.Application
         services.AddSingleton<ITorrentBlacklistService, TorrentBlacklistService>();
         services.AddSingleton<ITorrentAddGateService, TorrentAddGateService>();
 
+        services.AddSingleton<IHostScanService, HostScanService>();
+        services.AddTransient<FirstRunViewModel>();
+        services.AddTransient<FirstRunWindow>();
+
         services.AddSingleton<IWorkspaceNavigator, WorkspaceNavigator>();
         services.AddSingleton<AutoTrackViewModel>();
         services.AddSingleton<NewsViewModel>();
@@ -255,6 +312,90 @@ public partial class App : System.Windows.Application
         services.AddSingleton<SystemSettingsViewModel>();
         services.AddSingleton<MainViewModel>();
         services.AddSingleton<MainWindow>();
+    }
+
+    private void ShowFirstRunWindow(
+        IAppLogger logger,
+        AppLaunchOptions launchOptions,
+        bool gated,
+        MainWindow? owner)
+    {
+        if (_serviceProvider is null)
+        {
+            return;
+        }
+
+        var firstRun = _serviceProvider.GetRequiredService<FirstRunWindow>();
+        if (firstRun.DataContext is FirstRunViewModel viewModel)
+        {
+            viewModel.IsGated = gated;
+            viewModel.RestartRequested += (_, _) => RestartAfterFirstRun(launchOptions, logger);
+        }
+
+        logger.Info(
+            gated
+                ? "Showing first-run scan window (gated). News will not open until Continue."
+                : "Showing first-run scan window (forced review).",
+            LogTarget.All);
+
+        if (owner is not null)
+        {
+            firstRun.Owner = owner;
+            firstRun.WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        }
+        else
+        {
+            MainWindow = firstRun;
+            firstRun.WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        }
+
+        firstRun.Show();
+    }
+
+    private void RestartAfterFirstRun(AppLaunchOptions launchOptions, IAppLogger logger)
+    {
+        var exe = Environment.ProcessPath;
+        if (string.IsNullOrWhiteSpace(exe) || !File.Exists(exe))
+        {
+            logger.Error("First-run restart failed: process path is missing.");
+            Shutdown();
+            return;
+        }
+
+        logger.Info("Restarting after Host setup Continue.", LogTarget.All);
+        ReleaseSingleInstanceMutex();
+
+        var start = new ProcessStartInfo(exe)
+        {
+            UseShellExecute = true
+        };
+        foreach (var argument in launchOptions.ToRestartArguments())
+        {
+            start.ArgumentList.Add(argument);
+        }
+
+        Process.Start(start);
+        Shutdown();
+    }
+
+    private void ReleaseSingleInstanceMutex()
+    {
+        if (!_ownsSingleInstanceMutex)
+        {
+            return;
+        }
+
+        try
+        {
+            _singleInstanceMutex?.ReleaseMutex();
+        }
+        catch (Exception)
+        {
+        }
+
+        _singleInstanceMutex?.Dispose();
+        _singleInstanceMutex = null;
+        _ownsSingleInstanceMutex = false;
     }
 
     private void WarmupPosterCache()
@@ -291,6 +432,35 @@ public partial class App : System.Windows.Application
             {
             }
         });
+    }
+
+    private static void LogLaunchOptions(IAppLogger logger, AppLaunchOptions launchOptions, ISettingsService settings)
+    {
+        var activeStateFolder = settings.Current.StateFolder;
+        logger.Info(
+            $"State folder bootstrap source={settings.BootstrapSource}; folder='{activeStateFolder}'. Pointer='{AppConstants.PointerFilePath}'; new-install default='{AppConstants.DefaultStateFolder}'; legacy detect='{AppConstants.LegacyStateFolder}'.",
+            LogTarget.All);
+
+        if (launchOptions.HasStateFolderOverride)
+        {
+            logger.Info(
+                $"Launch --state-folder pinned to '{activeStateFolder}'. Pointer file is not read or written this session.",
+                LogTarget.All);
+        }
+
+        if (launchOptions.ForceFirstRun)
+        {
+            logger.Info(
+                "Launch --force-first-run is set. Host setup will open (gated or forced review).",
+                LogTarget.All);
+        }
+
+        if (launchOptions.EnableBackground && launchOptions.HasStateFolderOverride)
+        {
+            logger.Warning(
+                "Launch --enable-background is set with --state-folder. Auto-Track, Backup, and symlink will start against the test folder.",
+                LogTarget.All);
+        }
     }
 
     private static void NormalizeGeminiSettings(ISettingsService settings, IGeminiModelCatalogService modelCatalog)

@@ -6,7 +6,8 @@ public enum WarpLeaseReason
     TmdbSslRecover = 1,
     Hunt = 2,
     JellyfinHold = 3,
-    SettingsTest = 4
+    SettingsTest = 4,
+    FirstRun = 5
 }
 
 public enum WarpConnectionChangeSource
@@ -82,6 +83,7 @@ public static class WarpLeaseReasonText
         WarpLeaseReason.Hunt => "Auto-Track hunt",
         WarpLeaseReason.JellyfinHold => "Jellyfin hold",
         WarpLeaseReason.SettingsTest => "connection test",
+        WarpLeaseReason.FirstRun => "Host setup",
         _ => reason.ToString()
     };
 
@@ -104,6 +106,11 @@ public static class WarpLeaseReasonText
         if (leases.Contains(WarpLeaseReason.SettingsTest))
         {
             return "connection test";
+        }
+
+        if (leases.Contains(WarpLeaseReason.FirstRun))
+        {
+            return "Host setup";
         }
 
         return string.Empty;

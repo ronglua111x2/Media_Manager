@@ -110,13 +110,42 @@
         </Style>
     </UserControl.Resources>
 
-    <Grid Margin="16">
+        <Grid Margin="16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <materialDesign:Card Style="{StaticResource PanelCardStyle}" Margin="0,0,0,12">
+        <StackPanel>
+            <Border Margin="0,0,0,12"
+                    Padding="12,10"
+                    Background="{StaticResource AppBrushAccentSoft}"
+                    BorderBrush="{StaticResource AppBrushAccent}"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Visibility="{Binding ShowSetupReminder, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <DockPanel LastChildFill="True">
+                    <Button DockPanel.Dock="Right"
+                            MinHeight="0"
+                            Padding="8,4"
+                            Style="{StaticResource AppOutlinedButtonStyle}"
+                            Content="Dismiss"
+                            Command="{Binding DismissSetupReminderCommand}" />
+                    <Button DockPanel.Dock="Right"
+                            MinHeight="0"
+                            Margin="0,0,8,0"
+                            Padding="8,4"
+                            Style="{StaticResource AppPrimaryButtonStyle}"
+                            Content="Settings"
+                            Command="{Binding OpenSettingsFromReminderCommand}" />
+                    <TextBlock VerticalAlignment="Center"
+                               TextWrapping="Wrap"
+                               Margin="0,0,12,0"
+                               Text="Some setup was skipped — open Settings for TMDB, qBittorrent, and other apps." />
+                </DockPanel>
+            </Border>
+
+            <materialDesign:Card Style="{StaticResource PanelCardStyle}" Margin="0,0,0,12">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
@@ -154,6 +183,7 @@
                 </Button>
             </Grid>
         </materialDesign:Card>
+        </StackPanel>
 
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>

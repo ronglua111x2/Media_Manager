@@ -62,16 +62,17 @@ Borderless WPF window with custom chrome:
 On launch (`App.xaml.cs`):
 
 1. **Single-instance mutex** — second instance shows message and exits
-2. **Settings load** — `settings.json` from state folder
-3. **Database init** — SQLite schema create/migrate
-4. **Background services start:**
+2. **Launch flags** — optional `--state-folder`, `--force-first-run`, `--enable-background` ([first-run](./first-run/README.md))
+3. **Settings load** — `settings.json` from state folder (pinned when `--state-folder` is set)
+4. **Database init** — SQLite schema create/migrate
+5. **Background services start** (skipped in `--state-folder` safe test mode unless `--enable-background`):
    - `LogCleanupService` — periodic old log deletion
    - `SymlinkCoordinatorService` — startup symlink sync
    - `AutoTrackSchedulerService` — TMDB discovery, torrent hunt, reconcile timers
    - `BackupSchedulerService` — daily + event-driven Google Drive backup
-5. **Windows notifications** initialized
-6. **Poster cache warmup** — background TMDB poster fetch
-7. **Tray icon** — if Start Minimized or Close to Tray enabled
+6. **Windows notifications** initialized
+7. **Poster cache warmup** — background TMDB poster fetch (also skipped in safe test mode)
+8. **Tray icon** — if Start Minimized or Close to Tray enabled
 
 On exit: schedulers, symlink coordinator, Jellyfin refresh, log cleanup, and tray disposed.
 
@@ -179,9 +180,9 @@ See [STATE_FOLDER.md](./STATE_FOLDER.md#google-drive-oauth) for credential forma
 
 ## Data Storage
 
-### State Folder (default `D:\MediaManagerState`)
+### State Folder
 
-Full layout documented in [STATE_FOLDER.md](./STATE_FOLDER.md). Summary:
+Layout: [STATE_FOLDER.md](./STATE_FOLDER.md). New installs use `%LocalAppData%\MediaManager\State`. This PC’s live library is `D:\MediaManagerState`, found via `%LocalAppData%\MediaManager\state-path.txt`. Summary:
 
 | File/Folder | Contents |
 |-------------|----------|

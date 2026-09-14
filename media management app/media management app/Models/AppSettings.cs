@@ -4,7 +4,7 @@ namespace media_management_app.Models;
 
 public sealed class AppSettings
 {
-    public string StateFolder { get; set; } = AppConstants.DefaultStateFolder;
+    public string StateFolder { get; set; } = string.Empty;
 
     public AutoTorrentSettings AutoTorrent { get; set; } = new();
 
