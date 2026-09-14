@@ -37,7 +37,7 @@ meta:
     - first_run: "Phases 1–4: harness, silent host scan, SetupCompleted gate, Host setup shell (Start/This PC/Apps/Library; local Restore apply; WARP hold for TMDB Test). State bootstrap: LocalAppData pointer. docs/first-run/"
     - settings_ui_json_mismatch: "Settings UI tabs != JSON/Apply ownership — audit docs/settings-modernization/; 7-VM split cancelled with E4, do not resume Sprint 5"
     - settings_live_apply: "RefreshLibraryRootPreview and OnWarpExecutablePathChanged mutate ISettingsService.Current without Save"
-    - settings_multi_writer: "UiSettings in settings.json written by Library/Torrent/News VMs — whole-file Save last-writer-wins"
+    - settings_multi_writer: "UiSettings in settings.json written by Library/Torrent/News/Recipe VMs — whole-file Save last-writer-wins"
 ```
 
 ---
@@ -100,7 +100,7 @@ navigation:
     Library: OnNavigatedTo clear detail-load cache, RefreshLibrary, reload selected detail
     Stats: OnNavigatedTo rebuild personal rating overview (no TTL)
     Torrent: OnNavigatedTo RefreshWorkspace; OnNavigatedFrom no-op — cart/search keep running while on other tabs (user Stop only)
-    Recipe: OnNavigatedTo ReloadRecipes if RecipesChanged while away; OnNavigatedFrom mark inactive
+    Recipe: OnNavigatedTo ReloadRecipes if RecipesChanged while away; restore UiSettings.SelectedRecipeId; OnNavigatedFrom mark inactive
     Settings: OnNavigatedTo settingsService.Load + LoadFromSettings (dirty-tracking Sprint 6)
   long_ops_policy: >
     Workspace long-running UI ops (Torrent cart/search via _operationCts) are NOT cancelled on navigate away.

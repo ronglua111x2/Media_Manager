@@ -406,10 +406,10 @@ Exhaustive list of user-facing and background features. Each entry includes purp
 ## 7. Recipe Workspace
 
 ### 7.1 Recipe List CRUD
-- **What:** Create, duplicate, delete, refresh recipes from disk folder
-- **User interaction:** List selection; Create/Duplicate/Delete/Refresh buttons
-- **Code:** `Views/RecipeWorkspaceView.xaml`, `ViewModels/RecipeWorkspaceViewModel.cs`, `Services/RecipeService.cs`
-- **DB:** None (JSON files on disk)
+- **What:** Create, duplicate, delete, refresh recipes from disk folder; filter the list; restore last selected recipe
+- **User interaction:** Icon toolbar (Create / Duplicate / Delete / Refresh folder) with tooltips. Confirm-to-search (Enter or Search) filters by recipe name; Clear restores the full list (session-only). List selection persists as `UiSettings.SelectedRecipeId`
+- **Code:** `Views/RecipeWorkspaceView.xaml`, `ViewModels/RecipeWorkspaceViewModel.cs`, `Services/RecipeService.cs`, `Models/UiSettings.cs`
+- **DB:** None (JSON files on disk; last selected recipe in settings.json)
 
 ### 7.2 Recipe Module Editor
 - **What:** Six pipeline modules: Identity, QueryBuilder, SearchSource, CandidateParser, CandidateFilter, Scoring

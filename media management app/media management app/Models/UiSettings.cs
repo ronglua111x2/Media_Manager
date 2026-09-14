@@ -43,4 +43,6 @@ public sealed class UiSettings
     public long? TorrentSelectedMediaId { get; set; }
 
     public MediaKind? TorrentSelectedMediaKind { get; set; }
+
+    public string? SelectedRecipeId { get; set; }
 }

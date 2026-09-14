@@ -11,13 +11,19 @@ public sealed partial class RecipeWorkspaceViewModel : ViewModelBase
 {
     private readonly IRecipeService _recipeService;
     private readonly IQbittorrentSearchPluginService _searchPluginService;
+    private readonly ISettingsService _settingsService;
     private bool _isActive;
     private bool _recipesChangedWhileAway;
+    private bool _isRestoringRecipeUiState;
 
-    public RecipeWorkspaceViewModel(IRecipeService recipeService, IQbittorrentSearchPluginService searchPluginService)
+    public RecipeWorkspaceViewModel(
+        IRecipeService recipeService,
+        IQbittorrentSearchPluginService searchPluginService,
+        ISettingsService settingsService)
     {
         _recipeService = recipeService;
         _searchPluginService = searchPluginService;
+        _settingsService = settingsService;
         _recipeService.RecipesChanged += OnRecipesChanged;
         ReloadRecipes();
     }
@@ -51,6 +57,8 @@ public sealed partial class RecipeWorkspaceViewModel : ViewModelBase
 
     public ObservableCollection<RecipeListItemViewModel> Recipes { get; } = [];
 
+    public ObservableCollection<RecipeListItemViewModel> FilteredRecipes { get; } = [];
+
     public ObservableCollection<RecipeModuleEditorViewModel> Modules { get; } = [];
 
     public IReadOnlyList<MediaKind> TargetKinds { get; } = [MediaKind.TvEpisode, MediaKind.TvSeasonPack, MediaKind.Movie];
@@ -63,6 +71,19 @@ public sealed partial class RecipeWorkspaceViewModel : ViewModelBase
 
     [ObservableProperty]
     private string statusMessage = "Select a recipe module to edit its search behavior.";
+
+    [ObservableProperty]
+    private string recipeSearchText = string.Empty;
+
+    [ObservableProperty]
+    private string recipeSearchQuery = string.Empty;
+
+    public bool HasRecipeSearchText => !string.IsNullOrEmpty(RecipeSearchText);
+
+    public bool HasAppliedRecipeSearch => !string.IsNullOrWhiteSpace(RecipeSearchQuery);
+
+    public bool HasNoRecipeSearchResults =>
+        HasRecipes && HasAppliedRecipeSearch && FilteredRecipes.Count == 0;
 
     public SearchRecipe? SelectedRecipe => SelectedRecipeItem?.Recipe;
 
@@ -150,6 +171,7 @@ public sealed partial class RecipeWorkspaceViewModel : ViewModelBase
                 .ToList()
         });
         ReloadRecipes(recipe.RecipeId);
+        ClearRecipeSearch();
         StatusMessage = $"Created recipe '{recipe.Name}'.";
     }
 
@@ -177,6 +199,7 @@ public sealed partial class RecipeWorkspaceViewModel : ViewModelBase
 
         var copy = _recipeService.DuplicateRecipe(SelectedRecipe.RecipeId);
         ReloadRecipes(copy.RecipeId);
+        ClearRecipeSearch();
         StatusMessage = $"Duplicated recipe as '{copy.Name}'.";
     }
 
@@ -216,6 +239,7 @@ public sealed partial class RecipeWorkspaceViewModel : ViewModelBase
         OnPropertyChanged(nameof(SelectedRecipeName));
         OnPropertyChanged(nameof(SelectedRecipeTargetKind));
         NotifySelectionStateChanged();
+        PersistSelectedRecipeIfChanged();
     }
 
     partial void OnSelectedModuleChanged(RecipeModuleEditorViewModel? value)
@@ -228,19 +252,91 @@ public sealed partial class RecipeWorkspaceViewModel : ViewModelBase
         OnPropertyChanged(nameof(HasSelectedModule));
     }
 
+    [RelayCommand]
+    private void SearchRecipes()
+    {
+        RecipeSearchText = (RecipeSearchText ?? string.Empty).Trim();
+        RecipeSearchQuery = RecipeSearchText;
+    }
+
+    [RelayCommand(CanExecute = nameof(CanClearRecipeSearch))]
+    private void ClearRecipeSearch()
+    {
+        RecipeSearchText = string.Empty;
+        RecipeSearchQuery = string.Empty;
+    }
+
+    private bool CanClearRecipeSearch() => HasAppliedRecipeSearch;
+
+    partial void OnRecipeSearchTextChanged(string value) =>
+        OnPropertyChanged(nameof(HasRecipeSearchText));
+
+    partial void OnRecipeSearchQueryChanged(string value)
+    {
+        ApplyRecipeFilter();
+        OnPropertyChanged(nameof(HasAppliedRecipeSearch));
+        OnPropertyChanged(nameof(HasNoRecipeSearchResults));
+        ClearRecipeSearchCommand.NotifyCanExecuteChanged();
+    }
+
     private void ReloadRecipes(string? selectedRecipeId = null)
     {
-        selectedRecipeId ??= SelectedRecipe?.RecipeId;
+        selectedRecipeId ??= SelectedRecipe?.RecipeId
+            ?? _settingsService.Current.Ui?.SelectedRecipeId;
         Recipes.Clear();
         foreach (var recipe in _recipeService.GetRecipes())
         {
             Recipes.Add(new RecipeListItemViewModel(recipe));
         }
 
-        SelectedRecipeItem = Recipes.FirstOrDefault(item => item.Recipe.RecipeId == selectedRecipeId)
-            ?? Recipes.FirstOrDefault();
+        _isRestoringRecipeUiState = true;
+        try
+        {
+            SelectedRecipeItem = Recipes.FirstOrDefault(item => item.Recipe.RecipeId == selectedRecipeId)
+                ?? Recipes.FirstOrDefault();
+        }
+        finally
+        {
+            _isRestoringRecipeUiState = false;
+        }
+
+        PersistSelectedRecipeIfChanged();
+        ApplyRecipeFilter();
         OnPropertyChanged(nameof(HasRecipes));
         NotifySelectionStateChanged();
+    }
+
+    private void ApplyRecipeFilter()
+    {
+        FilteredRecipes.Clear();
+        var query = (RecipeSearchQuery ?? string.Empty).Trim();
+        var source = string.IsNullOrWhiteSpace(query)
+            ? Recipes.AsEnumerable()
+            : Recipes.Where(item => item.Name.Contains(query, StringComparison.OrdinalIgnoreCase));
+        foreach (var item in source)
+        {
+            FilteredRecipes.Add(item);
+        }
+
+        OnPropertyChanged(nameof(HasNoRecipeSearchResults));
+    }
+
+    private void PersistSelectedRecipeIfChanged()
+    {
+        if (_isRestoringRecipeUiState)
+        {
+            return;
+        }
+
+        var ui = _settingsService.Current.Ui ??= new UiSettings();
+        var selectedId = SelectedRecipe?.RecipeId;
+        if (string.Equals(ui.SelectedRecipeId, selectedId, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        ui.SelectedRecipeId = selectedId;
+        _settingsService.Save();
     }
 
     private void LoadModules(SearchRecipe? recipe)
@@ -402,8 +498,6 @@ public sealed partial class RecipeListItemViewModel : ObservableObject
         _ => "TV Episode"
     };
 
-    public string ModuleCountLabel => $"{Recipe.Modules.Count} module(s)";
-
     [ObservableProperty]
     private bool isSelected;
 
@@ -411,7 +505,6 @@ public sealed partial class RecipeListItemViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(Name));
         OnPropertyChanged(nameof(TargetLabel));
-        OnPropertyChanged(nameof(ModuleCountLabel));
     }
 }
 
