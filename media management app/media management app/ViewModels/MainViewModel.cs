@@ -20,6 +20,8 @@ public partial class MainViewModel : ViewModelBase
     private readonly ShellLaunchGuard _shellLaunchGuard;
     private readonly DispatcherTimer _statusTimer;
     private readonly Dictionary<AppWorkspaceKind, ViewModelBase> _workspaceMap;
+    private readonly IReadOnlyList<ShellNavigationItem> _primaryNavigationItems;
+    private int _overflowSlotCount = int.MaxValue;
 
     public MainViewModel(
         AutoTrackViewModel autoTrackViewModel,
@@ -121,6 +123,12 @@ public partial class MainViewModel : ViewModelBase
             }
         ];
 
+        SettingsItem = NavigationItems.First(item => item.Kind == AppWorkspaceKind.SystemSettings);
+        _primaryNavigationItems = NavigationItems
+            .Where(item => item.Kind != AppWorkspaceKind.SystemSettings)
+            .ToList();
+        ApplyNavigationOverflow(_overflowSlotCount);
+
         _deviceStatusService.StatusChanged += OnDeviceStatusChanged;
         _qbittorrentViewerService.IsOpenChanged += OnViewerOpenChanged;
         _jellyfinViewerService.IsOpenChanged += OnViewerOpenChanged;
@@ -143,6 +151,18 @@ public partial class MainViewModel : ViewModelBase
     public IAsyncRelayCommand RunAutoTrackNowCommand => _autoTrackViewModel.RunNowCommand;
 
     public ObservableCollection<ShellNavigationItem> NavigationItems { get; }
+
+    public ShellNavigationItem SettingsItem { get; }
+
+    public ObservableCollection<ShellNavigationItem> VisibleNavigationItems { get; } = [];
+
+    public ObservableCollection<ShellNavigationItem> OverflowNavigationItems { get; } = [];
+
+    [ObservableProperty]
+    private bool hasOverflowItems;
+
+    [ObservableProperty]
+    private bool isOverflowSelected;
 
     [ObservableProperty]
     private ViewModelBase currentView = null!;
@@ -484,7 +504,56 @@ public partial class MainViewModel : ViewModelBase
             item.IsSelected = item.Kind == workspace;
         }
 
+        ApplyNavigationOverflow(_overflowSlotCount);
         next.OnNavigatedTo();
+    }
+
+    public void ApplyNavigationOverflow(int slotCount)
+    {
+        _overflowSlotCount = Math.Max(slotCount, 0);
+
+        IReadOnlyList<ShellNavigationItem> visible;
+        IReadOnlyList<ShellNavigationItem> overflow;
+        if (_primaryNavigationItems.Count <= _overflowSlotCount)
+        {
+            visible = _primaryNavigationItems;
+            overflow = [];
+        }
+        else
+        {
+            var visibleCount = Math.Max(0, _overflowSlotCount - 1);
+            var visibleList = _primaryNavigationItems.Take(visibleCount).ToList();
+            var selected = _primaryNavigationItems.FirstOrDefault(item => item.IsSelected);
+            if (selected is not null && visibleCount > 0 && !visibleList.Contains(selected))
+            {
+                visibleList[visibleCount - 1] = selected;
+            }
+
+            var visibleSet = visibleList.ToHashSet();
+            overflow = _primaryNavigationItems.Where(item => !visibleSet.Contains(item)).ToList();
+            visible = visibleList;
+        }
+
+        ReplaceNavigationItems(VisibleNavigationItems, visible);
+        ReplaceNavigationItems(OverflowNavigationItems, overflow);
+        HasOverflowItems = OverflowNavigationItems.Count > 0;
+        IsOverflowSelected = OverflowNavigationItems.Any(item => item.IsSelected);
+    }
+
+    private static void ReplaceNavigationItems(
+        ObservableCollection<ShellNavigationItem> target,
+        IReadOnlyList<ShellNavigationItem> source)
+    {
+        if (target.Count == source.Count && target.SequenceEqual(source))
+        {
+            return;
+        }
+
+        target.Clear();
+        foreach (var item in source)
+        {
+            target.Add(item);
+        }
     }
 
     private async Task RefreshStatusAsync()

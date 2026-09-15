@@ -157,11 +157,20 @@
                                 ToolTip="Minimize">
                             <iconPacks:PackIconLucide Kind="Minus" Style="{StaticResource ChromeIconStyle}" />
                         </Button>
-                        <Button Style="{StaticResource TitleButtonStyle}"
-                                Focusable="False"
+                        <Button Focusable="False"
                                 Click="MaximizeRestoreButton_Click"
-                                ToolTip="Maximize or restore">
-                            <iconPacks:PackIconLucide Kind="Square" Style="{StaticResource ChromeIconStyle}" />
+                                Content=" "
+                                ContentTemplate="{StaticResource MaximizeRestoreButtonContent}">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource TitleButtonStyle}">
+                                    <Setter Property="ToolTip" Value="Maximize" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding WindowState, RelativeSource={RelativeSource AncestorType=Window}}" Value="Maximized">
+                                            <Setter Property="ToolTip" Value="Restore" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
                         </Button>
                         <Button Style="{StaticResource CloseTitleButtonStyle}"
                                 Focusable="False"

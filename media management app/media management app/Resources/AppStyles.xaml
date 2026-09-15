@@ -15,6 +15,40 @@
         <Setter Property="HorizontalAlignment" Value="Center" />
     </Style>
 
+    <Style x:Key="MaximizeRestoreCaptionIconStyle" TargetType="iconPacks:PackIconLucide" BasedOn="{StaticResource AppIconStyle}">
+        <Setter Property="Width" Value="13" />
+        <Setter Property="Height" Value="13" />
+        <Setter Property="Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+    </Style>
+
+    <DataTemplate x:Key="MaximizeRestoreButtonContent">
+        <Grid>
+            <iconPacks:PackIconLucide Kind="Square">
+                <iconPacks:PackIconLucide.Style>
+                    <Style TargetType="iconPacks:PackIconLucide" BasedOn="{StaticResource MaximizeRestoreCaptionIconStyle}">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding WindowState, RelativeSource={RelativeSource AncestorType=Window}}" Value="Maximized">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </iconPacks:PackIconLucide.Style>
+            </iconPacks:PackIconLucide>
+            <iconPacks:PackIconLucide Kind="Copy">
+                <iconPacks:PackIconLucide.Style>
+                    <Style TargetType="iconPacks:PackIconLucide" BasedOn="{StaticResource MaximizeRestoreCaptionIconStyle}">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding WindowState, RelativeSource={RelativeSource AncestorType=Window}}" Value="Maximized">
+                                <Setter Property="Visibility" Value="Visible" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </iconPacks:PackIconLucide.Style>
+            </iconPacks:PackIconLucide>
+        </Grid>
+    </DataTemplate>
+
     <Style TargetType="ToolTip">
         <Setter Property="Background" Value="{StaticResource AppBrushSurfaceRaised}" />
         <Setter Property="Foreground" Value="{StaticResource AppBrushText}" />

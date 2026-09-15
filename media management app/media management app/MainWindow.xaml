@@ -7,6 +7,7 @@
         xmlns:controls="clr-namespace:media_management_app.Views.Controls"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         mc:Ignorable="d"
+        x:Name="RootWindow"
         Title="Media Manager"
         Height="720"
         Width="1280"
@@ -126,6 +127,10 @@
                     <Setter Property="Background" Value="{StaticResource AppBrushAccentSoft}" />
                     <Setter Property="BorderBrush" Value="{StaticResource AppBrushAccent}" />
                 </DataTrigger>
+                <DataTrigger Binding="{Binding DataContext.IsSidebarCollapsed, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                    <Setter Property="MinHeight" Value="44" />
+                    <Setter Property="Margin" Value="0,0,0,4" />
+                </DataTrigger>
             </Style.Triggers>
         </Style>
 
@@ -137,6 +142,103 @@
                 </DataTrigger>
             </Style.Triggers>
         </Style>
+
+        <Style x:Key="SidebarOverflowButtonStyle" TargetType="Button" BasedOn="{StaticResource SidebarButtonStyle}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsOverflowSelected}" Value="True">
+                    <Setter Property="Background" Value="{StaticResource AppBrushAccentSoft}" />
+                    <Setter Property="BorderBrush" Value="{StaticResource AppBrushAccent}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="OverflowSelectedAccentStyle" TargetType="Border">
+            <Setter Property="Background" Value="Transparent" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsOverflowSelected}" Value="True">
+                    <Setter Property="Background" Value="{StaticResource AppBrushAccent}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <DataTemplate x:Key="SidebarNavButtonTemplate">
+            <Button Style="{StaticResource SidebarButtonStyle}"
+                    Command="{Binding DataContext.NavigateCommand, ElementName=RootWindow}"
+                    CommandParameter="{Binding}"
+                    ToolTip="{Binding Label}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="4" />
+                        <ColumnDefinition Width="46" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <Border Grid.Column="0"
+                            Style="{StaticResource SelectedAccentStyle}" />
+
+                    <iconPacks:PackIconLucide Grid.Column="1"
+                                              Kind="{Binding IconKind}"
+                                              Width="22"
+                                              Height="22"
+                                              Foreground="{StaticResource AppBrushText}"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+
+                    <StackPanel Grid.Column="2"
+                                VerticalAlignment="Center"
+                                Margin="4,0,12,0"
+                                Style="{StaticResource SidebarTextPanelStyle}">
+                        <TextBlock Text="{Binding Label}"
+                                   FontSize="16"
+                                   FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding Description}"
+                                   Foreground="{StaticResource AppBrushMutedText}"
+                                   FontSize="11"
+                                   TextTrimming="CharacterEllipsis"
+                                   TextWrapping="NoWrap" />
+                    </StackPanel>
+                </Grid>
+            </Button>
+        </DataTemplate>
+
+        <DataTemplate x:Key="SidebarOverflowNavButtonTemplate">
+            <Button Style="{StaticResource SidebarButtonStyle}"
+                    Command="{Binding DataContext.NavigateCommand, ElementName=RootWindow}"
+                    CommandParameter="{Binding}"
+                    ToolTip="{Binding Label}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="4" />
+                        <ColumnDefinition Width="46" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <Border Grid.Column="0"
+                            Style="{StaticResource SelectedAccentStyle}" />
+
+                    <iconPacks:PackIconLucide Grid.Column="1"
+                                              Kind="{Binding IconKind}"
+                                              Width="22"
+                                              Height="22"
+                                              Foreground="{StaticResource AppBrushText}"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+
+                    <StackPanel Grid.Column="2"
+                                VerticalAlignment="Center"
+                                Margin="4,0,12,0">
+                        <TextBlock Text="{Binding Label}"
+                                   FontSize="16"
+                                   FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding Description}"
+                                   Foreground="{StaticResource AppBrushMutedText}"
+                                   FontSize="11"
+                                   TextTrimming="CharacterEllipsis"
+                                   TextWrapping="NoWrap" />
+                    </StackPanel>
+                </Grid>
+            </Button>
+        </DataTemplate>
 
         <Style x:Key="StatusPillStyle" TargetType="Border">
             <Setter Property="Background" Value="{StaticResource AppBrushSurfaceRaised}" />
@@ -231,11 +333,20 @@
                                 ToolTip="Minimize">
                             <iconPacks:PackIconLucide Kind="Minus" Style="{StaticResource ChromeIconStyle}" />
                         </Button>
-                        <Button Style="{StaticResource TitleButtonStyle}"
-                                Focusable="False"
+                        <Button Focusable="False"
                                 Click="MaximizeRestoreButton_Click"
-                                ToolTip="Maximize or restore">
-                            <iconPacks:PackIconLucide Kind="Square" Style="{StaticResource ChromeIconStyle}" />
+                                Content=" "
+                                ContentTemplate="{StaticResource MaximizeRestoreButtonContent}">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource TitleButtonStyle}">
+                                    <Setter Property="ToolTip" Value="Maximize" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding WindowState, RelativeSource={RelativeSource AncestorType=Window}}" Value="Maximized">
+                                            <Setter Property="ToolTip" Value="Restore" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
                         </Button>
                         <Button Style="{StaticResource CloseTitleButtonStyle}"
                                 Focusable="False"
@@ -297,13 +408,20 @@
                             </Grid>
                         </Border>
 
-                        <ItemsControl ItemsSource="{Binding NavigationItems}" Margin="12,14,12,0">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Button Style="{StaticResource SidebarButtonStyle}"
-                                            Command="{Binding DataContext.NavigateCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                            CommandParameter="{Binding}"
-                                            ToolTip="{Binding Label}">
+                        <ContentPresenter DockPanel.Dock="Bottom"
+                                          Margin="12,0,12,8"
+                                          Content="{Binding SettingsItem}"
+                                          ContentTemplate="{StaticResource SidebarNavButtonTemplate}" />
+
+                        <Border x:Name="SidebarNavHost"
+                                Margin="12,14,12,0">
+                            <DockPanel LastChildFill="True">
+                                <Grid DockPanel.Dock="Bottom"
+                                      Visibility="{Binding HasOverflowItems, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                    <Button x:Name="OverflowButton"
+                                            Style="{StaticResource SidebarOverflowButtonStyle}"
+                                            Click="OverflowButton_Click"
+                                            ToolTip="More">
                                         <Grid>
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="4" />
@@ -312,10 +430,10 @@
                                             </Grid.ColumnDefinitions>
 
                                             <Border Grid.Column="0"
-                                                    Style="{StaticResource SelectedAccentStyle}" />
+                                                    Style="{StaticResource OverflowSelectedAccentStyle}" />
 
                                             <iconPacks:PackIconLucide Grid.Column="1"
-                                                                      Kind="{Binding IconKind}"
+                                                                      Kind="Ellipsis"
                                                                       Width="22"
                                                                       Height="22"
                                                                       Foreground="{StaticResource AppBrushText}"
@@ -326,10 +444,10 @@
                                                         VerticalAlignment="Center"
                                                         Margin="4,0,12,0"
                                                         Style="{StaticResource SidebarTextPanelStyle}">
-                                                <TextBlock Text="{Binding Label}"
+                                                <TextBlock Text="More"
                                                            FontSize="16"
                                                            FontWeight="SemiBold" />
-                                                <TextBlock Text="{Binding Description}"
+                                                <TextBlock Text="Hidden workspaces"
                                                            Foreground="{StaticResource AppBrushMutedText}"
                                                            FontSize="11"
                                                            TextTrimming="CharacterEllipsis"
@@ -337,9 +455,29 @@
                                             </StackPanel>
                                         </Grid>
                                     </Button>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
+                                    <Popup x:Name="OverflowPopup"
+                                           PlacementTarget="{Binding ElementName=OverflowButton}"
+                                           Placement="Left"
+                                           HorizontalOffset="-8"
+                                           AllowsTransparency="True"
+                                           StaysOpen="False"
+                                           Closed="OverflowPopup_Closed">
+                                        <Border Background="{StaticResource AppBrushSurfaceRaised}"
+                                                BorderBrush="{StaticResource AppBrushBorder}"
+                                                BorderThickness="1"
+                                                CornerRadius="8"
+                                                Padding="8,10,8,6"
+                                                MinWidth="220">
+                                            <ItemsControl ItemsSource="{Binding DataContext.OverflowNavigationItems, ElementName=RootWindow}"
+                                                          ItemTemplate="{StaticResource SidebarOverflowNavButtonTemplate}" />
+                                        </Border>
+                                    </Popup>
+                                </Grid>
+
+                                <ItemsControl ItemsSource="{Binding VisibleNavigationItems}"
+                                              ItemTemplate="{StaticResource SidebarNavButtonTemplate}" />
+                            </DockPanel>
+                        </Border>
                     </DockPanel>
                 </Border>
                 <!-- #endregion -->

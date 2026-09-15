@@ -10,6 +10,8 @@ namespace media_management_app;
 public partial class MainWindow : Window
 {
     private const double NormalCornerRadius = 8;
+    private const double ExpandedNavSlotHeight = 66;
+    private const double CollapsedNavSlotHeight = 48;
     private static readonly Thickness NormalShellBorderThickness = new(1);
     private static readonly Thickness NormalResizeBorderThickness = new(6);
 
@@ -19,6 +21,7 @@ public partial class MainWindow : Window
     private bool _allowClose;
     private bool _chromeIsMaximized;
     private WindowState _previousWindowState = WindowState.Normal;
+    private DateTime _overflowClosedAt;
 
     public MainWindow(
         MainViewModel viewModel,
@@ -31,6 +34,8 @@ public partial class MainWindow : Window
         _settingsService = settingsService;
         _trayIconService = trayIconService;
         _lifecycleService = lifecycleService;
+        viewModel.PropertyChanged += OnViewModelPropertyChanged;
+        Loaded += OnLoaded;
     }
 
     public void CloseForShutdown()
@@ -55,7 +60,62 @@ public partial class MainWindow : Window
     protected override void OnClosed(EventArgs e)
     {
         base.OnClosed(e);
+        if (DataContext is MainViewModel viewModel)
+        {
+            viewModel.PropertyChanged -= OnViewModelPropertyChanged;
+        }
+
         System.Windows.Application.Current.Shutdown();
+    }
+
+    private void OnLoaded(object sender, RoutedEventArgs e)
+    {
+        SidebarNavHost.SizeChanged += (_, _) => RecalculateNavigationOverflow();
+        RecalculateNavigationOverflow();
+    }
+
+    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(MainViewModel.IsSidebarCollapsed))
+        {
+            RecalculateNavigationOverflow();
+            OverflowPopup.IsOpen = false;
+            return;
+        }
+
+        if (e.PropertyName == nameof(MainViewModel.SelectedWorkspace))
+        {
+            OverflowPopup.IsOpen = false;
+        }
+    }
+
+    private void RecalculateNavigationOverflow()
+    {
+        if (DataContext is not MainViewModel viewModel || SidebarNavHost.ActualHeight <= 0)
+        {
+            return;
+        }
+
+        var slotHeight = viewModel.IsSidebarCollapsed
+            ? CollapsedNavSlotHeight
+            : ExpandedNavSlotHeight;
+        var slotCount = (int)Math.Floor(SidebarNavHost.ActualHeight / slotHeight);
+        viewModel.ApplyNavigationOverflow(slotCount);
+    }
+
+    private void OverflowButton_Click(object sender, RoutedEventArgs e)
+    {
+        if ((DateTime.UtcNow - _overflowClosedAt).TotalMilliseconds < 200)
+        {
+            return;
+        }
+
+        OverflowPopup.IsOpen = true;
+    }
+
+    private void OverflowPopup_Closed(object? sender, EventArgs e)
+    {
+        _overflowClosedAt = DateTime.UtcNow;
     }
 
     protected override void OnSourceInitialized(EventArgs e)
