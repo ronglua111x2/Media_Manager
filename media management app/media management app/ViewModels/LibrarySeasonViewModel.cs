@@ -156,10 +156,11 @@ public partial class LibrarySeasonViewModel : ObservableObject
 
     public string AiLinkPackToolTip => "Link pack with Gemini special/OVA mapping and review";
 
-    public string UnlinkPackToolTip => "Remove generated library hardlinks for this season pack";
+    public string UnlinkPackToolTip =>
+        "Remove generated library hardlinks for this season pack. Pack download identity is kept until Cleanup.";
 
     public string CleanupPackToolTip =>
-        "Reset pack download/link state so this season shows as Missing and can be added to cart again";
+        "Reset pack download/link state so covered seasons show as Missing. Does not delete qBittorrent files — unlink, cleanup, then delete source files.";
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanAddPackToCart))]
@@ -177,9 +178,28 @@ public partial class LibrarySeasonViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(ShowPackUnlinkButton))]
     [NotifyPropertyChangedFor(nameof(ShowPackCleanupButton))]
     [NotifyPropertyChangedFor(nameof(PackLinkStatus))]
+    [NotifyPropertyChangedFor(nameof(HasSeasonLibraryHardlink))]
+    [NotifyPropertyChangedFor(nameof(CanTogglePackMode))]
+    [NotifyPropertyChangedFor(nameof(TogglePackModeToolTip))]
     private bool isPackLinked;
 
-    public bool CanTogglePackMode => !IsCoveredByAnotherPack && SeasonNumber != AppConstants.SpecialsSeasonNumber;
+    public bool HasSeasonLibraryHardlink =>
+        IsPackLinked ||
+        Episodes.Any(episode => episode.IsTrackedEpisode && !episode.IsOrphan && episode.IsLinked);
+
+    public bool CanTogglePackMode =>
+        !IsCoveredByAnotherPack &&
+        SeasonNumber != AppConstants.SpecialsSeasonNumber &&
+        !HasSeasonLibraryHardlink;
+
+    public string TogglePackModeToolTip =>
+        IsCoveredByAnotherPack
+            ? $"This season is covered by the pack on {PackOwnerDisplay}."
+            : SeasonNumber == AppConstants.SpecialsSeasonNumber
+                ? "Specials stay in episode mode."
+                : HasSeasonLibraryHardlink
+                    ? "Unlink episode or pack hardlinks in this season before switching mode."
+                    : "Switch this season between episode cart and season-pack cart.";
 
     [ObservableProperty]
     private bool isExpanded;
@@ -218,6 +238,7 @@ public partial class LibrarySeasonViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(ShowPackUnlinkButton))]
     [NotifyPropertyChangedFor(nameof(ShowPackCleanupButton))]
     [NotifyPropertyChangedFor(nameof(CanTogglePackMode))]
+    [NotifyPropertyChangedFor(nameof(TogglePackModeToolTip))]
     private int? selectedPackOwnerSeasonNumber;
 
     [ObservableProperty]

@@ -8,6 +8,8 @@ public interface ISymlinkSyncService
 
     SymlinkSyncResult RemoveItem(SourceItem item, string? linkedPath = null, IReadOnlyList<SourceItem>? linkedGroup = null);
 
+    Dictionary<string, List<SourceItem>> GroupLinkedItemsByPath(IEnumerable<SourceItem> items);
+
     SymlinkSyncResult ReconcileAll();
 
     void PruneEmptyFolders(string? startDirectory);

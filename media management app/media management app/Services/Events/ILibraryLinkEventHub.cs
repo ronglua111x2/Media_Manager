@@ -8,7 +8,13 @@ public interface ILibraryLinkEventHub
 
     event EventHandler<LibraryLinkEventArgs>? HardlinkRemoved;
 
+    event EventHandler<LibraryLinkBatchEventArgs>? HardlinksCreated;
+
+    event EventHandler<LibraryLinkBatchEventArgs>? HardlinksRemoved;
+
     event EventHandler? SymlinkStateChanged;
+
+    IDisposable BeginBulkMutation();
 
     void PublishHardlinkCreated(SourceItem item, string linkedPath);
 
@@ -28,4 +34,14 @@ public sealed class LibraryLinkEventArgs : EventArgs
     public SourceItem Item { get; }
 
     public string LinkedPath { get; }
+}
+
+public sealed class LibraryLinkBatchEventArgs : EventArgs
+{
+    public LibraryLinkBatchEventArgs(IReadOnlyList<LibraryLinkEventArgs> items)
+    {
+        Items = items;
+    }
+
+    public IReadOnlyList<LibraryLinkEventArgs> Items { get; }
 }

@@ -261,8 +261,8 @@ Exhaustive list of user-facing and background features. Each entry includes purp
 
 ### 5.9 Season Pack Linking
 - **What:** Link entire season pack torrent to library (normal or AI-assisted)
-- **User interaction:** Normal Link, AI Link, Unlink, Cleanup buttons
-- **Code:** `Services/AutoTorrentLinkService.cs`, `Services/PackLinkCoordinatorService.cs`, `Services/SpecialMappingOrchestrator.cs`
+- **User interaction:** Normal Link, AI Link, Unlink, Cleanup buttons. Typical reset sequence is Unlink → Cleanup → delete qBittorrent files. Unlink removes library hardlinks but keeps pack provenance on SourceItems. Cleanup snapshots owner + covered seasons, deletes those SourceItems, and clears pack torrent/cart state; it does not delete download files. Cleanup stays on the pack-owner season and covers every season in the pack (including matched S00 specials). Pack mode cannot be toggled while this season still has an episode hardlink or a pack hardlink. Pack Link / Unlink / Cleanup batch filesystem work and symlink side effects: one SourceItems snapshot, one coordinator pass, one summary toast (for example `52 episodes, 1 matched special, 1 extra symlinked`), and one Library detail refresh. Single-episode Link still uses per-file toasts.
+- **Code:** `Services/AutoTorrentLinkService.cs`, `Services/PackLinkCoordinatorService.cs`, `Services/SpecialMappingOrchestrator.cs`, `MediaManager.Core/Services/SeasonPackCleanupMatcher.cs`
 - **DB:** `TrackedSeasons`, `SourceItems`
 - **Dialogs:** `Views/PackLinkReviewWindow.xaml`, `Views/PackLinkProgressWindow.xaml`
 - **Heuristics:** See [Appendix A — Pack Link Matching](#appendix-a--pack-link-matching-heuristics)
@@ -585,7 +585,7 @@ Setup details: [STATE_FOLDER.md](./STATE_FOLDER.md#google-drive-oauth)
 - **DB:** Cart candidates
 
 ### 10.9 Symlink Coordinator
-- **What:** Startup sync + manual sync of symlinks for all source items
+- **What:** Startup sync + manual sync of symlinks for all source items. Pack create/remove batches are processed under one sync gate (one SourceItems snapshot, deferred NFO/folder cleanup, one `SymlinkStateChanged`)
 - **Code:** `Services/Symlink/SymlinkCoordinatorService.cs`, `Services/Symlink/SymlinkSyncService.cs`
 - **DB:** `SourceItems` (`SymlinkPath`)
 - **Requires:** Administrator for symlink creation
@@ -650,8 +650,8 @@ Setup details: [STATE_FOLDER.md](./STATE_FOLDER.md#google-drive-oauth)
 - **DB:** None
 
 ### 10.21 Windows Notifications
-- **What:** Toast notifications for Auto-Track, symlinks, WARP, Jellyfin, qBittorrent events
-- **Code:** `Services/WindowsNotificationService.cs`, `Common/NotificationCatalog.cs`
+- **What:** Toast notifications for Auto-Track, symlinks, WARP, Jellyfin, qBittorrent events. Pack Link sends one summary toast (regular episodes, matched specials, extras); single-episode Link stays per file
+- **Code:** `Services/WindowsNotificationService.cs`, `Common/NotificationCatalog.cs`, `MediaManager.Core/Services/LibraryLinkBatchSummary.cs`
 - **Kinds:** 15+ notification types with per-kind enable toggles
 
 ### 10.22 Automation Flow (Recipe Run)
@@ -680,8 +680,8 @@ Setup details: [STATE_FOLDER.md](./STATE_FOLDER.md#google-drive-oauth)
 - **DB:** All tracked tables
 
 ### 10.27 Library Link Event Hub
-- **What:** Pub/sub for hardlink create/remove events (internal coordination)
-- **Code:** `Services/Events/LibraryLinkEventHub.cs`
+- **What:** Pub/sub for hardlink create/remove events (internal coordination). Pack Link / Unlink / Cleanup wrap work in `BeginBulkMutation()` so successful creates/removes publish as one batch; single-episode and movie links still publish per file.
+- **Code:** `Services/Events/LibraryLinkEventHub.cs`, `MediaManager.Core/Services/NestedBulkEventCollector.cs`
 - **DB:** None
 
 ---

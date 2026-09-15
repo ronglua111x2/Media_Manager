@@ -124,6 +124,9 @@ public sealed partial class LibraryViewModel : ViewModelBase
     private bool _suppressWatchStatusFilterApply;
     private long? _pendingRestoreMediaId;
     private MediaKind? _pendingRestoreMediaKind;
+    private int _detailRefreshGeneration;
+    private CancellationTokenSource? _detailRefreshDebounceCts;
+    private static readonly TimeSpan DetailRefreshDebounce = TimeSpan.FromMilliseconds(250);
 
     public ObservableCollection<LibraryMediaCardViewModel> MediaCards { get; } = [];
 
@@ -836,7 +839,8 @@ public sealed partial class LibraryViewModel : ViewModelBase
         try
         {
             StatusMessage = $"Removing library links for season {season.SeasonNumber:00} pack...";
-            var unlinkResult = _autoTorrentLinkService.RemoveSeasonPackLinks(season.ShowId, season.SeasonNumber);
+            var unlinkResult = await Task.Run(
+                () => _autoTorrentLinkService.RemoveSeasonPackLinks(season.ShowId, season.SeasonNumber));
             _trackedShowService.RefreshAvailability(season.ShowId);
             await ReloadSelectedDetailAsync();
             StatusMessage = $"Removed pack library links for S{season.SeasonNumber:00}: {unlinkResult.Summary}.";
@@ -855,13 +859,35 @@ public sealed partial class LibraryViewModel : ViewModelBase
             return;
         }
 
+        var covered = SeasonPackCleanupMatcher.Resolve(
+            season.SeasonNumber,
+            season.SelectedPackCoveredSeasons,
+            season.PackTorrentHash,
+            lastPackLinkTorrentHash: null);
+        var coveredLabel = string.IsNullOrWhiteSpace(covered.CoveredSeasonsDisplay)
+            ? $"S{season.SeasonNumber:00}"
+            : covered.CoveredSeasonsDisplay;
+        var confirm = AppMessageBox.Show(
+            $"Reset pack download/link state for S{season.SeasonNumber:00} (covers {coveredLabel})?\n\n" +
+            "Unlink removes library hardlinks first. Cleanup then deletes pack SourceItems and cart/torrent metadata so covered seasons show as Missing.\n\n" +
+            "qBittorrent download files are not deleted. After Cleanup succeeds, delete those files yourself.",
+            "Cleanup Season Pack",
+            System.Windows.MessageBoxButton.OKCancel,
+            System.Windows.MessageBoxImage.Question);
+        if (confirm != System.Windows.MessageBoxResult.OK)
+        {
+            return;
+        }
+
         try
         {
             StatusMessage = $"Cleaning up season {season.SeasonNumber:00} pack...";
-            var result = _autoTorrentLinkService.ResetSeasonPackForRedownload(season.ShowId, season.SeasonNumber);
+            var result = await _autoTorrentLinkService.ResetSeasonPackForRedownloadAsync(season.ShowId, season.SeasonNumber);
             RefreshLibrary();
             await ReloadSelectedDetailAsync();
-            StatusMessage = $"Pack cleanup for S{season.SeasonNumber:00}: {result.Summary}.";
+            StatusMessage = result.ErrorCount > 0
+                ? $"Pack cleanup for S{season.SeasonNumber:00} aborted: {result.Summary}."
+                : $"Pack cleanup for S{season.SeasonNumber:00}: {result.Summary}.";
         }
         catch (Exception ex)
         {
@@ -2005,6 +2031,43 @@ public sealed partial class LibraryViewModel : ViewModelBase
         if (dispatcher is not null && !dispatcher.CheckAccess())
         {
             dispatcher.BeginInvoke(DispatcherPriority.Background, RunRefreshSelectedDetailAfterReconcileOnUiThread);
+            return;
+        }
+
+        var generation = Interlocked.Increment(ref _detailRefreshGeneration);
+        _detailRefreshDebounceCts?.Cancel();
+        _detailRefreshDebounceCts?.Dispose();
+        var cts = new CancellationTokenSource();
+        _detailRefreshDebounceCts = cts;
+        _ = DebounceRefreshSelectedDetailAsync(generation, cts.Token);
+    }
+
+    private async Task DebounceRefreshSelectedDetailAsync(int generation, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(DetailRefreshDebounce, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        if (generation != Volatile.Read(ref _detailRefreshGeneration))
+        {
+            return;
+        }
+
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher is not null && !dispatcher.CheckAccess())
+        {
+            await dispatcher.InvokeAsync(() =>
+            {
+                if (generation == _detailRefreshGeneration)
+                {
+                    RefreshSelectedDetailAfterReconcile();
+                }
+            }, DispatcherPriority.Background);
             return;
         }
 

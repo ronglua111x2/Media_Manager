@@ -49,7 +49,10 @@ public interface IAutoTorrentLinkService
 
     AutoTorrentLinkResult ResetEpisodeForRedownload(long showId, int seasonNumber, int episodeNumber);
 
-    AutoTorrentLinkResult ResetSeasonPackForRedownload(long showId, int ownerSeasonNumber);
+    Task<AutoTorrentLinkResult> ResetSeasonPackForRedownloadAsync(
+        long showId,
+        int ownerSeasonNumber,
+        CancellationToken cancellationToken = default);
 
     AutoTorrentLinkResult ResetMovieForRedownload(long movieId);
 }

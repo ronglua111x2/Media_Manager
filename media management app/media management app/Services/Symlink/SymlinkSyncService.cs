@@ -211,6 +211,9 @@ public sealed class SymlinkSyncService : ISymlinkSyncService
         return aggregate;
     }
 
+    public Dictionary<string, List<SourceItem>> GroupLinkedItemsByPath(IEnumerable<SourceItem> items) =>
+        BuildLinkedGroupsByPath(items);
+
     private static Dictionary<string, List<SourceItem>> BuildLinkedGroupsByPath(IEnumerable<SourceItem> linkedItems)
     {
         var groups = new Dictionary<string, List<SourceItem>>(StringComparer.OrdinalIgnoreCase);

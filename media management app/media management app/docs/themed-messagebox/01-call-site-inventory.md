@@ -92,11 +92,12 @@ Default result **OS default** means the call does not pass `MessageBoxResult`; W
 
 ## ViewModels
 
-### [`LibraryViewModel`](../../ViewModels/LibraryViewModel.cs) — 8 calls
+### [`LibraryViewModel`](../../ViewModels/LibraryViewModel.cs) — 9 calls
 
 | Line | Method | Caption | Buttons / image | Default | Class | Body (summary) |
 |------|--------|---------|-----------------|--------|--------|----------------|
 | ~722 | `ResetEpisode` | Reset Episode | OKCancel / Question | OS | Confirm | Clear download/link state for `{EpisodeCode}`; files on disk not deleted |
+| ~866 | `CleanupSeasonPack` | Cleanup Season Pack | OKCancel / Question | OS | Confirm | Reset pack for `Sxx` (covers listed seasons); Unlink then Cleanup; qBit files not deleted |
 | ~811 | `ShowJellyfinNavigationError` | Jellyfin | OK / Warning | OS | Blocking error | `result.ErrorMessage` or *Could not open this title in Jellyfin.* **Trigger screenshot** |
 | ~1083 | `ResetMovie` | Reset Movie | OKCancel / Question | OS | Confirm | Same reset copy for movie title |
 | ~1126 | `RefreshAllFromTmdb` | Refresh Metadata from TMDB | YesNo / Question | OS | Confirm | Refresh all shows and movies from TMDB |

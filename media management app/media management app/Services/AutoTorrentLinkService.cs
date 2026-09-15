@@ -223,14 +223,25 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
     {
         var show = _databaseService.GetTrackedShow(showId);
         var providerId = show?.TmdbId.ToString();
-        return string.IsNullOrWhiteSpace(providerId)
-            ? new AutoTorrentLinkResult { SkippedCount = 1, Messages = { "Tracked show was not found." } }
-            : RemoveLinks(item => item.MediaKind == MediaKind.TvEpisode &&
-                                  string.Equals(item.Provider, "tmdb", StringComparison.OrdinalIgnoreCase) &&
-                                  string.Equals(item.ProviderId, providerId, StringComparison.OrdinalIgnoreCase) &&
-                                  item.AutoTorrentPackOwnerSeasonNumber == ownerSeasonNumber &&
-                                  (item.AutoTorrentLinkKind == AutoTorrentLinkKind.SeasonPack ||
-                                   item.IsOrphanPackSpecial));
+        if (string.IsNullOrWhiteSpace(providerId))
+        {
+            return new AutoTorrentLinkResult { SkippedCount = 1, Messages = { "Tracked show was not found." } };
+        }
+
+        using (_eventHub.BeginBulkMutation())
+        {
+            var snapshot = _databaseService.GetSourceItems();
+            _logger.Info($"Pack unlink SourceItems snapshot: {snapshot.Count} item(s).", LogTarget.All);
+            return RemoveLinks(
+                item => item.MediaKind == MediaKind.TvEpisode &&
+                        string.Equals(item.Provider, "tmdb", StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(item.ProviderId, providerId, StringComparison.OrdinalIgnoreCase) &&
+                        item.AutoTorrentPackOwnerSeasonNumber == ownerSeasonNumber &&
+                        (item.AutoTorrentLinkKind == AutoTorrentLinkKind.SeasonPack ||
+                         item.IsOrphanPackSpecial),
+                preservePackProvenance: true,
+                snapshot: snapshot);
+        }
     }
 
     public AutoTorrentLinkResult RemoveMovieLinks(long movieId)
@@ -284,10 +295,15 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             if (!File.Exists(item.LinkedPath))
             {
                 item.LinkedPath = null;
-                item.AutoTorrentLinkKind = null;
-                item.AutoTorrentTorrentHash = null;
-                item.AutoTorrentPackOwnerSeasonNumber = null;
+                item.State = ItemState.Parsed;
                 item.Notes = "Linked path no longer exists.";
+                if (!ShouldPreservePackProvenance(item))
+                {
+                    item.AutoTorrentLinkKind = null;
+                    item.AutoTorrentTorrentHash = null;
+                    item.AutoTorrentPackOwnerSeasonNumber = null;
+                }
+
                 result.SkippedCount++;
             }
 
@@ -349,28 +365,83 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
         return result;
     }
 
-    public AutoTorrentLinkResult ResetSeasonPackForRedownload(long showId, int ownerSeasonNumber)
+    public async Task<AutoTorrentLinkResult> ResetSeasonPackForRedownloadAsync(
+        long showId,
+        int ownerSeasonNumber,
+        CancellationToken cancellationToken = default)
     {
         var result = new AutoTorrentLinkResult();
-
-        var unlinkResult = RemoveSeasonPackLinks(showId, ownerSeasonNumber);
-        result.LinkedCount += unlinkResult.LinkedCount;
-        result.SkippedCount += unlinkResult.SkippedCount;
-        result.Messages.AddRange(unlinkResult.Messages);
-
-        // Delete by season/pack-owner key, not pack flags. Unlink clears those flags but
-        // leaves Parsed SourceItems that RefreshAvailability still counts as Available.
         var show = _databaseService.GetTrackedShow(showId);
-        var providerId = show?.TmdbId.ToString();
-        var deletedCount = 0;
-        if (!string.IsNullOrWhiteSpace(providerId))
+        if (show is null)
         {
-            deletedCount = DeleteAcceptedTvSourceItems(
-                providerId,
-                item =>
-                    GetOutputEpisodeKey(item)?.SeasonNumber == ownerSeasonNumber ||
-                    item.AutoTorrentPackOwnerSeasonNumber == ownerSeasonNumber,
-                result);
+            AddSkip(result, "Tracked show was not found.");
+            return result;
+        }
+
+        var ownerSeason = _databaseService.GetTrackedSeasons(showId)
+            .FirstOrDefault(season => season.SeasonNumber == ownerSeasonNumber);
+        var scope = SeasonPackCleanupMatcher.Resolve(
+            ownerSeasonNumber,
+            ownerSeason?.SelectedPackCoveredSeasons,
+            ownerSeason?.PackTorrentHash,
+            ownerSeason?.LastPackLinkTorrentHash);
+
+        HashSet<string> packSourcePaths;
+        try
+        {
+            packSourcePaths = await CollectPackSourcePathsAsync(scope.TorrentHashes, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            packSourcePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            _logger.Warning(
+                $"Pack cleanup could not list qBittorrent files for show id={showId} S{ownerSeasonNumber:00}: {ex.Message}. Continuing with provenance capture only.",
+                LogTarget.File | LogTarget.Console);
+        }
+        var providerId = show.TmdbId.ToString();
+        var sourceItems = _databaseService.GetSourceItems()
+            .Where(item =>
+                item.MediaKind == MediaKind.TvEpisode &&
+                string.Equals(item.Provider, "tmdb", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(item.ProviderId, providerId, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        var capturedIds = SeasonPackCleanupMatcher
+            .SelectItems(sourceItems.Select(ToCleanupCandidate), scope, packSourcePaths)
+            .Select(item => item.Id)
+            .ToHashSet();
+
+        AutoTorrentLinkResult unlinkResult;
+        using (_eventHub.BeginBulkMutation())
+        {
+            _logger.Info(
+                $"Pack cleanup unlink SourceItems snapshot: {sourceItems.Count} item(s).",
+                LogTarget.All);
+            unlinkResult = await Task.Run(
+                () => RemoveLinks(
+                    item => capturedIds.Contains(item.Id),
+                    preservePackProvenance: true,
+                    snapshot: sourceItems),
+                cancellationToken);
+        }
+
+        Merge(result, unlinkResult);
+        if (unlinkResult.ErrorCount > 0)
+        {
+            _logger.Warning(
+                $"Pack cleanup aborted for show id={showId} S{ownerSeasonNumber:00}: {unlinkResult.ErrorCount} unlink error(s). Pack metadata was left unchanged.",
+                LogTarget.File | LogTarget.Console);
+            result.Messages.Add(
+                $"Pack cleanup aborted: {unlinkResult.ErrorCount} library link(s) could not be removed. Retry after those files are unlocked.");
+            return result;
+        }
+
+        var deletedCount = 0;
+        foreach (var item in _databaseService.GetSourceItems().Where(item => capturedIds.Contains(item.Id)).ToList())
+        {
+            _databaseService.DeleteSourceItem(item.Id);
+            result.RemovedCount++;
+            result.Messages.Add($"Removed source item: {item.FileName}");
+            deletedCount++;
         }
 
         _databaseService.ClearTrackedSeasonSelectedPack(showId, ownerSeasonNumber);
@@ -383,10 +454,12 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             _databaseService.DeleteTorrentCartOrder(order.Id);
         }
 
+        var coveredDisplay = scope.CoveredSeasonsDisplay;
+        var hashDisplay = scope.TorrentHashes.Count == 0 ? "-" : string.Join(",", scope.TorrentHashes);
         _logger.Info(
-            $"Pack cleanup for show id={showId} S{ownerSeasonNumber:00}: deleted {deletedCount} source item(s).",
+            $"Pack cleanup for show id={showId} S{ownerSeasonNumber:00}: covered={coveredDisplay} hash={hashDisplay} deleted {deletedCount} source item(s).",
             LogTarget.File | LogTarget.Console);
-        result.Messages.Add($"Reset season S{ownerSeasonNumber:00} pack: download state cleared.");
+        result.Messages.Add($"Reset season S{ownerSeasonNumber:00} pack (covers {coveredDisplay}): download state cleared.");
         return result;
     }
 
@@ -627,67 +700,82 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             PackLinkProgressStatus.Active,
             "Creating library links...");
 
-        foreach (var entry in inventory.Files.Where(file => file.Classification == PackFileClassification.Movie))
+        using (_eventHub.BeginBulkMutation())
         {
-            AddSkip(result, $"{show.DisplayTitle}: skipped movie pack file '{entry.FileName}'.");
-        }
+            var snapshot = _databaseService.GetSourceItems();
+            var index = SourceItemPathIndex.From(snapshot);
+            _logger.Info($"Pack link SourceItems snapshot: {snapshot.Count} item(s).", LogTarget.All);
 
-        foreach (var entry in inventory.Files.Where(file => file.Classification == PackFileClassification.Skipped))
-        {
-            AddSkip(result, $"{show.DisplayTitle}: skipped unmatched pack file '{entry.FileName}'.");
-        }
-
-        foreach (var entry in linkableEntries)
-        {
-            var sourcePath = BuildSourcePath(torrent, new TorrentContentFile
+            await Task.Run(() =>
             {
-                Name = entry.RelativePath,
-                Size = 0,
-                Progress = 1
-            });
+                foreach (var entry in inventory.Files.Where(file => file.Classification == PackFileClassification.Movie))
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    AddSkip(result, $"{show.DisplayTitle}: skipped movie pack file '{entry.FileName}'.");
+                }
 
-            switch (entry.Classification)
-            {
-                case PackFileClassification.UnmatchedExtra:
-                    if (LinkOrphanPackItem(show, torrent, sourcePath, ownerSeason.SeasonNumber, result))
+                foreach (var entry in inventory.Files.Where(file => file.Classification == PackFileClassification.Skipped))
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    AddSkip(result, $"{show.DisplayTitle}: skipped unmatched pack file '{entry.FileName}'.");
+                }
+
+                foreach (var entry in linkableEntries)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var sourcePath = BuildSourcePath(torrent, new TorrentContentFile
                     {
-                        orphansLinked++;
-                    }
+                        Name = entry.RelativePath,
+                        Size = 0,
+                        Progress = 1
+                    });
 
-                    break;
-                case PackFileClassification.MatchedSpecial when entry.MatchedSeasonNumber is not null &&
-                                                                entry.MatchedEpisodeNumber is not null &&
-                                                                episodesByKey.TryGetValue(
-                                                                    (entry.MatchedSeasonNumber.Value, entry.MatchedEpisodeNumber.Value),
-                                                                    out var specialEpisode):
-                    LinkSourceItem(
-                        CreateEpisodeSourceItem(
-                            show,
-                            specialEpisode,
-                            torrent,
-                            sourcePath,
-                            AutoTorrentLinkKind.SeasonPack,
-                            ownerSeason.SeasonNumber),
-                        result);
-                    specialsMatched++;
-                    break;
-                case PackFileClassification.RegularEpisode when entry.MatchedSeasonNumber is not null &&
-                                                                  entry.MatchedEpisodeNumber is not null &&
-                                                                  episodesByKey.TryGetValue(
-                                                                      (entry.MatchedSeasonNumber.Value, entry.MatchedEpisodeNumber.Value),
-                                                                      out var episode):
-                    LinkSourceItem(
-                        CreateEpisodeSourceItem(
-                            show,
-                            episode,
-                            torrent,
-                            sourcePath,
-                            AutoTorrentLinkKind.SeasonPack,
-                            ownerSeason.SeasonNumber),
-                        result);
-                    regularLinked++;
-                    break;
-            }
+                    switch (entry.Classification)
+                    {
+                        case PackFileClassification.UnmatchedExtra:
+                            if (LinkOrphanPackItem(show, torrent, sourcePath, ownerSeason.SeasonNumber, result, index))
+                            {
+                                orphansLinked++;
+                            }
+
+                            break;
+                        case PackFileClassification.MatchedSpecial when entry.MatchedSeasonNumber is not null &&
+                                                                        entry.MatchedEpisodeNumber is not null &&
+                                                                        episodesByKey.TryGetValue(
+                                                                            (entry.MatchedSeasonNumber.Value, entry.MatchedEpisodeNumber.Value),
+                                                                            out var specialEpisode):
+                            LinkSourceItem(
+                                CreateEpisodeSourceItem(
+                                    show,
+                                    specialEpisode,
+                                    torrent,
+                                    sourcePath,
+                                    AutoTorrentLinkKind.SeasonPack,
+                                    ownerSeason.SeasonNumber),
+                                result,
+                                index);
+                            specialsMatched++;
+                            break;
+                        case PackFileClassification.RegularEpisode when entry.MatchedSeasonNumber is not null &&
+                                                                          entry.MatchedEpisodeNumber is not null &&
+                                                                          episodesByKey.TryGetValue(
+                                                                              (entry.MatchedSeasonNumber.Value, entry.MatchedEpisodeNumber.Value),
+                                                                              out var episode):
+                            LinkSourceItem(
+                                CreateEpisodeSourceItem(
+                                    show,
+                                    episode,
+                                    torrent,
+                                    sourcePath,
+                                    AutoTorrentLinkKind.SeasonPack,
+                                    ownerSeason.SeasonNumber),
+                                result,
+                                index);
+                            regularLinked++;
+                            break;
+                    }
+                }
+            }, cancellationToken);
         }
 
         result.Messages.Add(inventory.BuildSummaryText());
@@ -722,12 +810,14 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
         AddedTorrentResult torrent,
         string sourcePath,
         int packOwnerSeasonNumber,
-        AutoTorrentLinkResult result)
+        AutoTorrentLinkResult result,
+        SourceItemPathIndex? index = null)
     {
         var beforeLinked = result.LinkedCount;
         LinkSourceItem(
             CreateOrphanPackSourceItem(show, torrent, sourcePath, packOwnerSeasonNumber),
-            result);
+            result,
+            index);
         return result.LinkedCount > beforeLinked;
     }
 
@@ -765,11 +855,14 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
         };
     }
 
-    private void LinkSourceItem(SourceItem sourceItem, AutoTorrentLinkResult result)
+    private void LinkSourceItem(
+        SourceItem sourceItem,
+        AutoTorrentLinkResult result,
+        SourceItemPathIndex? index = null)
     {
-        TryMigrateLegacyOrphanPath(sourceItem, result);
+        TryMigrateLegacyOrphanPath(sourceItem, result, index);
 
-        if (TryGetExistingLinkedItem(sourceItem, out var existingItem) && existingItem is not null)
+        if (TryGetExistingLinkedItem(sourceItem, index, out var existingItem) && existingItem is not null)
         {
             existingItem.AutoTorrentLinkKind = sourceItem.AutoTorrentLinkKind;
             existingItem.AutoTorrentTorrentHash = sourceItem.AutoTorrentTorrentHash;
@@ -777,6 +870,7 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             existingItem.IsOrphanPackSpecial = sourceItem.IsOrphanPackSpecial;
             existingItem.LastSeenUtc = DateTime.UtcNow;
             _databaseService.UpdateSourceItem(existingItem);
+            index?.Replace(existingItem);
             AddSkip(result, $"{sourceItem.DisplayTitle}: already linked.");
             return;
         }
@@ -787,6 +881,7 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             sourceItem.LinkedPath = linkedPath;
             sourceItem.Notes = null;
             _databaseService.UpdateSourceItem(sourceItem);
+            index?.Replace(sourceItem);
             _eventHub.PublishHardlinkCreated(sourceItem, linkedPath!);
             result.LinkedCount++;
             result.Messages.Add($"Linked {sourceItem.FileName}");
@@ -797,19 +892,24 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
         result.Messages.Add($"{sourceItem.FileName}: {errorMessage}");
     }
 
-    private void TryMigrateLegacyOrphanPath(SourceItem sourceItem, AutoTorrentLinkResult result)
+    private void TryMigrateLegacyOrphanPath(
+        SourceItem sourceItem,
+        AutoTorrentLinkResult result,
+        SourceItemPathIndex? index)
     {
         if (!sourceItem.IsOrphanPackSpecial)
         {
             return;
         }
 
-        var existingOrphan = _databaseService.GetSourceItems().FirstOrDefault(item =>
-            string.Equals(item.FilePath, sourceItem.FilePath, StringComparison.OrdinalIgnoreCase) &&
-            item.IsOrphanPackSpecial &&
-            !string.IsNullOrWhiteSpace(item.LinkedPath) &&
-            File.Exists(item.LinkedPath) &&
-            IsLegacyOrphanSeasonPath(item.LinkedPath));
+        var existingOrphan = index is not null
+            ? index.FindLegacyOrphan(sourceItem.FilePath)
+            : _databaseService.GetSourceItems().FirstOrDefault(item =>
+                string.Equals(item.FilePath, sourceItem.FilePath, StringComparison.OrdinalIgnoreCase) &&
+                item.IsOrphanPackSpecial &&
+                !string.IsNullOrWhiteSpace(item.LinkedPath) &&
+                File.Exists(item.LinkedPath) &&
+                IsLegacyOrphanSeasonPath(item.LinkedPath));
 
         if (existingOrphan is null)
         {
@@ -821,6 +921,7 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             existingOrphan.LinkedPath = null;
             existingOrphan.State = ItemState.Parsed;
             _databaseService.UpdateSourceItem(existingOrphan);
+            index?.Replace(existingOrphan);
             result.Messages.Add($"Migrated orphan {existingOrphan.FileName} from Season 00 to extras/.");
             return;
         }
@@ -835,26 +936,34 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
                normalized.Contains("/Season 0/", StringComparison.OrdinalIgnoreCase);
     }
 
-    private bool TryGetExistingLinkedItem(SourceItem sourceItem, out SourceItem? existingItem)
+    private bool TryGetExistingLinkedItem(
+        SourceItem sourceItem,
+        SourceItemPathIndex? index,
+        out SourceItem? existingItem)
     {
-        existingItem = _databaseService.GetSourceItems().FirstOrDefault(item =>
-            string.Equals(item.FilePath, sourceItem.FilePath, StringComparison.OrdinalIgnoreCase) &&
-            !string.IsNullOrWhiteSpace(item.LinkedPath) &&
-            File.Exists(item.LinkedPath));
+        existingItem = index is not null
+            ? index.FindExistingLinked(sourceItem.FilePath)
+            : _databaseService.GetSourceItems().FirstOrDefault(item =>
+                string.Equals(item.FilePath, sourceItem.FilePath, StringComparison.OrdinalIgnoreCase) &&
+                !string.IsNullOrWhiteSpace(item.LinkedPath) &&
+                File.Exists(item.LinkedPath));
         return existingItem is not null;
     }
 
-    private AutoTorrentLinkResult RemoveLinks(Func<SourceItem, bool> predicate)
+    private AutoTorrentLinkResult RemoveLinks(
+        Func<SourceItem, bool> predicate,
+        bool preservePackProvenance = false,
+        IReadOnlyList<SourceItem>? snapshot = null)
     {
         var result = new AutoTorrentLinkResult();
-        foreach (var item in _databaseService.GetSourceItems().Where(predicate).ToList())
+        foreach (var item in (snapshot ?? _databaseService.GetSourceItems()).Where(predicate).ToList())
         {
             if (string.IsNullOrWhiteSpace(item.LinkedPath))
             {
                 continue;
             }
 
-            if (item.IsExternalImport)
+            if (!preservePackProvenance && item.IsExternalImport)
             {
                 _databaseService.DeleteSourceItem(item.Id);
                 result.RemovedCount++;
@@ -862,7 +971,7 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
                 continue;
             }
 
-            if (item.IsOrphanPackSpecial)
+            if (!preservePackProvenance && item.IsOrphanPackSpecial)
             {
                 if (_hardlinkService.RemoveHardLink(item, out _, out var errorMessage))
                 {
@@ -881,10 +990,14 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             {
                 item.LinkedPath = null;
                 item.State = ItemState.Parsed;
-                item.AutoTorrentLinkKind = null;
-                item.AutoTorrentTorrentHash = null;
-                item.AutoTorrentPackOwnerSeasonNumber = null;
                 item.Notes = null;
+                if (!preservePackProvenance)
+                {
+                    item.AutoTorrentLinkKind = null;
+                    item.AutoTorrentTorrentHash = null;
+                    item.AutoTorrentPackOwnerSeasonNumber = null;
+                }
+
                 _databaseService.UpdateSourceItem(item);
                 result.RemovedCount++;
                 continue;
@@ -971,6 +1084,46 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             .Where(file => file.IsVideoFile && file.IsComplete)
             .ToList();
     }
+
+    private async Task<HashSet<string>> CollectPackSourcePathsAsync(
+        IReadOnlyList<string> torrentHashes,
+        CancellationToken cancellationToken)
+    {
+        var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var hash in torrentHashes)
+        {
+            var torrent = await GetTorrentAsync(hash, cancellationToken);
+            if (torrent is null)
+            {
+                continue;
+            }
+
+            var files = await _qbittorrentClient.GetTorrentFilesAsync(torrent.Hash, cancellationToken);
+            foreach (var file in files.Where(item => item.IsVideoFile))
+            {
+                paths.Add(SeasonPackCleanupMatcher.NormalizePath(BuildSourcePath(torrent, file)));
+            }
+        }
+
+        return paths;
+    }
+
+    private static SeasonPackCleanupCandidate ToCleanupCandidate(SourceItem item) =>
+        new()
+        {
+            Id = item.Id,
+            IsExternalImport = item.IsExternalImport,
+            IsOrphanPackSpecial = item.IsOrphanPackSpecial,
+            PackOwnerSeasonNumber = item.AutoTorrentPackOwnerSeasonNumber,
+            TorrentHash = item.AutoTorrentTorrentHash,
+            IsSeasonPackLink = item.AutoTorrentLinkKind == AutoTorrentLinkKind.SeasonPack,
+            FilePath = item.FilePath
+        };
+
+    private static bool ShouldPreservePackProvenance(SourceItem item) =>
+        item.AutoTorrentLinkKind == AutoTorrentLinkKind.SeasonPack ||
+        item.AutoTorrentPackOwnerSeasonNumber is not null ||
+        item.IsOrphanPackSpecial;
 
     private static TorrentContentFile? SelectEpisodeFile(IReadOnlyList<TorrentContentFile> files, TrackedEpisode episode)
     {
@@ -1079,5 +1232,83 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
     {
         result.SkippedCount++;
         result.Messages.Add(message);
+    }
+
+    private sealed class SourceItemPathIndex
+    {
+        private readonly Dictionary<string, List<SourceItem>> _byFilePath =
+            new(StringComparer.OrdinalIgnoreCase);
+
+        public static SourceItemPathIndex From(IReadOnlyList<SourceItem> items)
+        {
+            var index = new SourceItemPathIndex();
+            foreach (var item in items)
+            {
+                index.Replace(item);
+            }
+
+            return index;
+        }
+
+        public SourceItem? FindExistingLinked(string filePath)
+        {
+            if (!_byFilePath.TryGetValue(filePath, out var items))
+            {
+                return null;
+            }
+
+            return items.FirstOrDefault(item =>
+                !string.IsNullOrWhiteSpace(item.LinkedPath) &&
+                File.Exists(item.LinkedPath));
+        }
+
+        public SourceItem? FindLegacyOrphan(string filePath)
+        {
+            if (!_byFilePath.TryGetValue(filePath, out var items))
+            {
+                return null;
+            }
+
+            return items.FirstOrDefault(item =>
+                item.IsOrphanPackSpecial &&
+                !string.IsNullOrWhiteSpace(item.LinkedPath) &&
+                File.Exists(item.LinkedPath) &&
+                IsLegacyOrphanSeasonPath(item.LinkedPath));
+        }
+
+        public void Replace(SourceItem item)
+        {
+            if (string.IsNullOrWhiteSpace(item.FilePath))
+            {
+                return;
+            }
+
+            if (!_byFilePath.TryGetValue(item.FilePath, out var items))
+            {
+                _byFilePath[item.FilePath] = [item];
+                return;
+            }
+
+            if (item.Id != 0)
+            {
+                var existingIndex = items.FindIndex(candidate => candidate.Id == item.Id);
+                if (existingIndex >= 0)
+                {
+                    items[existingIndex] = item;
+                    return;
+                }
+            }
+
+            var samePathIndex = items.FindIndex(candidate =>
+                string.Equals(candidate.FilePath, item.FilePath, StringComparison.OrdinalIgnoreCase) &&
+                candidate.Id == item.Id);
+            if (samePathIndex >= 0)
+            {
+                items[samePathIndex] = item;
+                return;
+            }
+
+            items.Add(item);
+        }
     }
 }

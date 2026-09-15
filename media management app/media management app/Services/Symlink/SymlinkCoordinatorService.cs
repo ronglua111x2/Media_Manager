@@ -47,6 +47,8 @@ public sealed class SymlinkCoordinatorService : ISymlinkCoordinatorService
 
         _eventHub.HardlinkCreated += OnHardlinkCreated;
         _eventHub.HardlinkRemoved += OnHardlinkRemoved;
+        _eventHub.HardlinksCreated += OnHardlinksCreated;
+        _eventHub.HardlinksRemoved += OnHardlinksRemoved;
     }
 
     public void Start()
@@ -93,6 +95,8 @@ public sealed class SymlinkCoordinatorService : ISymlinkCoordinatorService
 
         _eventHub.HardlinkCreated -= OnHardlinkCreated;
         _eventHub.HardlinkRemoved -= OnHardlinkRemoved;
+        _eventHub.HardlinksCreated -= OnHardlinksCreated;
+        _eventHub.HardlinksRemoved -= OnHardlinksRemoved;
 
         try
         {
@@ -162,6 +166,48 @@ public sealed class SymlinkCoordinatorService : ISymlinkCoordinatorService
         });
     }
 
+    private void OnHardlinksCreated(object? sender, LibraryLinkBatchEventArgs e)
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await ProcessHardlinksCreatedBatchAsync(e.Items, _shutdown.Token);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(
+                    $"Symlink coordinator failed after pack hardlink created batch ({e.Items.Count} item(s)).",
+                    ex,
+                    LogTarget.All);
+            }
+        });
+    }
+
+    private void OnHardlinksRemoved(object? sender, LibraryLinkBatchEventArgs e)
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await ProcessHardlinksRemovedBatchAsync(e.Items, _shutdown.Token);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(
+                    $"Symlink coordinator failed after pack hardlink removed batch ({e.Items.Count} item(s)).",
+                    ex,
+                    LogTarget.All);
+            }
+        });
+    }
+
     private async Task RunStartupReconcileAsync()
     {
         try
@@ -217,6 +263,67 @@ public sealed class SymlinkCoordinatorService : ISymlinkCoordinatorService
         }
     }
 
+    private async Task ProcessHardlinksCreatedBatchAsync(
+        IReadOnlyList<LibraryLinkEventArgs> events,
+        CancellationToken cancellationToken)
+    {
+        if (events.Count == 0)
+        {
+            return;
+        }
+
+        await _syncGate.WaitAsync(cancellationToken);
+        try
+        {
+            var aggregate = new SymlinkSyncResult();
+            var successfulItems = new List<SourceItem>();
+            await Task.Run(() =>
+            {
+                var snapshot = _databaseService.GetSourceItems();
+                var groups = _symlinkSyncService.GroupLinkedItemsByPath(snapshot);
+                _logger.Info(
+                    $"Symlink coordinator created batch: {events.Count} item(s), SourceItems snapshot {snapshot.Count}.",
+                    LogTarget.All);
+
+                foreach (var e in events)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var group = ResolveCreatedGroup(e, groups);
+                    var result = _symlinkSyncService.SyncItem(e.Item, e.LinkedPath, group);
+                    Merge(aggregate, result);
+                    TryWriteNfoForItem(e.Item);
+                    if (string.IsNullOrWhiteSpace(e.Item.SymlinkPath) && result.TouchedSymlinkPaths.Count > 0)
+                    {
+                        e.Item.SymlinkPath = result.TouchedSymlinkPaths[0];
+                    }
+
+                    e.Item.SymlinkPath ??= ResolveSymlinkPath(e.Item, snapshot);
+                    UpdateGroupAfterSync(groups, e, group);
+                    if (result.CreatedCount > 0 || result.RepairedCount > 0)
+                    {
+                        successfulItems.Add(e.Item);
+                    }
+                }
+            }, cancellationToken);
+
+            if (aggregate.CreatedCount > 0 || aggregate.RepairedCount > 0 || aggregate.ErrorCount > 0)
+            {
+                _logger.Info($"Symlink coordinator created batch finished. {aggregate.Summary}", LogTarget.All);
+            }
+
+            if (aggregate.CreatedCount > 0 || aggregate.RepairedCount > 0)
+            {
+                NotifySymlinkedBatch(successfulItems);
+                EnqueueJellyfinForCreatedBatch(events, aggregate);
+                _eventHub.PublishSymlinkStateChanged();
+            }
+        }
+        finally
+        {
+            _syncGate.Release();
+        }
+    }
+
     private async Task NotifyJellyfinForTouchedPathsAsync(SymlinkSyncResult result, CancellationToken cancellationToken)
     {
         if (result.TouchedSymlinkPaths.Count == 0)
@@ -258,6 +365,36 @@ public sealed class SymlinkCoordinatorService : ISymlinkCoordinatorService
     private void NotifySymlinkedItem(SourceItem item)
     {
         var message = BuildSymlinkNotificationMessage(item);
+        ShowSymlinkNotification(item, message);
+    }
+
+    private void NotifySymlinkedBatch(IReadOnlyList<SourceItem> items)
+    {
+        if (items.Count == 0)
+        {
+            return;
+        }
+
+        if (items.Count == 1 && items[0].MediaKind == MediaKind.Movie)
+        {
+            NotifySymlinkedItem(items[0]);
+            return;
+        }
+
+        var first = items[0];
+        var showTitle = first.MatchedTitle ?? first.ShowTitle ?? "Unknown Show";
+        var counts = LibraryLinkBatchSummary.CountMembers(
+            items.Select(item => (item.IsOrphanPackSpecial, item.MappedSeasonNumber, item.SeasonNumber)));
+        var message = LibraryLinkBatchSummary.FormatSymlinkCreated(
+            showTitle,
+            counts.RegularEpisodes,
+            counts.MatchedSpecials,
+            counts.OrphanExtras);
+        ShowSymlinkNotification(first, message);
+    }
+
+    private void ShowSymlinkNotification(SourceItem item, string message)
+    {
         var poster = GetNotificationPoster(item);
         _windowsNotificationService.TryShow(new WindowsNotificationRequest
         {
@@ -267,6 +404,61 @@ public sealed class SymlinkCoordinatorService : ISymlinkCoordinatorService
             HeroImagePathOrUrl = poster,
             AppLogoOverridePathOrUrl = poster
         });
+    }
+
+    private void EnqueueJellyfinForCreatedBatch(
+        IReadOnlyList<LibraryLinkEventArgs> events,
+        SymlinkSyncResult result)
+    {
+        var tvItem = events.Select(e => e.Item).FirstOrDefault(item => item.MediaKind == MediaKind.TvEpisode);
+        if (tvItem is null)
+        {
+            return;
+        }
+
+        if (!string.Equals(tvItem.Provider, "tmdb", StringComparison.OrdinalIgnoreCase) ||
+            !int.TryParse(tvItem.ProviderId, out var tmdbId))
+        {
+            _logger.Debug("Jellyfin refresh skip pack batch: tracked show not resolved.", LogTarget.File | LogTarget.Console);
+            return;
+        }
+
+        var show = _databaseService.GetTrackedShowByTmdbId(tmdbId);
+        if (show is null)
+        {
+            _logger.Debug("Jellyfin refresh skip pack batch: tracked show not resolved.", LogTarget.File | LogTarget.Console);
+            return;
+        }
+
+        if (!show.IsAutoTracked)
+        {
+            _logger.Debug(
+                $"Jellyfin refresh skip pack batch: show '{show.DisplayTitle}' is not Auto-Tracked.",
+                LogTarget.File | LogTarget.Console);
+            return;
+        }
+
+        if (show.UsesEpisodeGroup)
+        {
+            _logger.Info(
+                $"Jellyfin refresh skip pack batch: episode-group order '{show.EpisodeGroupName ?? show.EpisodeGroupId}' (NFO-owned).",
+                LogTarget.All);
+            return;
+        }
+
+        var paths = result.TouchedSymlinkPaths
+            .Concat(events
+                .Select(e => e.Item.SymlinkPath)
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Select(path => path!))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (paths.Count == 0)
+        {
+            return;
+        }
+
+        _jellyfinLibraryRefreshService.EnqueuePaths(paths);
     }
 
     private string BuildSymlinkNotificationMessage(SourceItem item)
@@ -363,6 +555,90 @@ public sealed class SymlinkCoordinatorService : ISymlinkCoordinatorService
             foreach (var showFolder in showFolders)
             {
                 _symlinkSyncService.PruneEmptyFolders(showFolder);
+            }
+        }
+        finally
+        {
+            _syncGate.Release();
+        }
+    }
+
+    private async Task ProcessHardlinksRemovedBatchAsync(
+        IReadOnlyList<LibraryLinkEventArgs> events,
+        CancellationToken cancellationToken)
+    {
+        if (events.Count == 0)
+        {
+            return;
+        }
+
+        await _syncGate.WaitAsync(cancellationToken);
+        try
+        {
+            var aggregate = new SymlinkSyncResult();
+            await Task.Run(() =>
+            {
+                var snapshot = _databaseService.GetSourceItems();
+                _logger.Info(
+                    $"Symlink coordinator removed batch: {events.Count} item(s), SourceItems snapshot {snapshot.Count}.",
+                    LogTarget.All);
+
+                var nfoTargets = events
+                    .SelectMany(e => CollectSymlinkPathsForNfoCleanup(e.Item, snapshot))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+                var seasonFolders = nfoTargets
+                    .Select(Path.GetDirectoryName)
+                    .Where(path => !string.IsNullOrWhiteSpace(path))
+                    .Select(path => Path.GetFullPath(path!))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+                var showFolders = nfoTargets
+                    .Select(GetShowFolderFromEpisodeSymlink)
+                    .Where(path => !string.IsNullOrWhiteSpace(path))
+                    .Select(path => Path.GetFullPath(path!))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                foreach (var symlinkPath in nfoTargets)
+                {
+                    _nfoWriterService.DeleteEpisodeNfo(symlinkPath);
+                }
+
+                foreach (var e in events)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var group = ResolveRemovalGroupFromSnapshot(e, snapshot);
+                    Merge(aggregate, _symlinkSyncService.RemoveItem(e.Item, e.LinkedPath, group));
+                }
+
+                foreach (var showFolder in showFolders)
+                {
+                    if (!_nfoWriterService.HasRemainingEpisodeArtifacts(showFolder))
+                    {
+                        _nfoWriterService.DeleteTvShowNfo(showFolder);
+                    }
+                }
+
+                foreach (var seasonFolder in seasonFolders)
+                {
+                    _symlinkSyncService.PruneEmptyFolders(seasonFolder);
+                }
+
+                foreach (var showFolder in showFolders)
+                {
+                    _symlinkSyncService.PruneEmptyFolders(showFolder);
+                }
+            }, cancellationToken);
+
+            if (aggregate.RemovedCount > 0 || aggregate.ErrorCount > 0)
+            {
+                _logger.Info($"Symlink coordinator removed batch finished. {aggregate.Summary}", LogTarget.All);
+            }
+
+            if (aggregate.RemovedCount > 0)
+            {
+                _eventHub.PublishSymlinkStateChanged();
             }
         }
         finally
@@ -565,7 +841,7 @@ public sealed class SymlinkCoordinatorService : ISymlinkCoordinatorService
         return true;
     }
 
-    private string? ResolveSymlinkPath(SourceItem item)
+    private string? ResolveSymlinkPath(SourceItem item, IReadOnlyList<SourceItem>? sourceItems = null)
     {
         if (!string.IsNullOrWhiteSpace(item.SymlinkPath))
         {
@@ -578,7 +854,7 @@ public sealed class SymlinkCoordinatorService : ISymlinkCoordinatorService
         }
 
         var normalizedLinkedPath = Path.GetFullPath(item.LinkedPath);
-        return _databaseService.GetSourceItems()
+        return (sourceItems ?? _databaseService.GetSourceItems())
             .Where(candidate => candidate.State == ItemState.Linked)
             .Where(candidate => !string.IsNullOrWhiteSpace(candidate.LinkedPath))
             .Where(candidate => string.Equals(Path.GetFullPath(candidate.LinkedPath!), normalizedLinkedPath, StringComparison.OrdinalIgnoreCase))
@@ -586,7 +862,9 @@ public sealed class SymlinkCoordinatorService : ISymlinkCoordinatorService
             .FirstOrDefault(path => !string.IsNullOrWhiteSpace(path));
     }
 
-    private List<string> CollectSymlinkPathsForNfoCleanup(SourceItem item)
+    private List<string> CollectSymlinkPathsForNfoCleanup(
+        SourceItem item,
+        IReadOnlyList<SourceItem>? sourceItems = null)
     {
         var paths = new List<string>();
         if (!string.IsNullOrWhiteSpace(item.SymlinkPath))
@@ -594,7 +872,7 @@ public sealed class SymlinkCoordinatorService : ISymlinkCoordinatorService
             paths.Add(item.SymlinkPath);
         }
 
-        var resolvedPath = ResolveSymlinkPath(item);
+        var resolvedPath = ResolveSymlinkPath(item, sourceItems);
         if (!string.IsNullOrWhiteSpace(resolvedPath))
         {
             paths.Add(resolvedPath);
@@ -603,6 +881,104 @@ public sealed class SymlinkCoordinatorService : ISymlinkCoordinatorService
         return paths
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
+
+    private static List<SourceItem> ResolveCreatedGroup(
+        LibraryLinkEventArgs e,
+        Dictionary<string, List<SourceItem>> groups)
+    {
+        var normalized = Path.GetFullPath(e.LinkedPath);
+        if (!groups.TryGetValue(normalized, out var group))
+        {
+            group = [e.Item];
+            groups[normalized] = group;
+            return group;
+        }
+
+        if (!group.Any(member => member.Id == e.Item.Id && (e.Item.Id != 0 || ReferenceEquals(member, e.Item))))
+        {
+            if (e.Item.Id == 0 || group.All(member => member.Id != e.Item.Id))
+            {
+                group.Add(e.Item);
+            }
+        }
+
+        return group;
+    }
+
+    private static void UpdateGroupAfterSync(
+        Dictionary<string, List<SourceItem>> groups,
+        LibraryLinkEventArgs e,
+        List<SourceItem> group)
+    {
+        var normalized = Path.GetFullPath(e.LinkedPath);
+        groups[normalized] = group;
+        if (!string.IsNullOrWhiteSpace(e.Item.SymlinkPath))
+        {
+            foreach (var member in group)
+            {
+                member.SymlinkPath ??= e.Item.SymlinkPath;
+            }
+        }
+    }
+
+    private static List<SourceItem> ResolveRemovalGroupFromSnapshot(
+        LibraryLinkEventArgs e,
+        IReadOnlyList<SourceItem> snapshot)
+    {
+        var group = new List<SourceItem>();
+        var seenIds = new HashSet<long>();
+        void Add(SourceItem item)
+        {
+            if (item.Id != 0)
+            {
+                if (!seenIds.Add(item.Id))
+                {
+                    return;
+                }
+            }
+            else if (group.Any(member => ReferenceEquals(member, item)))
+            {
+                return;
+            }
+
+            group.Add(item);
+        }
+
+        Add(e.Item);
+        foreach (var item in snapshot)
+        {
+            if (string.Equals(item.FilePath, e.Item.FilePath, StringComparison.OrdinalIgnoreCase))
+            {
+                Add(item);
+                continue;
+            }
+
+            if (!string.IsNullOrWhiteSpace(e.Item.SymlinkPath) &&
+                string.Equals(item.SymlinkPath, e.Item.SymlinkPath, StringComparison.OrdinalIgnoreCase))
+            {
+                Add(item);
+            }
+        }
+
+        return group;
+    }
+
+    private static void Merge(SymlinkSyncResult aggregate, SymlinkSyncResult itemResult)
+    {
+        aggregate.CreatedCount += itemResult.CreatedCount;
+        aggregate.RepairedCount += itemResult.RepairedCount;
+        aggregate.RemovedCount += itemResult.RemovedCount;
+        aggregate.SkippedCount += itemResult.SkippedCount;
+        aggregate.ErrorCount += itemResult.ErrorCount;
+        aggregate.Messages.AddRange(itemResult.Messages);
+        foreach (var path in itemResult.TouchedSymlinkPaths)
+        {
+            if (!aggregate.TouchedSymlinkPaths.Contains(path, StringComparer.OrdinalIgnoreCase))
+            {
+                aggregate.TouchedSymlinkPaths.Add(path);
+            }
+        }
     }
 
     private static string? GetShowFolderFromEpisodeSymlink(string symlinkPath)
