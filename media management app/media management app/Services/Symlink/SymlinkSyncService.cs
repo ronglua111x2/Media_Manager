@@ -486,7 +486,7 @@ public sealed class SymlinkSyncService : ISymlinkSyncService
         }
 
         item.SymlinkPath = symlinkPath;
-        _databaseService.UpdateSourceItem(item);
+        _databaseService.UpdateSourceItemSymlinkPath(item.Id, symlinkPath);
     }
 
     private void ClearSymlinkPath(SourceItem item)
@@ -497,7 +497,7 @@ public sealed class SymlinkSyncService : ISymlinkSyncService
         }
 
         item.SymlinkPath = null;
-        _databaseService.UpdateSourceItem(item);
+        _databaseService.UpdateSourceItemSymlinkPath(item.Id, null);
     }
 
     public void PruneEmptyFolders(string? startDirectory)

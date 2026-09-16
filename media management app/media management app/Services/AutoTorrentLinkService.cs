@@ -965,9 +965,24 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
 
             if (!preservePackProvenance && item.IsExternalImport)
             {
+                var linkedPathMatchesSource = string.Equals(
+                    Path.GetFullPath(item.LinkedPath),
+                    Path.GetFullPath(item.FilePath),
+                    StringComparison.OrdinalIgnoreCase);
+                if (linkedPathMatchesSource)
+                {
+                    _eventHub.PublishHardlinkRemoved(item, item.LinkedPath);
+                }
+                else if (!_hardlinkService.RemoveHardLink(item, out _, out var errorMessage))
+                {
+                    result.ErrorCount++;
+                    result.Messages.Add($"{item.FileName}: {errorMessage}");
+                    continue;
+                }
+
                 _databaseService.DeleteSourceItem(item.Id);
                 result.RemovedCount++;
-                result.Messages.Add($"Removed imported library record for {item.FileName}.");
+                result.Messages.Add($"Removed imported media links and library record for {item.FileName}. Original file was kept.");
                 continue;
             }
 

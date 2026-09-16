@@ -348,6 +348,18 @@ public sealed class DatabaseService : IDatabaseService
         return deletedCount;
     }
 
+    public void UpdateSourceItemSymlinkPath(long id, string? symlinkPath)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE SourceItems SET SymlinkPath = $SymlinkPath WHERE Id = $Id;";
+        command.Parameters.AddWithValue("$SymlinkPath", (object?)symlinkPath ?? DBNull.Value);
+        command.Parameters.AddWithValue("$Id", id);
+        command.ExecuteNonQuery();
+    }
+
     private static void AddParameters(SqliteCommand command, SourceItem item)
     {
         command.Parameters.AddWithValue("$SourceRootFolder", item.SourceRootFolder);

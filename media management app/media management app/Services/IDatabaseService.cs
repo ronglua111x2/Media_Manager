@@ -21,6 +21,8 @@ public interface IDatabaseService
 
     void UpdateSourceItem(SourceItem item);
 
+    void UpdateSourceItemSymlinkPath(long id, string? symlinkPath);
+
     int MarkMissingSourceItems(IEnumerable<string> sourceFolders, IEnumerable<string> seenFilePaths);
 
     int DeleteSourceItemsByState(ItemState state);

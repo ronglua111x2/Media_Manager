@@ -2236,7 +2236,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
     {
         return new LibraryMovieDetailViewModel(movie)
         {
-            LibraryLinkStatus = IsMovieLinked(movie.TmdbId, sourceItems) ? "Linked" : "Not linked",
+            LibraryLinkStatus = GetMovieLinkStatus(movie.TmdbId, sourceItems),
             IsInCart = _torrentCartService.TryGetActiveMovieOrder(movie.Id, out _),
             HasJellyfinSymlink = IsMovieSymlinked(movie.TmdbId, sourceItems)
         };
@@ -2610,13 +2610,15 @@ public sealed partial class LibraryViewModel : ViewModelBase
             }
 
             var key = (season.Value, episode.Value);
-            var status = item.AutoTorrentLinkKind switch
-            {
-                AutoTorrentLinkKind.SeasonPack when item.AutoTorrentPackOwnerSeasonNumber is not null =>
-                    $"Linked by pack S{item.AutoTorrentPackOwnerSeasonNumber.Value:00}",
-                AutoTorrentLinkKind.Episode => "Linked by episode torrent",
-                _ => "Linked"
-            };
+            var status = item.IsExternalImport
+                ? "Imported file"
+                : item.AutoTorrentLinkKind switch
+                {
+                    AutoTorrentLinkKind.SeasonPack when item.AutoTorrentPackOwnerSeasonNumber is not null =>
+                        $"Linked by pack S{item.AutoTorrentPackOwnerSeasonNumber.Value:00}",
+                    AutoTorrentLinkKind.Episode => "Linked by episode torrent",
+                    _ => "Linked"
+                };
 
             if (!statuses.TryGetValue(key, out var existingStatus) ||
                 GetLinkStatusPriority(status) > GetLinkStatusPriority(existingStatus))
@@ -2679,23 +2681,37 @@ public sealed partial class LibraryViewModel : ViewModelBase
     {
         if (status.StartsWith("Linked by pack", StringComparison.OrdinalIgnoreCase))
         {
+            return 4;
+        }
+
+        if (string.Equals(status, "Linked by episode torrent", StringComparison.OrdinalIgnoreCase))
+        {
             return 3;
         }
 
-        return string.Equals(status, "Linked by episode torrent", StringComparison.OrdinalIgnoreCase) ? 2 : 1;
+        return string.Equals(status, "Linked", StringComparison.OrdinalIgnoreCase) ? 2 : 1;
     }
 
-    private static bool IsMovieLinked(int tmdbId, IReadOnlyList<SourceItem> sourceItems)
+    private static string GetMovieLinkStatus(int tmdbId, IReadOnlyList<SourceItem> sourceItems)
     {
         var providerId = tmdbId.ToString();
-        return sourceItems.Any(item =>
-            item.MediaKind == MediaKind.Movie &&
-            item.MatchAccepted &&
-            item.State == ItemState.Linked &&
-            !string.IsNullOrWhiteSpace(item.LinkedPath) &&
-            File.Exists(item.LinkedPath) &&
-            string.Equals(item.Provider, "tmdb", StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(item.ProviderId, providerId, StringComparison.OrdinalIgnoreCase));
+        var linkedItems = sourceItems
+            .Where(item =>
+                item.MediaKind == MediaKind.Movie &&
+                item.MatchAccepted &&
+                item.State == ItemState.Linked &&
+                !string.IsNullOrWhiteSpace(item.LinkedPath) &&
+                File.Exists(item.LinkedPath) &&
+                string.Equals(item.Provider, "tmdb", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(item.ProviderId, providerId, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (linkedItems.Any(item => !item.IsExternalImport))
+        {
+            return "Movie link";
+        }
+
+        return linkedItems.Count > 0 ? "Imported file" : "Not linked";
     }
 
     private static bool IsMovieSymlinked(int tmdbId, IReadOnlyList<SourceItem> sourceItems)

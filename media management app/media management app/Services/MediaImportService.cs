@@ -1,5 +1,6 @@
 using media_management_app.Common;
 using media_management_app.Models;
+using media_management_app.Services.Events;
 
 namespace media_management_app.Services;
 
@@ -12,6 +13,7 @@ public sealed class MediaImportService : IMediaImportService
     private readonly ITrackedShowService _trackedShowService;
     private readonly ITrackedMovieService _trackedMovieService;
     private readonly IDatabaseService _databaseService;
+    private readonly ILibraryLinkEventHub _eventHub;
     private readonly IAppLogger _logger;
 
     public MediaImportService(
@@ -20,6 +22,7 @@ public sealed class MediaImportService : IMediaImportService
         ITrackedShowService trackedShowService,
         ITrackedMovieService trackedMovieService,
         IDatabaseService databaseService,
+        ILibraryLinkEventHub eventHub,
         IAppLogger logger)
     {
         _scannerService = scannerService;
@@ -27,6 +30,7 @@ public sealed class MediaImportService : IMediaImportService
         _trackedShowService = trackedShowService;
         _trackedMovieService = trackedMovieService;
         _databaseService = databaseService;
+        _eventHub = eventHub;
         _logger = logger;
     }
 
@@ -133,6 +137,7 @@ public sealed class MediaImportService : IMediaImportService
         var result = new MediaImportCommitResult();
         var importedShowIds = new Dictionary<int, long>();
         var importedMovieIds = new Dictionary<int, long>();
+        using var bulkMutation = _eventHub.BeginBulkMutation();
 
         foreach (var group in groups)
         {
@@ -332,6 +337,7 @@ public sealed class MediaImportService : IMediaImportService
         item.Notes = "Imported from existing hardlinked media.";
         item.LastSeenUtc = DateTime.UtcNow;
         _databaseService.UpdateSourceItem(item);
+        _eventHub.PublishHardlinkCreated(item, item.LinkedPath!);
     }
 
     private void CommitMovieItem(SourceItem item, MediaImportCandidate candidate)
@@ -351,6 +357,7 @@ public sealed class MediaImportService : IMediaImportService
         item.Notes = "Imported from existing hardlinked media.";
         item.LastSeenUtc = DateTime.UtcNow;
         _databaseService.UpdateSourceItem(item);
+        _eventHub.PublishHardlinkCreated(item, item.LinkedPath!);
     }
 
     private static void ApplyCandidate(SourceItem item, MediaImportCandidate candidate)

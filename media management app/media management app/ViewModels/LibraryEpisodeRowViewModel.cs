@@ -123,6 +123,8 @@ public sealed partial class LibraryEpisodeRowViewModel : ObservableObject
 
     public bool IsLinked => !string.Equals(LibraryLinkStatus, "Not linked", StringComparison.OrdinalIgnoreCase);
 
+    public bool IsImported => string.Equals(LibraryLinkStatus, "Imported file", StringComparison.OrdinalIgnoreCase);
+
     public bool CanLink => IsOrphan
         ? IsLinked
         : IsTrackedEpisode && !IsOrphanSeparator && !IsSeasonPackMode && (HasTorrent || IsLinked);
@@ -136,6 +138,8 @@ public sealed partial class LibraryEpisodeRowViewModel : ObservableObject
 
     public string LinkActionToolTip => IsOrphan
         ? "Remove orphan library hardlink only — download file is not deleted"
+        : IsImported
+            ? "Remove imported media from Jellyfin and Library. The original file is kept; use Import Existing to add it again."
         : IsLinked
             ? "Remove generated library hardlink for this episode"
             : "Create library hardlink for this episode";
@@ -150,6 +154,7 @@ public sealed partial class LibraryEpisodeRowViewModel : ObservableObject
         ? string.Empty
         : LibraryLinkStatus switch
         {
+            "Imported file" => "Imported file",
             "Linked by episode torrent" => "Episode link",
             var status when status.StartsWith("Linked by pack", StringComparison.OrdinalIgnoreCase) => status,
             "Linked" => "Linked",
@@ -246,6 +251,7 @@ public sealed partial class LibraryEpisodeRowViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsLinked))]
+    [NotifyPropertyChangedFor(nameof(IsImported))]
     [NotifyPropertyChangedFor(nameof(CanLink))]
     [NotifyPropertyChangedFor(nameof(LinkActionLabel))]
     [NotifyPropertyChangedFor(nameof(LinkActionIconKind))]

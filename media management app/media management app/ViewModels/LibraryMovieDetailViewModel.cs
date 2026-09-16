@@ -67,17 +67,21 @@ public sealed partial class LibraryMovieDetailViewModel : ObservableObject
 
     public bool IsLinked => !string.Equals(LibraryLinkStatus, "Not linked", StringComparison.OrdinalIgnoreCase);
 
+    public bool IsImported => string.Equals(LibraryLinkStatus, "Imported file", StringComparison.OrdinalIgnoreCase);
+
     public bool CanLink => HasTorrent || IsLinked;
 
-    public string LinkActionLabel => IsLinked ? "Unlink" : "Link";
+    public string LinkActionLabel => IsImported ? "Remove import" : IsLinked ? "Unlink" : "Link";
 
     public string LinkActionIconKind => IsLinked ? "Unlink" : "Link";
 
-    public string LinkActionToolTip => IsLinked
-        ? "Remove generated library hardlink for this movie"
-        : "Create library hardlink for this movie";
+    public string LinkActionToolTip => IsImported
+        ? "Remove imported media from Jellyfin and Library. The original file is kept; use Import Existing to add it again."
+        : IsLinked
+            ? "Remove generated library hardlink for this movie"
+            : "Create library hardlink for this movie";
 
-    public string CompactLinkStatus => IsLinked ? "Linked" : "Not linked";
+    public string CompactLinkStatus => LibraryLinkStatus;
 
     public bool ShowWorkflowStatus => !string.IsNullOrWhiteSpace(WorkflowStatusLabel) &&
                                       !string.Equals(WorkflowStatusLabel, "Linked", StringComparison.OrdinalIgnoreCase);
@@ -123,6 +127,7 @@ public sealed partial class LibraryMovieDetailViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsLinked))]
+    [NotifyPropertyChangedFor(nameof(IsImported))]
     [NotifyPropertyChangedFor(nameof(CanLink))]
     [NotifyPropertyChangedFor(nameof(LinkActionLabel))]
     [NotifyPropertyChangedFor(nameof(LinkActionIconKind))]
