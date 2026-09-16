@@ -1200,29 +1200,26 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
 
     public async Task DeleteTorrentsAsync(IEnumerable<string> hashes, bool deleteFiles = false, CancellationToken cancellationToken = default)
     {
-        try
+        var hashList = hashes
+            .Where(hash => !string.IsNullOrWhiteSpace(hash))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (hashList.Count == 0)
         {
-            var hashList = hashes.ToList();
-            if (hashList.Count == 0)
-            {
-                return;
-            }
-
-            var hashesStr = string.Join("|", hashList);
-            using var response = await PostFormWithAuthRetryAsync("api/v2/torrents/delete", new Dictionary<string, string>
-            {
-                ["hashes"] = hashesStr,
-                ["deleteFiles"] = deleteFiles ? "true" : "false"
-            }, cancellationToken);
-
-            if (!response.IsSuccessStatusCode)
-            {
-                _logger.Warning($"Failed to delete torrents from qBittorrent: {(int)response.StatusCode} {response.ReasonPhrase}", LogTarget.All);
-            }
+            return;
         }
-        catch (Exception ex)
+
+        var hashesStr = string.Join("|", hashList);
+        using var response = await PostFormWithAuthRetryAsync("api/v2/torrents/delete", new Dictionary<string, string>
         {
-            _logger.Warning($"Error deleting torrents: {ex.Message}", LogTarget.All);
+            ["hashes"] = hashesStr,
+            ["deleteFiles"] = deleteFiles ? "true" : "false"
+        }, cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException(
+                $"Failed to delete torrents from qBittorrent: {(int)response.StatusCode} {response.ReasonPhrase}");
         }
     }
 

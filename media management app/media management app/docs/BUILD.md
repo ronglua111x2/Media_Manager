@@ -12,6 +12,7 @@ Canonical build/test commands for this repo on **Windows x64**, verified with **
 | **Main WPF project** | `media management app.csproj` |
 | **Core library** | `MediaManager.Core\MediaManager.Core.csproj` |
 | **Unit tests** | `MediaManager.Core.Tests\MediaManager.Core.Tests.csproj` |
+| **App tests** | `MediaManager.App.Tests\MediaManager.App.Tests.csproj` (Windows cleanup/halt) |
 | **Third-party parser** | `ThirdParty\Sonarr.Parser\MediaManager.Sonarr.Parser.csproj` |
 | **Solution (`.slnx`)** | `media management app.slnx` (parent folder — includes WPF + Core + Tests) |
 | **Solution (`.sln`)** | *None* — open `.slnx` or build the main `.csproj` directly. |
@@ -73,8 +74,11 @@ dotnet build "$PROJ" -c Debug -p:Platform=x64 -v minimal
 
 ```bash
 TEST_PROJ="$APP_ROOT/MediaManager.Core.Tests/MediaManager.Core.Tests.csproj"
-dotnet test "$TEST_PROJ" -c Release -v normal
-# Expected (Sprint 3): 79 passed; Core.Tests references Core only (no WPF).
+APP_TEST_PROJ="$APP_ROOT/MediaManager.App.Tests/MediaManager.App.Tests.csproj"
+dotnet test "$TEST_PROJ" -c Release -p:Platform=x64 -v normal
+# Expected (2026-09-16): 207 passed; Core.Tests references Core only (no WPF).
+dotnet test "$APP_TEST_PROJ" -c Release -p:Platform=x64 -v minimal
+# Expected: 9 passed (AUD-002 cleanup retry/verify/halt).
 ```
 
 ### Publish (single-file self-contained)
@@ -168,7 +172,8 @@ No separate restore step is required for ThirdParty beyond building the main pro
 | **Merge gate build** | `dotnet build "$PROJ" -c Release -p:Platform=x64 -v minimal` |
 | Debug build | `dotnet build "$PROJ" -c Debug -p:Platform=x64 -v minimal` |
 | Publish | `dotnet publish "$PROJ" -c Release -p:Platform=x64 -v minimal` |
-| Tests (future) | `dotnet test "<Tests.csproj>" -c Release -v normal` |
+| Tests (Core) | `dotnet test "$APP_ROOT/MediaManager.Core.Tests/MediaManager.Core.Tests.csproj" -c Release -p:Platform=x64` |
+| Tests (App cleanup) | `dotnet test "$APP_ROOT/MediaManager.App.Tests/MediaManager.App.Tests.csproj" -c Release -p:Platform=x64` |
 | MSBuild x64 (VS) | `MSYS_NO_PATHCONV=1 amd64\MSBuild.exe "$PROJ" /p:Configuration=Release /p:Platform=x64` |
 | Script | `./scripts/build.sh [Release\|Debug] [x64]` |
 
@@ -182,7 +187,7 @@ No separate restore step is required for ThirdParty beyond building the main pro
 | `CS0579` duplicate assembly attributes | WPF `_wpftmp` project | Already handled in `.csproj` via `_wpftmp` `PropertyGroup`; clean `obj/` if stale |
 | Sonarr.Parser not found | Missing `ThirdParty/Sonarr.Parser` | Ensure submodule/folder present; path must match `ProjectReference` |
 | Wrong output folder (no `x64`) | Built with `Platform=AnyCPU` | Pass `-p:Platform=x64` for sprint/CI parity |
-| `dotnet test` passes but no tests ran | Tests not added yet; tested WPF exe project | Point `dotnet test` at `*Tests.csproj` when it exists |
+| `dotnet test` passes but no tests ran | Ran against the WPF `.csproj` | Use `MediaManager.Core.Tests` or `MediaManager.App.Tests` |
 | NU1100 / restore errors | Offline or missing SDK | Install .NET 8 SDK + Windows desktop workload; run `dotnet restore` |
 | WPF markup errors | XAML compile | Read `error MC` / `error CS` lines; rebuild after fixing XAML |
 | `CS0234` / `CS0246` — `media_management_app.Migrations` not found | VS rebuilt WPF only; `MediaManager.Core` stale or wrong config (Sprint 2+) | Close VS → **Rebuild Solution** (not single project). Confirm **Release \| x64** for **all** projects in Configuration Manager. Ensure Solution Explorer lists `MediaManager.Core`. Clean `bin/` + `obj/` under app + Core (see below). Or build from terminal: `dotnet build "media management app/media management app.csproj" -c Release -p:Platform=x64` |
@@ -194,6 +199,7 @@ dotnet clean "$PROJ" -c Release -p:Platform=x64
 rm -rf "$APP_ROOT/obj" "$APP_ROOT/bin" "$APP_ROOT/ThirdParty/Sonarr.Parser/obj" "$APP_ROOT/ThirdParty/Sonarr.Parser/bin"
 rm -rf "$APP_ROOT/MediaManager.Core/obj" "$APP_ROOT/MediaManager.Core/bin"
 rm -rf "$APP_ROOT/MediaManager.Core.Tests/obj" "$APP_ROOT/MediaManager.Core.Tests/bin"
+rm -rf "$APP_ROOT/MediaManager.App.Tests/obj" "$APP_ROOT/MediaManager.App.Tests/bin"
 dotnet build "$PROJ" -c Release -p:Platform=x64
 ```
 
@@ -213,5 +219,7 @@ Commands run on this repo (Windows, Git Bash):
 | `MSBuild.exe` (amd64) **without** `MSYS_NO_PATHCONV` | **FAIL** (MSB1008) |
 | `MSBuild.exe` (amd64) **with** `MSYS_NO_PATHCONV=1` | OK |
 | `dotnet publish -c Release -p:Platform=x64` | OK |
-| `dotnet test` on WPF `.csproj` | OK exit, **no tests** |
+| `dotnet test` on WPF `.csproj` | OK exit, **no tests** (tests live in Core.Tests / App.Tests) |
+| `dotnet test` Core.Tests Release/x64 | **207 passed** (2026-09-16) |
+| `dotnet test` App.Tests Release/x64 | **9 passed** (AUD-002 cleanup/halt) |
 

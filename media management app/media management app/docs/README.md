@@ -3,7 +3,7 @@
 Comprehensive documentation for the **Media Manager** Windows desktop application — a WPF/C# media library and torrent automation tool integrated with qBittorrent, Jellyfin, TMDB, Gemini, and Google Drive.
 
 **Documentation generated from branch:** `auto-torrent`  
-**Commit:** `631c3d7` — *remove add paused and added polling validation after torrent add*
+**Behavior snapshot:** 2026-09-16 whole-project audit + AUD-002 cleanup-failure safety (add-then-validate while running remains the accepted trade-off).
 
 ## Documents
 
@@ -11,13 +11,14 @@ Comprehensive documentation for the **Media Manager** Windows desktop applicatio
 |------|----------|-------------|
 | [APP_OVERVIEW.md](./APP_OVERVIEW.md) | Humans | Purpose, architecture, workflows, integrations, and data model |
 | [FEATURES.md](./FEATURES.md) | Humans | Exhaustive feature catalog (UI + background) with code paths and DB tables |
+| [AI_CONTEXT.md](./AI_CONTEXT.md) | AI / tooling | Structured machine-readable reference (modules, entities, flows, key files) |
+| [code-review/](./code-review/README.md) | Humans / AI | **Whole-project audit** — findings register, verification log, AUD-002 cleanup-failure |
 | [IMPROVEMENTS.md](./IMPROVEMENTS.md) | Humans | App evaluation, strengths, gaps, and improvement suggestions |
 | [planning/05-sprint-timeline.md](./planning/05-sprint-timeline.md) | Humans | **Execution schedule** — 11 sprints, test gates, migration milestones |
 | [planning/06-ai-execution-guide.md](./planning/06-ai-execution-guide.md) | Humans / AI | **How to execute** — AI-assisted workflow, prompts, compressed timeline |
 | [planning/00-integrated-roadmap.md](./planning/00-integrated-roadmap.md) | Humans | How the 4 High items connect, phased timeline, industry standards |
 | [planning/](./planning/) | Humans | Per-item deep dives (migrations, tests, splits, VM lifetime) |
 | [BUILD.md](./BUILD.md) | Humans / AI | **Build & test commands** — x64, MSBuild, Git Bash quirks, ThirdParty restore |
-| [AI_CONTEXT.md](./AI_CONTEXT.md) | AI / tooling | Structured machine-readable reference (modules, entities, flows, key files) |
 | [ui-polish/](./ui-polish/README.md) | Humans / AI | Dark theme tokens, layout stability, TwoWay binding rules, Lucide Kind catalog |
 | [STATE_FOLDER.md](./STATE_FOLDER.md) | Humans / AI | Live state folder layout, OAuth paths, FetchJobs purge, sensitive fields |
 | [RECIPE_SCHEMA.md](./RECIPE_SCHEMA.md) | Humans / AI | Recipe `.rcp` JSON schema with examples from real state files |

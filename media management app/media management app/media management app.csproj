@@ -31,7 +31,7 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <DefaultItemExcludes>$(DefaultItemExcludes);ThirdParty/**;tools/**;MediaManager.Core/**;MediaManager.Core.Tests/**</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);ThirdParty/**;tools/**;MediaManager.Core/**;MediaManager.Core.Tests/**;MediaManager.App.Tests/**</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>
@@ -43,6 +43,10 @@
     <None Remove="MediaManager.Core.Tests/**" />
     <EmbeddedResource Remove="MediaManager.Core.Tests/**" />
     <Page Remove="MediaManager.Core.Tests/**" />
+    <Compile Remove="MediaManager.App.Tests/**" />
+    <None Remove="MediaManager.App.Tests/**" />
+    <EmbeddedResource Remove="MediaManager.App.Tests/**" />
+    <Page Remove="MediaManager.App.Tests/**" />
     <Compile Remove="ThirdParty\**" />
     <None Remove="ThirdParty\**" />
     <EmbeddedResource Remove="ThirdParty\**" />

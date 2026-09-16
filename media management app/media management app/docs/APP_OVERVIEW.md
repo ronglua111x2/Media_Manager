@@ -210,19 +210,21 @@ See [FEATURES.md](./FEATURES.md) for column details.
 
 ### Torrent Content Validation
 
-Before resuming a paused torrent add:
+Gated cart and Auto-Track adds run **then** validate (accepted AUD-001 trade-off; pause-on-add previously broke `search/downloadTorrent`):
 
-1. Add torrent **paused**
-2. Fetch file list from qBittorrent
-3. Check extensions against allowed media + dangerous extension lists
-4. Detect extension obfuscation
-5. Resume or blacklist + remove on failure
+1. Blacklist check on the listing URL
+2. Add torrent **running** (`Paused = false`)
+3. Infohash blacklist check; poll the file list (default 90s, cap 120s)
+4. Check extensions against allowed media + dangerous extension lists; detect obfuscation
+5. Valid torrents keep downloading. Rejected torrents are deleted with files, then blacklisted
+6. If deletion cannot be verified (AUD-002): retry up to three times, fail-safe pause/stop, throw `TorrentCleanupFailedException` with the hash, and **halt** the current cart batch / Auto-Track hunt. `MaliciousTorrentException` is used only after confirmed removal
 
-**Code:** `Services/TorrentAddGateService.cs`, `Services/TorrentContentValidationService.cs`
+**Code:** `Services/TorrentAddGateService.cs`, `Services/TorrentContentValidationService.cs`, `Services/TorrentCleanupService.cs`  
+**Audit:** [code-review/README.md](./code-review/README.md), [code-review/06-aud-002-cleanup-failure.md](./code-review/06-aud-002-cleanup-failure.md)
 
 ### Torrent Blacklist
 
-Rejected listings/hashes stored per show with reason and suspicious file JSON. Soft-delete via `IsActive`.
+Rejected listings/hashes stored per show with reason and suspicious file JSON. Soft-delete via `IsActive`. Malicious listings are still blacklisted when cleanup fails, but that state is not treated as a successful malware reject.
 
 ### Shell Launch Guard
 

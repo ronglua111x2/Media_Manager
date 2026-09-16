@@ -7,7 +7,8 @@ public interface ITorrentAddGateService
 {
     /// <summary>
     /// Adds the selected candidate while running, waits for the file list, validates malware/payload,
-    /// then returns. Throws <see cref="MaliciousTorrentException"/> after delete+blacklist.
+    /// then returns. Throws <see cref="MaliciousTorrentException"/> after verified delete+blacklist.
+    /// Throws <see cref="TorrentCleanupFailedException"/> when a rejected torrent cannot be verified deleted.
     /// Empty file list deletes without blacklisting. When content validation is disabled,
     /// returns immediately after add (plus infohash blacklist check).
     /// </summary>
@@ -83,30 +84,14 @@ public sealed class TorrentAddGateService : ITorrentAddGateService
                 $"Skipped add — infohash already blacklisted for '{order.Title}' (hash={addedTorrent.Hash}).",
                 LogTarget.File | LogTarget.Console);
 
-            await _cleanupService.DeleteTorrentAsync(
+            await DeleteRejectedTorrentAsync(
+                order,
                 addedTorrent.Hash,
-                deleteFiles: true,
-                reason: "blacklisted infohash",
+                cleanupReason: "blacklisted infohash",
+                blacklistReason: "Blacklisted infohash",
+                notes: $"Listing URL resolved to known-bad infohash '{addedTorrent.Hash}'",
+                rejectMessage: "Listing matches a blacklisted infohash.",
                 cancellationToken);
-
-            try
-            {
-                await _blacklistService.AddToBlacklistAsync(
-                    order.MediaId,
-                    order.SelectedCandidateUrl,
-                    addedTorrent.Hash,
-                    "Blacklisted infohash",
-                    notes: $"Listing URL resolved to known-bad infohash '{addedTorrent.Hash}'");
-            }
-            catch (Exception ex)
-            {
-                _logger.Error(
-                    $"Failed to blacklist listing URL after known infohash skip for '{order.Title}' (hash={addedTorrent.Hash}): {ex.Message}",
-                    ex,
-                    LogTarget.File | LogTarget.Console);
-            }
-
-            throw new MaliciousTorrentException("Listing matches a blacklisted infohash.");
         }
 
         var validationEnabled = _settingsService.Current.TorrentValidation?.EnableContentValidation ?? true;
@@ -124,13 +109,15 @@ public sealed class TorrentAddGateService : ITorrentAddGateService
             _logger.Warning(
                 $"Metadata timeout for '{order.Title}' (hash={addedTorrent.Hash}): empty file list.",
                 LogTarget.File | LogTarget.Console);
-            await _cleanupService.DeleteTorrentAsync(
+            await DeleteRejectedTorrentAsync(
+                order,
                 addedTorrent.Hash,
-                deleteFiles: true,
-                reason: "metadata timeout",
-                cancellationToken);
-            throw new InvalidOperationException(
-                $"Torrent metadata timed out with empty file list (hash={addedTorrent.Hash}).");
+                cleanupReason: "metadata timeout",
+                blacklistReason: null,
+                notes: null,
+                rejectMessage: $"Torrent metadata timed out with empty file list (hash={addedTorrent.Hash}).",
+                cancellationToken,
+                maliciousReject: false);
         }
 
         _logger.Info(
@@ -158,31 +145,15 @@ public sealed class TorrentAddGateService : ITorrentAddGateService
                     LogTarget.File);
             }
 
-            await _cleanupService.DeleteTorrentAsync(
+            await DeleteRejectedTorrentAsync(
+                order,
                 addedTorrent.Hash,
-                deleteFiles: true,
-                reason: $"malware: {validation.Summary}",
-                cancellationToken);
-
-            try
-            {
-                await _blacklistService.AddToBlacklistAsync(
-                    order.MediaId,
-                    order.SelectedCandidateUrl,
-                    addedTorrent.Hash,
-                    $"Malware: {validation.Summary}",
-                    validation.SuspiciousFiles,
-                    $"Rejected candidate '{order.SelectedCandidateName}'");
-            }
-            catch (Exception ex)
-            {
-                _logger.Error(
-                    $"Failed to blacklist malware torrent for '{order.Title}' after delete (hash={addedTorrent.Hash}): {ex.Message}",
-                    ex,
-                    LogTarget.File | LogTarget.Console);
-            }
-
-            throw new MaliciousTorrentException(validation.Summary);
+                cleanupReason: $"malware: {validation.Summary}",
+                blacklistReason: $"Malware: {validation.Summary}",
+                notes: $"Rejected candidate '{order.SelectedCandidateName}'",
+                rejectMessage: validation.Summary,
+                cancellationToken,
+                suspiciousFiles: validation.SuspiciousFiles);
         }
 
         _logger.Info(
@@ -190,6 +161,84 @@ public sealed class TorrentAddGateService : ITorrentAddGateService
             LogTarget.File | LogTarget.Console);
 
         return await GetLiveTorrentAsync(addedTorrent, cancellationToken);
+    }
+
+    private async Task DeleteRejectedTorrentAsync(
+        TorrentCartOrder order,
+        string torrentHash,
+        string cleanupReason,
+        string? blacklistReason,
+        string? notes,
+        string rejectMessage,
+        CancellationToken cancellationToken,
+        bool maliciousReject = true,
+        List<SuspiciousFile>? suspiciousFiles = null)
+    {
+        try
+        {
+            await _cleanupService.DeleteTorrentAsync(
+                torrentHash,
+                deleteFiles: true,
+                reason: cleanupReason,
+                cancellationToken);
+        }
+        catch (TorrentCleanupFailedException)
+        {
+            if (!string.IsNullOrWhiteSpace(blacklistReason))
+            {
+                await TryBlacklistAsync(
+                    order,
+                    torrentHash,
+                    blacklistReason,
+                    notes,
+                    suspiciousFiles);
+            }
+
+            throw;
+        }
+
+        if (!string.IsNullOrWhiteSpace(blacklistReason))
+        {
+            await TryBlacklistAsync(
+                order,
+                torrentHash,
+                blacklistReason,
+                notes,
+                suspiciousFiles);
+        }
+
+        if (maliciousReject)
+        {
+            throw new MaliciousTorrentException(rejectMessage);
+        }
+
+        throw new InvalidOperationException(rejectMessage);
+    }
+
+    private async Task TryBlacklistAsync(
+        TorrentCartOrder order,
+        string torrentHash,
+        string blacklistReason,
+        string? notes,
+        List<SuspiciousFile>? suspiciousFiles)
+    {
+        try
+        {
+            await _blacklistService.AddToBlacklistAsync(
+                order.MediaId,
+                order.SelectedCandidateUrl,
+                torrentHash,
+                blacklistReason,
+                suspiciousFiles,
+                notes);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(
+                $"Failed to blacklist torrent for '{order.Title}' (hash={torrentHash}): {ex.Message}",
+                ex,
+                LogTarget.File | LogTarget.Console);
+        }
     }
 
     private async Task<IReadOnlyList<TorrentContentFile>> WaitForTorrentFilesAsync(

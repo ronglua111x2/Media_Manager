@@ -10,12 +10,14 @@ meta:
   language: C#
   database: SQLite
   branch: auto-torrent  # canonical dev branch; origin/main is ~76 commits behind
-  commit: 177cd5bd857adb21490e207bf4ee3f564542e080
-  commit_message: Sprint 4 INavigationAware workspace refresh hooks (E3)
+  commit: 26d1476fb9719cf7d3898d35ae040f46097b0eb6
+  commit_message: update imported media link
+  audit: docs/code-review/  # 2026-09-16; AUD-002 implemented; AUD-001 accepted trade-off
   root_namespace: media_management_app
   project_file: media management app.csproj
   core_library: MediaManager.Core/MediaManager.Core.csproj
   test_project: MediaManager.Core.Tests/MediaManager.Core.Tests.csproj
+  test_project_app: MediaManager.App.Tests/MediaManager.App.Tests.csproj  # Windows cleanup/halt tests
   default_state_folder: "%LocalAppData%\\MediaManager\\State"
   state_folder_pointer: "%LocalAppData%\\MediaManager\\state-path.txt"
   legacy_state_folder: D:\MediaManagerState  # detect-only; live this-PC library stays here via pointer
@@ -29,15 +31,19 @@ meta:
   before_coding: "git check on auto-torrent; Plan Mode local plan for each new sprint"
   when_touching_code: >
     After any code change in a sprint/session, update progress in the relevant docs in the same change set:
-    AI_CONTEXT.md (structure/DI/navigation/policy), 05-sprint-timeline.md (status/session notes/checklists),
-    sprint-plans/sprint-NN-local-plan.md, and feature docs (FEATURES/STATE_FOLDER) when behavior changes.
+    AI_CONTEXT.md (structure/DI/navigation/policy), APP_OVERVIEW.md / FEATURES.md when behavior changes,
+    05-sprint-timeline.md (status/session notes/checklists), sprint-plans/sprint-NN-local-plan.md,
+    and docs/code-review/ when audit findings or torrent safety change.
     Do not leave planning docs describing cancelled policies or stale DoD.
   known_debt:
     - library_reconcile_poster: "fixed — Reconciled/PackReconciled now RefreshSelectedDetailAfterReconcile (keep SelectedPosterImage; RebuildSelectedShowDetail / RebuildSelectedMovieDetail + cart). See docs/planning/sprint-plans/poster-flash-surgical-fix.md"
     - first_run: "Phases 1–4: harness, silent host scan, SetupCompleted gate, Host setup shell (Start/This PC/Apps/Library; local Restore apply; WARP hold for TMDB Test). State bootstrap: LocalAppData pointer. docs/first-run/"
     - settings_ui_json_mismatch: "Settings UI tabs != JSON/Apply ownership — audit docs/settings-modernization/; 7-VM split cancelled with E4, do not resume Sprint 5"
+    - torrent_add_validation: "AUD-001 accepted trade-off — gated adds use Paused=false and poll files while running; pause-on-add broke search/downloadTorrent"
+    - torrent_cleanup_failure: "AUD-002 fixed — delete throws, retry/verify, fail-safe pause, halt batch; MaliciousTorrentException only after confirmed delete. docs/code-review/06-aud-002-cleanup-failure.md"
     - settings_live_apply: "RefreshLibraryRootPreview and OnWarpExecutablePathChanged mutate ISettingsService.Current without Save"
     - settings_multi_writer: "UiSettings in settings.json written by Library/Torrent/News/Recipe VMs — whole-file Save last-writer-wins"
+    - audit_open: "AUD-003 restore vs live SQLite; AUD-004 background-mode UI-thread; AUD-005 library delete after hardlink errors; AUD-006 blacklist fail-open; AUD-007 NU1701 chart packages"
 ```
 
 ---
@@ -330,7 +336,8 @@ order_status_enum: TorrentOrderStatus
 ```yaml
 flow: torrent_add_gate
 service: Services/ITorrentAddGateService.cs (TorrentAddGateService)
-commit_631c3d7: "remove add paused and added polling validation after torrent add"
+policy: add_running_then_validate  # AUD-001 accepted; do not set Paused=true
+cleanup: Services/ITorrentCleanupService.cs
 steps:
   1: Blacklist check (listing URL)
   2: Add torrent RUNNING (Paused=false) via QbittorrentClient
@@ -340,10 +347,15 @@ steps:
   6: Empty file list -> delete, throw (no blacklist)
   7: Validate via TorrentContentValidationService (isPack inferred from order)
   8a: Return live torrent if valid (download continues)
-  8b: Blacklist + delete if malicious (MaliciousTorrentException)
+  8b: Verified delete + blacklist -> MaliciousTorrentException
+  8c: Unverified delete -> retry 3x (20s cleanup timeout), PauseTorrentsAsync fail-safe, TorrentCleanupFailedException; cart/Auto-Track halt
+exceptions:
+  MaliciousTorrentException: confirmed delete only
+  TorrentCleanupFailedException: Common/TorrentCleanupFailedException.cs — includes hash; halt current batch
 config: Models/TorrentValidationConfig.cs
   ValidationTimeoutSeconds: default 90 (code), clamp 5-120
   note: settings.json may still show 30 until user saves settings
+audit: docs/code-review/06-aud-002-cleanup-failure.md
 ```
 
 ### Library Linking
@@ -449,7 +461,9 @@ integrations:
   qbittorrent:
     client: Services/QbittorrentClient.cs
     config: AutoTorrentSettings (WebUiUrl, credentials, ApiKey, DownloadFolders)
-    features: [search, add, pause, resume, delete, file list, plugins]
+    features: [search, add, pause/stop, resume, delete, file list, plugins]
+    delete_policy: DeleteTorrentsAsync throws on non-2xx and transport/auth failure
+    pause_policy: PauseTorrentsAsync tries torrents/stop then torrents/pause; used as AUD-002 fail-safe
     webapi_docs: docs/qbittorrent-webapi/  # 5.1 vs 5.2; client supports 5.2 login/add + optional API key
   jellyfin:
     client: Services/JellyfinClient.cs
@@ -501,8 +515,11 @@ data:
 safety:
   - Services/TorrentAddGateService.cs
   - Services/TorrentContentValidationService.cs
+  - Services/TorrentCleanupService.cs
   - Services/TorrentBlacklistService.cs
   - Common/MaliciousTorrentException.cs
+  - Common/TorrentCleanupFailedException.cs
+  - docs/code-review/06-aud-002-cleanup-failure.md
 
 linking:
   - Services/AutoTorrentLinkService.cs
@@ -578,8 +595,10 @@ core:
   project: MediaManager.Core/MediaManager.Core.csproj
   tfm: net8.0
   tests: MediaManager.Core.Tests/MediaManager.Core.Tests.csproj
+  app_tests: MediaManager.App.Tests/MediaManager.App.Tests.csproj
   test_stack: [xUnit, FluentAssertions, coverlet.collector]
-  test_count: 80
+  test_count_core: 207
+  test_count_app: 9  # Windows-targeted AUD-002 cleanup/halt; no extra assertion library
   wpf_reference: media management app.csproj -> ProjectReference MediaManager.Core
   moved_types:
     - TorrentCandidateParser (+ TorrentCandidateParseResult)
@@ -617,8 +636,12 @@ build:
   project: media management app.csproj
   core_project: MediaManager.Core/MediaManager.Core.csproj
   test_project: MediaManager.Core.Tests/MediaManager.Core.Tests.csproj
+  test_project_app: MediaManager.App.Tests/MediaManager.App.Tests.csproj
   command: msbuild "media management app.csproj" /p:Platform=x64
-  test_command: dotnet test MediaManager.Core.Tests/MediaManager.Core.Tests.csproj -c Release
+  test_command: >
+    dotnet test MediaManager.Core.Tests/MediaManager.Core.Tests.csproj -c Release -p:Platform=x64;
+    dotnet test MediaManager.App.Tests/MediaManager.App.Tests.csproj -c Release -p:Platform=x64
+  test_counts: { core: 207, app: 9 }
   publish: single-file self-contained win-x64
   third_party: ThirdParty/Sonarr.Parser/MediaManager.Sonarr.Parser.csproj
 ```
@@ -638,7 +661,8 @@ resolved_docs:
   - autotrack_eligibility: docs/FEATURES.md section 3.7
   - fetch_jobs_purge: docs/STATE_FOLDER.md (one-time migration 002)
   - google_drive_oauth: docs/STATE_FOLDER.md
-  - commit_631c3d7: docs/FEATURES.md section 10.6, torrent_add_gate above
+  - torrent_add_gate: docs/FEATURES.md section 10.6, torrent_add_gate above
+  - aud_002_cleanup: docs/code-review/06-aud-002-cleanup-failure.md
 ```
 
 ---
@@ -647,6 +671,8 @@ resolved_docs:
 
 - [APP_OVERVIEW.md](./APP_OVERVIEW.md) — narrative overview
 - [FEATURES.md](./FEATURES.md) — exhaustive feature list
+- [code-review/README.md](./code-review/README.md) — 2026-09-16 whole-project audit
 - [IMPROVEMENTS.md](./IMPROVEMENTS.md) — evaluation and suggestions
+- [BUILD.md](./BUILD.md) — x64 MSBuild and test commands
 - [STATE_FOLDER.md](./STATE_FOLDER.md) — state folder, OAuth, SchemaMigrations / FetchJobs purge
 - [RECIPE_SCHEMA.md](./RECIPE_SCHEMA.md) — recipe `.rcp` JSON schema

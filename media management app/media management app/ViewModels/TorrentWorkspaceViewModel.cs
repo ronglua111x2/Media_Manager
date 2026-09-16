@@ -523,6 +523,13 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
                     failedCount++;
                     HandleManualMalwareReject(order, ex);
                 }
+                catch (TorrentCleanupFailedException ex)
+                {
+                    failedCount++;
+                    HandleCleanupFailed(order, ex);
+                    StatusMessage = ex.OrderStatusDetail;
+                    break;
+                }
                 catch (Exception ex)
                 {
                     failedCount++;
@@ -608,6 +615,11 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         {
             HandleManualMalwareReject(order, ex);
             StatusMessage = $"Malware rejected: {ex.Message}";
+        }
+        catch (TorrentCleanupFailedException ex)
+        {
+            HandleCleanupFailed(order, ex);
+            StatusMessage = ex.OrderStatusDetail;
         }
         catch (Exception ex)
         {
@@ -1620,6 +1632,15 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         refreshed.StatusDetail = $"Malware rejected. Pick another candidate. {ex.Message}";
         refreshed.LastFailureReason = ex.Message;
         _torrentCartService.SaveOrder(refreshed);
+    }
+
+    private void HandleCleanupFailed(TorrentCartOrder order, TorrentCleanupFailedException ex)
+    {
+        _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.Failed, ex.OrderStatusDetail);
+        _logger.Error(
+            $"Torrent cleanup failed for '{order.Title}' hash={ex.TorrentHash}. Batch halted.",
+            ex,
+            LogTarget.File | LogTarget.Console);
     }
 
     private string? GetSeasonDownloadFolder(long showId, int seasonNumber)

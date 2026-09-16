@@ -48,8 +48,8 @@ Embedded WebUI ([`QbittorrentViewerService`](../../Services/QbittorrentViewerSer
 | `PostAddTorrentAsync` | `POST torrents/add` (multipart) | 2xx and body not `"Fails."` | `AddTorrentAsync` |
 | `TryPrepareCategoryAsync` | `POST torrents/createCategory` | 2xx and body not `"Fails."` | `AddTorrentAsync` |
 | `ApplyTorrentPostAddSettingsAsync` | `POST torrents/setLocation`, `setCategory`, `addTags` | Warn if not 2xx or `"Fails."` | After plugin download add |
-| `DeleteTorrentsAsync` | `POST torrents/delete` | Warn if not 2xx | [`TorrentCleanupService`](../../Services/ITorrentCleanupService.cs) |
-| `PauseTorrentsAsync` | `POST torrents/stop`, then `torrents/pause` | Stop 2xx wins; else pause must 2xx | **No app callers today** (interface only) |
+| `DeleteTorrentsAsync` | `POST torrents/delete` | Must 2xx; throws on non-success and transport/auth failure | [`TorrentCleanupService`](../../Services/ITorrentCleanupService.cs) |
+| `PauseTorrentsAsync` | `POST torrents/stop`, then `torrents/pause` | Stop 2xx wins; else pause must 2xx | [`TorrentCleanupService`](../../Services/ITorrentCleanupService.cs) fail-safe after unverified delete (AUD-002) |
 | `ResumeTorrentsAsync` | `POST torrents/start` | Must 2xx; **no** `/resume` fallback | **No app callers today** (interface only) |
 
 Add form fields: `urls` or `torrents` file, `savepath`, `category`, `tags`, **`paused`**. Default from add gate / automation: `Paused = false`.
@@ -68,6 +68,7 @@ After add, the client **polls** `torrents/info` for a new hash (`AddVerifyTimeou
 | Hunt preflight / restart | `AutoTrackService` → `QbittorrentProcessRestartService` |
 | Hunt search | `FetchJobService`, `ShowSearchSnapshotService`, `AutomationFlowService` |
 | Add + validate | `TorrentAddGateService` → `AddTorrentAsync`; files via `QbittorrentTorrentContentValidationService` |
+| Cleanup / reject | `TorrentCleanupService` → `DeleteTorrentsAsync` (throws); fail-safe `PauseTorrentsAsync` |
 | Cart / recipe add | `TorrentWorkspaceViewModel`, `AutomationFlowService` |
 | Reconcile / link | `TorrentReconciliationService`, `AutoTorrentLinkService`, `PackLinkCoordinatorService` |
 | Engine list | `QbittorrentSearchPluginService` |

@@ -593,12 +593,31 @@ public sealed class AutoTrackService : IAutoTrackService
             return result;
         }
 
-        await RunFetchAndAddPhaseAsync(
-            pendingOrdersByShow,
-            settings,
-            result,
-            preflight.HuntLeaseHeld,
-            cancellationToken);
+        try
+        {
+            await RunFetchAndAddPhaseAsync(
+                pendingOrdersByShow,
+                settings,
+                result,
+                preflight.HuntLeaseHeld,
+                cancellationToken);
+        }
+        catch (TorrentCleanupFailedException ex)
+        {
+            result.Succeeded = false;
+            if (result.Failed == 0)
+            {
+                result.Failed++;
+            }
+
+            result.Summary = ex.OrderStatusDetail;
+            _logger.Error(
+                $"Auto-track hunt halted after unverified torrent cleanup. Hash={ex.TorrentHash}.",
+                ex,
+                LogTarget.File | LogTarget.Console);
+            return result;
+        }
+
         result.Succeeded = result.Failed == 0;
         result.Summary =
             $"Hunt: shows={result.ShowsProcessed}, queued={result.EpisodesQueued}, candidates={result.CandidatesFound}, added={result.TorrentsAdded}, failed={result.Failed}.";
@@ -1085,6 +1104,12 @@ public sealed class AutoTrackService : IAutoTrackService
                     {
                         throw;
                     }
+                    catch (TorrentCleanupFailedException ex)
+                    {
+                        result.Failed++;
+                        RecordCleanupFailedOutcome(order, ex, approvedFetchOutcomes, result);
+                        throw;
+                    }
                     catch (Exception ex)
                     {
                         result.Failed++;
@@ -1176,6 +1201,13 @@ public sealed class AutoTrackService : IAutoTrackService
             {
                 throw;
             }
+            catch (TorrentCleanupFailedException ex)
+            {
+                failedCandidateUrls.Add(candidate.Url);
+                order.FailedCandidateUrls = SerializeFailedCandidateUrls(failedCandidateUrls);
+                PersistCleanupFailedOrder(order, ex);
+                throw;
+            }
             catch (MaliciousTorrentException ex)
             {
                 failedCandidateUrls.Add(candidate.Url);
@@ -1215,6 +1247,40 @@ public sealed class AutoTrackService : IAutoTrackService
             LogTarget.File | LogTarget.Console);
 
         return false;
+    }
+
+    private void PersistCleanupFailedOrder(TorrentCartOrder order, TorrentCleanupFailedException ex)
+    {
+        order.LastFailureReason = ex.Message;
+        order.Status = TorrentOrderStatus.Failed;
+        order.StatusDetail = ex.OrderStatusDetail;
+        _torrentCartService.SaveOrder(order);
+        _logger.Error(
+            $"Auto-track cleanup failed for '{order.Title}' hash={ex.TorrentHash}. Halting add run.",
+            ex,
+            LogTarget.File | LogTarget.Console);
+    }
+
+    private void RecordCleanupFailedOutcome(
+        TorrentCartOrder order,
+        TorrentCleanupFailedException ex,
+        Dictionary<long, HuntEpisodeOutcome> approvedFetchOutcomes,
+        AutoTrackRunResult result)
+    {
+        var refreshed = _torrentCartService.GetOrder(order.Id) ?? order;
+        if (refreshed.Status != TorrentOrderStatus.Failed)
+        {
+            PersistCleanupFailedOrder(refreshed, ex);
+        }
+
+        if (approvedFetchOutcomes.TryGetValue(order.Id, out var fetchOutcome))
+        {
+            fetchOutcome.Stage = HuntEpisodeStage.Add;
+            fetchOutcome.FailureReason = "Cleanup failed";
+            fetchOutcome.FailureDetail = ex.OrderStatusDetail;
+            RecordAndLogEpisodeOutcome(result, fetchOutcome);
+            approvedFetchOutcomes.Remove(order.Id);
+        }
     }
 
     private void SelectCandidateForRetry(TorrentCartOrder order, TorrentCartOrderCandidate candidate)

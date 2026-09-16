@@ -1,6 +1,6 @@
 # Media Manager — Evaluation & Improvement Suggestions
 
-This document evaluates the application as of branch `auto-torrent` (commit `631c3d7`) and proposes concrete improvements.
+This document evaluates the application as of branch `auto-torrent` (audit 2026-09-16 + AUD-002 cleanup-failure fix) and proposes concrete improvements.
 
 ---
 
@@ -12,7 +12,7 @@ Media Manager is a **mature, feature-rich personal automation tool** that succes
 
 1. **End-to-end automation** — Auto-Track covers TMDB discovery through hardlinking with minimal user intervention
 2. **Flexible acquisition** — Recipe system with modular scoring/search/quality configuration rivals dedicated *arr apps
-3. **Safety-first torrent adds** — Running add → file-list polling validation → continue/blacklist pipeline reduces malware risk (post `631c3d7`; no longer paused-add/resume)
+3. **Safety-first torrent adds** — Running add → file-list polling → continue, or verified delete + blacklist. Unverified cleanup retries, pauses, and **halts** the current batch (AUD-002). Pause-on-add remains an accepted trade-off (AUD-001).
 4. **Dual library strategy** — Hardlinks for organization + symlinks for Jellyfin is a pragmatic NTFS pattern
 5. **Rich settings surface** — Seven settings sections with test buttons for every integration
 6. **Observability** — File/UI/console logging, operation progress, notification catalog, debug sessions
@@ -22,13 +22,13 @@ Media Manager is a **mature, feature-rich personal automation tool** that succes
 ### Weaknesses & Risks
 
 1. **Windows-only coupling** — Hardlinks, symlinks (admin), WARP CLI, registry startup; no cross-platform path
-2. **Schema migration fragility** — Additive `ALTER TABLE` without version tracking; rebuild migrations (e.g. TorrentBlacklist) are one-off
+2. **Schema migration remaining risk** — Numbered `SchemaMigrations` exist (001–007); `EnsureColumn` is still a transition safety net. In-process restore can still replace SQLite while writers are active (AUD-003).
 3. **Large monolithic ViewModels** — `SettingsViewModel` (~2000 lines), `LibraryViewModel`, `AutoTrackService` (~1500 lines) hinder maintenance
 4. **Singleton ViewModels** — Workspace VMs persist state across navigations; can cause stale UI or memory retention
 5. **Legacy FetchJobs purge** — `PurgeLegacyFetchJobs()` on every DB init deletes all `FetchJobs` rows; table is legacy (see [STATE_FOLDER.md](./STATE_FOLDER.md#fetchjobs-legacy-purge))
 6. **Tight external dependency chain** — Auto-Track hunt blocked if WARP or qBittorrent WebUI unavailable (by design, but brittle)
-7. **No automated tests visible** — Complex scoring, parsing, and pack mapping logic lacks test coverage
-8. **Documentation was absent** — Onboarding requires reading source (addressed by this docs folder)
+7. **Open audit findings** — AUD-003 restore vs live DB, AUD-004 background-mode UI thread, AUD-005 library delete after hardlink errors, AUD-006 blacklist fail-open, AUD-007 NU1701 chart packages. Register: [code-review/03-findings-register.md](./code-review/03-findings-register.md)
+8. **Test coverage is Core-heavy** — 207 Core tests plus 9 Windows App cleanup tests; WPF services, ViewModels, and live qBittorrent/Jellyfin paths still lack integration coverage
 
 ---
 
@@ -41,21 +41,16 @@ Detailed planning: [planning/README.md](./planning/README.md) · Integrated time
 #### 1. Database Migration Versioning
 → [Planning doc](./planning/01-database-migration-versioning.md)
 
-- **Problem:** No `schema_version` table; migrations are scattered `EnsureColumn` calls and one-off rebuilds
-- **Suggestion:** Introduce `SchemaMigrations` table with numbered migrations; replace init-time purge with targeted migration
-- **Benefit:** Safer upgrades, auditable schema history, no accidental data loss (FetchJobs purge)
-- **Files:** `Services/DatabaseService.cs`
+- **Problem:** No `schema_version` table; migrations were scattered `EnsureColumn` calls (historical)
+- **Current:** `SchemaMigrations` + numbered SQL/C# migrations 001–007. `EnsureColumn` remains a transition safety net. Restore-while-writers-active is AUD-003.
+- **Files:** `MediaManager.Core/Migrations/MigrationRunner.cs`, `Services/DatabaseService.cs`
 
 #### 2. Unit Tests for Critical Paths
 → [Planning doc](./planning/02-unit-tests-critical-paths.md)
 
-- **Problem:** Candidate scoring, torrent parsing, pack episode mapping, search plan building are untested
-- **Suggestion:** Add xUnit test project covering:
-  - `CandidateEvaluationService` / `TorrentCandidateParser`
-  - `SearchPlanBuilder` / `SearchTitleResolver`
-  - `PackSeasonFileGrouper` / `PackEpisodePatternInferrer`
-  - `TorrentContentValidationService`
-- **Benefit:** Regression safety for recipe and auto-track behavior
+- **Problem:** Candidate scoring, torrent parsing, pack episode mapping, search plan building were untested (historical)
+- **Current:** `MediaManager.Core.Tests` has **207** passing tests (Release/x64). `MediaManager.App.Tests` adds **9** Windows cleanup/halt tests for AUD-002.
+- **Remaining:** WPF ViewModels, live qBittorrent, restore, and Auto-Track integration paths are still untested.
 
 #### 3. Split Large ViewModels/Services
 → [Planning doc](./planning/03-split-large-viewmodels-services.md)
@@ -196,10 +191,11 @@ flowchart LR
 
 ### Recently implemented
 
-- **Episode rating + thought + chart** — personal `UserRating`/`Thought` on `TrackedEpisodes`; IMDb-style per-season boxes + heatmap; per-specials rating on TMDB S00 (`FEATURES.md` §5.18–5.20, migration `004_episode_rating_thought`)  
+- **Episode rating + thought + chart** — personal `UserRating`/`Thought` on `TrackedEpisodes`; IMDb-style per-season boxes + heatmap; per-specials rating on TMDB S00 (`FEATURES.md` §5.18–5.20, migration `004_episode_rating_thought`)
+- **AUD-002 cleanup-failure safety** — delete errors throw; cleanup retries/verifies; unverified removal pauses and halts the current cart/Auto-Track batch ([code-review/06-aud-002-cleanup-failure.md](./code-review/06-aud-002-cleanup-failure.md))
 
 ---
 
 ## Conclusion
 
-Media Manager is a capable personal media automation platform with production-quality integrations and safety features. The main technical debt lies in **schema evolution**, **test coverage**, and **monolithic classes** rather than fundamental design flaws. Addressing migration versioning and critical-path tests would yield the highest return on investment.
+Media Manager is a capable personal media automation platform with production-quality integrations and safety features. Schema versioning and Core tests shipped in Sprints 0–4. Remaining technical debt is **open audit findings** (AUD-003–007), **WPF/integration test gaps**, and **monolithic classes** rather than fundamental design flaws. AUD-001 (download-while-validating) is an accepted trade-off.

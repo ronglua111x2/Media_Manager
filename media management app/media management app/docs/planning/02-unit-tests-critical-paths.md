@@ -2,7 +2,7 @@
 
 **Priority:** High  
 **Source:** [IMPROVEMENTS.md](../IMPROVEMENTS.md) § Priority: High #2  
-**Status:** Sprint 3 implemented — Core critical-path services + 79 unit tests on `auto-torrent`
+**Status:** Sprint 3 implemented Core critical-path tests. **Current (2026-09-16):** `MediaManager.Core.Tests` **207** passed (Release/x64). `MediaManager.App.Tests` adds **9** Windows cleanup/halt tests for AUD-002. The sections below are the original planning write-up.
 
 ---
 

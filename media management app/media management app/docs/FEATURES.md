@@ -559,7 +559,7 @@ Setup details: [STATE_FOLDER.md](./STATE_FOLDER.md#google-drive-oauth)
 - **DB:** Episodes, movies, seasons, cart orders
 
 ### 10.6 Torrent Add Gate (Validation Pipeline)
-- **What:** Add torrent **running** → poll file list → validate → continue or blacklist+delete (commit `631c3d7`)
+- **What:** Add torrent **running** → poll file list → validate → continue, or verified delete + blacklist. Pause-on-add is an accepted trade-off (AUD-001). Failed deletion is not treated as a successful malware reject (AUD-002).
 - **Steps:**
   1. Blacklist check (listing URL)
   2. Add via qBittorrent (not paused; `Paused = false`)
@@ -567,11 +567,13 @@ Setup details: [STATE_FOLDER.md](./STATE_FOLDER.md#google-drive-oauth)
   4. If `EnableContentValidation` false → return immediately
   5. Poll `GetTorrentFilesAsync` every 1s until non-empty or timeout (default 90s, clamp 5–120)
   6. Empty file list → delete torrent, throw (no blacklist)
-  7. Validate files → malware → delete + blacklist + `MaliciousTorrentException`
-  8. Return live torrent state (download continues; no explicit resume step)
-- **Code:** `Services/TorrentAddGateService.cs` (in `ITorrentAddGateService.cs`), `Services/TorrentContentValidationService.cs`
+  7. Validate files → malware → verified delete + blacklist + `MaliciousTorrentException`
+  8. If delete cannot be verified → retry (3×), fail-safe pause, `TorrentCleanupFailedException` with hash; cart/Auto-Track halt
+  9. Return live torrent state (download continues; no explicit resume step)
+- **Code:** `Services/TorrentAddGateService.cs` (in `ITorrentAddGateService.cs`), `Services/TorrentContentValidationService.cs`, `Services/TorrentCleanupService.cs`
 - **Config:** `Models/TorrentValidationConfig.cs` (`ValidationTimeoutSeconds`, default 90 in code)
 - **DB:** `TorrentBlacklist`
+- **Audit:** [code-review/06-aud-002-cleanup-failure.md](./code-review/06-aud-002-cleanup-failure.md)
 
 ### 10.7 Fetch Job Orchestration
 - **What:** In-memory candidate fetch/search for episodes, movies, season packs (cart workspace + auto-track)
@@ -658,6 +660,7 @@ Setup details: [STATE_FOLDER.md](./STATE_FOLDER.md#google-drive-oauth)
 - **What:** Dry-run or immediate recipe execution (search + add best candidate)
 - **Code:** `Services/AutomationFlowService.cs`
 - **DB:** Updates episode/movie torrent state
+- **Notes:** `RunNowAsync` bypasses the add gate. No production caller; cart and Auto-Track use `ITorrentAddGateService`.
 
 ### 10.23 Candidate Evaluation & Scoring
 - **What:** Score torrent results against recipe rules (quality, seeders, title match, etc.)
@@ -670,9 +673,11 @@ Setup details: [STATE_FOLDER.md](./STATE_FOLDER.md#google-drive-oauth)
 - **DB:** Reads show alt titles
 
 ### 10.25 Torrent Cleanup & Blacklist
-- **What:** Delete torrents from qBittorrent; manage per-show blacklist
-- **Code:** `Services/TorrentCleanupService.cs`, `Services/TorrentBlacklistService.cs`
+- **What:** Delete torrents from qBittorrent with files; manage per-show blacklist
+- **Behavior:** `DeleteTorrentsAsync` throws on non-2xx/transport failure. Cleanup retries up to three times (20s timeout, independent of user cancel), verifies the hash is gone, then fail-safe `PauseTorrentsAsync` (qBittorrent 5 `stop` then 4.x `pause`) and throws `TorrentCleanupFailedException`. Confirmed delete + blacklist still throws `MaliciousTorrentException`.
+- **Code:** `Services/TorrentCleanupService.cs`, `Services/TorrentBlacklistService.cs`, `Common/TorrentCleanupFailedException.cs`
 - **DB:** `TorrentBlacklist`
+- **Tests:** `MediaManager.App.Tests` (Windows-targeted cleanup/halt)
 
 ### 10.26 Media Metadata Sync
 - **What:** Bulk TMDB refresh for ongoing shows or entire library

@@ -89,7 +89,7 @@ Legacy `PackExtrasPriority` modules are migrated into `Scoring.extensionData` on
 | `savePath` | string | `""` | Override download path (usually empty) |
 | `torrentCategory` | string | `"AutoTorrent"` | qBittorrent category on add |
 | `tags` | string | `""` | qBittorrent tags on add |
-| `paused` | bool | false | Passed to add request (gate service may override) |
+| `paused` | bool | false | Passed to add request; the add gate always sends `Paused = false` (AUD-001 trade-off) |
 | `extensionData` | object | `{}` | String key/value module-specific settings |
 
 ---

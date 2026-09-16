@@ -62,7 +62,7 @@ Effect: paused/stopped torrents can show as downloading in reconcile/UI. Hunt ad
 
 ### Add form `paused` vs `stopped` (from **5.0**)
 
-Client sends `paused` only. Gate/automation set `Paused = false`. Pause-on-add would be the risky path; today it is unused.
+Client sends `paused` only. Gate/automation set `Paused = false`. Pause-on-add is an accepted AUD-001 trade-off and is unused. `PauseTorrentsAsync` is used as the AUD-002 fail-safe after unverified delete.
 
 ### Resume on **4.x**
 

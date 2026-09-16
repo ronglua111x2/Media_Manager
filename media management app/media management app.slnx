@@ -11,6 +11,10 @@
     <Platform Solution="*|x64" Project="x64" />
     <Platform Solution="*|Any CPU" Project="AnyCPU" />
   </Project>
+  <Project Path="media management app/MediaManager.App.Tests/MediaManager.App.Tests.csproj">
+    <Platform Solution="*|x64" Project="x64" />
+    <Platform Solution="*|Any CPU" Project="AnyCPU" />
+  </Project>
   <Project Path="media management app/media management app.csproj">
     <Platform Solution="*|x64" Project="x64" />
   </Project>
