@@ -93,6 +93,7 @@ shell:
   lucide_package: MahApps.Metro.IconPacks.Lucide 6.2.1
   lucide_kind_rule: IconKind/Kind must match PackIconLucideKind exactly; unknown names render blank
   nested_scroll: Views/NestedScrollViewer.cs — vertical wheel on nested horizontal ScrollViewer goes to page; Shift+wheel pans
+  busy_overlay: Views/Controls/BusyOverlay.xaml — drop-in Grid overlay (IsBusy, Message; optional determinate Value). Stats first visit/Update uses a 90% determinate bar; Library later tab enters stay indeterminate.
   navigation_command: NavigateCommand
 navigation:
   contract: ViewModels/INavigationAware.cs
@@ -103,8 +104,8 @@ navigation:
     News: OnNavigatedTo UpdateDashboard if last load older than 2 minutes
     AutoTrack: OnNavigatedTo RefreshDashboard
     FindAdd: OnNavigatedTo RefreshExistingMedia + refresh SearchResults IsAlreadyAdded flags
-    Library: OnNavigatedTo clear detail-load cache, RefreshLibrary, reload selected detail
-    Stats: OnNavigatedTo rebuild personal rating overview (no TTL)
+    Library: constructor RefreshLibrary + selected detail; first OnNavigatedTo skips unless PrepareSelect is pending; later visits show BusyOverlay then refresh cards/detail (cancel on leave; keep previous complete pane)
+    Stats: OnNavigatedTo queues deferred overview load (BusyOverlay on first visit starts at 90% determinate; no overlay flash on return); overview Build runs off the UI thread; OnNavigatedFrom cancels pending load; Update force-rebuilds heatmap/strips with 3s cooldown; fingerprints include watch status
     Torrent: OnNavigatedTo RefreshWorkspace; OnNavigatedFrom no-op — cart/search keep running while on other tabs (user Stop only)
     Recipe: OnNavigatedTo ReloadRecipes if RecipesChanged while away; restore UiSettings.SelectedRecipeId; OnNavigatedFrom mark inactive
     Settings: OnNavigatedTo settingsService.Load + LoadFromSettings (dirty-tracking Sprint 6)

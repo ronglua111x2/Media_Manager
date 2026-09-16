@@ -65,6 +65,8 @@ public static class HeatmapStripLayout
                 .Append(card.MediaId)
                 .Append(':')
                 .Append(card.Rating.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture))
+                .Append(':')
+                .Append((int)card.WatchStatus)
                 .Append(';');
         }
 
@@ -80,7 +82,9 @@ public static class HeatmapStripLayout
                 .Append(':')
                 .Append(row.EpisodeCount)
                 .Append(':')
-                .Append(row.RatedEpisodeCount);
+                .Append(row.RatedEpisodeCount)
+                .Append(':')
+                .Append((int)row.WatchStatus);
             AppendSeasons(builder, row.Seasons);
             AppendSeasons(builder, row.ExtraSeasons);
             builder.Append(';');

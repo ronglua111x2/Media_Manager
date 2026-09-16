@@ -89,6 +89,43 @@ public class HeatmapStripLayoutTests
     }
 
     [Fact]
+    public void Fingerprint_ChangesWhenWatchStatusChanges()
+    {
+        var watching = new ShowHeatmapRow
+        {
+            ShowId = 1,
+            EpisodeCount = 12,
+            RatedEpisodeCount = 4,
+            WatchStatus = UserWatchStatus.Watching,
+            Seasons =
+            [
+                new HeatmapSeasonGroup
+                {
+                    SeasonNumber = 1,
+                    Cells = [Cell(1), Cell(2)]
+                }
+            ]
+        };
+        var completed = new ShowHeatmapRow
+        {
+            ShowId = 1,
+            EpisodeCount = 12,
+            RatedEpisodeCount = 4,
+            WatchStatus = UserWatchStatus.Completed,
+            Seasons =
+            [
+                new HeatmapSeasonGroup
+                {
+                    SeasonNumber = 1,
+                    Cells = [Cell(1), Cell(2)]
+                }
+            ]
+        };
+
+        HeatmapStripLayout.Fingerprint([watching]).Should().NotBe(HeatmapStripLayout.Fingerprint([completed]));
+    }
+
+    [Fact]
     public void PosterFitCount_IsThreeRowsOfSlots()
     {
         HeatmapStripLayout.PosterFitCount(0).Should().Be(0);
@@ -109,6 +146,29 @@ public class HeatmapStripLayoutTests
         HeatmapStripLayout.TitleStripFingerprint([first]).Should().Be(HeatmapStripLayout.TitleStripFingerprint([same]));
         HeatmapStripLayout.TitleStripFingerprint([first]).Should().NotBe(HeatmapStripLayout.TitleStripFingerprint([differentRating]));
         HeatmapStripLayout.TitleStripFingerprint(Array.Empty<TitleRatingCard>()).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void TitleStripFingerprint_ChangesWhenWatchStatusChanges()
+    {
+        var watching = new TitleRatingCard
+        {
+            MediaKind = MediaKind.Movie,
+            MediaId = 1,
+            Rating = 8.0,
+            WatchStatus = UserWatchStatus.Watching
+        };
+        var completed = new TitleRatingCard
+        {
+            MediaKind = MediaKind.Movie,
+            MediaId = 1,
+            Rating = 8.0,
+            WatchStatus = UserWatchStatus.Completed
+        };
+
+        HeatmapStripLayout.TitleStripFingerprint([watching])
+            .Should()
+            .NotBe(HeatmapStripLayout.TitleStripFingerprint([completed]));
     }
 
     private static HeatmapEpisodeCell Cell(int episodeNumber) =>

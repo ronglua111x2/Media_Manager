@@ -17,8 +17,12 @@ public sealed partial class StatsViewModel : ViewModelBase
     private readonly IPosterImageService _posterImageService;
     private readonly LibraryViewModel _libraryViewModel;
     private readonly IWorkspaceNavigator _workspaceNavigator;
+    private static readonly TimeSpan UpdateCooldown = TimeSpan.FromSeconds(3);
+
     private readonly HashSet<long> _expandedHeatmapShowIds = [];
     private readonly DispatcherTimer _hallOfFameTimer;
+    private readonly DispatcherTimer _updateCooldownTimer;
+    private readonly UiBusyWork _busyWork = new();
     private readonly HallOfFamePager _topEpisodes = new();
     private readonly HallOfFamePager _bottomEpisodes = new();
     private readonly HallOfFamePager _topSpecials = new();
@@ -26,6 +30,8 @@ public sealed partial class StatsViewModel : ViewModelBase
     private string _heatmapFingerprint = string.Empty;
     private string _showStripFingerprint = string.Empty;
     private string _movieStripFingerprint = string.Empty;
+    private bool _hasLoadedOnce;
+    private bool _updateOnCooldown;
 
     public StatsViewModel(
         IDatabaseService databaseService,
@@ -46,6 +52,8 @@ public sealed partial class StatsViewModel : ViewModelBase
             LoadPosterAsync(card, card.Card.PosterPath, card.MediaKind, card.Card.TmdbId));
         _hallOfFameTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(8) };
         _hallOfFameTimer.Tick += (_, _) => AdvanceHallOfFame();
+        _updateCooldownTimer = new DispatcherTimer { Interval = UpdateCooldown };
+        _updateCooldownTimer.Tick += (_, _) => EndUpdateCooldown();
         HookPager(_topEpisodes, nameof(TopEpisodes));
         HookPager(_bottomEpisodes, nameof(BottomEpisodes));
         HookPager(_topSpecials, nameof(TopSpecials));
@@ -196,27 +204,69 @@ public sealed partial class StatsViewModel : ViewModelBase
     [ObservableProperty]
     private bool canRotateBottomSpecials;
 
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(UpdateOverviewCommand))]
+    private bool isOverviewBusy = true;
+
+    [ObservableProperty]
+    private string busyMessage = "Loading stats…";
+
     public override void OnNavigatedTo()
     {
-        RefreshOverview();
         IsBillboardActive = true;
+        RequestLoad(forceVisualRebuild: false, showOverlay: !_hasLoadedOnce);
         UpdateHallOfFameTimer();
     }
 
     public override void OnNavigatedFrom()
     {
+        _busyWork.Cancel();
+        IsOverviewBusy = false;
         IsBillboardActive = false;
         UpdateHallOfFameTimer();
     }
 
-    [RelayCommand]
-    private void RefreshOverview()
+    [RelayCommand(CanExecute = nameof(CanUpdateOverview))]
+    private void UpdateOverview()
     {
-        var overview = PersonalRatingOverviewBuilder.Build(
-            _databaseService.GetTrackedShows(),
-            _databaseService.GetTrackedMovies(),
-            _databaseService.GetAllEpisodeUserRatings());
+        RequestLoad(forceVisualRebuild: true, showOverlay: true, startCooldown: true);
+    }
 
+    private bool CanUpdateOverview() => !IsOverviewBusy && !_updateOnCooldown;
+
+    private void RequestLoad(bool forceVisualRebuild, bool showOverlay, bool startCooldown = false)
+    {
+        BusyMessage = startCooldown ? "Updating stats…" : "Loading stats…";
+        _busyWork.Run(
+            setBusy: value => IsOverviewBusy = value,
+            showOverlay,
+            work: cancellationToken => LoadOverviewAsync(forceVisualRebuild, startCooldown, cancellationToken));
+    }
+
+    private async Task LoadOverviewAsync(bool forceVisualRebuild, bool startCooldown, CancellationToken cancellationToken)
+    {
+        var overview = await Task.Run(
+            () =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                return PersonalRatingOverviewBuilder.Build(
+                    _databaseService.GetTrackedShows(),
+                    _databaseService.GetTrackedMovies(),
+                    _databaseService.GetAllEpisodeUserRatings());
+            },
+            cancellationToken);
+
+        cancellationToken.ThrowIfCancellationRequested();
+        ApplyOverview(overview, forceVisualRebuild);
+        _hasLoadedOnce = true;
+        if (startCooldown)
+        {
+            BeginUpdateCooldown();
+        }
+    }
+
+    private void ApplyOverview(PersonalRatingOverview overview, bool forceVisualRebuild)
+    {
         HasLibrary = overview.HasLibrary;
         ShowCountText = FormatCount(overview.ShowCount, "show", "shows");
         MovieCountText = FormatCount(overview.MovieCount, "movie", "movies");
@@ -254,7 +304,7 @@ public sealed partial class StatsViewModel : ViewModelBase
         Replace(EmptyOpinions, overview.EmptyOpinions);
 
         var heatmapFingerprint = HeatmapStripLayout.Fingerprint(overview.HeatmapRows);
-        if (heatmapFingerprint != _heatmapFingerprint)
+        if (forceVisualRebuild || heatmapFingerprint != _heatmapFingerprint)
         {
             HeatmapRows.Clear();
             foreach (var row in overview.HeatmapRows)
@@ -268,14 +318,14 @@ public sealed partial class StatsViewModel : ViewModelBase
         }
 
         var showFingerprint = HeatmapStripLayout.TitleStripFingerprint(overview.RatedShows);
-        if (showFingerprint != _showStripFingerprint)
+        if (forceVisualRebuild || showFingerprint != _showStripFingerprint)
         {
             ShowStrip.ReplaceSource(overview.RatedShows);
             _showStripFingerprint = showFingerprint;
         }
 
         var movieFingerprint = HeatmapStripLayout.TitleStripFingerprint(overview.RatedMovies);
-        if (movieFingerprint != _movieStripFingerprint)
+        if (forceVisualRebuild || movieFingerprint != _movieStripFingerprint)
         {
             MovieStrip.ReplaceSource(overview.RatedMovies);
             _movieStripFingerprint = movieFingerprint;
@@ -385,6 +435,8 @@ public sealed partial class StatsViewModel : ViewModelBase
         card.PosterImage = await _posterImageService.LoadAsync(posterPath, kind, tmdbId, width: 342);
     }
 
+    partial void OnIsOverviewBusyChanged(bool value) => UpdateHallOfFameTimer();
+
     partial void OnIsBillboardActiveChanged(bool value) => UpdateHallOfFameTimer();
 
     partial void OnIsTopEpisodesPausedChanged(bool value) => UpdateHallOfFameTimer();
@@ -397,7 +449,7 @@ public sealed partial class StatsViewModel : ViewModelBase
 
     private void AdvanceHallOfFame()
     {
-        if (!IsBillboardActive)
+        if (!IsBillboardActive || IsOverviewBusy)
         {
             return;
         }
@@ -430,7 +482,7 @@ public sealed partial class StatsViewModel : ViewModelBase
             (CanRotateBottomEpisodes && !IsBottomEpisodesPaused) ||
             (CanRotateTopSpecials && !IsTopSpecialsPaused) ||
             (CanRotateBottomSpecials && !IsBottomSpecialsPaused);
-        if (IsBillboardActive && anyCanRun)
+        if (IsBillboardActive && !IsOverviewBusy && anyCanRun)
         {
             if (!_hallOfFameTimer.IsEnabled)
             {
@@ -452,6 +504,21 @@ public sealed partial class StatsViewModel : ViewModelBase
                 OnPropertyChanged(propertyName);
             }
         };
+    }
+
+    private void BeginUpdateCooldown()
+    {
+        _updateOnCooldown = true;
+        UpdateOverviewCommand.NotifyCanExecuteChanged();
+        _updateCooldownTimer.Stop();
+        _updateCooldownTimer.Start();
+    }
+
+    private void EndUpdateCooldown()
+    {
+        _updateCooldownTimer.Stop();
+        _updateOnCooldown = false;
+        UpdateOverviewCommand.NotifyCanExecuteChanged();
     }
 
     private static void Replace<T>(ObservableCollection<T> target, IReadOnlyList<T> source)

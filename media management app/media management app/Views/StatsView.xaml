@@ -353,18 +353,18 @@
                             <TextBlock Text="Stats" Style="{StaticResource SectionTitleStyle}" />
                         </StackPanel>
                         <Button Grid.Column="1"
-                                Command="{Binding RefreshOverviewCommand}"
+                                Command="{Binding UpdateOverviewCommand}"
                                 Style="{StaticResource AppOutlinedButtonStyle}"
                                 MinHeight="36"
                                 Padding="12,8"
-                                ToolTip="Rebuild library stats">
+                                ToolTip="Update library stats">
                             <StackPanel Orientation="Horizontal">
                                 <iconPacks:PackIconLucide Kind="RefreshCw"
                                                           Width="14"
                                                           Height="14"
                                                           VerticalAlignment="Center"
                                                           Margin="0,0,6,0" />
-                                <TextBlock Text="Refresh" VerticalAlignment="Center" />
+                                <TextBlock Text="Update" VerticalAlignment="Center" />
                             </StackPanel>
                         </Button>
                     </Grid>
@@ -1301,5 +1301,10 @@
                 </ScrollViewer>
             </Border>
         </Popup>
+        <controls:BusyOverlay Panel.ZIndex="1"
+                              IsBusy="{Binding IsOverviewBusy}"
+                              Message="{Binding BusyMessage}"
+                              IsIndeterminate="False"
+                              Value="90" />
     </Grid>
 </UserControl>

@@ -34,6 +34,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
     private readonly IDownloadFolderCatalogService _downloadFolderCatalogService;
     private readonly IGeminiLinkConfirmationService _geminiLinkConfirmationService;
     private readonly IJellyfinMediaNavigationService _jellyfinMediaNavigationService;
+    private readonly UiBusyWork _tabEnterBusyWork = new();
 
     private IReadOnlyList<LibraryMediaCardViewModel> _allMediaCards = [];
     private long? _pendingFocusMediaId;
@@ -113,17 +114,34 @@ public sealed partial class LibraryViewModel : ViewModelBase
 
     public override void OnNavigatedTo()
     {
-        // Force detail reload even when the same card remains selected (04 stale-detail bug).
-        _loadedDetailMediaId = null;
-        _loadedDetailMediaKind = null;
-        RefreshLibrary();
-        _ = ReloadSelectedDetailAsync();
+        if (!_hasNavigatedToLibrary)
+        {
+            _hasNavigatedToLibrary = true;
+            if (!_pendingFocusActive)
+            {
+                return;
+            }
+        }
+
+        BusyMessage = "Loading library…";
+        _tabEnterBusyWork.Run(
+            setBusy: value => IsLibraryBusy = value,
+            showOverlay: true,
+            work: RefreshLibraryOnTabEnterAsync);
+    }
+
+    public override void OnNavigatedFrom()
+    {
+        _tabEnterBusyWork.Cancel();
+        IsLibraryBusy = false;
     }
 
     private bool _isRestoringLibraryUiState;
     private bool _suppressWatchStatusFilterApply;
     private long? _pendingRestoreMediaId;
     private MediaKind? _pendingRestoreMediaKind;
+    private bool _hasNavigatedToLibrary;
+    private bool _suppressDetailLoadOnSelection;
     private int _detailRefreshGeneration;
     private CancellationTokenSource? _detailRefreshDebounceCts;
     private static readonly TimeSpan DetailRefreshDebounce = TimeSpan.FromMilliseconds(250);
@@ -204,6 +222,12 @@ public sealed partial class LibraryViewModel : ViewModelBase
 
     [ObservableProperty]
     private string statusMessage = string.Empty;
+
+    [ObservableProperty]
+    private bool isLibraryBusy;
+
+    [ObservableProperty]
+    private string busyMessage = "Loading library…";
 
     [ObservableProperty]
     private bool isImportPanelOpen;
@@ -1664,7 +1688,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
         }
 
         var isSameMedia = value?.Id == _loadedDetailMediaId && value?.MediaKind == _loadedDetailMediaKind;
-        if (!isSameMedia)
+        if (!_suppressDetailLoadOnSelection && !isSameMedia)
         {
             ShowHiddenSeasons = false;
             _loadedDetailMediaId = value?.Id;
@@ -1885,6 +1909,160 @@ public sealed partial class LibraryViewModel : ViewModelBase
         RebuildSelectedShowDetail();
     }
 
+    private async Task RefreshLibraryOnTabEnterAsync(CancellationToken cancellationToken)
+    {
+        _suppressDetailLoadOnSelection = true;
+        try
+        {
+            RefreshLibrary();
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var card = SelectedMediaCard;
+            var expandedSeasons = SelectedShow?.Seasons
+                .Where(season => season.IsExpanded)
+                .Select(season => season.SeasonNumber)
+                .ToHashSet() ?? [];
+            var showHiddenSeasons = ShowHiddenSeasons;
+
+            if (card is null)
+            {
+                ApplyClearedDetail();
+                return;
+            }
+
+            var built = await Task.Run(
+                () => BuildSelectedDetail(card, expandedSeasons, showHiddenSeasons, cancellationToken),
+                cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            ApplyBuiltDetail(built);
+            NotifyAfterDetailLoad();
+
+            var poster = await _posterImageService.LoadAsync(card.PosterPath, card.MediaKind, card.TmdbId);
+            cancellationToken.ThrowIfCancellationRequested();
+            SelectedPosterImage = poster;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            _suppressDetailLoadOnSelection = false;
+        }
+    }
+
+    private BuiltLibraryDetail BuildSelectedDetail(
+        LibraryMediaCardViewModel card,
+        IReadOnlySet<int> expandedSeasons,
+        bool showHiddenSeasons,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var sourceItems = _databaseService.GetSourceItems();
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (card.IsShow)
+        {
+            var show = _trackedShowService.GetShows().FirstOrDefault(item => item.Id == card.Id);
+            if (show is null)
+            {
+                return BuiltLibraryDetail.Missing($"Selected show was not found.");
+            }
+
+            var detail = BuildShowDetail(show, expandedSeasons, sourceItems, showHiddenSeasons);
+            cancellationToken.ThrowIfCancellationRequested();
+            return new BuiltLibraryDetail(
+                Card: card,
+                Show: detail,
+                Movie: null,
+                SeriesStatus: show.SeriesStatus,
+                WatchStatus: show.WatchStatus,
+                WatchedEpisodes: show.WatchedEpisodes,
+                TotalEpisodes: show.WatchEpisodeTotal,
+                Rating: show.Rating,
+                Thought: show.Thought,
+                StatusMessage: $"Viewing show: {show.DisplayTitle}");
+        }
+
+        var movie = _trackedMovieService.GetMovies().FirstOrDefault(item => item.Id == card.Id);
+        if (movie is null)
+        {
+            return BuiltLibraryDetail.Missing("Selected movie was not found.");
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        return new BuiltLibraryDetail(
+            Card: card,
+            Show: null,
+            Movie: BuildMovieDetail(movie, sourceItems),
+            SeriesStatus: null,
+            WatchStatus: movie.WatchStatus,
+            WatchedEpisodes: 0,
+            TotalEpisodes: 0,
+            Rating: movie.Rating,
+            Thought: movie.Thought,
+            StatusMessage: $"Viewing movie: {movie.DisplayTitle}");
+    }
+
+    private void ApplyBuiltDetail(BuiltLibraryDetail built)
+    {
+        if (built.IsMissing)
+        {
+            StatusMessage = built.StatusMessage;
+            ClearPendingFocus();
+            return;
+        }
+
+        _loadedDetailMediaId = built.Card.Id;
+        _loadedDetailMediaKind = built.Card.MediaKind;
+
+        if (built.Show is not null)
+        {
+            SelectedShow = built.Show;
+            SelectedMovie = null;
+            _suppressSeriesStatusUpdate = true;
+            SelectedShowSeriesStatus = built.SeriesStatus ?? ShowSeriesStatus.Unknown;
+            _suppressSeriesStatusUpdate = false;
+            ApplyPendingRatingFocus();
+        }
+        else
+        {
+            SelectedMovie = built.Movie;
+            SelectedShow = null;
+            ClearPendingFocus();
+        }
+
+        SetWatchProgressUi(built.WatchStatus, built.WatchedEpisodes, built.TotalEpisodes);
+        SetRatingThoughtUi(built.Rating, built.Thought);
+        StatusMessage = built.StatusMessage;
+    }
+
+    private void ApplyClearedDetail()
+    {
+        _loadedDetailMediaId = null;
+        _loadedDetailMediaKind = null;
+        SelectedShow = null;
+        SelectedMovie = null;
+        SelectedPosterImage = null;
+        SetWatchProgressUi(UserWatchStatus.None, watchedEpisodes: 0, totalEpisodes: 0);
+        SetRatingThoughtUi(rating: null, thought: null);
+        ClearPendingFocus();
+    }
+
+    private void NotifyAfterDetailLoad()
+    {
+        AddMovieToCartCommand.NotifyCanExecuteChanged();
+        AddEpisodeToCartCommand.NotifyCanExecuteChanged();
+        AddSeasonPackToCartCommand.NotifyCanExecuteChanged();
+        LinkMovieCommand.NotifyCanExecuteChanged();
+        ResetMovieCommand.NotifyCanExecuteChanged();
+        LinkEpisodeCommand.NotifyCanExecuteChanged();
+        ResetEpisodeCommand.NotifyCanExecuteChanged();
+        RuleLinkSeasonPackCommand.NotifyCanExecuteChanged();
+        AiLinkSeasonPackCommand.NotifyCanExecuteChanged();
+        UnlinkSeasonPackCommand.NotifyCanExecuteChanged();
+        CleanupSeasonPackCommand.NotifyCanExecuteChanged();
+    }
+
     private async Task LoadSelectedMediaAsync(LibraryMediaCardViewModel? card)
     {
         // Block watch-status persistence until SetWatchProgressUi finishes settling bindings.
@@ -1895,64 +2073,51 @@ public sealed partial class LibraryViewModel : ViewModelBase
             .Select(season => season.SeasonNumber)
             .ToHashSet() ?? [];
 
-        SelectedShow = null;
-        SelectedMovie = null;
-        SelectedPosterImage = null;
-
         if (card is null)
         {
-            _loadedDetailMediaId = null;
-            _loadedDetailMediaKind = null;
-            SetWatchProgressUi(UserWatchStatus.None, watchedEpisodes: 0, totalEpisodes: 0);
-            SetRatingThoughtUi(rating: null, thought: null);
-            ClearPendingFocus();
+            ApplyClearedDetail();
             return;
         }
 
-        var sourceItems = _databaseService.GetSourceItems();
-
-        if (card.IsShow)
+        var built = BuildSelectedDetail(card, expandedSeasons, ShowHiddenSeasons, CancellationToken.None);
+        ApplyBuiltDetail(built);
+        if (built.IsMissing)
         {
-            var show = _trackedShowService.GetShows().FirstOrDefault(item => item.Id == card.Id);
-            if (show is null)
-            {
-                StatusMessage = "Selected show was not found.";
-                ClearPendingFocus();
-                return;
-            }
-
-            SelectedShow = BuildShowDetail(show, expandedSeasons, sourceItems);
-            _suppressSeriesStatusUpdate = true;
-            SelectedShowSeriesStatus = show.SeriesStatus;
-            _suppressSeriesStatusUpdate = false;
-            SetWatchProgressUi(show.WatchStatus, show.WatchedEpisodes, show.WatchEpisodeTotal);
-            SetRatingThoughtUi(show.Rating, show.Thought);
-            SelectedPosterImage = await _posterImageService.LoadAsync(
-                card.PosterPath,
-                card.MediaKind,
-                card.TmdbId);
-            StatusMessage = $"Viewing show: {show.DisplayTitle}";
-            ApplyPendingRatingFocus();
             return;
         }
 
-        var movie = _trackedMovieService.GetMovies().FirstOrDefault(item => item.Id == card.Id);
-        if (movie is null)
-        {
-            StatusMessage = "Selected movie was not found.";
-            ClearPendingFocus();
-            return;
-        }
-
-        SelectedMovie = BuildMovieDetail(movie, sourceItems);
-        SetWatchProgressUi(movie.WatchStatus, watchedEpisodes: 0, totalEpisodes: 0);
-        SetRatingThoughtUi(movie.Rating, movie.Thought);
         SelectedPosterImage = await _posterImageService.LoadAsync(
             card.PosterPath,
             card.MediaKind,
             card.TmdbId);
-        StatusMessage = $"Viewing movie: {movie.DisplayTitle}";
-        ClearPendingFocus();
+    }
+
+    private sealed record BuiltLibraryDetail(
+        LibraryMediaCardViewModel Card,
+        LibraryShowDetailViewModel? Show,
+        LibraryMovieDetailViewModel? Movie,
+        ShowSeriesStatus? SeriesStatus,
+        UserWatchStatus WatchStatus,
+        int WatchedEpisodes,
+        int TotalEpisodes,
+        double? Rating,
+        string? Thought,
+        string StatusMessage,
+        bool IsMissing = false)
+    {
+        public static BuiltLibraryDetail Missing(string statusMessage) =>
+            new(
+                Card: null!,
+                Show: null,
+                Movie: null,
+                SeriesStatus: null,
+                WatchStatus: UserWatchStatus.None,
+                WatchedEpisodes: 0,
+                TotalEpisodes: 0,
+                Rating: null,
+                Thought: null,
+                StatusMessage: statusMessage,
+                IsMissing: true);
     }
 
     private void ApplyPendingRatingFocus()
@@ -2121,8 +2286,10 @@ public sealed partial class LibraryViewModel : ViewModelBase
     private LibraryShowDetailViewModel BuildShowDetail(
         TrackedShow show,
         IReadOnlySet<int>? expandedSeasons,
-        IReadOnlyList<SourceItem> sourceItems)
+        IReadOnlyList<SourceItem> sourceItems,
+        bool? showHiddenSeasons = null)
     {
+        var includeHidden = showHiddenSeasons ?? ShowHiddenSeasons;
         var linkedEpisodeStatuses = GetLinkedEpisodeStatuses(show.TmdbId, sourceItems);
         var linkedPackOwnerSeasons = GetLinkedPackOwnerSeasons(show.TmdbId, sourceItems);
         var symlinkedEpisodeKeys = GetSymlinkedEpisodeKeys(show.TmdbId, sourceItems);
@@ -2153,7 +2320,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
 
         var seasons = episodes
             .GroupBy(episode => episode.SeasonNumber)
-            .Where(group => ShowHiddenSeasons || !hiddenSeasonNumbers.Contains(group.Key))
+            .Where(group => includeHidden || !hiddenSeasonNumbers.Contains(group.Key))
             .OrderBy(group => group.Key)
             .Select(group =>
             {
@@ -2179,7 +2346,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
         {
             var orphanRows = AppendOrphanPackRows(show.Id, show.TmdbId, [], sourceItems);
             if (orphanRows.Count > 0 &&
-                (ShowHiddenSeasons || !hiddenSeasonNumbers.Contains(AppConstants.SpecialsSeasonNumber)))
+                (includeHidden || !hiddenSeasonNumbers.Contains(AppConstants.SpecialsSeasonNumber)))
             {
                 seasonRecords.TryGetValue(AppConstants.SpecialsSeasonNumber, out var specialsRecord);
                 seasons.Insert(
