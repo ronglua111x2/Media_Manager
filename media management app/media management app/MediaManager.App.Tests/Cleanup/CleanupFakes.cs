@@ -153,6 +153,12 @@ internal sealed class FakeQbittorrentClient : IQbittorrentClient
 
     public AddTorrentRequest? LastAdd { get; private set; }
 
+    public int AddCount { get; private set; }
+
+    public int ApplyManagedSettingsCount { get; private set; }
+
+    public List<AddedTorrentResult> SeededTorrents { get; } = [];
+
     public AddedTorrentResult Added { get; set; } = new()
     {
         Hash = "abc123",
@@ -166,6 +172,12 @@ internal sealed class FakeQbittorrentClient : IQbittorrentClient
     ];
 
     private readonly HashSet<string> _hashes = new(StringComparer.OrdinalIgnoreCase) { "abc123" };
+
+    public void SeedExisting(AddedTorrentResult torrent)
+    {
+        SeededTorrents.Add(torrent);
+        _hashes.Add(torrent.Hash);
+    }
 
     public Task<string> TestConnectionAsync(CancellationToken cancellationToken = default)
         => throw new NotSupportedException();
@@ -198,14 +210,30 @@ internal sealed class FakeQbittorrentClient : IQbittorrentClient
         AddTorrentRequest request,
         CancellationToken cancellationToken = default)
     {
+        AddCount++;
         LastAdd = request;
+        _hashes.Add(Added.Hash);
         return Task.FromResult(Added);
+    }
+
+    public Task ApplyManagedTorrentSettingsAsync(
+        string hash,
+        string? savePath,
+        string? category,
+        string tags,
+        CancellationToken cancellationToken = default)
+    {
+        ApplyManagedSettingsCount++;
+        return Task.CompletedTask;
     }
 
     public Task<IReadOnlyList<AddedTorrentResult>> GetTorrentsAsync(CancellationToken cancellationToken = default)
     {
         IReadOnlyList<AddedTorrentResult> list = _hashes
-            .Select(hash => new AddedTorrentResult { Hash = hash, Name = Added.Name, State = Added.State })
+            .Select(hash =>
+                SeededTorrents.FirstOrDefault(torrent =>
+                    string.Equals(torrent.Hash, hash, StringComparison.OrdinalIgnoreCase))
+                ?? new AddedTorrentResult { Hash = hash, Name = Added.Name, State = Added.State })
             .ToList();
         return Task.FromResult(list);
     }

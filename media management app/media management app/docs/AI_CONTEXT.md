@@ -289,7 +289,7 @@ phases:
   - name: torrent_hunt
     method: RunTorrentHuntAsync
     lock: _huntLock
-    actions: [search qbit, score candidates, create cart orders, add torrents via gate]
+    actions: [search qbit, score candidates, create cart orders, add or attach existing torrents via gate]
     dependencies: [IWarpCliService, IQbittorrentProcessRestartService, ITorrentAddGateService]
   - name: background_reconcile
     method: RunBackgroundReconcileAsync
@@ -338,9 +338,11 @@ flow: torrent_add_gate
 service: Services/ITorrentAddGateService.cs (TorrentAddGateService)
 policy: add_running_then_validate  # AUD-001 accepted; do not set Paused=true
 cleanup: Services/ITorrentCleanupService.cs
+existing_hash: TryGetExistingByListingUrlAsync matches magnet infohash to GetTorrentsAsync
 steps:
   1: Blacklist check (listing URL)
-  2: Add torrent RUNNING (Paused=false) via QbittorrentClient
+  1b: Magnet already in qBittorrent -> cart AppMessageBox Yes/No; Auto-Track auto-attaches; ApplyManagedTorrentSettingsAsync; skip AddTorrentAsync
+  2: Else add torrent RUNNING (Paused=false) via QbittorrentClient
   3: Infohash blacklist check -> delete if matched
   4: If EnableContentValidation=false -> return immediately
   5: Poll GetTorrentFilesAsync every 1s until files or timeout
@@ -349,9 +351,11 @@ steps:
   8a: Return live torrent if valid (download continues)
   8b: Verified delete + blacklist -> MaliciousTorrentException
   8c: Unverified delete -> retry 3x (20s cleanup timeout), PauseTorrentsAsync fail-safe, TorrentCleanupFailedException; cart/Auto-Track halt
+limitation: HTTP listings without magnet infohash stay on the add path
 exceptions:
   MaliciousTorrentException: confirmed delete only
   TorrentCleanupFailedException: Common/TorrentCleanupFailedException.cs — includes hash; halt current batch
+  cart_existing_no: skip that order only (not a halt)
 config: Models/TorrentValidationConfig.cs
   ValidationTimeoutSeconds: default 90 (code), clamp 5-120
   note: settings.json may still show 30 until user saves settings
@@ -513,7 +517,8 @@ data:
   - Models/AppSettings.cs
 
 safety:
-  - Services/TorrentAddGateService.cs
+  - Services/ITorrentAddGateService.cs
+  - Common/TorrentListingIdentity.cs
   - Services/TorrentContentValidationService.cs
   - Services/TorrentCleanupService.cs
   - Services/TorrentBlacklistService.cs

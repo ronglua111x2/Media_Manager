@@ -346,6 +346,14 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
         throw new InvalidOperationException("qBittorrent accepted the add request, but no new torrent appeared. The search plugin URL may be a details page, blocked URL, or dead torrent link.");
     }
 
+    public Task ApplyManagedTorrentSettingsAsync(
+        string hash,
+        string? savePath,
+        string? category,
+        string tags,
+        CancellationToken cancellationToken = default)
+        => ApplyTorrentPostAddSettingsAsync(hash, savePath, category, tags, cancellationToken);
+
     public void Dispose()
     {
         _loginGate.Dispose();

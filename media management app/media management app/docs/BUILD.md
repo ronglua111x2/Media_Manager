@@ -78,7 +78,7 @@ APP_TEST_PROJ="$APP_ROOT/MediaManager.App.Tests/MediaManager.App.Tests.csproj"
 dotnet test "$TEST_PROJ" -c Release -p:Platform=x64 -v normal
 # Expected (2026-09-16): 207 passed; Core.Tests references Core only (no WPF).
 dotnet test "$APP_TEST_PROJ" -c Release -p:Platform=x64 -v minimal
-# Expected: 9 passed (AUD-002 cleanup retry/verify/halt).
+# Expected: 13 passed (AUD-002 cleanup retry/verify/halt + existing-hash attach).
 ```
 
 ### Publish (single-file self-contained)
@@ -221,5 +221,5 @@ Commands run on this repo (Windows, Git Bash):
 | `dotnet publish -c Release -p:Platform=x64` | OK |
 | `dotnet test` on WPF `.csproj` | OK exit, **no tests** (tests live in Core.Tests / App.Tests) |
 | `dotnet test` Core.Tests Release/x64 | **207 passed** (2026-09-16) |
-| `dotnet test` App.Tests Release/x64 | **9 passed** (AUD-002 cleanup/halt) |
+| `dotnet test` App.Tests Release/x64 | **13 passed** (AUD-002 cleanup/halt + existing-hash attach) |
 

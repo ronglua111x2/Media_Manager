@@ -1,6 +1,6 @@
 # 00 — Executive summary
 
-**Status:** Helper implemented (`AppMessageBox`). Inventory of the 26 former Win32 call sites still applies.
+**Status:** Helper implemented (`AppMessageBox`). Inventory of the 26 former Win32 call sites still applies, plus the cart **Already in qBittorrent** confirm (27 `AppMessageBox` sites).
 
 ## Symptom
 
@@ -39,7 +39,7 @@ flowchart LR
 | | |
 |--|--|
 | Files with `MessageBox.Show` | **14** |
-| Call sites | **26** |
+| Call sites | **27** |
 | WinForms `MessageBox` | **None** |
 | WPF-UI / Material `ContentDialog` | **None** |
 
@@ -56,7 +56,7 @@ Four **services** own a box. Ten other files are ViewModels, view code-behind, o
 | VM | [`NewsViewModel`](../../ViewModels/NewsViewModel.cs) | 1 |
 | VM | [`MainViewModel`](../../ViewModels/MainViewModel.cs) | 1 |
 | VM | [`SettingsViewModel`](../../ViewModels/SettingsViewModel.cs) | 1 |
-| VM | [`TorrentWorkspaceViewModel`](../../ViewModels/TorrentWorkspaceViewModel.cs) | 5 |
+| VM | [`TorrentWorkspaceViewModel`](../../ViewModels/TorrentWorkspaceViewModel.cs) | 6 |
 | VM | [`RecipeWorkspaceViewModel`](../../ViewModels/RecipeWorkspaceViewModel.cs) | 1 |
 | View | [`SetAutoTrackDialog`](../../Views/SetAutoTrackDialog.xaml.cs) | 2 |
 | View | [`EpisodeOrganizationDialog`](../../Views/EpisodeOrganizationDialog.xaml.cs) | 1 |
@@ -72,7 +72,7 @@ From [`App.xaml.cs`](../../App.xaml.cs) `OnStartup`:
 2. `IThemeService.Apply(settings.Current.Ui?.Theme ?? AppTheme.Light)` — swaps Dark/Light dictionaries.
 3. `IDatabaseService.Initialize` — **migration failure** box runs after Apply, still on the UI thread.
 
-All 26 current callers are UI-thread. Dispatcher marshal is a safety rule for a later helper, not a live bug.
+All 27 current callers are UI-thread. Dispatcher marshal is a safety rule for a later helper, not a live bug.
 
 ## What this pack is for
 

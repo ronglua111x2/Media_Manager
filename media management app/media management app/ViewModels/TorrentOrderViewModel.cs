@@ -18,6 +18,7 @@ public sealed partial class TorrentOrderViewModel : ObservableObject
         AcceptCommand = new RelayCommand(Accept, () => CanAccept);
         BlacklistCandidateCommand = new RelayCommand<long>(BlacklistCandidate, _ => CanChangeCandidate);
         RetryAddCommand = new RelayCommand(RetryAdd, () => CanRetryAdd);
+        RetrySelectCommand = new RelayCommand(RetrySelect, () => CanRetrySelect);
         RetrySearchCommand = new RelayCommand(RetrySearch, () => CanRetrySearch);
         ReconcilePackCommand = new RelayCommand(ReconcilePack, () => CanReconcilePack);
     }
@@ -60,6 +61,8 @@ public sealed partial class TorrentOrderViewModel : ObservableObject
 
     public IRelayCommand RetryAddCommand { get; }
 
+    public IRelayCommand RetrySelectCommand { get; }
+
     public IRelayCommand RetrySearchCommand { get; }
 
     public IRelayCommand ReconcilePackCommand { get; }
@@ -71,6 +74,8 @@ public sealed partial class TorrentOrderViewModel : ObservableObject
     public Action<long>? AcceptRequested { get; set; }
 
     public Action<long>? RetryAddRequested { get; set; }
+
+    public Action<long>? RetrySelectRequested { get; set; }
 
     public Action<long>? RetrySearchRequested { get; set; }
 
@@ -98,10 +103,12 @@ public sealed partial class TorrentOrderViewModel : ObservableObject
                 OnPropertyChanged(nameof(HasCandidates));
                 OnPropertyChanged(nameof(CanAccept));
                 OnPropertyChanged(nameof(CanRetryAdd));
+                OnPropertyChanged(nameof(CanRetrySelect));
                 OnPropertyChanged(nameof(CanRetrySearch));
                 AcceptCommand.NotifyCanExecuteChanged();
                 BlacklistCandidateCommand.NotifyCanExecuteChanged();
                 RetryAddCommand.NotifyCanExecuteChanged();
+                RetrySelectCommand.NotifyCanExecuteChanged();
                 RetrySearchCommand.NotifyCanExecuteChanged();
                 if (!_isLoadingSelection && value is not null)
                 {
@@ -157,6 +164,11 @@ public sealed partial class TorrentOrderViewModel : ObservableObject
                                Status == TorrentOrderStatus.Failed &&
                                SelectedCandidateId is not null &&
                                !string.IsNullOrWhiteSpace(SelectedCandidateName);
+
+    public bool CanRetrySelect => !CartOperationRunning &&
+                                  Status is TorrentOrderStatus.Failed or TorrentOrderStatus.Canceled &&
+                                  SelectedCandidateId is not null &&
+                                  !string.IsNullOrWhiteSpace(SelectedCandidateName);
 
     public bool CanRetrySearch => !CartOperationRunning &&
                                   Status is TorrentOrderStatus.Failed or TorrentOrderStatus.NoCandidates;
@@ -237,6 +249,7 @@ public sealed partial class TorrentOrderViewModel : ObservableObject
         OnPropertyChanged(nameof(HasCandidates));
         OnPropertyChanged(nameof(CanAccept));
         OnPropertyChanged(nameof(CanRetryAdd));
+        OnPropertyChanged(nameof(CanRetrySelect));
         OnPropertyChanged(nameof(CanRetrySearch));
         OnPropertyChanged(nameof(SelectedCandidate));
         OnPropertyChanged(nameof(SelectedCandidateIsMultiSeason));
@@ -247,6 +260,7 @@ public sealed partial class TorrentOrderViewModel : ObservableObject
         AcceptCommand.NotifyCanExecuteChanged();
         BlacklistCandidateCommand.NotifyCanExecuteChanged();
         RetryAddCommand.NotifyCanExecuteChanged();
+        RetrySelectCommand.NotifyCanExecuteChanged();
         RetrySearchCommand.NotifyCanExecuteChanged();
     }
 
@@ -270,6 +284,11 @@ public sealed partial class TorrentOrderViewModel : ObservableObject
         RetryAddRequested?.Invoke(Id);
     }
 
+    private void RetrySelect()
+    {
+        RetrySelectRequested?.Invoke(Id);
+    }
+
     private void RetrySearch()
     {
         RetrySearchRequested?.Invoke(Id);
@@ -286,11 +305,13 @@ public sealed partial class TorrentOrderViewModel : ObservableObject
         OnPropertyChanged(nameof(CanShowRecoveryMenu));
         OnPropertyChanged(nameof(CanAccept));
         OnPropertyChanged(nameof(CanRetryAdd));
+        OnPropertyChanged(nameof(CanRetrySelect));
         OnPropertyChanged(nameof(CanRetrySearch));
         OnPropertyChanged(nameof(CanReconcilePack));
         AcceptCommand.NotifyCanExecuteChanged();
         BlacklistCandidateCommand.NotifyCanExecuteChanged();
         RetryAddCommand.NotifyCanExecuteChanged();
+        RetrySelectCommand.NotifyCanExecuteChanged();
         RetrySearchCommand.NotifyCanExecuteChanged();
         ReconcilePackCommand.NotifyCanExecuteChanged();
     }

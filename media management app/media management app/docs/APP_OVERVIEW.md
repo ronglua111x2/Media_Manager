@@ -19,7 +19,7 @@ flowchart TD
     D --> F[qBittorrent search via plugins]
     E --> F
     F --> G[Score & rank candidates]
-    G --> H[Add to qBittorrent running]
+    G --> H[Add or attach existing in qBittorrent]
     H --> I[Poll file list & validate]
     I --> J[Reconcile download progress]
     J --> K[Hardlink into library]
@@ -122,7 +122,7 @@ See [RECIPE_SCHEMA.md](./RECIPE_SCHEMA.md) for the full schema and live examples
 Three concurrent phases (each mutex-guarded):
 
 1. **TMDB Discovery** — refresh tracked shows, detect new aired episodes, enforce daily TMDB budget
-2. **Torrent Hunt** — search qBittorrent for pending episodes, create cart orders, add torrents (with WARP if needed)
+2. **Torrent Hunt** — search qBittorrent for pending episodes, create cart orders, add torrents or attach a copy already in qBittorrent (with WARP if needed)
 3. **Background Reconcile** — sync qBittorrent state, hardlink completed downloads, trigger pack linking
 
 Scheduler respects weekly anchor (day + time), per-show overrides, and hunt intervals.
@@ -213,11 +213,12 @@ See [FEATURES.md](./FEATURES.md) for column details.
 Gated cart and Auto-Track adds run **then** validate (accepted AUD-001 trade-off; pause-on-add previously broke `search/downloadTorrent`):
 
 1. Blacklist check on the listing URL
-2. Add torrent **running** (`Paused = false`)
-3. Infohash blacklist check; poll the file list (default 90s, cap 120s)
-4. Check extensions against allowed media + dangerous extension lists; detect obfuscation
-5. Valid torrents keep downloading. Rejected torrents are deleted with files, then blacklisted
-6. If deletion cannot be verified (AUD-002): retry up to three times, fail-safe pause/stop, throw `TorrentCleanupFailedException` with the hash, and **halt** the current cart batch / Auto-Track hunt. `MaliciousTorrentException` is used only after confirmed removal
+2. If qBittorrent already has the same magnet file, the cart asks in plain language whether Media Manager should manage that copy (Yes/No). Auto-Track attaches it with no dialog. Remaining malware checks still run
+3. Otherwise add torrent **running** (`Paused = false`)
+4. Infohash blacklist check; poll the file list (default 90s, cap 120s)
+5. Check extensions against allowed media + dangerous extension lists; detect obfuscation
+6. Valid torrents keep downloading. Rejected torrents are deleted with files, then blacklisted
+7. If deletion cannot be verified (AUD-002): retry up to three times, fail-safe pause/stop, throw `TorrentCleanupFailedException` with the hash, and **halt** the current cart batch / Auto-Track hunt. `MaliciousTorrentException` is used only after confirmed removal. Declining an existing copy skips that cart order only
 
 **Code:** `Services/TorrentAddGateService.cs`, `Services/TorrentContentValidationService.cs`, `Services/TorrentCleanupService.cs`  
 **Audit:** [code-review/README.md](./code-review/README.md), [code-review/06-aud-002-cleanup-failure.md](./code-review/06-aud-002-cleanup-failure.md)

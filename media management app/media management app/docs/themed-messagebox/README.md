@@ -9,7 +9,7 @@
 
 | # | File | Contents |
 |---|------|----------|
-| 0 | [00-executive-summary.md](./00-executive-summary.md) | Why OS boxes appeared; 26 calls; services vs ViewModels; theme apply order |
+| 0 | [00-executive-summary.md](./00-executive-summary.md) | Why OS boxes appeared; 27 calls; services vs ViewModels; theme apply order |
 | 1 | [01-call-site-inventory.md](./01-call-site-inventory.md) | Every former `MessageBox.Show`: caption, buttons, icon, owner, intent class |
 | 2 | [02-theme-and-chrome.md](./02-theme-and-chrome.md) | `AppBrush*` tokens, `WindowChrome`, Lucide severity, `ThemeService` swap |
 | 3 | [03-library-shape.md](./03-library-shape.md) | Drop-in Show API, owner rules, boot-time constraint |

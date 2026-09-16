@@ -365,9 +365,10 @@ Exhaustive list of user-facing and background features. Each entry includes purp
 - **DB:** `TorrentCartOrderCandidates`, `TorrentCartOrders`
 
 ### 6.5 Add to qBittorrent
-- **What:** Add accepted orders to qBittorrent with disk assignment
-- **User interaction:** Add button → `TorrentAddDiskDialog`
-- **Code:** `Views/TorrentAddDiskDialog.xaml`, `Services/TorrentAddDiskAssignmentService.cs`, `Services/TorrentAddGateService.cs`
+- **What:** Add accepted orders to qBittorrent with disk assignment. If the magnet infohash is already in qBittorrent, the cart asks whether Media Manager should manage that copy instead of adding again.
+- **User interaction:** Add button → `TorrentAddDiskDialog`. When qBittorrent already has the file: `AppMessageBox` title **Already in qBittorrent**, Yes (manage the existing copy) / No (skip that order). Batch No skips that order only.
+- **Status:** Yes → `Using existing qBittorrent download: {existingName}`. No → `Add canceled. This file is already in qBittorrent.`
+- **Code:** `Views/TorrentAddDiskDialog.xaml`, `Services/TorrentAddDiskAssignmentService.cs`, `Services/ITorrentAddGateService.cs`, `ViewModels/TorrentWorkspaceViewModel.cs`
 - **DB:** `TorrentCartOrders`; updates torrent state on episodes/movies/seasons
 
 ### 6.6 Per-Media Recipe Assignment
@@ -390,9 +391,9 @@ Exhaustive list of user-facing and background features. Each entry includes purp
 - **DB:** `TorrentCartOrders`, `TorrentCartOrderCandidates`
 
 ### 6.9 Retry Actions
-- **What:** Retry failed add or retry search for an order
-- **User interaction:** Per-order Retry Add / Retry Search buttons
-- **Code:** `ViewModels/TorrentOrderViewModel.cs`
+- **What:** Recover a stuck cart order without starting from scratch. **Retry select** (Failed or Canceled) re-applies the current listing so Accept works again; it does not add to qBittorrent. **Retry add** (Failed only) opens the disk dialog and adds again. **Re-search** (Failed or No candidates) runs search for that order.
+- **User interaction:** RotateCcw icon next to Remove (X) for retry select. Overflow menu: Re-search / Retry add.
+- **Code:** `ViewModels/TorrentOrderViewModel.cs`, `Views/TorrentWorkspaceView.xaml`, `Services/TorrentCartService.cs` (`SelectCandidate` also resets Canceled to Candidates found)
 - **DB:** `TorrentCartOrders`
 
 ### 6.10 Reconcile Pack
@@ -543,7 +544,7 @@ Setup details: [STATE_FOLDER.md](./STATE_FOLDER.md#google-drive-oauth)
 - **DB:** `TrackedShows`, `TrackedSeasons`, `TrackedEpisodes`
 
 ### 10.3 Torrent Hunt (Auto-Track)
-- **What:** Search qBittorrent for pending episodes, score candidates, create cart orders, add torrents. Hunt applies the assigned episode recipe plus `AutoTrackEpisodeOverridesJson`.
+- **What:** Search qBittorrent for pending episodes, score candidates, create cart orders, add torrents. Hunt applies the assigned episode recipe plus `AutoTrackEpisodeOverridesJson`. If the magnet is already in qBittorrent, hunt attaches that copy with no dialog and still runs remaining add-gate checks.
 - **Code:** `Services/AutoTrackService.cs` (`RunTorrentHuntAsync`)
 - **DB:** `TorrentCartOrders`, `TorrentCartOrderCandidates`, `TrackedShows.AutoTrackEpisodeOverridesJson`
 - **External:** WARP connect, qBittorrent restart if WebUI down
@@ -559,18 +560,19 @@ Setup details: [STATE_FOLDER.md](./STATE_FOLDER.md#google-drive-oauth)
 - **DB:** Episodes, movies, seasons, cart orders
 
 ### 10.6 Torrent Add Gate (Validation Pipeline)
-- **What:** Add torrent **running** → poll file list → validate → continue, or verified delete + blacklist. Pause-on-add is an accepted trade-off (AUD-001). Failed deletion is not treated as a successful malware reject (AUD-002).
+- **What:** Add torrent **running** → poll file list → validate → continue, or verified delete + blacklist. Pause-on-add is an accepted trade-off (AUD-001). Failed deletion is not treated as a successful malware reject (AUD-002). Magnet listings already in qBittorrent are attached instead of added again.
 - **Steps:**
   1. Blacklist check (listing URL)
-  2. Add via qBittorrent (not paused; `Paused = false`)
-  3. Infohash blacklist check → delete if matched
-  4. If `EnableContentValidation` false → return immediately
-  5. Poll `GetTorrentFilesAsync` every 1s until non-empty or timeout (default 90s, clamp 5–120)
-  6. Empty file list → delete torrent, throw (no blacklist)
-  7. Validate files → malware → verified delete + blacklist + `MaliciousTorrentException`
-  8. If delete cannot be verified → retry (3×), fail-safe pause, `TorrentCleanupFailedException` with hash; cart/Auto-Track halt
-  9. Return live torrent state (download continues; no explicit resume step)
-- **Code:** `Services/TorrentAddGateService.cs` (in `ITorrentAddGateService.cs`), `Services/TorrentContentValidationService.cs`, `Services/TorrentCleanupService.cs`
+  2. If magnet infohash is already in qBittorrent (`TryGetExistingByListingUrlAsync`): cart Yes/No; Auto-Track auto-attaches. Apply category / save path / `media-manager` tag; do not rename; skip `AddTorrentAsync`. HTTP listings without a magnet hash stay on the add path
+  3. Else add via qBittorrent (not paused; `Paused = false`)
+  4. Infohash blacklist check → delete if matched
+  5. If `EnableContentValidation` false → return immediately
+  6. Poll `GetTorrentFilesAsync` every 1s until non-empty or timeout (default 90s, clamp 5–120)
+  7. Empty file list → delete torrent, throw (no blacklist)
+  8. Validate files → malware → verified delete + blacklist + `MaliciousTorrentException`
+  9. If delete cannot be verified → retry (3×), fail-safe pause, `TorrentCleanupFailedException` with hash; cart/Auto-Track halt
+  10. Return live torrent state (download continues; no explicit resume step)
+- **Code:** `Services/TorrentAddGateService.cs` (in `ITorrentAddGateService.cs`), `Common/TorrentListingIdentity.cs`, `Services/TorrentContentValidationService.cs`, `Services/TorrentCleanupService.cs`
 - **Config:** `Models/TorrentValidationConfig.cs` (`ValidationTimeoutSeconds`, default 90 in code)
 - **DB:** `TorrentBlacklist`
 - **Audit:** [code-review/06-aud-002-cleanup-failure.md](./code-review/06-aud-002-cleanup-failure.md)

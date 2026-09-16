@@ -1,6 +1,6 @@
 # 01 — Call-site inventory
 
-**Live grep:** `MessageBox.Show` in `*.cs` / `*.xaml`. **26** calls in **14** files. No WinForms `MessageBox`.
+**Live grep:** `MessageBox.Show` in `*.cs` / `*.xaml`. **27** calls in **14** files. No WinForms `MessageBox`.
 
 Intent class (for a later helper, not new copy):
 
@@ -146,15 +146,16 @@ Default result **OS default** means the call does not pass `MessageBoxResult`; W
 | Default | OS default |
 | Class | Destructive confirm |
 
-### [`TorrentWorkspaceViewModel`](../../ViewModels/TorrentWorkspaceViewModel.cs) — 5 calls
+### [`TorrentWorkspaceViewModel`](../../ViewModels/TorrentWorkspaceViewModel.cs) — 6 calls
 
 | Line | Method | Caption | Buttons / image | Default | Class | Body (summary) |
 |------|--------|---------|-----------------|--------|--------|----------------|
-| ~808 | `ClearCart` | Clear Cart | YesNo / Question | OS | Confirm | Clear all orders in `{Title}`'s cart |
-| ~832 | `ClearCandidates` | Clear Candidates | YesNo / Question | OS | Confirm | Clear all candidates in `{Title}`'s cart |
-| ~851 | `ClearAllCarts` | Clear All Carts | YesNo / Question | OS | Confirm | Clear all carts for every media item |
-| ~895 | `BlacklistCandidateAsync` | Blacklist listing | YesNo / Warning | OS | Destructive confirm | Blacklist listing for `{Title}` plus name/URL |
-| ~1773 | multi-season pack accept | Multi-Season Pack | YesNo / Warning | OS | Destructive confirm | Pack covers seasons; accepting cancels listed cart pack orders |
+| ~830 | `ClearCart` | Clear Cart | YesNo / Question | OS | Confirm | Clear all orders in `{Title}`'s cart |
+| ~854 | `ClearCandidates` | Clear Candidates | YesNo / Question | OS | Confirm | Clear all candidates in `{Title}`'s cart |
+| ~873 | `ClearAllCarts` | Clear All Carts | YesNo / Question | OS | Confirm | Clear all carts for every media item |
+| ~917 | `BlacklistCandidateAsync` | Blacklist listing | YesNo / Warning | OS | Destructive confirm | Blacklist listing for `{Title}` plus name/URL |
+| ~1575 | `TryAddOrderToClientAsync` | Already in qBittorrent | YesNo / Question | OS | Confirm | qBittorrent already has this file (may use a different name); Yes manages that copy |
+| ~1838 | multi-season pack accept | Multi-Season Pack | YesNo / Warning | OS | Destructive confirm | Pack covers seasons; accepting cancels listed cart pack orders |
 
 ### [`RecipeWorkspaceViewModel.DeleteRecipe`](../../ViewModels/RecipeWorkspaceViewModel.cs)
 

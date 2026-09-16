@@ -486,6 +486,7 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         var addedCount = 0;
         var failedCount = 0;
         var canceledCount = 0;
+        var haltedByUser = false;
         try
         {
             foreach (var seasonGroup in plan.Rows
@@ -509,12 +510,19 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
                 try
                 {
                     var savePath = plan.Rows.First(row => row.OrderId == order.Id).SelectedDownloadFolder;
-                    await AddOrderToClientAsync(order, savePath, cancellationToken);
-                    addedCount++;
+                    if (await TryAddOrderToClientAsync(order, savePath, cancellationToken))
+                    {
+                        addedCount++;
+                    }
+                    else
+                    {
+                        canceledCount++;
+                    }
                 }
                 catch (OperationCanceledException)
                 {
                     canceledCount++;
+                    haltedByUser = true;
                     _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.Canceled, "Add stopped by user.");
                     break;
                 }
@@ -539,9 +547,11 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
 
             _trackedShowService.RefreshAvailability();
             _trackedMovieService.RefreshAvailability();
-            StatusMessage = canceledCount > 0
+            StatusMessage = haltedByUser
                 ? $"Add stopped. Added={addedCount}, Failed={failedCount}, Canceled={canceledCount}."
-                : $"Add complete. Added={addedCount}, Failed={failedCount}.";
+                : canceledCount > 0
+                    ? $"Add complete. Added={addedCount}, Failed={failedCount}, Canceled={canceledCount}."
+                    : $"Add complete. Added={addedCount}, Failed={failedCount}.";
         }
         catch (OperationCanceledException)
         {
@@ -601,7 +611,11 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
 
             StatusMessage = $"Retrying add: {order.Title}...";
             var savePath = plan.Rows.First(row => row.OrderId == order.Id).SelectedDownloadFolder;
-            await AddOrderToClientAsync(order, savePath, cancellationToken);
+            if (!await TryAddOrderToClientAsync(order, savePath, cancellationToken))
+            {
+                return;
+            }
+
             _trackedShowService.RefreshAvailability();
             _trackedMovieService.RefreshAvailability();
             StatusMessage = $"Added {order.Title} to qBittorrent.";
@@ -894,6 +908,19 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         StatusMessage = "Candidate selection updated.";
     }
 
+    private void RetrySelectOrder(long orderId)
+    {
+        var selected = _torrentCartService.GetCandidates(orderId)
+            .FirstOrDefault(candidate => candidate.IsSelected);
+        if (selected is null)
+        {
+            return;
+        }
+
+        _torrentCartService.SelectCandidate(orderId, selected.Id);
+        StatusMessage = "Candidate ready to accept again.";
+    }
+
     private async Task BlacklistCandidateAsync(long orderId, long candidateId)
     {
         var order = _torrentCartService.GetOrder(orderId);
@@ -1172,6 +1199,7 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         viewModel.AcceptRequested = AcceptCandidate;
         viewModel.BlacklistCandidateRequested = (orderId, candidateId) => _ = BlacklistCandidateAsync(orderId, candidateId);
         viewModel.RetryAddRequested = orderId => _ = RetryAddOrderAsync(orderId);
+        viewModel.RetrySelectRequested = RetrySelectOrder;
         viewModel.RetrySearchRequested = orderId => _ = RetrySearchOrderAsync(orderId);
         viewModel.ReconcilePackRequested = orderId => _ = ReconcilePackOrderAsync(orderId);
         viewModel.LoadCandidates(_torrentCartService.GetCandidates(order.Id)
@@ -1548,12 +1576,46 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         }).ToList();
     }
 
-    private async Task AddOrderToClientAsync(TorrentCartOrder order, string savePath, CancellationToken cancellationToken = default)
+    private async Task<bool> TryAddOrderToClientAsync(
+        TorrentCartOrder order,
+        string savePath,
+        CancellationToken cancellationToken = default)
     {
         _logger.Info(
             $"Adding torrent to qBittorrent. Order='{order.Title}', Url='{order.SelectedCandidateUrl}', SavePath='{savePath}'.",
             LogTarget.All);
-        var addedTorrent = await _addGateService.AddPausedValidateAndResumeAsync(order, savePath, cancellationToken);
+
+        var existing = await _addGateService.TryGetExistingByListingUrlAsync(
+            order.SelectedCandidateUrl,
+            cancellationToken);
+        if (existing is not null)
+        {
+            var confirm = AppMessageBox.Show(
+                "qBittorrent already has this file. It may appear under a different name, for example:\n\n" +
+                $"{existing.Name}\n\n" +
+                "You cannot add the same file again from another search result.\n\n" +
+                "Do you want Media Manager to manage the copy that is already there?",
+                "Already in qBittorrent",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+            if (confirm != MessageBoxResult.Yes)
+            {
+                _torrentCartService.UpdateOrderStatus(
+                    order.Id,
+                    TorrentOrderStatus.Canceled,
+                    "Add canceled. This file is already in qBittorrent.");
+                StatusMessage = "Add canceled. This file is already in qBittorrent.";
+                return false;
+            }
+
+            StatusMessage = $"Using existing qBittorrent download: {existing.Name}";
+        }
+
+        var addedTorrent = await _addGateService.AddPausedValidateAndResumeAsync(
+            order,
+            savePath,
+            cancellationToken,
+            existing);
         order.TorrentHash = addedTorrent.Hash;
         order.TorrentName = addedTorrent.Name;
         order.TorrentState = QbittorrentTorrentStateNormalizer.Normalize(addedTorrent.State, addedTorrent.IsComplete);
@@ -1570,7 +1632,7 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
             _trackedMovieService.UpdateSelectedCandidate(order.MediaId, candidate);
             _trackedMovieService.UpdateTorrentState(order.MediaId, addedTorrent);
             _torrentCartService.SaveOrder(order);
-            return;
+            return true;
         }
 
         if (order.EpisodeId is null)
@@ -1591,13 +1653,14 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
             _trackedShowService.UpdateSeasonPackTorrent(order.MediaId, order.SeasonNumber.Value, addedTorrent);
             CancelSupersededPackOrders(order.MediaId, order.SeasonNumber.Value, order.Id, coveredSeasons);
             _torrentCartService.SaveOrder(order);
-            return;
+            return true;
         }
 
         var episodeCandidate = ToEpisodeCandidate(order);
         _trackedShowService.UpdateSelectedCandidate(order.EpisodeId.Value, episodeCandidate);
         _trackedShowService.UpdateTorrentState(order.EpisodeId.Value, addedTorrent);
         _torrentCartService.SaveOrder(order);
+        return true;
     }
 
     private void HandleManualMalwareReject(TorrentCartOrder order, MaliciousTorrentException ex)

@@ -1479,7 +1479,21 @@ public sealed class AutoTrackService : IAutoTrackService
 
     private async Task AddOrderToClientAsync(TorrentCartOrder order, string savePath, CancellationToken cancellationToken)
     {
-        var addedTorrent = await _addGateService.AddPausedValidateAndResumeAsync(order, savePath, cancellationToken);
+        var existing = await _addGateService.TryGetExistingByListingUrlAsync(
+            order.SelectedCandidateUrl,
+            cancellationToken);
+        if (existing is not null)
+        {
+            _logger.Info(
+                $"Using existing qBittorrent download '{existing.Name}' for '{order.Title}' (hash={existing.Hash}).",
+                LogTarget.File | LogTarget.Console);
+        }
+
+        var addedTorrent = await _addGateService.AddPausedValidateAndResumeAsync(
+            order,
+            savePath,
+            cancellationToken,
+            existing);
 
         if (order.EpisodeId is null)
         {

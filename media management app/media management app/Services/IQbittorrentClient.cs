@@ -24,6 +24,13 @@ public interface IQbittorrentClient
 
     Task<AddedTorrentResult> AddTorrentAsync(AddTorrentRequest request, CancellationToken cancellationToken = default);
 
+    Task ApplyManagedTorrentSettingsAsync(
+        string hash,
+        string? savePath,
+        string? category,
+        string tags,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<AddedTorrentResult>> GetTorrentsAsync(CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<TorrentContentFile>> GetTorrentFilesAsync(string hash, CancellationToken cancellationToken = default);

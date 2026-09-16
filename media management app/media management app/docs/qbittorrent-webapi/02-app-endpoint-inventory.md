@@ -37,7 +37,7 @@ Embedded WebUI ([`QbittorrentViewerService`](../../Services/QbittorrentViewerSer
 
 | Method | Path | Success rule today | Callers |
 |--------|------|--------------------|---------|
-| `GetTorrentsAsync` | `GET torrents/info` | Login + `EnsureSuccessStatusCode`; JSON array | Add verify, reconcile, link, cleanup, pack coordinator |
+| `GetTorrentsAsync` | `GET torrents/info` | Login + `EnsureSuccessStatusCode`; JSON array | Add verify, pre-add existing-hash match (`TryGetExistingByListingUrlAsync`), reconcile, link, cleanup, pack coordinator |
 | `GetTorrentFilesAsync` | `GET torrents/files?hash=` | Login + `EnsureSuccessStatusCode` | Content validation, add gate, pack link, auto-link |
 | `GetCategoriesAsync` | `GET torrents/categories` | `EnsureSuccessStatusCode` | Before `createCategory` |
 
@@ -47,7 +47,7 @@ Embedded WebUI ([`QbittorrentViewerService`](../../Services/QbittorrentViewerSer
 |--------|------|--------------------|---------|
 | `PostAddTorrentAsync` | `POST torrents/add` (multipart) | 2xx and body not `"Fails."` | `AddTorrentAsync` |
 | `TryPrepareCategoryAsync` | `POST torrents/createCategory` | 2xx and body not `"Fails."` | `AddTorrentAsync` |
-| `ApplyTorrentPostAddSettingsAsync` | `POST torrents/setLocation`, `setCategory`, `addTags` | Warn if not 2xx or `"Fails."` | After plugin download add |
+| `ApplyTorrentPostAddSettingsAsync` | `POST torrents/setLocation`, `setCategory`, `addTags` | Warn if not 2xx or `"Fails."` | After plugin download add; `ApplyManagedTorrentSettingsAsync` when attaching an existing hash |
 | `DeleteTorrentsAsync` | `POST torrents/delete` | Must 2xx; throws on non-success and transport/auth failure | [`TorrentCleanupService`](../../Services/ITorrentCleanupService.cs) |
 | `PauseTorrentsAsync` | `POST torrents/stop`, then `torrents/pause` | Stop 2xx wins; else pause must 2xx | [`TorrentCleanupService`](../../Services/ITorrentCleanupService.cs) fail-safe after unverified delete (AUD-002) |
 | `ResumeTorrentsAsync` | `POST torrents/start` | Must 2xx; **no** `/resume` fallback | **No app callers today** (interface only) |
@@ -67,7 +67,7 @@ After add, the client **polls** `torrents/info` for a new hash (`AddVerifyTimeou
 | Settings test + status pill | `SettingsViewModel`, `DeviceStatusService` |
 | Hunt preflight / restart | `AutoTrackService` → `QbittorrentProcessRestartService` |
 | Hunt search | `FetchJobService`, `ShowSearchSnapshotService`, `AutomationFlowService` |
-| Add + validate | `TorrentAddGateService` → `AddTorrentAsync`; files via `QbittorrentTorrentContentValidationService` |
+| Add + validate | `TorrentAddGateService` → `TryGetExistingByListingUrlAsync` / `AddTorrentAsync` / `ApplyManagedTorrentSettingsAsync`; files via `QbittorrentTorrentContentValidationService` |
 | Cleanup / reject | `TorrentCleanupService` → `DeleteTorrentsAsync` (throws); fail-safe `PauseTorrentsAsync` |
 | Cart / recipe add | `TorrentWorkspaceViewModel`, `AutomationFlowService` |
 | Reconcile / link | `TorrentReconciliationService`, `AutoTorrentLinkService`, `PackLinkCoordinatorService` |

@@ -439,9 +439,11 @@ public sealed class TorrentCartService : ITorrentCartService
         _databaseService.UpdateTorrentCartOrderCandidateSelection(orderId, candidateId);
         _databaseService.UpdateTorrentCartOrderCandidateAccepted(orderId, candidateId, isAccepted: false);
         ApplyCandidate(order, candidate);
-        if (order.Status is TorrentOrderStatus.Approved or TorrentOrderStatus.Failed)
+        if (order.Status is TorrentOrderStatus.Approved
+            or TorrentOrderStatus.Failed
+            or TorrentOrderStatus.Canceled)
         {
-            if (order.Status == TorrentOrderStatus.Failed)
+            if (order.Status is TorrentOrderStatus.Failed or TorrentOrderStatus.Canceled)
             {
                 ClearTorrentState(order);
             }

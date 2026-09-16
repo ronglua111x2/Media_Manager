@@ -6,16 +6,26 @@ namespace media_management_app.Services;
 public interface ITorrentAddGateService
 {
     /// <summary>
+    /// Returns the live qBittorrent torrent whose infohash matches a magnet listing URL, or null.
+    /// HTTP listings without a magnet infohash cannot be matched.
+    /// </summary>
+    Task<AddedTorrentResult?> TryGetExistingByListingUrlAsync(
+        string? listingUrl,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Adds the selected candidate while running, waits for the file list, validates malware/payload,
-    /// then returns. Throws <see cref="MaliciousTorrentException"/> after verified delete+blacklist.
-    /// Throws <see cref="TorrentCleanupFailedException"/> when a rejected torrent cannot be verified deleted.
-    /// Empty file list deletes without blacklisting. When content validation is disabled,
-    /// returns immediately after add (plus infohash blacklist check).
+    /// then returns. When <paramref name="existingTorrent"/> is set, skips qBittorrent add and
+    /// validates that copy instead. Throws <see cref="MaliciousTorrentException"/> after verified
+    /// delete+blacklist. Throws <see cref="TorrentCleanupFailedException"/> when a rejected torrent
+    /// cannot be verified deleted. Empty file list deletes without blacklisting. When content
+    /// validation is disabled, returns immediately after add (plus infohash blacklist check).
     /// </summary>
     Task<AddedTorrentResult> AddPausedValidateAndResumeAsync(
         TorrentCartOrder order,
         string savePath,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        AddedTorrentResult? existingTorrent = null);
 }
 
 public sealed class TorrentAddGateService : ITorrentAddGateService
@@ -43,10 +53,26 @@ public sealed class TorrentAddGateService : ITorrentAddGateService
         _logger = logger;
     }
 
+    public async Task<AddedTorrentResult?> TryGetExistingByListingUrlAsync(
+        string? listingUrl,
+        CancellationToken cancellationToken = default)
+    {
+        var infoHash = TorrentListingIdentity.TryParseInfoHashFromUrl(listingUrl);
+        if (string.IsNullOrWhiteSpace(infoHash))
+        {
+            return null;
+        }
+
+        var torrents = await _qbittorrentClient.GetTorrentsAsync(cancellationToken);
+        return torrents.FirstOrDefault(torrent =>
+            string.Equals(torrent.Hash, infoHash, StringComparison.OrdinalIgnoreCase));
+    }
+
     public async Task<AddedTorrentResult> AddPausedValidateAndResumeAsync(
         TorrentCartOrder order,
         string savePath,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        AddedTorrentResult? existingTorrent = null)
     {
         if (string.IsNullOrWhiteSpace(order.SelectedCandidateUrl))
         {
@@ -58,21 +84,40 @@ public sealed class TorrentAddGateService : ITorrentAddGateService
             throw new MaliciousTorrentException("Selected candidate is blacklisted for this show.");
         }
 
-        _logger.Info(
-            $"Add with validation: '{order.Title}' candidate '{order.SelectedCandidateName}'.",
-            LogTarget.File | LogTarget.Console);
+        var category = _settingsService.Current.AutoTorrent.GetCategoryFor(order.TargetKind);
+        const string managedTag = "media-manager";
+        AddedTorrentResult addedTorrent;
+        if (existingTorrent is not null && !string.IsNullOrWhiteSpace(existingTorrent.Hash))
+        {
+            _logger.Info(
+                $"Using existing qBittorrent download '{existingTorrent.Name}' for '{order.Title}' (hash={existingTorrent.Hash}).",
+                LogTarget.File | LogTarget.Console);
+            await _qbittorrentClient.ApplyManagedTorrentSettingsAsync(
+                existingTorrent.Hash,
+                savePath,
+                category,
+                managedTag,
+                cancellationToken);
+            addedTorrent = existingTorrent;
+        }
+        else
+        {
+            _logger.Info(
+                $"Add with validation: '{order.Title}' candidate '{order.SelectedCandidateName}'.",
+                LogTarget.File | LogTarget.Console);
 
-        var addedTorrent = await _qbittorrentClient.AddTorrentAsync(
-            new AddTorrentRequest
-            {
-                Url = order.SelectedCandidateUrl,
-                PluginName = order.SelectedCandidatePlugin,
-                SavePath = savePath,
-                Category = _settingsService.Current.AutoTorrent.GetCategoryFor(order.TargetKind),
-                Tags = "media-manager",
-                Paused = false
-            },
-            cancellationToken);
+            addedTorrent = await _qbittorrentClient.AddTorrentAsync(
+                new AddTorrentRequest
+                {
+                    Url = order.SelectedCandidateUrl,
+                    PluginName = order.SelectedCandidatePlugin,
+                    SavePath = savePath,
+                    Category = category,
+                    Tags = managedTag,
+                    Paused = false
+                },
+                cancellationToken);
+        }
 
         _logger.Debug(
             $"Torrent added for '{order.Title}'. Hash={addedTorrent.Hash}, Name='{addedTorrent.Name}'.",

@@ -240,6 +240,24 @@
                                 </ContextMenu>
                             </Button.ContextMenu>
                         </Button>
+                        <Button Command="{Binding RetrySelectCommand}"
+                                Margin="0,0,2,0"
+                                ToolTip="Use this listing again">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource AppCompactIconButtonStyle}">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding CanRetrySelect}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                            <iconPacks:PackIconLucide Kind="RotateCcw"
+                                                       Width="15"
+                                                       Height="15"
+                                                       Style="{StaticResource AppIconStyle}" />
+                        </Button>
                         <Button Style="{StaticResource AppCompactIconButtonStyle}"
                                 Command="{Binding DataContext.RemoveOrderCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                 CommandParameter="{Binding}"
