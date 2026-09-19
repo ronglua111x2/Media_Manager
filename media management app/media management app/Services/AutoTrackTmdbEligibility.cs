@@ -10,30 +10,26 @@ public static class AutoTrackTmdbEligibility
         AutoTrackSettings settings,
         IReadOnlyList<TrackedEpisode> episodes,
         DateTime nowLocal,
+        out string? skipReason,
         bool bypassAnchor = false)
     {
+        skipReason = null;
+
         if (!show.IsAutoTracked)
         {
+            skipReason = "Show is not auto-tracked";
             return false;
         }
 
         if (!bypassAnchor && !AutoTrackWeekAnchor.IsPastAnchorThisWeek(show, nowLocal, settings))
         {
+            skipReason = "Anchor time not yet reached this week";
             return false;
         }
 
         if (!bypassAnchor && HasSatisfiedPostAnchorRefreshThisWeek(show, settings, nowLocal))
         {
-            return false;
-        }
-
-        if (show.SeriesStatus == ShowSeriesStatus.Finished && IsFullyCaughtUp(show, episodes))
-        {
-            return false;
-        }
-
-        if (!bypassAnchor && show.AutoTrackTmdbState == AutoTrackTmdbState.FinishedComplete)
-        {
+            skipReason = "Already refreshed once after anchor this week";
             return false;
         }
 

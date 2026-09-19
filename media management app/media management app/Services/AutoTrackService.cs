@@ -227,11 +227,18 @@ public sealed class AutoTrackService : IAutoTrackService
                         AutoTrackTmdbState.FinishedComplete,
                         currentShow.AutoTrackLastTmdbWeekKey,
                         currentShow.AutoTrackLastTmdbRefreshLocal);
-                    continue;
+                    // Don't skip refresh - continue to check if refresh should occur
+                    // to detect any new specials/OVAs that may have been added
                 }
 
-                if (!AutoTrackTmdbEligibility.ShouldRefreshTmdb(currentShow, settings, episodes, nowLocal, bypassAnchor))
+                if (!AutoTrackTmdbEligibility.ShouldRefreshTmdb(currentShow, settings, episodes, nowLocal, out var skipReason, bypassAnchor))
                 {
+                    if (!string.IsNullOrEmpty(skipReason))
+                    {
+                        _logger.Debug(
+                            $"Skipping TMDB refresh for '{currentShow.DisplayTitle}': {skipReason}",
+                            LogTarget.File | LogTarget.Console);
+                    }
                     continue;
                 }
 
