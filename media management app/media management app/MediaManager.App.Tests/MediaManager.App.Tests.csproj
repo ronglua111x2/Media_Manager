@@ -29,4 +29,8 @@
     <ProjectReference Include="..\media management app.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="Services\" />
+  </ItemGroup>
+
 </Project>

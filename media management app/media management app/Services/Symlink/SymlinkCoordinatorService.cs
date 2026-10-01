@@ -15,6 +15,7 @@ public sealed class SymlinkCoordinatorService : ISymlinkCoordinatorService
     private readonly IPosterImageService _posterImageService;
     private readonly IWindowsNotificationService _windowsNotificationService;
     private readonly INfoWriterService _nfoWriterService;
+    private readonly ISymlinkSubtitleCleanupService _subtitleCleanupService;
     private readonly IJellyfinLibraryRefreshService _jellyfinLibraryRefreshService;
     private readonly IAppLogger _logger;
     private readonly SemaphoreSlim _syncGate = new(1, 1);
@@ -32,6 +33,7 @@ public sealed class SymlinkCoordinatorService : ISymlinkCoordinatorService
         IPosterImageService posterImageService,
         IWindowsNotificationService windowsNotificationService,
         INfoWriterService nfoWriterService,
+        ISymlinkSubtitleCleanupService subtitleCleanupService,
         IJellyfinLibraryRefreshService jellyfinLibraryRefreshService,
         IAppLogger logger)
     {
@@ -42,6 +44,7 @@ public sealed class SymlinkCoordinatorService : ISymlinkCoordinatorService
         _posterImageService = posterImageService;
         _windowsNotificationService = windowsNotificationService;
         _nfoWriterService = nfoWriterService;
+        _subtitleCleanupService = subtitleCleanupService;
         _jellyfinLibraryRefreshService = jellyfinLibraryRefreshService;
         _logger = logger;
 
@@ -526,6 +529,7 @@ public sealed class SymlinkCoordinatorService : ISymlinkCoordinatorService
             foreach (var symlinkPath in nfoTargets)
             {
                 _nfoWriterService.DeleteEpisodeNfo(symlinkPath);
+                _subtitleCleanupService.DeleteSubtitleFiles(symlinkPath);
             }
 
             var result = await Task.Run(() => _symlinkSyncService.RemoveItem(e.Item, e.LinkedPath), cancellationToken);
@@ -603,6 +607,7 @@ public sealed class SymlinkCoordinatorService : ISymlinkCoordinatorService
                 foreach (var symlinkPath in nfoTargets)
                 {
                     _nfoWriterService.DeleteEpisodeNfo(symlinkPath);
+                    _subtitleCleanupService.DeleteSubtitleFiles(symlinkPath);
                 }
 
                 foreach (var e in events)

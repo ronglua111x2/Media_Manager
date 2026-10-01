@@ -240,9 +240,10 @@ public partial class App : System.Windows.Application
         services.AddSingleton<ILibraryPathResolver, LibraryPathResolver>();
         services.AddSingleton<ILibraryLinkEventHub, LibraryLinkEventHub>();
         services.AddSingleton<IHardlinkService, HardlinkService>();
-        services.AddSingleton<ISymlinkService, SymlinkService>();
+         services.AddSingleton<ISymlinkService, SymlinkService>();
         services.AddSingleton<ISymlinkSyncService, SymlinkSyncService>();
         services.AddSingleton<INfoWriterService, NfoWriterService>();
+        services.AddSingleton<ISymlinkSubtitleCleanupService, SymlinkSubtitleCleanupService>();
         services.AddSingleton<IJellyfinClient, JellyfinClient>();
         services.AddSingleton<IJellyfinLibraryRefreshService, JellyfinLibraryRefreshService>();
         services.AddSingleton<ISymlinkCoordinatorService, SymlinkCoordinatorService>();
