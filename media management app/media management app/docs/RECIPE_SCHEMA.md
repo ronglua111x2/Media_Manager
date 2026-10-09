@@ -74,15 +74,15 @@ Legacy `PackExtrasPriority` modules are migrated into `Scoring.extensionData` on
 | `queryTemplates` | string[] | `[]` | Query patterns with placeholders |
 | `customQueries` | string[] | `[]` | Fixed queries (no templating) |
 | `qualityAllowList` | string[] | `["1080p"]` | Allowed resolutions |
-| `preferredAudioCodec` | string | `""` | e.g. `"AAC"`, `"FLAC"` |
+| `preferredAudioCodec` | string | `""` | Comma-separated scoring terms, e.g. `"Dolby, DV"`. Term match rule below |
 | `minimumSeeders` | int | 0 | Hard filter |
 | `minimumSizeBytes` | long? | null | Hard filter |
 | `maximumSizeBytes` | long? | null | Hard filter |
-| `includeTerms` | string[] | `[]` | Must appear in candidate name |
-| `excludeTerms` | string[] | `[]` | Disqualify if present |
-| `preferTerms` | string[] | `[]` | Scoring boost terms |
+| `includeTerms` | string[] | `[]` | Must appear in candidate name. Term match rule below |
+| `excludeTerms` | string[] | `[]` | Disqualify if present. Term match rule below |
+| `preferTerms` | string[] | `[]` | Scoring boost terms. Term match rule below |
 | `preferredReleaseGroups` | string[] | `[]` | Release group allow list |
-| `blockedReleaseGroups` | string[] | `[]` | Release group block list |
+| `blockedReleaseGroups` | string[] | `[]` | Release group block list. Term match rule below |
 | `plugins` | string | `"enabled"` | `"enabled"` or comma-separated plugin names |
 | `category` | string | `"all"` | qBittorrent search category |
 | `resultLimit` | int | 100 | Max results per search (1–5000) |
@@ -91,6 +91,17 @@ Legacy `PackExtrasPriority` modules are migrated into `Scoring.extensionData` on
 | `tags` | string | `""` | qBittorrent tags on add |
 | `paused` | bool | false | Passed to add request; the add gate always sends `Paused = false` (AUD-001 trade-off) |
 | `extensionData` | object | `{}` | String key/value module-specific settings |
+
+**Term match rule** (`ReleaseTermMatcher`, since 2026-10-10). `includeTerms`, `excludeTerms`, `preferTerms`, `preferredAudioCodec`, and `blockedReleaseGroups` match the torrent name **case-sensitively** and as **whole tokens**. A term edge that is a letter or digit must sit at the start/end of the name or next to a non-alphanumeric character (`.`, space, `-`, `_`, `[`, `(`…).
+
+| Term | Matches | Does not match |
+|---|---|---|
+| `CAM` | `Movie.2019.CAM.x264`, `[CAM]` | `El Camino`, `HDCAM`, `CAMRip`, `cam` |
+| `TS` | `Movie.TS.x264` | `DTS-HD`, `Its` |
+| `DV` | `2160p.DV.HDR` | `DVDRip`, `Adventure` |
+| `RAW` | `[RAW]` | `Erai-raws`, `Raw` |
+
+List every variant you want to match (`HDCAM`, `CAMRip`, `RAW`, `Raw`). Terms that differ only by case are kept as separate entries.
 
 ---
 

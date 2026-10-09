@@ -59,7 +59,7 @@ public static class RecipeCandidateFilter
 
         var missingTerm = filter.IncludeTerms
             .Where(term => !string.IsNullOrWhiteSpace(term))
-            .FirstOrDefault(term => !result.FileName.Contains(term, StringComparison.OrdinalIgnoreCase));
+            .FirstOrDefault(term => !ReleaseTermMatcher.Matches(result.FileName, term));
         if (missingTerm is not null)
         {
             return (CandidateRejectReason.MissingIncludeTerm, $"missing include term '{missingTerm}'");
@@ -67,7 +67,7 @@ public static class RecipeCandidateFilter
 
         var excludedTerm = filter.ExcludeTerms
             .Where(term => !string.IsNullOrWhiteSpace(term))
-            .FirstOrDefault(term => result.FileName.Contains(term, StringComparison.OrdinalIgnoreCase));
+            .FirstOrDefault(term => ReleaseTermMatcher.Matches(result.FileName, term));
         if (excludedTerm is not null)
         {
             return (CandidateRejectReason.ExcludedTerm, $"contains excluded term '{excludedTerm}'");
@@ -75,7 +75,7 @@ public static class RecipeCandidateFilter
 
         var blockedGroup = filter.BlockedReleaseGroups
             .Where(group => !string.IsNullOrWhiteSpace(group))
-            .FirstOrDefault(group => result.FileName.Contains(group, StringComparison.OrdinalIgnoreCase));
+            .FirstOrDefault(group => ReleaseTermMatcher.Matches(result.FileName, group));
         if (blockedGroup is not null)
         {
             return (CandidateRejectReason.BlockedReleaseGroup, $"contains blocked group '{blockedGroup}'");

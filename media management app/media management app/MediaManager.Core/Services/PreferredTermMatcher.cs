@@ -22,14 +22,14 @@ public static class PreferredTermMatcher
         var terms = preferredTerms
             .Where(term => !string.IsNullOrWhiteSpace(term))
             .Select(term => term.Trim())
-            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Distinct(StringComparer.Ordinal)
             .ToList();
         if (terms.Count == 0)
         {
             return 0;
         }
 
-        return terms.Count(term => fileName.Contains(term, StringComparison.OrdinalIgnoreCase));
+        return terms.Count(term => ReleaseTermMatcher.Matches(fileName, term));
     }
 
     public static IReadOnlyList<string> SplitTerms(string? preferredTerms)
@@ -42,7 +42,7 @@ public static class PreferredTermMatcher
         return preferredTerms
             .Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Where(term => !string.IsNullOrWhiteSpace(term))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Distinct(StringComparer.Ordinal)
             .ToList();
     }
 }

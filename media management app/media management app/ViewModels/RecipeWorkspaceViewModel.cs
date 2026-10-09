@@ -864,19 +864,19 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
     public string IncludeTermsText
     {
         get => ToLines(_module.IncludeTerms);
-        set => SetListValue(_module.IncludeTerms, SplitTerms(value));
+        set => SetListValue(_module.IncludeTerms, SplitMatchTerms(value));
     }
 
     public string PreferTermsText
     {
         get => ToLines(_module.PreferTerms);
-        set => SetListValue(_module.PreferTerms, SplitTerms(value));
+        set => SetListValue(_module.PreferTerms, SplitMatchTerms(value));
     }
 
     public string ExcludeTermsText
     {
         get => ToLines(_module.ExcludeTerms);
-        set => SetListValue(_module.ExcludeTerms, SplitTerms(value));
+        set => SetListValue(_module.ExcludeTerms, SplitMatchTerms(value));
     }
 
     public string PreferredReleaseGroupsText
@@ -888,7 +888,7 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
     public string BlockedReleaseGroupsText
     {
         get => ToLines(_module.BlockedReleaseGroups);
-        set => SetListValue(_module.BlockedReleaseGroups, SplitTerms(value));
+        set => SetListValue(_module.BlockedReleaseGroups, SplitMatchTerms(value));
     }
 
     public string Plugins
@@ -1743,6 +1743,16 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
+
+    // Candidate-filter terms are matched case-sensitively (ReleaseTermMatcher), so "CAM" and "cam" are different terms.
+    private static IReadOnlyList<string> SplitMatchTerms(string value)
+    {
+        return value
+            .Split(["\r\n", "\n", ","], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+    }
 }
 
 public sealed class ModuleFieldHelpItem
@@ -1788,13 +1798,13 @@ internal static class ModuleFieldHelp
                 new() { FieldName = "Minimum seeders", Description = "Lowest seeder count still accepted.", OutputImpact = "Higher values reduce dead or slow torrents but may eliminate rare releases." },
                 new() { FieldName = "Min size GB", Description = "Optional lower size floor in gigabytes. 0 disables the floor. Unknown/missing sizes are not rejected.", OutputImpact = "Rejects tiny same-quality encodes below the floor while keeping max size as the hard ceiling." },
                 new() { FieldName = "Max size GB", Description = "Optional upper size limit in gigabytes.", OutputImpact = "Oversized packs or remuxes are rejected when set." },
-                new() { FieldName = "Preferred audio", Description = "Comma-separated audio labels used for scoring bonus, e.g. Dolby, DV.", OutputImpact = "Does not reject candidates. Each matching token adds a scoring boost (more matches = higher rank)." },
-                new() { FieldName = "Prefer terms", Description = "Custom soft-preference terms, one per line (same boost mechanic as preferred audio).", OutputImpact = "Does not reject candidates. Each matching term raises the score using the audio weight." },
+                new() { FieldName = "Preferred audio", Description = "Comma-separated audio labels used for scoring bonus, e.g. Dolby, DV. Case-sensitive, whole-token match (DV does not match DVD).", OutputImpact = "Does not reject candidates. Each matching token adds a scoring boost (more matches = higher rank)." },
+                new() { FieldName = "Prefer terms", Description = "Custom soft-preference terms, one per line (same boost mechanic as preferred audio). Case-sensitive, whole-token match.", OutputImpact = "Does not reject candidates. Each matching term raises the score using the audio weight." },
                 new() { FieldName = "Preferred engines", Description = "Search plugins to prefer when ranking candidates. Flat gives equal rank; ranked applies stronger boosts to higher ranks.", OutputImpact = "Does not limit which engines are searched. Only affects score when Engine weight in Scoring is above 0." },
-                new() { FieldName = "Include terms", Description = "Terms that must appear in the torrent name.", OutputImpact = "Useful to require WEB-DL, x265, or a specific language tag." },
-                new() { FieldName = "Exclude terms", Description = "Terms that reject a candidate immediately.", OutputImpact = "Common use: block cam, telesync, or unwanted codecs." },
+                new() { FieldName = "Include terms", Description = "Terms that must appear in the torrent name. Case-sensitive, whole-token match.", OutputImpact = "Useful to require WEB-DL, x265, or a specific language tag." },
+                new() { FieldName = "Exclude terms", Description = "Terms that reject a candidate immediately. Case-sensitive, whole-token match: CAM does not match Camino or HDCAM.", OutputImpact = "Common use: block CAM, TS, or unwanted codecs. Add each variant you want to block (HDCAM, CAMRip)." },
                 new() { FieldName = "Preferred release groups", Description = "Groups you prefer when ranking.", OutputImpact = "Currently informational for scoring; blocked groups always reject." },
-                new() { FieldName = "Blocked release groups", Description = "Groups that are always rejected.", OutputImpact = "Any matching group name in the torrent title removes the candidate." }
+                new() { FieldName = "Blocked release groups", Description = "Groups that are always rejected. Case-sensitive, whole-token match.", OutputImpact = "A group name that appears as a whole token in the torrent title removes the candidate." }
             ],
             RecipeBlockType.CandidateParser =>
                 targetKind == MediaKind.Movie
