@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Shell;
 using media_management_app.Services;
 using media_management_app.ViewModels;
@@ -18,6 +19,7 @@ public partial class MainWindow : Window
     private readonly ISettingsService _settingsService;
     private readonly ITrayIconService _trayIconService;
     private readonly IAppLifecycleService _lifecycleService;
+    private readonly ICrashLogService _crashLog;
     private bool _allowClose;
     private bool _chromeIsMaximized;
     private WindowState _previousWindowState = WindowState.Normal;
@@ -27,13 +29,15 @@ public partial class MainWindow : Window
         MainViewModel viewModel,
         ISettingsService settingsService,
         ITrayIconService trayIconService,
-        IAppLifecycleService lifecycleService)
+        IAppLifecycleService lifecycleService,
+        ICrashLogService crashLog)
     {
         InitializeComponent();
         DataContext = viewModel;
         _settingsService = settingsService;
         _trayIconService = trayIconService;
         _lifecycleService = lifecycleService;
+        _crashLog = crashLog;
         viewModel.PropertyChanged += OnViewModelPropertyChanged;
         Loaded += OnLoaded;
     }
@@ -46,6 +50,8 @@ public partial class MainWindow : Window
 
     protected override void OnClosing(CancelEventArgs e)
     {
+        _crashLog.TraceLifetime(
+            $"MainWindow OnClosing. AllowClose={_allowClose}, CloseToTray={_settingsService.Current.Startup.CloseToTray}.");
         if (!_allowClose && _settingsService.Current.Startup.CloseToTray)
         {
             e.Cancel = true;
@@ -59,6 +65,8 @@ public partial class MainWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        _crashLog.TraceLifetime(
+            $"MainWindow OnClosed. AllowClose={_allowClose}. Calling Shutdown().{Environment.NewLine}{Environment.StackTrace}");
         base.OnClosed(e);
         if (DataContext is MainViewModel viewModel)
         {
@@ -121,7 +129,63 @@ public partial class MainWindow : Window
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
+        HwndSource.FromHwnd(new WindowInteropHelper(this).Handle)?.AddHook(TraceLifetimeMessages);
         UpdateWindowChromeForState();
+    }
+
+    // Diagnostic for docs/debug/unclean-exit: records the window messages that can end the app.
+    private IntPtr TraceLifetimeMessages(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        const int WmDestroy = 0x0002;
+        const int WmClose = 0x0010;
+        const int WmQueryEndSession = 0x0011;
+        const int WmEndSession = 0x0016;
+        const int WmPowerBroadcast = 0x0218;
+
+        switch (msg)
+        {
+            case WmQueryEndSession:
+            case WmEndSession:
+                _crashLog.TraceLifetime(
+                    $"MainWindow {(msg == WmQueryEndSession ? "WM_QUERYENDSESSION" : "WM_ENDSESSION")}. wParam=0x{wParam.ToInt64():X}, lParam=0x{lParam.ToInt64():X} ({DescribeEndSessionFlags(lParam.ToInt64())}).");
+                break;
+            case WmClose:
+                _crashLog.TraceLifetime("MainWindow WM_CLOSE.");
+                break;
+            case WmDestroy:
+                _crashLog.TraceLifetime("MainWindow WM_DESTROY.");
+                break;
+            case WmPowerBroadcast:
+                _crashLog.TraceLifetime($"MainWindow WM_POWERBROADCAST. wParam=0x{wParam.ToInt64():X}.");
+                break;
+        }
+
+        return IntPtr.Zero;
+    }
+
+    private static string DescribeEndSessionFlags(long lParam)
+    {
+        const long EndSessionCloseApp = 0x00000001;
+        const long EndSessionCritical = 0x40000000;
+        const long EndSessionLogoff = 0x80000000;
+
+        var flags = new List<string>();
+        if ((lParam & EndSessionCloseApp) != 0)
+        {
+            flags.Add("CLOSEAPP (Restart Manager)");
+        }
+
+        if ((lParam & EndSessionCritical) != 0)
+        {
+            flags.Add("CRITICAL");
+        }
+
+        if ((lParam & EndSessionLogoff) != 0)
+        {
+            flags.Add("LOGOFF");
+        }
+
+        return flags.Count == 0 ? "shutdown" : string.Join(", ", flags);
     }
 
     protected override void OnStateChanged(EventArgs e)

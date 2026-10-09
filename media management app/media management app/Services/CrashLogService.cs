@@ -17,6 +17,7 @@ public sealed class CrashLogService : ICrashLogService, IDisposable
     private bool _disposed;
     private bool _gracefulExitLogged;
     private DateTime _sessionStartedUtc;
+    private string? _lifetimeTracePath;
 
     public CrashLogService(ISettingsService settingsService, IAppLogger logger)
     {
@@ -137,6 +138,31 @@ public sealed class CrashLogService : ICrashLogService, IDisposable
         }
         catch
         {
+        }
+    }
+
+    public void TraceLifetime(string message)
+    {
+        lock (_writeLock)
+        {
+            try
+            {
+                if (_lifetimeTracePath is null)
+                {
+                    var folder = Path.Combine(_settingsService.Current.StateFolder, AppConstants.LogFolderName);
+                    Directory.CreateDirectory(folder);
+                    var stamp = DateTime.Now.ToString(AppConstants.LogFileTimestampFormat);
+                    _lifetimeTracePath = Path.Combine(
+                        folder,
+                        $"{stamp}_{AppConstants.LifetimeTraceFileSuffix}{AppConstants.LogFileExtension}");
+                }
+
+                var line = $"[{DateTime.Now.ToString(AppConstants.LogTimestampFormat)}] [pid {Environment.ProcessId}] {message}";
+                File.AppendAllText(_lifetimeTracePath, line + Environment.NewLine);
+            }
+            catch
+            {
+            }
         }
     }
 

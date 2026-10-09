@@ -173,11 +173,61 @@ public partial class App : System.Windows.Application
         }
     }
 
-    protected override void OnExit(ExitEventArgs e)
+    protected override void OnSessionEnding(SessionEndingCancelEventArgs e)
     {
+        base.OnSessionEnding(e);
+
+        var crashLog = _serviceProvider?.GetService<ICrashLogService>();
         try
         {
-            _serviceProvider?.GetService<ICrashLogService>()?.LogLifetime(
+            crashLog?.TraceLifetime(
+                $"WPF SessionEnding. Reason={e.ReasonSessionEnding}, Cancel={e.Cancel}, ManagedThreadId={Environment.CurrentManagedThreadId}.");
+        }
+        catch (Exception)
+        {
+        }
+
+        if (e.Cancel)
+        {
+            return;
+        }
+
+        // WPF calls Shutdown() after this returns, and Windows may end the process before
+        // OnExit finishes. Clear the sentinel now so the next start does not report unclean.
+        try
+        {
+            crashLog?.ClearAlive();
+        }
+        catch (Exception)
+        {
+        }
+
+        try
+        {
+            crashLog?.LogLifetime("SessionEnding", $"WPF session ending: {e.ReasonSessionEnding}.");
+        }
+        catch (Exception)
+        {
+        }
+    }
+
+    protected override void OnExit(ExitEventArgs e)
+    {
+        var crashLog = _serviceProvider?.GetService<ICrashLogService>();
+
+        // Clear the sentinel before anything slow. On the AC-loss exits the process was torn
+        // down inside OnExit, after last-exit.json was written but before session.alive was deleted.
+        try
+        {
+            crashLog?.ClearAlive();
+        }
+        catch (Exception)
+        {
+        }
+
+        try
+        {
+            crashLog?.LogLifetime(
                 "CleanExit",
                 "Application OnExit: WPF shutdown completed.",
                 e.ApplicationExitCode);
@@ -187,9 +237,12 @@ public partial class App : System.Windows.Application
         }
 
         StopCrashLoggingHooks();
+
         try
         {
-            _serviceProvider?.GetService<ICrashLogService>()?.ClearAlive();
+            var onDispatcher = Dispatcher.CheckAccess();
+            crashLog?.TraceLifetime(
+                $"OnExit caller. ExitCode={e.ApplicationExitCode}, ManagedThreadId={Environment.CurrentManagedThreadId}, OnDispatcher={onDispatcher}.{Environment.NewLine}{Environment.StackTrace}");
         }
         catch (Exception)
         {
@@ -542,11 +595,24 @@ public partial class App : System.Windows.Application
 
     private void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e)
     {
+        var crashLog = _serviceProvider?.GetService<ICrashLogService>();
         try
         {
+            var powerLine = System.Windows.Forms.SystemInformation.PowerStatus.PowerLineStatus;
+            crashLog?.TraceLifetime(
+                $"Power mode changed: {e.Mode}. Enter. PowerLine={powerLine}, ManagedThreadId={Environment.CurrentManagedThreadId}.");
             _serviceProvider?.GetService<IAppLogger>()?.Info(
-                $"Power mode changed: {e.Mode}.",
+                $"Power mode changed: {e.Mode}. PowerLine={powerLine}.",
                 LogTarget.File | LogTarget.Console);
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            crashLog?.TraceLifetime(
+                $"Power mode changed: {e.Mode}. Leave. ManagedThreadId={Environment.CurrentManagedThreadId}.");
         }
         catch
         {
@@ -555,6 +621,15 @@ public partial class App : System.Windows.Application
 
     private void OnSessionEnding(object sender, SessionEndingEventArgs e)
     {
+        try
+        {
+            _serviceProvider?.GetService<ICrashLogService>()?.TraceLifetime(
+                $"SystemEvents SessionEnding. Reason={e.Reason}.");
+        }
+        catch
+        {
+        }
+
         try
         {
             _serviceProvider?.GetService<ICrashLogService>()?.LogLifetime(

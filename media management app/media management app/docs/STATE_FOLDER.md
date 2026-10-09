@@ -57,6 +57,7 @@ Rotation: `YYYYMMDD_HHmmss_fff_{kind}_{n}.txt`
 |------|--------|----------|
 | `systemlog` | `AppLogger` | Main session log |
 | `crash` | `CrashLogService` | Unhandled exceptions, WebView2 process failed, unclean shutdown. Clean exit and Windows shutdown/logoff are **not** crash files (`last-exit.json` + systemlog only). |
+| `lifetime` | `CrashLogService.TraceLifetime` | Shutdown-path trace written synchronously (power events, session-end window messages, `MainWindow` close, `OnExit` caller stack). Created only when one of those happens. See [debug/unclean-exit](debug/unclean-exit/README.md). |
 | `settingslog` | `SettingsService` | Settings load/save bootstrap (replaces the old root `settings-load.log`) |
 | `cartdebug` | `CartCandidateDebugSession` | Optional per-run candidate debug when a recipe enables it |
 

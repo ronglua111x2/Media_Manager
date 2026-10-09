@@ -124,6 +124,7 @@ public static class AppConstants
     public const int MaxUiLogLines = 500;
     public const string LogFileSuffix = "systemlog";
     public const string CrashLogFileSuffix = "crash";
+    public const string LifetimeTraceFileSuffix = "lifetime";
     public const string SettingsLogFileSuffix = "settingslog";
     public const string CartDebugLogFileSuffix = "cartdebug";
     public const string CrashDumpFolderName = "CrashDumps";
