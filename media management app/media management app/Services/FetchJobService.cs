@@ -166,7 +166,13 @@ public sealed class FetchJobService : IFetchJobService
         }
 
         ClearEpisodeCandidateCache(targetEpisodes);
-        var recipe = _recipeService.GetRecipeOrDefault(recipeId ?? show.RecipeId, MediaKind.TvEpisode);
+        var termGuard = HuntCandidateDebugWriter.ApplyTermGuard(
+            _recipeService.GetRecipeOrDefault(recipeId ?? show.RecipeId, MediaKind.TvEpisode),
+            show.Title,
+            show.GetSearchableAlternativeTitles(),
+            show.DisplayTitle,
+            _logger);
+        var recipe = termGuard.Recipe;
         var useSnapshot = options?.ForceParallelEpisodeSearch == true
             ? false
             : RecipeRuntimeSettings.GetUseShowSnapshotSearch(recipe, _settingsService.Current.AutoTorrent);
@@ -180,7 +186,9 @@ public sealed class FetchJobService : IFetchJobService
             recipe,
             _settingsService,
             _logger,
-            options?.Overrides);
+            options?.Overrides,
+            termGuard,
+            show.DisplayTitle);
         try
         {
             return useSnapshot
@@ -266,12 +274,20 @@ public sealed class FetchJobService : IFetchJobService
         _progressService.Start("Search: preparing…", 0);
         try
         {
-            var packRecipe = _recipeService.GetRecipeOrDefault(recipeId ?? show.PackRecipeId, MediaKind.TvSeasonPack);
+            var packTermGuard = HuntCandidateDebugWriter.ApplyTermGuard(
+                _recipeService.GetRecipeOrDefault(recipeId ?? show.PackRecipeId, MediaKind.TvSeasonPack),
+                show.Title,
+                show.GetSearchableAlternativeTitles(),
+                show.DisplayTitle,
+                _logger);
+            var packRecipe = packTermGuard.Recipe;
             var packDebugSession = HuntCandidateDebugWriter.TryCreateSession(
                 packRecipe,
                 _settingsService,
                 _logger,
-                overrides);
+                overrides,
+                packTermGuard,
+                show.DisplayTitle);
             var snapshotResults = await _snapshotService.CaptureSnapshotAsync(
                 show,
                 _progressService,

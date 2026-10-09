@@ -103,6 +103,11 @@ Legacy `PackExtrasPriority` modules are migrated into `Scoring.extensionData` on
 
 List every variant you want to match (`HDCAM`, `CAMRip`, `RAW`, `Raw`). Terms that differ only by case are kept as separate entries.
 
+**Title guard** (`RecipeTermGuard`, since 2026-10-10). At the start of every recipe run (Cart episode/movie/pack, Auto-Track, snapshot search), the app collects the media's primary title, its searchable alternative titles, the recipe's Identity aliases, and the sanitized form of each. Any `excludeTerms` entry or `blockedReleaseGroups` entry that matches one of those titles under the rule above is removed from a run-scoped copy of the recipe, because it would reject every correct release (exclude `Cam` for the movie *Cam*). The `.rcp` file is not changed, and runs for other media keep the term. `includeTerms`, `preferTerms`, and `preferredAudioCodec` are not touched.
+
+- Console and system log: one line per run when something was suspended, e.g. `Recipe 'Common Movie' for 'Cam (2018)': temporarily suspended 1 exclude term(s) and 0 blocked group(s) that match the media title ('Cam').`
+- Cart debug file (when enabled): `TermGuard:` lines at the top explain the suspension and list each term with the title it matched.
+
 ---
 
 ## Query Template Placeholders

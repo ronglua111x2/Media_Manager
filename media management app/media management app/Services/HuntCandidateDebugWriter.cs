@@ -9,7 +9,9 @@ public static class HuntCandidateDebugWriter
         SearchRecipe recipe,
         ISettingsService settingsService,
         IAppLogger logger,
-        RecipeExecutionOverrides? overrides = null)
+        RecipeExecutionOverrides? overrides = null,
+        RecipeTermGuardResult? termGuard = null,
+        string? mediaTitle = null)
     {
         if (!RecipeRuntimeSettings.GetEnableCandidateDebugLog(recipe, overrides))
         {
@@ -23,7 +25,33 @@ public static class HuntCandidateDebugWriter
         logger.Info(
             $"Cart debug mode is enabled for recipe '{recipe.Name}'. Candidate debug log will be written under '{debugLogFolder}'.",
             LogTarget.All);
+        if (termGuard is not null)
+        {
+            foreach (var line in termGuard.FormatDebugHeader(SanitizeForLog(mediaTitle)))
+            {
+                session.WriteLine(line);
+            }
+        }
+
         return session;
+    }
+
+    /// <summary>Applies RecipeTermGuard for one run and writes the one-line summary to the console and system log.</summary>
+    public static RecipeTermGuardResult ApplyTermGuard(
+        SearchRecipe recipe,
+        string? primaryTitle,
+        IEnumerable<string>? alternativeTitles,
+        string mediaDisplayTitle,
+        IAppLogger logger)
+    {
+        var guard = RecipeTermGuard.Apply(recipe, primaryTitle, alternativeTitles);
+        var summary = guard.FormatSummary(recipe.Name, mediaDisplayTitle);
+        if (summary is not null)
+        {
+            logger.Info(summary, LogTarget.All);
+        }
+
+        return guard;
     }
 
     public static void WriteRecipeEvaluation(
