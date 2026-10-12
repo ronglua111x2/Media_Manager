@@ -76,9 +76,9 @@ dotnet build "$PROJ" -c Debug -p:Platform=x64 -v minimal
 TEST_PROJ="$APP_ROOT/MediaManager.Core.Tests/MediaManager.Core.Tests.csproj"
 APP_TEST_PROJ="$APP_ROOT/MediaManager.App.Tests/MediaManager.App.Tests.csproj"
 dotnet test "$TEST_PROJ" -c Release -p:Platform=x64 -v normal
-# Expected (2026-09-16): 207 passed; Core.Tests references Core only (no WPF).
+# Expected (2026-10-12): 248 passed; Core.Tests references Core only (no WPF).
 dotnet test "$APP_TEST_PROJ" -c Release -p:Platform=x64 -v minimal
-# Expected: 13 passed (AUD-002 cleanup retry/verify/halt + existing-hash attach).
+# Expected (2026-10-12): 23 passed.
 ```
 
 ### Publish (single-file self-contained)
@@ -246,6 +246,6 @@ Commands run on this repo (Windows, Git Bash):
 | `MSBuild.exe` (amd64) **with** `MSYS_NO_PATHCONV=1` | OK |
 | `dotnet publish -c Release -p:Platform=x64` | OK |
 | `dotnet test` on WPF `.csproj` | OK exit, **no tests** (tests live in Core.Tests / App.Tests) |
-| `dotnet test` Core.Tests Release/x64 | **207 passed** (2026-09-16) |
-| `dotnet test` App.Tests Release/x64 | **13 passed** (AUD-002 cleanup/halt + existing-hash attach) |
+| `dotnet test` Core.Tests Release/x64 | **248 passed** (2026-10-12, clean clone) |
+| `dotnet test` App.Tests Release/x64 | **23 passed** (2026-10-12, clean clone) |
 
