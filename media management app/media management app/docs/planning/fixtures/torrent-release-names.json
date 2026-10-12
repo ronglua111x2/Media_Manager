@@ -1,0 +1,190 @@
+{
+  "version": 1,
+  "description": "Golden parser fixtures — real release naming patterns from qBittorrent downloads.",
+  "sourceNote": "Filenames only; scraped from E:/Download-Disk-E/qBittorrent/Download (Aug 2026). Titles are public media names.",
+  "fixtures": [
+    {
+      "id": "jjk-s03e01-subeteka-brackets",
+      "fileName": "[Subeteka] Jujutsu Kaisen - S03E01 [1080p WEB DUAL DDP2.0 H.265] [7BE3B471].mkv",
+      "category": "episode-sxxexx",
+      "expected": { "season": 3, "episode": 1, "quality": "1080p" },
+      "notes": "Release group in brackets; quality/audio in nested brackets"
+    },
+    {
+      "id": "jjk-s03e05-subeteka",
+      "fileName": "[Subeteka] Jujutsu Kaisen - S03E05 [1080p WEB DUAL DDP2.0 H.265] [6A8D1248].mkv",
+      "category": "episode-sxxexx",
+      "expected": { "season": 3, "episode": 5, "quality": "1080p" }
+    },
+    {
+      "id": "jjk-s03e11-spaces-no-dots",
+      "fileName": "JUJUTSU KAISEN S03E11 Tokyo Colony No 1 Part 5 1080p CR WEB-DL DDP2 0 H 264-Kitsune",
+      "category": "episode-sxxexx",
+      "expected": { "season": 3, "episode": 11, "quality": "1080p" },
+      "notes": "Space-separated; episode title after SxxExx; split codec token DDP2 0"
+    },
+    {
+      "id": "jjk-s03e07-dots-varyg",
+      "fileName": "JUJUTSU.KAISEN.S03E07.Tokyo.Colony.No.1.1080p.CR.WEB-DL.AAC2.0.H.264-VARYG.mkv",
+      "category": "episode-sxxexx",
+      "expected": { "season": 3, "episode": 7, "quality": "1080p" }
+    },
+    {
+      "id": "jjk-s03e02-repack",
+      "fileName": "Jujutsu Kaisen S03E02 One More Time REPACK 1080p CR WEB-DL AAC2 0 H 264-playWEB",
+      "category": "episode-sxxexx",
+      "expected": { "season": 3, "episode": 2, "quality": "1080p" },
+      "notes": "REPACK tag; mixed case title"
+    },
+    {
+      "id": "jjk-s03e08-eztv-suffix",
+      "fileName": "Jujutsu Kaisen S03E08 Tokyo Colony No 1-Part 2 1080p CR WEB-DL AAC2 0 H 264-playWEB[EZTVx.to].mkv",
+      "category": "episode-sxxexx",
+      "expected": { "season": 3, "episode": 8, "quality": "1080p" }
+    },
+    {
+      "id": "jjk-s03e03-dual-audio",
+      "fileName": "JUJUTSU.KAISEN.S03E03.About.the.Culling.Game.1080p.CR.WEB-DL.DUAL.AAC2.0.H.264-VARYG.mkv",
+      "category": "episode-sxxexx",
+      "expected": { "season": 3, "episode": 3, "quality": "1080p" }
+    },
+    {
+      "id": "jjk-s03e12-multi",
+      "fileName": "JUJUTSU.KAISEN.S03E12.Sendai.Colony.1080p.CR.WEB-DL.MULTi.AAC2.0.H.264-VARYG.mkv",
+      "category": "episode-sxxexx",
+      "expected": { "season": 3, "episode": 12, "quality": "1080p" }
+    },
+    {
+      "id": "chainsmoker-s01e08-toonshub",
+      "fileName": "Chainsmoker.Cat.S01E08.1080p.NF.WEB-DL.JPN.AAC2.0.H.264.MSubs-ToonsHub.mkv",
+      "category": "episode-sxxexx",
+      "expected": { "season": 1, "episode": 8, "quality": "1080p" }
+    },
+    {
+      "id": "smoking-s01e07-bracket-group",
+      "fileName": "[ToonsHub] Smoking Behind the Supermarket With You S01E07 1080p NF WEB-DL DUAL AAC2.0 H.264 (Super no Ura de Yani Suu Futari, Dual-Audio, Multi-Subs)",
+      "category": "episode-sxxexx",
+      "expected": { "season": 1, "episode": 7, "quality": "1080p" },
+      "notes": "Parenthetical alias title; dual-audio tag"
+    },
+    {
+      "id": "smoking-s01e06-dots-multi",
+      "fileName": "Smoking.Behind.the.Supermarket.With.You.S01E06.Smoke.6.1080p.NF.WEB-DL.MULTi.AAC2.0.H.264-VARYG.mkv",
+      "category": "episode-sxxexx",
+      "expected": { "season": 1, "episode": 6, "quality": "1080p" }
+    },
+    {
+      "id": "heroine-s01e08-long-title",
+      "fileName": "Heroine.Saint.No.Im.an.All-Works.Maid.And.Proud.of.It.S01E08.1080p.CR.WEB-DL.JPN.AAC2.0.H.264.MSubs-ToonsHub.mkv",
+      "category": "episode-sxxexx",
+      "expected": { "season": 1, "episode": 8, "quality": "1080p" },
+      "notes": "Very long dotted title"
+    },
+    {
+      "id": "goodbye-lara-s01e07",
+      "fileName": "Goodbye.Lara.S01E07.Meet.Me.at.Biwako.Terrace.Saturday.at.10.1080p.CR.WEB-DL.DUAL.AAC2.0.H.264-VARYG.mkv",
+      "category": "episode-sxxexx",
+      "expected": { "season": 1, "episode": 7, "quality": "1080p" }
+    },
+    {
+      "id": "dara-s01e08",
+      "fileName": "Dara-san.of.the.Reiwa.Era.S01E08.A.Serpents.Struggles.1080p.CR.WEB-DL.JPN.AAC2.0.H.264.MSubs-ToonsHub.mkv",
+      "category": "episode-sxxexx",
+      "expected": { "season": 1, "episode": 8, "quality": "1080p" }
+    },
+    {
+      "id": "taiari-absolute-07-erai",
+      "fileName": "[Erai-raws] Tai Ari Deshita Ojou-sama wa Kakutou Game Nante Shinai - 07 [1080p CR WEB-DL AVC AAC][MultiSub][0FBE586A].mkv",
+      "category": "absolute-anime",
+      "expected": { "absoluteEpisode": 7, "quality": "1080p" },
+      "notes": "Absolute episode via ' - NN'; requires UsesAnimeAbsoluteEpisodeNumbering in evaluation"
+    },
+    {
+      "id": "taiari-absolute-02-erai",
+      "fileName": "[Erai-raws] taiari - 02 [1080p CR WEB-DL AVC AAC][MultiSub][350457AB].mkv",
+      "category": "absolute-anime",
+      "expected": { "absoluteEpisode": 2, "quality": "1080p" },
+      "notes": "Shortened series alias in filename"
+    },
+    {
+      "id": "all-works-maid-dots",
+      "fileName": "All-Works.Maid.S01E03.1080p.AMZN.WEB-DL.JPN.DDP2.0.H.264-ToonsHub.mkv",
+      "category": "episode-sxxexx",
+      "expected": { "season": 1, "episode": 3, "quality": "1080p" }
+    },
+    {
+      "id": "jjk-movie-vodes",
+      "fileName": "Jujutsu Kaisen 0 (2021) [v3] [BD 1080p HEVC Dual-Audio] [Vodes].mkv",
+      "category": "movie",
+      "expected": { "year": 2021, "quality": "1080p" },
+      "notes": "Movie/special; no SxxExx; year in parentheses"
+    },
+    {
+      "id": "kaguya-movie-2026",
+      "fileName": "Cosmic.Princess.Kaguya.2026.1080p.NF.WEB-DL.MULTi.DDP5.1.H.264-VARYG.mkv",
+      "category": "movie",
+      "expected": { "year": 2026, "quality": "1080p" }
+    },
+    {
+      "id": "your-name-2160p-dots",
+      "fileName": "Your.Name.2016.2160p.BluRay.x265.10bit.HDR.DTS-HD.MA.5.1-SWTYBLZ",
+      "category": "movie",
+      "expected": { "year": 2016, "quality": "2160p" },
+      "notes": "4K BluRay; dot-separated classic scene naming"
+    },
+    {
+      "id": "spider-verse-2160p-spaces",
+      "fileName": "Spider.Man.Across.The.Spider.Verse.2023.2160p.Dolby.Vision.And.HDR10.ENG.And.ESP.LATINO.DDP5.1.Atmos.DV.x265.MP4-BEN.THE.MEN",
+      "category": "movie",
+      "expected": { "year": 2023, "quality": "2160p" }
+    },
+    {
+      "id": "oppenheimer-remux-imax",
+      "fileName": "Oppenheimer.2023.2160p.REMUX.IMAX.Dolby.Vision.And.HDR10.PLUS.ENG.ITA.LATINO.DTS-HD.Master.DDP5.1.DV.x265.MKV-BEN.THE.MEN",
+      "category": "movie",
+      "expected": { "year": 2023, "quality": "2160p" },
+      "notes": "REMUX IMAX; many language/audio tokens"
+    },
+    {
+      "id": "hibike-ova-2023",
+      "fileName": "[Okay-Subs] Hibike! Euphonium Ensemble Contest (2023) (BD 1080p) [F67CD190].mkv",
+      "category": "ova-special",
+      "expected": { "year": 2023, "quality": "1080p" },
+      "notes": "OVA/special; Tokubetsu hen pattern"
+    },
+    {
+      "id": "hibike-season-pack",
+      "fileName": "[Judas] Hibike Euphonium (Sound! Euphonium) (Seasons 1-2 + Movies + Specials + OVA) [BD 1080p][HEVC x265 10bit][Eng-Subs]",
+      "category": "season-pack",
+      "expected": { "quality": "1080p", "coveredSeasons": [1, 2] },
+      "notes": "Multi-season pack; folder/torrent name not single episode"
+    },
+    {
+      "id": "bojack-season-folder",
+      "fileName": "BoJack Horseman (2014) Season 6 S06 (1080p NF WEB-DL x265 HEVC 10bit EAC3 5.1 Ghost)",
+      "category": "season-pack",
+      "expected": { "year": 2014, "season": 6, "quality": "1080p" },
+      "notes": "Full season folder name; S06 redundant with Season 6"
+    },
+    {
+      "id": "reza-simple-sxxexx",
+      "fileName": "[Reza] Smoking Behind the Supermarket with You - S01E01.mkv",
+      "category": "episode-sxxexx",
+      "expected": { "season": 1, "episode": 1 },
+      "notes": "Minimal metadata; clean S01E01"
+    },
+    {
+      "id": "jjk-s03e09-part-title",
+      "fileName": "JUJUTSU KAISEN S03E09 Tokyo Colony No 1 - Part 3 1080p CR WEB-DL DDP2 0 H 264-Kitsune",
+      "category": "episode-sxxexx",
+      "expected": { "season": 3, "episode": 9, "quality": "1080p" },
+      "notes": "Multi-part episode title with dash"
+    },
+    {
+      "id": "jjk-s03e04-multi-subs",
+      "fileName": "JUJUTSU.KAISEN.S03E04.Perfect.Preparation.1080p.CR.WEB-DL.MULTi.AAC2.0.H.264-VARYG.mkv",
+      "category": "episode-sxxexx",
+      "expected": { "season": 3, "episode": 4, "quality": "1080p" }
+    }
+  ]
+}

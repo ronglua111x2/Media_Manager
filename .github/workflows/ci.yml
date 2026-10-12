@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  SLN: media management app/media management app.slnx
+  APP_PROJ: media management app/media management app/media management app.csproj
+
+jobs:
+  build-test:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Short SHA
+        id: sha
+        shell: bash
+        run: echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+          # Test projects target net8.0 and need the 8.0 runtime to execute.
+          dotnet-version: 8.0.x
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/Directory.Build.props', 'global.json') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Restore
+        run: dotnet restore "${{ env.SLN }}"
+
+      - name: Build (Release x64)
+        run: dotnet build "${{ env.SLN }}" -c Release -p:Platform=x64 --no-restore -v minimal
+
+      - name: Test
+        run: dotnet test "${{ env.SLN }}" -c Release -p:Platform=x64 --no-build --logger trx --results-directory TestResults
+
+      - name: Publish (single-file smoke)
+        run: dotnet publish "${{ env.APP_PROJ }}" -c Release -p:Platform=x64 -o out/publish -v minimal
+
+      - name: Upload build
+        uses: actions/upload-artifact@v4
+        with:
+          name: MediaManager-${{ github.event.pull_request.number && format('pr{0}', github.event.pull_request.number) || github.ref_name }}-${{ steps.sha.outputs.short }}
+          path: out/publish
+          retention-days: 7
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ steps.sha.outputs.short }}
+          path: TestResults/*.trx
+          if-no-files-found: ignore
+          retention-days: 7

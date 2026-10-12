@@ -1,0 +1,266 @@
+using System.Globalization;
+using CommunityToolkit.Mvvm.ComponentModel;
+using media_management_app.Common;
+using media_management_app.Models;
+
+namespace media_management_app.ViewModels;
+
+public sealed partial class LibraryEpisodeRowViewModel : ObservableObject
+{
+    private LibraryEpisodeRowViewModel()
+    {
+    }
+
+    public LibraryEpisodeRowViewModel(TrackedEpisode episode)
+    {
+        Id = episode.Id;
+        ShowId = episode.ShowId;
+        SeasonNumber = episode.SeasonNumber;
+        EpisodeNumber = episode.EpisodeNumber;
+        Title = episode.Title;
+        AirDateDisplay = episode.AirDateDisplay;
+        Availability = episode.Availability;
+        TorrentHash = episode.TorrentHash ?? string.Empty;
+        TorrentState = episode.TorrentState ?? string.Empty;
+        TorrentProgress = episode.TorrentProgress;
+        VoteAverage = episode.VoteAverage;
+        UserRating = episode.UserRating;
+        Thought = episode.Thought ?? string.Empty;
+        IsTrackedEpisode = true;
+    }
+
+    public long Id { get; }
+
+    public long ShowId { get; private init; }
+
+    public int SeasonNumber { get; private init; }
+
+    public int EpisodeNumber { get; }
+
+    public int ShowTmdbId { get; init; }
+
+    public long? SourceItemId { get; private init; }
+
+    public bool IsTrackedEpisode { get; private init; }
+
+    public bool IsOrphan { get; private init; }
+
+    public bool IsOrphanSeparator { get; private init; }
+
+    public string EpisodeCode => IsOrphanSeparator
+        ? string.Empty
+        : IsOrphan
+            ? "-"
+            : $"S{SeasonNumber:00}E{EpisodeNumber:00}";
+
+    public string Title { get; private init; } = string.Empty;
+
+    public string AirDateDisplay { get; private init; } = string.Empty;
+
+    public EpisodeAvailability Availability { get; private init; }
+
+    public bool IsAvailable => IsOrphan || Availability == EpisodeAvailability.Available;
+
+    public bool CanOpenInJellyfin => IsTrackedEpisode && !IsOrphan && !IsOrphanSeparator && HasJellyfinSymlink;
+
+    public string TorrentHash { get; private init; } = string.Empty;
+
+    public string TorrentState { get; private init; } = string.Empty;
+
+    public double TorrentProgress { get; private init; }
+
+    public double? VoteAverage { get; private init; }
+
+    public bool CanRateEpisode => IsTrackedEpisode && !IsOrphan && !IsOrphanSeparator;
+
+    public bool ShowUnrateableExtraHint => IsOrphan && !IsOrphanSeparator;
+
+    public string UnrateableExtraHint => "Linked extra not in TMDB order — cannot rate.";
+
+    public bool HasRating => UserRating.HasValue;
+
+    public bool HasThought => !string.IsNullOrWhiteSpace(Thought);
+
+    public bool ShowRatingSummary => CanRateEpisode && HasRating && !IsNotesPanelOpen;
+
+    public bool ShowThoughtBody => CanRateEpisode && HasThought && !IsNotesPanelOpen;
+
+    public bool ShowRatingEditor => CanRateEpisode && IsNotesPanelOpen;
+
+    public string NotesToggleToolTip => IsNotesPanelOpen
+        ? "Hide episode rating and thought"
+        : "Add or edit episode rating and thought";
+
+    public string UserRatingText
+    {
+        get => UserRating.HasValue
+            ? UserRating.Value.ToString("0.0", CultureInfo.InvariantCulture)
+            : string.Empty;
+        set
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                UserRating = null;
+                return;
+            }
+
+            if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
+                || double.TryParse(value, NumberStyles.Float, CultureInfo.CurrentCulture, out parsed))
+            {
+                UserRating = Math.Clamp(Math.Round(parsed, 1, MidpointRounding.AwayFromZero), 0.0, 10.0);
+                return;
+            }
+
+            OnPropertyChanged(nameof(UserRatingText));
+        }
+    }
+
+    public bool HasTorrent => !string.IsNullOrWhiteSpace(TorrentHash);
+
+    public bool IsTorrentComplete => HasTorrent && TorrentProgress >= 0.999;
+
+    public bool CanAddToCart => IsTrackedEpisode && !IsSeasonPackMode && !IsAvailable && !IsInCart && !HasTorrent;
+
+    public bool IsLinked => !string.Equals(LibraryLinkStatus, "Not linked", StringComparison.OrdinalIgnoreCase);
+
+    public bool IsImported => string.Equals(LibraryLinkStatus, "Imported file", StringComparison.OrdinalIgnoreCase);
+
+    public bool CanLink => IsOrphan
+        ? IsLinked
+        : IsTrackedEpisode && !IsOrphanSeparator && !IsSeasonPackMode && (HasTorrent || IsLinked);
+
+    public bool CanReset => IsTrackedEpisode && !IsOrphan && !IsOrphanSeparator && !IsSeasonPackMode &&
+                            (HasTorrent || IsAvailable);
+
+    public string LinkActionLabel => IsLinked ? "Unlink" : "Link";
+
+    public string LinkActionIconKind => IsLinked ? "Unlink" : "Link";
+
+    public string LinkActionToolTip => IsOrphan
+        ? "Remove orphan library hardlink only — download file is not deleted"
+        : IsImported
+            ? "Remove imported media from Jellyfin and Library. The original file is kept; use Import Existing to add it again."
+        : IsLinked
+            ? "Remove generated library hardlink for this episode"
+            : "Create library hardlink for this episode";
+
+    public string PrimaryStatusLabel => IsOrphanSeparator
+        ? string.Empty
+        : IsOrphan
+            ? "Linked"
+            : AvailabilityLabel;
+
+    public string CompactLinkStatus => IsOrphanSeparator
+        ? string.Empty
+        : LibraryLinkStatus switch
+        {
+            "Imported file" => "Imported file",
+            "Linked by episode torrent" => "Episode link",
+            var status when status.StartsWith("Linked by pack", StringComparison.OrdinalIgnoreCase) => status,
+            "Linked" => "Linked",
+            _ => "Not linked"
+        };
+
+    public bool ShowWorkflowStatus => !IsOrphan &&
+                                      !IsOrphanSeparator &&
+                                      !string.IsNullOrWhiteSpace(WorkflowStatusLabel) &&
+                                      !string.Equals(WorkflowStatusLabel, "Linked", StringComparison.OrdinalIgnoreCase);
+
+    public static LibraryEpisodeRowViewModel CreateOrphan(SourceItem item, long showId) =>
+        new()
+        {
+            ShowId = showId,
+            SeasonNumber = AppConstants.SpecialsSeasonNumber,
+            Title = item.FileName,
+            IsOrphan = true,
+            SourceItemId = item.Id,
+            LibraryLinkStatus = "Linked",
+            Availability = EpisodeAvailability.Available
+        };
+
+    public static LibraryEpisodeRowViewModel CreateOrphanSeparator() =>
+        new()
+        {
+            IsOrphanSeparator = true,
+            Title = "Unmatched extras/specials/OVAs from pack. Unlink removes library hardlink only — your download file is not deleted."
+        };
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanAddToCart))]
+    [NotifyPropertyChangedFor(nameof(WorkflowStatusLabel))]
+    [NotifyPropertyChangedFor(nameof(ShowWorkflowStatus))]
+    private bool isInCart;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanOpenInJellyfin))]
+    private bool hasJellyfinSymlink;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanAddToCart))]
+    [NotifyPropertyChangedFor(nameof(CanLink))]
+    private bool isSeasonPackMode;
+
+    public string AvailabilityLabel => IsAvailable ? "Available" : "Missing";
+
+    public string WorkflowStatusLabel
+    {
+        get
+        {
+            if (IsOrphanSeparator)
+            {
+                return string.Empty;
+            }
+
+            if (IsOrphan || IsLinked)
+            {
+                return "Linked";
+            }
+
+            if (IsTorrentComplete)
+            {
+                return "Ready to link";
+            }
+
+            if (HasTorrent)
+            {
+                return TorrentProgress > 0 ? "Downloading" : "Added";
+            }
+
+            return IsInCart ? "In cart" : string.Empty;
+        }
+    }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasRating))]
+    [NotifyPropertyChangedFor(nameof(UserRatingText))]
+    [NotifyPropertyChangedFor(nameof(ShowRatingSummary))]
+    [NotifyPropertyChangedFor(nameof(ShowRatingEditor))]
+    private double? userRating;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasThought))]
+    [NotifyPropertyChangedFor(nameof(ShowThoughtBody))]
+    private string thought = string.Empty;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowRatingSummary))]
+    [NotifyPropertyChangedFor(nameof(ShowThoughtBody))]
+    [NotifyPropertyChangedFor(nameof(ShowRatingEditor))]
+    [NotifyPropertyChangedFor(nameof(NotesToggleToolTip))]
+    private bool isNotesPanelOpen;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsLinked))]
+    [NotifyPropertyChangedFor(nameof(IsImported))]
+    [NotifyPropertyChangedFor(nameof(CanLink))]
+    [NotifyPropertyChangedFor(nameof(LinkActionLabel))]
+    [NotifyPropertyChangedFor(nameof(LinkActionIconKind))]
+    [NotifyPropertyChangedFor(nameof(LinkActionToolTip))]
+    [NotifyPropertyChangedFor(nameof(WorkflowStatusLabel))]
+    [NotifyPropertyChangedFor(nameof(CompactLinkStatus))]
+    [NotifyPropertyChangedFor(nameof(ShowWorkflowStatus))]
+    [NotifyPropertyChangedFor(nameof(IsAvailable))]
+    [NotifyPropertyChangedFor(nameof(AvailabilityLabel))]
+    [NotifyPropertyChangedFor(nameof(PrimaryStatusLabel))]
+    private string libraryLinkStatus = "Not linked";
+}

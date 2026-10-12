@@ -1,0 +1,103 @@
+<Window x:Class="media_management_app.Views.AddMediaLockDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
+        Title="Confirm Add Media"
+        Width="460"
+        MinWidth="400"
+        SizeToContent="Height"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource AppBrushCanvas}"
+        Foreground="{StaticResource AppBrushText}"
+        TextElement.Foreground="{StaticResource AppBrushText}"
+        Loaded="Window_Loaded"
+        KeyDown="Window_KeyDown">
+    <DockPanel Margin="16">
+        <StackPanel DockPanel.Dock="Bottom"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Margin="0,16,0,0">
+            <Button Content="Cancel"
+                    Style="{StaticResource AppOutlinedButtonStyle}"
+                    Width="96"
+                    Margin="0,0,8,0"
+                    Click="Cancel_Click"
+                    IsCancel="True" />
+            <Button Content="{Binding ConfirmButtonText, Mode=OneWay}"
+                    Style="{StaticResource AppPrimaryButtonStyle}"
+                    MinWidth="120"
+                    Padding="12,6"
+                    IsEnabled="{Binding CanConfirm, Mode=OneWay}"
+                    Click="Confirm_Click" />
+        </StackPanel>
+
+        <StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                <iconPacks:PackIconLucide Kind="Lock"
+                                           Width="20"
+                                           Height="20"
+                                           VerticalAlignment="Center"
+                                           Foreground="{StaticResource AppBrushText}"
+                                           Margin="0,0,8,0" />
+                <TextBlock Text="Type to unlock add"
+                           FontSize="16"
+                           FontWeight="SemiBold"
+                           Foreground="{StaticResource AppBrushText}"
+                           VerticalAlignment="Center" />
+            </StackPanel>
+
+            <TextBlock Text="{Binding MediaTitle, Mode=OneWay}"
+                       TextWrapping="NoWrap"
+                       TextTrimming="CharacterEllipsis"
+                       ToolTip="{Binding MediaTitle, Mode=OneWay}"
+                       FontWeight="SemiBold"
+                       Foreground="{StaticResource AppBrushText}"
+                       Margin="0,0,0,6" />
+
+            <TextBlock Text="Type the phrase by hand. Copy, paste, and select-all are blocked."
+                       TextWrapping="Wrap"
+                       Foreground="{StaticResource AppBrushMutedText}"
+                       Margin="0,0,0,12" />
+
+            <TextBlock Text="{Binding StepLabel, Mode=OneWay}"
+                       Foreground="{StaticResource AppBrushMutedText}"
+                       FontSize="12"
+                       Margin="0,0,0,6" />
+
+            <Border Background="{StaticResource AppBrushSurface}"
+                    BorderBrush="{StaticResource AppBrushBorder}"
+                    BorderThickness="1"
+                    CornerRadius="6"
+                    Padding="10,8"
+                    Margin="0,0,0,12">
+                <TextBlock Text="{Binding CurrentPhrase, Mode=OneWay}"
+                           FontFamily="Consolas"
+                           FontSize="15"
+                           FontWeight="SemiBold"
+                           Foreground="{StaticResource AppBrushText}"
+                           TextWrapping="NoWrap"
+                           TextTrimming="CharacterEllipsis"
+                           ToolTip="{Binding CurrentPhrase, Mode=OneWay}" />
+            </Border>
+
+            <TextBox x:Name="PhraseBox"
+                     Text="{Binding TypedText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                     FontFamily="Consolas"
+                     FontSize="14"
+                     Padding="8,6"
+                     AllowDrop="False"
+                     ContextMenu="{x:Null}"
+                     PreviewKeyDown="PhraseBox_PreviewKeyDown"
+                     PreviewDragOver="PhraseBox_PreviewDragOver"
+                     PreviewDrop="PhraseBox_PreviewDrop">
+                <TextBox.CommandBindings>
+                    <CommandBinding Command="ApplicationCommands.Copy" CanExecute="OnClipboardCommandCanExecute" />
+                    <CommandBinding Command="ApplicationCommands.Paste" CanExecute="OnClipboardCommandCanExecute" />
+                    <CommandBinding Command="ApplicationCommands.Cut" CanExecute="OnClipboardCommandCanExecute" />
+                    <CommandBinding Command="ApplicationCommands.SelectAll" CanExecute="OnClipboardCommandCanExecute" />
+                </TextBox.CommandBindings>
+            </TextBox>
+        </StackPanel>
+    </DockPanel>
+</Window>

@@ -1,0 +1,139 @@
+using CommunityToolkit.Mvvm.ComponentModel;
+using media_management_app.Common;
+using media_management_app.Models;
+using System.Collections.ObjectModel;
+
+namespace media_management_app.ViewModels;
+
+public sealed partial class LibraryMovieDetailViewModel : ObservableObject
+{
+    public LibraryMovieDetailViewModel(TrackedMovie movie)
+    {
+        Id = movie.Id;
+        TmdbId = movie.TmdbId;
+        Title = movie.DisplayTitle;
+        Overview = movie.Overview ?? string.Empty;
+        PosterPath = movie.PosterPath;
+        AlternativeTitleChips = LibraryShowDetailViewModel.BuildAlternativeTitleChips(
+            movie.Id,
+            isMovie: true,
+            movie.AlternativeTitles,
+            movie.ExcludedFromSearchAlternativeTitles);
+        Availability = movie.Availability;
+        TorrentHash = movie.TorrentHash ?? string.Empty;
+        TorrentState = movie.TorrentState ?? string.Empty;
+        TorrentProgress = movie.TorrentProgress;
+        PreferencesSummary =
+            $"Quality {movie.PreferredQuality} | Audio {(string.IsNullOrWhiteSpace(movie.PreferredAudioCodec) ? "Any" : movie.PreferredAudioCodec)} | Min seeders {movie.MinimumSeeders}";
+    }
+
+    public long Id { get; }
+
+    public int TmdbId { get; }
+
+    public string Title { get; }
+
+    public string Overview { get; }
+
+    public string? PosterPath { get; }
+
+    public ObservableCollection<AlternativeTitleChipViewModel> AlternativeTitleChips { get; }
+
+    public bool HasAlternativeTitles => AlternativeTitleChips.Count > 0;
+
+    public EpisodeAvailability Availability { get; }
+
+    public string TorrentHash { get; }
+
+    public string TorrentState { get; }
+
+    public double TorrentProgress { get; }
+
+    public bool HasTorrent => !string.IsNullOrWhiteSpace(TorrentHash);
+
+    public bool IsTorrentComplete => HasTorrent && TorrentProgress >= 0.999;
+
+    public string PreferencesSummary { get; }
+
+    public string TmdbPageUrl => $"https://www.themoviedb.org/movie/{TmdbId}";
+
+    public bool IsAvailable => Availability == EpisodeAvailability.Available;
+
+    public bool CanOpenInJellyfin => HasJellyfinSymlink;
+
+    public bool CanAddToCart => !IsAvailable && !IsInCart && !HasTorrent;
+
+    public bool CanReset => HasTorrent || IsAvailable;
+
+    public bool IsLinked => !string.Equals(LibraryLinkStatus, "Not linked", StringComparison.OrdinalIgnoreCase);
+
+    public bool IsImported => string.Equals(LibraryLinkStatus, "Imported file", StringComparison.OrdinalIgnoreCase);
+
+    public bool CanLink => HasTorrent || IsLinked;
+
+    public string LinkActionLabel => IsImported ? "Remove import" : IsLinked ? "Unlink" : "Link";
+
+    public string LinkActionIconKind => IsLinked ? "Unlink" : "Link";
+
+    public string LinkActionToolTip => IsImported
+        ? "Remove imported media from Jellyfin and Library. The original file is kept; use Import Existing to add it again."
+        : IsLinked
+            ? "Remove generated library hardlink for this movie"
+            : "Create library hardlink for this movie";
+
+    public string CompactLinkStatus => LibraryLinkStatus;
+
+    public bool ShowWorkflowStatus => !string.IsNullOrWhiteSpace(WorkflowStatusLabel) &&
+                                      !string.Equals(WorkflowStatusLabel, "Linked", StringComparison.OrdinalIgnoreCase);
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanAddToCart))]
+    [NotifyPropertyChangedFor(nameof(WorkflowStatusLabel))]
+    [NotifyPropertyChangedFor(nameof(ShowWorkflowStatus))]
+    private bool isInCart;
+
+    public string AvailabilityLabel => IsAvailable ? "Available" : "Not in library folder";
+
+    public string WorkflowStatusLabel
+    {
+        get
+        {
+            if (IsLinked)
+            {
+                return "Linked";
+            }
+
+            if (IsTorrentComplete)
+            {
+                return "Ready to link";
+            }
+
+            if (HasTorrent)
+            {
+                return TorrentProgress > 0 ? "Downloading" : "Added";
+            }
+
+            return IsInCart ? "In cart" : string.Empty;
+        }
+    }
+
+    public string PosterUrl => string.IsNullOrWhiteSpace(PosterPath)
+        ? string.Empty
+        : $"https://image.tmdb.org/t/p/w342{PosterPath}";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanOpenInJellyfin))]
+    private bool hasJellyfinSymlink;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsLinked))]
+    [NotifyPropertyChangedFor(nameof(IsImported))]
+    [NotifyPropertyChangedFor(nameof(CanLink))]
+    [NotifyPropertyChangedFor(nameof(LinkActionLabel))]
+    [NotifyPropertyChangedFor(nameof(LinkActionIconKind))]
+    [NotifyPropertyChangedFor(nameof(LinkActionToolTip))]
+    [NotifyPropertyChangedFor(nameof(WorkflowStatusLabel))]
+    [NotifyPropertyChangedFor(nameof(CompactLinkStatus))]
+    [NotifyPropertyChangedFor(nameof(ShowWorkflowStatus))]
+    private string libraryLinkStatus = "Not linked";
+}

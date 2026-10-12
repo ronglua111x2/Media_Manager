@@ -24,14 +24,39 @@ public enum AppLogLevel
 
 #endregion
 
-#region Media
+#region Settings
 
-public enum MediaKind
+public enum AppTheme
 {
-    Unknown = 0,
-    TvEpisode = 1,
-    Movie = 2
+    Light = 0,
+    Dark = 1
 }
+
+public enum SettingsSection
+{
+    System = 0,
+    Library = 1,
+    AutoTrack = 2,
+    Integrations = 3,
+    TorrentStorage = 4,
+    Notifications = 5,
+    Backup = 6
+}
+
+#endregion
+
+#region Backup
+
+public enum BackupTriggerType
+{
+    Daily = 0,
+    EventDriven = 1,
+    Manual = 2
+}
+
+#endregion
+
+#region Media
 
 public enum ParserPattern
 {
@@ -45,6 +70,59 @@ public enum ParserPattern
 public enum LibraryRootMode
 {
     AutoPerDrive = 0
+}
+
+public enum FetchJobStatus
+{
+    Pending = 0,
+    Running = 1,
+    Completed = 2,
+    Failed = 3,
+    Canceled = 4
+}
+
+public enum EpisodeFetchStatus
+{
+    NotFetched = 0,
+    Pending = 1,
+    Searching = 2,
+    CandidatesFound = 3,
+    NoCandidates = 4,
+    Added = 5,
+    Error = 6
+}
+
+public enum SeasonManagementMode
+{
+    Episode = 0,
+    Pack = 1
+}
+
+public enum AutoTorrentLinkKind
+{
+    Episode = 1,
+    SeasonPack = 2,
+    Movie = 3
+}
+
+public enum TorrentOrderStatus
+{
+    Draft = 0,
+    Searching = 1,
+    CandidatesFound = 2,
+    NoCandidates = 3,
+    Approved = 4,
+    AddedToClient = 5,
+    Downloading = 6,
+    Completed = 7,
+    Failed = 8,
+    Canceled = 9
+}
+
+public enum TorrentOrderSource
+{
+    Manual = 0,
+    AutoTrack = 1
 }
 
 #endregion

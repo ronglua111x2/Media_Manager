@@ -1,44 +1,325 @@
-using System.Collections.Specialized;
+using System.ComponentModel;
 using System.Windows;
-using System.Windows.Controls;
-using media_management_app.Models;
+using System.Windows.Input;
+using System.Windows.Interop;
+using System.Windows.Shell;
+using media_management_app.Services;
 using media_management_app.ViewModels;
 
 namespace media_management_app;
 
 public partial class MainWindow : Window
 {
-    private readonly MainViewModel _viewModel;
+    private const double NormalCornerRadius = 8;
+    private const double ExpandedNavSlotHeight = 66;
+    private const double CollapsedNavSlotHeight = 48;
+    private static readonly Thickness NormalShellBorderThickness = new(1);
+    private static readonly Thickness NormalResizeBorderThickness = new(6);
 
-    public MainWindow(MainViewModel viewModel)
+    private readonly ISettingsService _settingsService;
+    private readonly ITrayIconService _trayIconService;
+    private readonly IAppLifecycleService _lifecycleService;
+    private readonly ICrashLogService _crashLog;
+    private bool _allowClose;
+    private bool _chromeIsMaximized;
+    private WindowState _previousWindowState = WindowState.Normal;
+    private DateTime _overflowClosedAt;
+
+    public MainWindow(
+        MainViewModel viewModel,
+        ISettingsService settingsService,
+        ITrayIconService trayIconService,
+        IAppLifecycleService lifecycleService,
+        ICrashLogService crashLog)
     {
         InitializeComponent();
-        _viewModel = viewModel;
         DataContext = viewModel;
-        _viewModel.UiLogs.CollectionChanged += UiLogs_CollectionChanged;
+        _settingsService = settingsService;
+        _trayIconService = trayIconService;
+        _lifecycleService = lifecycleService;
+        _crashLog = crashLog;
+        viewModel.PropertyChanged += OnViewModelPropertyChanged;
+        Loaded += OnLoaded;
     }
 
-    private void UiLogs_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    public void CloseForShutdown()
     {
-        if (_viewModel.UiLogs.Count == 0)
+        _allowClose = true;
+        System.Windows.Application.Current.Shutdown();
+    }
+
+    protected override void OnClosing(CancelEventArgs e)
+    {
+        _crashLog.TraceLifetime(
+            $"MainWindow OnClosing. AllowClose={_allowClose}, CloseToTray={_settingsService.Current.Startup.CloseToTray}.");
+        if (!_allowClose && _settingsService.Current.Startup.CloseToTray)
+        {
+            e.Cancel = true;
+            EnsureTray();
+            _trayIconService.HideToTray();
+            return;
+        }
+
+        base.OnClosing(e);
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        _crashLog.TraceLifetime(
+            $"MainWindow OnClosed. AllowClose={_allowClose}. Calling Shutdown().{Environment.NewLine}{Environment.StackTrace}");
+        base.OnClosed(e);
+        if (DataContext is MainViewModel viewModel)
+        {
+            viewModel.PropertyChanged -= OnViewModelPropertyChanged;
+        }
+
+        System.Windows.Application.Current.Shutdown();
+    }
+
+    private void OnLoaded(object sender, RoutedEventArgs e)
+    {
+        SidebarNavHost.SizeChanged += (_, _) => RecalculateNavigationOverflow();
+        RecalculateNavigationOverflow();
+    }
+
+    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(MainViewModel.IsSidebarCollapsed))
+        {
+            RecalculateNavigationOverflow();
+            OverflowPopup.IsOpen = false;
+            return;
+        }
+
+        if (e.PropertyName == nameof(MainViewModel.SelectedWorkspace))
+        {
+            OverflowPopup.IsOpen = false;
+        }
+    }
+
+    private void RecalculateNavigationOverflow()
+    {
+        if (DataContext is not MainViewModel viewModel || SidebarNavHost.ActualHeight <= 0)
         {
             return;
         }
 
-        Dispatcher.BeginInvoke(() =>
-        {
-            var lastLogLine = _viewModel.UiLogs[^1];
-            ConsoleLogList.ScrollIntoView(lastLogLine);
-        });
+        var slotHeight = viewModel.IsSidebarCollapsed
+            ? CollapsedNavSlotHeight
+            : ExpandedNavSlotHeight;
+        var slotCount = (int)Math.Floor(SidebarNavHost.ActualHeight / slotHeight);
+        viewModel.ApplyNavigationOverflow(slotCount);
     }
 
-    private void InboxGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private void OverflowButton_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is not DataGrid { DataContext: InboxViewModel inboxViewModel } dataGrid)
+        if ((DateTime.UtcNow - _overflowClosedAt).TotalMilliseconds < 200)
         {
             return;
         }
 
-        inboxViewModel.UpdateSelectedItems(dataGrid.SelectedItems.OfType<SourceItem>());
+        OverflowPopup.IsOpen = true;
+    }
+
+    private void OverflowPopup_Closed(object? sender, EventArgs e)
+    {
+        _overflowClosedAt = DateTime.UtcNow;
+    }
+
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+        HwndSource.FromHwnd(new WindowInteropHelper(this).Handle)?.AddHook(TraceLifetimeMessages);
+        UpdateWindowChromeForState();
+    }
+
+    // Diagnostic for docs/debug/unclean-exit: records the window messages that can end the app.
+    private IntPtr TraceLifetimeMessages(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        const int WmDestroy = 0x0002;
+        const int WmClose = 0x0010;
+        const int WmQueryEndSession = 0x0011;
+        const int WmEndSession = 0x0016;
+        const int WmPowerBroadcast = 0x0218;
+
+        switch (msg)
+        {
+            case WmQueryEndSession:
+            case WmEndSession:
+                _crashLog.TraceLifetime(
+                    $"MainWindow {(msg == WmQueryEndSession ? "WM_QUERYENDSESSION" : "WM_ENDSESSION")}. wParam=0x{wParam.ToInt64():X}, lParam=0x{lParam.ToInt64():X} ({DescribeEndSessionFlags(lParam.ToInt64())}).");
+                break;
+            case WmClose:
+                _crashLog.TraceLifetime("MainWindow WM_CLOSE.");
+                break;
+            case WmDestroy:
+                _crashLog.TraceLifetime("MainWindow WM_DESTROY.");
+                break;
+            case WmPowerBroadcast:
+                _crashLog.TraceLifetime($"MainWindow WM_POWERBROADCAST. wParam=0x{wParam.ToInt64():X}.");
+                break;
+        }
+
+        return IntPtr.Zero;
+    }
+
+    private static string DescribeEndSessionFlags(long lParam)
+    {
+        const long EndSessionCloseApp = 0x00000001;
+        const long EndSessionCritical = 0x40000000;
+        const long EndSessionLogoff = 0x80000000;
+
+        var flags = new List<string>();
+        if ((lParam & EndSessionCloseApp) != 0)
+        {
+            flags.Add("CLOSEAPP (Restart Manager)");
+        }
+
+        if ((lParam & EndSessionCritical) != 0)
+        {
+            flags.Add("CRITICAL");
+        }
+
+        if ((lParam & EndSessionLogoff) != 0)
+        {
+            flags.Add("LOGOFF");
+        }
+
+        return flags.Count == 0 ? "shutdown" : string.Join(", ", flags);
+    }
+
+    protected override void OnStateChanged(EventArgs e)
+    {
+        var wasMinimized = _previousWindowState == WindowState.Minimized;
+        _previousWindowState = WindowState;
+        base.OnStateChanged(e);
+        UpdateWindowChromeForState();
+        UpdateLifecycleForWindowState(wasMinimized);
+    }
+
+    private void UpdateWindowChromeForState()
+    {
+        if (WindowChrome.GetWindowChrome(this) is not WindowChrome chrome)
+        {
+            return;
+        }
+
+        var isMaximized = WindowState == WindowState.Maximized;
+        // Guard: skip the property mutations if already in the correct state to avoid
+        // triggering unnecessary WPF chrome invalidation and layout passes.
+        if (isMaximized == _chromeIsMaximized)
+        {
+            return;
+        }
+
+        _chromeIsMaximized = isMaximized;
+        chrome.CornerRadius = isMaximized
+            ? new CornerRadius(0)
+            : new CornerRadius(NormalCornerRadius);
+        chrome.ResizeBorderThickness = isMaximized
+            ? new Thickness(0)
+            : NormalResizeBorderThickness;
+        ShellBorder.BorderThickness = isMaximized
+            ? new Thickness(0)
+            : NormalShellBorderThickness;
+    }
+
+    private void UpdateLifecycleForWindowState(bool wasMinimized)
+    {
+        if (WindowState == WindowState.Minimized && !ShouldUseTray())
+        {
+            _lifecycleService.EnterBackgroundMode();
+            return;
+        }
+
+        // Only signal foreground when genuinely restoring from minimized state,
+        // not on Normal↔Maximized transitions which are not lifecycle events.
+        if (wasMinimized && WindowState != WindowState.Minimized && IsVisible)
+        {
+            _lifecycleService.EnterForegroundMode();
+        }
+    }
+
+    private void Header_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ClickCount == 2)
+        {
+            ToggleMaximizedState();
+            return;
+        }
+
+        if (e.ButtonState == MouseButtonState.Pressed)
+        {
+            RestoreWindowForDrag(e);
+            DragMove();
+        }
+    }
+
+    private void MinimizeButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (ShouldUseTray())
+        {
+            EnsureTray();
+            _trayIconService.HideToTray();
+            return;
+        }
+
+        WindowState = WindowState.Minimized;
+    }
+
+    private void MaximizeRestoreButton_Click(object sender, RoutedEventArgs e)
+    {
+        ToggleMaximizedState();
+    }
+
+    private void CloseButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_settingsService.Current.Startup.CloseToTray)
+        {
+            CloseForShutdown();
+            return;
+        }
+
+        Close();
+    }
+
+    private bool ShouldUseTray()
+    {
+        var startup = _settingsService.Current.Startup;
+        return startup.StartMinimized || startup.CloseToTray;
+    }
+
+    private void EnsureTray()
+    {
+        if (!_trayIconService.IsInitialized)
+        {
+            _trayIconService.Initialize(this);
+        }
+    }
+
+    private void ToggleMaximizedState()
+    {
+        WindowState = WindowState == WindowState.Maximized
+            ? WindowState.Normal
+            : WindowState.Maximized;
+    }
+
+    private void RestoreWindowForDrag(MouseButtonEventArgs e)
+    {
+        if (WindowState != WindowState.Maximized)
+        {
+            return;
+        }
+
+        var mousePosition = PointToScreen(e.GetPosition(this));
+        var restoredWidth = RestoreBounds.Width;
+        var restoredHeight = RestoreBounds.Height;
+        var horizontalRatio = mousePosition.X / ActualWidth;
+
+        WindowState = WindowState.Normal;
+        Width = restoredWidth;
+        Height = restoredHeight;
+        Left = mousePosition.X - (restoredWidth * horizontalRatio);
+        Top = Math.Max(0, mousePosition.Y - 20);
     }
 }

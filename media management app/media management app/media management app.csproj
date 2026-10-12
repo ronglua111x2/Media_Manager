@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net8.0-windows10.0.17763.0</TargetFramework>
     <RootNamespace>media_management_app</RootNamespace>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -15,19 +15,93 @@
 	<RuntimeIdentifier>win-x64</RuntimeIdentifier>
 
 	<IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <CopyDocumentationFilesFromPackages>false</CopyDocumentationFilesFromPackages>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
+    <!-- Windows-only WPF desktop app; suppress platform-compat noise (CA1416) -->
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+  </PropertyGroup>
+
+  <!-- WPF markup-compilation temp project: avoid duplicate AssemblyInfo / TFM attributes (CS0579) -->
+  <PropertyGroup Condition="$([System.String]::Copy('$(MSBuildProjectName)').EndsWith('_wpftmp'))">
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
+    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <DefaultItemExcludes>$(DefaultItemExcludes);ThirdParty/**;tools/**;MediaManager.Core/**;MediaManager.Core.Tests/**;MediaManager.App.Tests/**</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="MediaManager.Core/**" />
+    <None Remove="MediaManager.Core/**" />
+    <EmbeddedResource Remove="MediaManager.Core/**" />
+    <Page Remove="MediaManager.Core/**" />
+    <Compile Remove="MediaManager.Core.Tests/**" />
+    <None Remove="MediaManager.Core.Tests/**" />
+    <EmbeddedResource Remove="MediaManager.Core.Tests/**" />
+    <Page Remove="MediaManager.Core.Tests/**" />
+    <Compile Remove="MediaManager.App.Tests/**" />
+    <None Remove="MediaManager.App.Tests/**" />
+    <EmbeddedResource Remove="MediaManager.App.Tests/**" />
+    <Page Remove="MediaManager.App.Tests/**" />
+    <Compile Remove="ThirdParty\**" />
+    <None Remove="ThirdParty\**" />
+    <EmbeddedResource Remove="ThirdParty\**" />
+    <Page Remove="ThirdParty\**" />
+    <Compile Remove="tools\**" />
+    <None Remove="tools\**" />
+    <EmbeddedResource Remove="tools\**" />
+    <Page Remove="tools\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="MediaManager.Core\MediaManager.Core.csproj" />
+    <ProjectReference Include="ThirdParty\Sonarr.Parser\MediaManager.Sonarr.Parser.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <PackageReference Include="Google.Apis.Auth" Version="1.75.0" />
+    <PackageReference Include="Google.Apis.Drive.v3" Version="1.75.0.4218" />
+    <PackageReference Include="LiveChartsCore.SkiaSharpView.WPF" Version="2.0.5" />
+    <PackageReference Include="MahApps.Metro.IconPacks.Lucide" Version="6.2.1" />
+    <PackageReference Include="MahApps.Metro.IconPacks.Material" Version="6.2.1" />
+    <PackageReference Include="MaterialDesignColors" Version="5.3.2" />
+    <PackageReference Include="MaterialDesignThemes" Version="5.3.2" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.8" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.8" />
     <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.8" />
     <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.8" />
+    <PackageReference Include="Microsoft.Toolkit.Uwp.Notifications" Version="7.1.3" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3967.48" />
+    <PackageReference Include="WPF-UI" Version="4.3.0" />
   </ItemGroup>
 
-  <ItemGroup>
+    <ItemGroup>
     <Resource Include="Assets\app-icon.ico" />
+    <Resource Include="Assets\window-icons\*.ico" />
     <None Include="Assets\*.svg" />
+    <None Include="Assets\window-icons\badges\*" />
+    <Content Include="Assets\notifications\*.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
+
+    <ItemGroup>
+      <None Remove="nul" />
+    </ItemGroup>
+
+  <Target Name="RemovePublishJunk" AfterTargets="Publish">
+    <PropertyGroup>
+      <_PublishJunkDir>$([MSBuild]::EnsureTrailingSlash('$(PublishDir)'))</_PublishJunkDir>
+    </PropertyGroup>
+    <ItemGroup>
+      <_PublishJunk Include="$(_PublishJunkDir)*.pdb;$(_PublishJunkDir)*.xml" />
+    </ItemGroup>
+    <Delete Files="@(_PublishJunk)" TreatErrorsAsWarnings="true" />
+  </Target>
 
 </Project>

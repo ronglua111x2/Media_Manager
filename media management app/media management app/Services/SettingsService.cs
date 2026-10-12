@@ -7,8 +7,13 @@ namespace media_management_app.Services;
 public sealed class SettingsService : ISettingsService
 {
     private const string SettingsFileName = "settings.json";
-    private const string SettingsLoadLogFileName = "settings-load.log";
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
+
+    private readonly object _saveLock = new();
+    private readonly object _bootstrapLogLock = new();
+    private string? _settingsLogTimestamp;
+    private string? _settingsLogFilePath;
+    private string? _pinnedStateFolder;
 
     public SettingsService()
     {
@@ -19,17 +24,45 @@ public sealed class SettingsService : ISettingsService
 
     public string SettingsFilePath => Path.Combine(Current.StateFolder, SettingsFileName);
 
-    public void Load()
+    public string? ActiveSettingsLogFilePath => _settingsLogFilePath;
+
+    public bool CreatedNewSettingsThisLoad { get; private set; }
+
+    public string BootstrapSource { get; private set; } = "default";
+
+    public void Load(string? bootstrapStateFolder = null)
     {
+        CreatedNewSettingsThisLoad = false;
+        BootstrapSource = "default";
+        ApplyBootstrapPin(bootstrapStateFolder);
+
+        if (string.IsNullOrWhiteSpace(_pinnedStateFolder))
+        {
+            Current.StateFolder = ResolveBootstrapFolder();
+        }
+        else
+        {
+            BootstrapSource = "cli-pin";
+        }
+
         var initialStateFolder = Current.StateFolder;
         var initialSettingsFilePath = SettingsFilePath;
-        WriteBootstrapLog(initialStateFolder, $"Starting settings load. InitialStateFolder='{initialStateFolder}', SettingsFilePath='{initialSettingsFilePath}'");
+        WriteBootstrapLog(
+            initialStateFolder,
+            $"Starting settings load. BootstrapSource={BootstrapSource}, InitialStateFolder='{initialStateFolder}', SettingsFilePath='{initialSettingsFilePath}'");
 
         Directory.CreateDirectory(Current.StateFolder);
 
         if (!File.Exists(initialSettingsFilePath))
         {
-            WriteBootstrapLog(initialStateFolder, $"Settings file does not exist. Creating default settings at '{initialSettingsFilePath}'.");
+            Current.Startup ??= new AppStartupSettings();
+            Current.Startup.SetupCompleted = false;
+            Current.AutoTrack ??= new AutoTrackSettings();
+            Current.AutoTrack.Enabled = false;
+            CreatedNewSettingsThisLoad = true;
+            WriteBootstrapLog(
+                initialStateFolder,
+                $"Settings file does not exist. Creating default settings at '{initialSettingsFilePath}' with SetupCompleted=false.");
             Save();
             return;
         }
@@ -50,10 +83,13 @@ public sealed class SettingsService : ISettingsService
                 Current = loaded;
             }
 
+            RestoreResolvedStateFolder(initialStateFolder);
             EnsureDefaults();
+            RestoreResolvedStateFolder(initialStateFolder);
+            ApplyLegacySetupCompleted();
             WriteBootstrapLog(
                 Current.StateFolder,
-                $"Loaded settings. StateFolder='{Current.StateFolder}', SourceFolders={Current.SourceFolders.Count}, DefaultLibraryFolderName='{Current.DefaultLibraryFolderName}', TokenConfigured={!string.IsNullOrWhiteSpace(Current.TmdbReadAccessToken)}.");
+                $"Loaded settings. StateFolder='{Current.StateFolder}', SourceFolders={Current.SourceFolders.Count}, DefaultLibraryFolderName='{Current.DefaultLibraryFolderName}', TokenConfigured={!string.IsNullOrWhiteSpace(Current.TmdbReadAccessToken)}, SetupCompleted={Current.Startup.SetupCompleted}.");
 
             foreach (var folder in Current.SourceFolders)
             {
@@ -76,24 +112,242 @@ public sealed class SettingsService : ISettingsService
 
     public void Save()
     {
-        EnsureDefaults();
-        Directory.CreateDirectory(Current.StateFolder);
-        var json = JsonSerializer.Serialize(Current, JsonOptions);
-        File.WriteAllText(SettingsFilePath, json);
-        WriteBootstrapLog(Current.StateFolder, $"Saved settings to '{SettingsFilePath}'. SourceFolders={Current.SourceFolders.Count}, TokenConfigured={!string.IsNullOrWhiteSpace(Current.TmdbReadAccessToken)}.");
+        lock (_saveLock)
+        {
+            EnsureDefaults();
+            if (!string.IsNullOrWhiteSpace(_pinnedStateFolder))
+            {
+                Current.StateFolder = _pinnedStateFolder;
+            }
+
+            Directory.CreateDirectory(Current.StateFolder);
+            var json = JsonSerializer.Serialize(Current, JsonOptions);
+            var targetPath = SettingsFilePath;
+            var tempPath = targetPath + ".tmp";
+            File.WriteAllText(tempPath, json);
+            File.Move(tempPath, targetPath, overwrite: true);
+            WriteBootstrapLog(Current.StateFolder, $"Saved settings to '{targetPath}'. SourceFolders={Current.SourceFolders.Count}, TokenConfigured={!string.IsNullOrWhiteSpace(Current.TmdbReadAccessToken)}.");
+            WritePointer(Current.StateFolder);
+        }
+    }
+
+    private void ApplyBootstrapPin(string? bootstrapStateFolder)
+    {
+        if (!string.IsNullOrWhiteSpace(bootstrapStateFolder))
+        {
+            _pinnedStateFolder = Path.GetFullPath(bootstrapStateFolder.Trim());
+        }
+
+        if (!string.IsNullOrWhiteSpace(_pinnedStateFolder))
+        {
+            Current.StateFolder = _pinnedStateFolder;
+        }
+    }
+
+    private void RestoreResolvedStateFolder(string loadedFromFolder)
+    {
+        if (string.IsNullOrWhiteSpace(_pinnedStateFolder))
+        {
+            if (!string.Equals(Current.StateFolder, loadedFromFolder, StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(Current.StateFolder))
+            {
+                WriteBootstrapLog(
+                    loadedFromFolder,
+                    $"Ignoring settings.json StateFolder '{Current.StateFolder}' this session; bootstrap resolved '{loadedFromFolder}'. Save in Settings to relocate and update the pointer.");
+            }
+
+            Current.StateFolder = loadedFromFolder;
+            return;
+        }
+
+        if (!string.Equals(Current.StateFolder, _pinnedStateFolder, StringComparison.OrdinalIgnoreCase))
+        {
+            WriteBootstrapLog(
+                _pinnedStateFolder,
+                $"Ignoring settings.json StateFolder '{Current.StateFolder}' because this process pinned '{_pinnedStateFolder}' (CLI --state-folder). Settings were read from '{loadedFromFolder}'.");
+        }
+
+        Current.StateFolder = _pinnedStateFolder;
+    }
+
+    private string ResolveBootstrapFolder()
+    {
+        if (TryReadPointer(out var pointed))
+        {
+            BootstrapSource = "pointer";
+            return pointed;
+        }
+
+        var legacySettings = Path.Combine(AppConstants.LegacyStateFolder, "settings.json");
+        if (File.Exists(legacySettings))
+        {
+            BootstrapSource = "legacy";
+            WritePointer(AppConstants.LegacyStateFolder);
+            WriteBootstrapLog(
+                AppConstants.LegacyStateFolder,
+                $"Legacy state folder found at '{AppConstants.LegacyStateFolder}'. Pointer written; settings.json was not saved.");
+            return AppConstants.LegacyStateFolder;
+        }
+
+        BootstrapSource = "default";
+        return AppConstants.DefaultStateFolder;
+    }
+
+    private static bool TryReadPointer(out string path)
+    {
+        path = string.Empty;
+        var pointerFile = AppConstants.PointerFilePath;
+        if (!File.Exists(pointerFile))
+        {
+            return false;
+        }
+
+        try
+        {
+            var line = File.ReadAllLines(pointerFile)
+                .Select(value => value.Trim())
+                .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+            if (string.IsNullOrWhiteSpace(line) || !Path.IsPathRooted(line))
+            {
+                return false;
+            }
+
+            path = Path.GetFullPath(line);
+            return !string.IsNullOrWhiteSpace(path);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private void WritePointer(string stateFolder)
+    {
+        if (!string.IsNullOrWhiteSpace(_pinnedStateFolder))
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(stateFolder))
+        {
+            return;
+        }
+
+        try
+        {
+            var full = Path.GetFullPath(stateFolder.Trim());
+            Directory.CreateDirectory(AppConstants.PointerDirectory);
+            File.WriteAllText(AppConstants.PointerFilePath, full + Environment.NewLine);
+            WriteBootstrapLog(full, $"Wrote state pointer '{AppConstants.PointerFilePath}' -> '{full}'.");
+        }
+        catch (Exception ex)
+        {
+            WriteBootstrapLog(stateFolder, $"Failed to write state pointer: {ex.Message}");
+        }
+    }
+
+    private void ApplyLegacySetupCompleted()
+    {
+        Current.Startup ??= new AppStartupSettings();
+        if (Current.Startup.SetupCompleted is not null)
+        {
+            return;
+        }
+
+        Current.Startup.SetupCompleted = true;
+        WriteBootstrapLog(
+            Current.StateFolder,
+            "Legacy settings.json has no Startup.SetupCompleted. Treating this install as already set up (not first-run). Will persist on the next Save.");
     }
 
     private void EnsureDefaults()
     {
         if (string.IsNullOrWhiteSpace(Current.StateFolder))
         {
-            Current.StateFolder = AppConstants.DefaultStateFolder;
+            Current.StateFolder = _pinnedStateFolder ?? AppConstants.DefaultStateFolder;
         }
 
         if (string.IsNullOrWhiteSpace(Current.DefaultLibraryFolderName))
         {
             Current.DefaultLibraryFolderName = AppConstants.DefaultLibraryFolderName;
         }
+
+        Current.AutoTorrent ??= new AutoTorrentSettings();
+        Current.Warp ??= new WarpSettings();
+        Current.Warp.ConnectTimeoutSeconds = Math.Clamp(Current.Warp.ConnectTimeoutSeconds, 5, 120);
+        Current.AutoTrack ??= new AutoTrackSettings();
+        MigrateAutoTrackSettings(Current.AutoTrack);
+        Current.Logs ??= new LogSettings();
+        Current.Startup ??= new AppStartupSettings();
+        Current.Ui ??= new UiSettings();
+        Current.Notifications ??= new NotificationSettings();
+        Current.Notifications.EnabledByKind ??= new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        if (!ReferenceEquals(Current.Notifications.EnabledByKind.Comparer, StringComparer.OrdinalIgnoreCase))
+        {
+            Current.Notifications.EnabledByKind = new Dictionary<string, bool>(
+                Current.Notifications.EnabledByKind,
+                StringComparer.OrdinalIgnoreCase);
+        }
+
+        Current.Logs.MaxLinesPerFile = Math.Clamp(
+            Current.Logs.MaxLinesPerFile,
+            AppConstants.MinLogLinesPerFile,
+            AppConstants.MaxConfigurableLogLinesPerFile);
+        Current.Logs.CleanupRetentionDays = Math.Clamp(
+            Current.Logs.CleanupRetentionDays,
+            AppConstants.MinLogCleanupRetentionDays,
+            AppConstants.MaxLogCleanupRetentionDays);
+
+        if (string.IsNullOrWhiteSpace(Current.AutoTorrent.QbittorrentWebUiUrl))
+        {
+            Current.AutoTorrent.QbittorrentWebUiUrl = "http://localhost:8080";
+        }
+
+        MigrateAutoTorrentCategories(Current.AutoTorrent);
+        Current.AutoTorrent.DownloadFolders ??= [];
+        Current.AutoTorrent.DownloadFolders = Current.AutoTorrent.DownloadFolders
+            .Where(folder => !string.IsNullOrWhiteSpace(folder))
+            .Select(folder => folder.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (!string.IsNullOrWhiteSpace(Current.AutoTorrent.DownloadFolder) &&
+            !Current.AutoTorrent.DownloadFolders.Contains(Current.AutoTorrent.DownloadFolder, StringComparer.OrdinalIgnoreCase))
+        {
+            Current.AutoTorrent.DownloadFolders.Insert(0, Current.AutoTorrent.DownloadFolder);
+        }
+        Current.AutoTorrent.MaxCandidatesPerFetch = Math.Clamp(Current.AutoTorrent.MaxCandidatesPerFetch, 1, 10);
+        Current.AutoTorrent.MaxParallelSearches = Math.Clamp(Current.AutoTorrent.MaxParallelSearches, 1, 4);
+        Current.AutoTorrent.MovieSearchTimeoutSeconds = Math.Clamp(Current.AutoTorrent.MovieSearchTimeoutSeconds, 10, 300);
+        Current.AutoTorrent.ParallelSearchTimeoutSeconds = Math.Clamp(Current.AutoTorrent.ParallelSearchTimeoutSeconds, 10, 300);
+        Current.AutoTorrent.SnapshotTimeoutSeconds = Math.Clamp(Current.AutoTorrent.SnapshotTimeoutSeconds, 30, 300);
+
+        Current.AutoTorrent.ProcessRestart ??= new QbittorrentProcessRestartSettings();
+        var restart = Current.AutoTorrent.ProcessRestart;
+        if (string.IsNullOrWhiteSpace(restart.ExecutablePath))
+        {
+            restart.ExecutablePath = QbittorrentProcessRestartSettings.DefaultExecutablePath;
+        }
+        else
+        {
+            restart.ExecutablePath = restart.ExecutablePath.Trim();
+        }
+
+        restart.GracefulShutdownSeconds = Math.Clamp(
+            restart.GracefulShutdownSeconds,
+            QbittorrentProcessRestartSettings.MinGracefulShutdownSeconds,
+            QbittorrentProcessRestartSettings.MaxGracefulShutdownSeconds);
+        restart.CooldownMinutes = Math.Clamp(
+            restart.CooldownMinutes,
+            QbittorrentProcessRestartSettings.MinCooldownMinutes,
+            QbittorrentProcessRestartSettings.MaxCooldownMinutes);
+        restart.MaxRestartsPerHour = Math.Clamp(
+            restart.MaxRestartsPerHour,
+            QbittorrentProcessRestartSettings.MinMaxRestartsPerHour,
+            QbittorrentProcessRestartSettings.MaxMaxRestartsPerHour);
+        restart.WebUiReadyTimeoutSeconds = Math.Clamp(
+            restart.WebUiReadyTimeoutSeconds,
+            QbittorrentProcessRestartSettings.MinWebUiReadyTimeoutSeconds,
+            QbittorrentProcessRestartSettings.MaxWebUiReadyTimeoutSeconds);
 
         if (string.IsNullOrWhiteSpace(Current.OutputLibraryFolder))
         {
@@ -105,9 +359,137 @@ public sealed class SettingsService : ISettingsService
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
         Current.DriveLibraryRoots ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        Current.Symlink ??= new SymlinkSettings();
+        if (string.IsNullOrWhiteSpace(Current.Symlink.UnifiedRoot))
+        {
+            Current.Symlink.UnifiedRoot = AppConstants.DefaultSymlinkUnifiedRoot;
+        }
+
+        Current.Gemini ??= new GeminiSettings();
+        Current.Gemini.TimeoutSeconds = Math.Clamp(Current.Gemini.TimeoutSeconds, 10, 120);
+        Current.Gemini.FallbackModels = (Current.Gemini.FallbackModels ?? [])
+            .Where(model => !string.IsNullOrWhiteSpace(model))
+            .Select(model => model.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        MigrateBackupSettings(Current.Backup ??= new BackupSettings());
     }
 
-    private static void WriteBootstrapLog(string stateFolder, string message)
+    private static void MigrateBackupSettings(BackupSettings backup)
+    {
+        if (string.IsNullOrWhiteSpace(backup.MachineId))
+        {
+            backup.MachineId = Guid.NewGuid().ToString("N");
+        }
+
+        backup.DailyBackupHour = Math.Clamp(
+            backup.DailyBackupHour,
+            AppConstants.MinDailyBackupHour,
+            AppConstants.MaxDailyBackupHour);
+        backup.EventDebounceMinutes = Math.Clamp(
+            backup.EventDebounceMinutes,
+            AppConstants.MinEventDebounceMinutes,
+            AppConstants.MaxEventDebounceMinutes);
+        backup.DbThrottleHours = Math.Clamp(
+            backup.DbThrottleHours,
+            AppConstants.MinDbThrottleHours,
+            AppConstants.MaxDbThrottleHours);
+        backup.HistoryRetentionCount = Math.Clamp(
+            backup.HistoryRetentionCount,
+            AppConstants.MinHistoryRetentionCount,
+            AppConstants.MaxHistoryRetentionCount);
+    }
+
+    private static void MigrateAutoTrackSettings(AutoTrackSettings autoTrack)
+    {
+        autoTrack.IntervalHours = Math.Clamp(autoTrack.IntervalHours, 1, 168);
+        if (autoTrack.TorrentHuntIntervalMinutes <= 0)
+        {
+            autoTrack.TorrentHuntIntervalMinutes = Math.Clamp(autoTrack.IntervalHours * 60, 15, 1440);
+        }
+
+        autoTrack.TmdbCheckIntervalMinutes = Math.Clamp(autoTrack.TmdbCheckIntervalMinutes, 5, 1440);
+        autoTrack.TorrentHuntIntervalMinutes = Math.Clamp(autoTrack.TorrentHuntIntervalMinutes, 15, 1440);
+        autoTrack.ReconcileIntervalMinutes = Math.Clamp(autoTrack.ReconcileIntervalMinutes, 5, 1440);
+        autoTrack.MaxTmdbRefreshesPerDay = Math.Clamp(autoTrack.MaxTmdbRefreshesPerDay, 1, 500);
+        autoTrack.DailyBudget ??= new TmdbDailyBudget();
+
+        // Migrate legacy day-key / counter into DailyBudget once.
+        if (string.IsNullOrEmpty(autoTrack.DailyBudget.DayKey) &&
+            (!string.IsNullOrEmpty(autoTrack.LastTmdbRefreshDayKey) || autoTrack.TmdbRefreshesToday > 0))
+        {
+            autoTrack.DailyBudget.DayKey = autoTrack.LastTmdbRefreshDayKey ?? string.Empty;
+            autoTrack.DailyBudget.Used = Math.Max(0, autoTrack.TmdbRefreshesToday);
+            autoTrack.LastTmdbRefreshDayKey = null;
+            autoTrack.TmdbRefreshesToday = 0;
+        }
+
+        if (string.IsNullOrWhiteSpace(autoTrack.AnchorTimeLocal))
+        {
+            autoTrack.AnchorTimeLocal = "21:00";
+        }
+
+        autoTrack.Search ??= new AutoTrackSearchSettings();
+        autoTrack.Jellyfin ??= new JellyfinRefreshSettings();
+        if (autoTrack.Jellyfin.WarpHoldSecondsAfterNotify <= 0)
+        {
+            autoTrack.Jellyfin.WarpHoldSecondsAfterNotify = JellyfinRefreshSettings.DefaultWarpHoldSecondsAfterNotify;
+        }
+
+        autoTrack.Jellyfin.WarpHoldSecondsAfterNotify = Math.Clamp(
+            autoTrack.Jellyfin.WarpHoldSecondsAfterNotify,
+            JellyfinRefreshSettings.MinWarpHoldSecondsAfterNotify,
+            JellyfinRefreshSettings.MaxWarpHoldSecondsAfterNotify);
+
+        if (autoTrack.Jellyfin.LogQuietSecondsAfterRefresh <= 0)
+        {
+            autoTrack.Jellyfin.LogQuietSecondsAfterRefresh =
+                JellyfinRefreshSettings.DefaultLogQuietSecondsAfterRefresh;
+        }
+
+        autoTrack.Jellyfin.LogQuietSecondsAfterRefresh = Math.Clamp(
+            autoTrack.Jellyfin.LogQuietSecondsAfterRefresh,
+            JellyfinRefreshSettings.MinLogQuietSecondsAfterRefresh,
+            JellyfinRefreshSettings.MaxLogQuietSecondsAfterRefresh);
+
+        if (string.IsNullOrWhiteSpace(autoTrack.Jellyfin.LogPath))
+        {
+            autoTrack.Jellyfin.LogPath = null;
+        }
+        else
+        {
+            autoTrack.Jellyfin.LogPath = autoTrack.Jellyfin.LogPath.Trim();
+        }
+        autoTrack.Search.MaxShowsPerHuntCycle = Math.Clamp(autoTrack.Search.MaxShowsPerHuntCycle, 1, 20);
+        autoTrack.Search.MaxEpisodesPerShowPerHuntCycle = Math.Clamp(autoTrack.Search.MaxEpisodesPerShowPerHuntCycle, 1, 50);
+        autoTrack.Search.MaxParallelWorkersPerShow = Math.Clamp(autoTrack.Search.MaxParallelWorkersPerShow, 1, 4);
+    }
+
+    private static void MigrateAutoTorrentCategories(AutoTorrentSettings settings)
+    {
+        var legacyCategory = string.IsNullOrWhiteSpace(settings.CategoryName)
+            ? null
+            : settings.CategoryName.Trim();
+        var hasLegacyCustomCategory = legacyCategory is not null &&
+                                      !string.Equals(legacyCategory, "AutoTorrent", StringComparison.OrdinalIgnoreCase);
+
+        if (string.IsNullOrWhiteSpace(settings.TvShowCategoryName))
+        {
+            settings.TvShowCategoryName = hasLegacyCustomCategory
+                ? legacyCategory!
+                : AppConstants.QbittorrentTvShowCategory;
+        }
+
+        if (string.IsNullOrWhiteSpace(settings.MovieCategoryName))
+        {
+            settings.MovieCategoryName = hasLegacyCustomCategory
+                ? legacyCategory!
+                : AppConstants.QbittorrentMovieCategory;
+        }
+    }
+
+    private void WriteBootstrapLog(string stateFolder, string message)
     {
         var line = $"[{DateTime.Now.ToString(AppConstants.LogTimestampFormat)}] [SET] [SettingsService.cs] {message}";
         Console.WriteLine(line);
@@ -115,12 +497,25 @@ public sealed class SettingsService : ISettingsService
 
         try
         {
-            Directory.CreateDirectory(stateFolder);
-            File.AppendAllText(Path.Combine(stateFolder, SettingsLoadLogFileName), line + Environment.NewLine);
+            File.AppendAllText(GetSettingsLogFilePath(stateFolder), line + Environment.NewLine);
         }
         catch
         {
             // Settings diagnostics must never prevent app startup.
+        }
+    }
+
+    private string GetSettingsLogFilePath(string stateFolder)
+    {
+        lock (_bootstrapLogLock)
+        {
+            _settingsLogTimestamp ??= DateTime.Now.ToString(AppConstants.LogFileTimestampFormat);
+            var folder = Path.Combine(stateFolder, AppConstants.LogFolderName);
+            Directory.CreateDirectory(folder);
+            _settingsLogFilePath = Path.Combine(
+                folder,
+                $"{_settingsLogTimestamp}_{AppConstants.SettingsLogFileSuffix}{AppConstants.LogFileExtension}");
+            return _settingsLogFilePath;
         }
     }
 }

@@ -289,6 +289,8 @@ Generated_Code/
 # because we have git ;-)
 _UpgradeReport_Files/
 Backup*/
+# App source folder, not a VS upgrade backup
+!**/Services/Backup/
 UpgradeLog*.XML
 UpgradeLog*.htm
 ServiceFabricBackup/
@@ -418,6 +420,9 @@ FodyWeavers.xsd
 !.vscode/extensions.json
 !.vscode/*.code-snippets
 
+# Cursor IDE
+.cursor/
+
 # Local History for Visual Studio Code
 .history/
 
@@ -430,3 +435,10 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+/media management app/.github
+/media management app/media management app/nul
+/media management app/media management app/scripts
+
+# CI outputs
+/out/
+**/TestResults/

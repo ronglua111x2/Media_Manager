@@ -3,374 +3,729 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:vm="clr-namespace:media_management_app.ViewModels"
+        xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
+        xmlns:controls="clr-namespace:media_management_app.Views.Controls"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         mc:Ignorable="d"
-        Title="Media Manager" Height="720" Width="1120"
-        MinHeight="560" MinWidth="920"
+        x:Name="RootWindow"
+        Title="Media Manager"
+        Height="720"
+        Width="1280"
+        MinHeight="600"
+        MinWidth="960"
+        WindowStartupLocation="CenterScreen"
+        WindowStyle="None"
+        ResizeMode="CanResize"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
+        Background="{StaticResource AppBrushCanvas}"
         Icon="Assets/app-icon.ico">
+    <!-- #region Window chrome -->
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="0"
+                            CornerRadius="8"
+                            GlassFrameThickness="0"
+                            ResizeBorderThickness="6" />
+    </shell:WindowChrome.WindowChrome>
+    <!-- #endregion -->
+
+    <!-- #region Window resources -->
     <Window.Resources>
-        <Style TargetType="TextBox">
-            <Setter Property="Margin" Value="0,4,0,12" />
-            <Setter Property="Padding" Value="8,6" />
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
+
+        <Style x:Key="ChromeIconStyle" TargetType="iconPacks:PackIconLucide" BasedOn="{StaticResource AppIconStyle}">
+            <Setter Property="Width" Value="13" />
+            <Setter Property="Height" Value="13" />
+            <Setter Property="Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+        </Style>
+
+        <Style x:Key="TitleButtonStyle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Width" Value="44" />
+            <Setter Property="Height" Value="38" />
+            <Setter Property="MinHeight" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template" Value="{StaticResource AppButtonControlTemplate}" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
             <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="shell:WindowChrome.IsHitTestVisibleInChrome" Value="True" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{StaticResource AppBrushAccentSoft}" />
+                </Trigger>
+                <Trigger Property="IsKeyboardFocused" Value="True">
+                    <Setter Property="BorderBrush" Value="{StaticResource AppBrushAccent}" />
+                    <Setter Property="BorderThickness" Value="1" />
+                </Trigger>
+            </Style.Triggers>
         </Style>
-        <Style TargetType="Button">
-            <Setter Property="Margin" Value="0,0,8,0" />
-            <Setter Property="Padding" Value="12,7" />
+
+        <Style x:Key="CloseTitleButtonStyle" TargetType="Button" BasedOn="{StaticResource TitleButtonStyle}">
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{StaticResource AppBrushDanger}" />
+                    <Setter Property="Foreground" Value="{StaticResource AppBrushOnAccent}" />
+                </Trigger>
+            </Style.Triggers>
         </Style>
-        <Style TargetType="TextBlock">
-            <Setter Property="TextWrapping" Value="Wrap" />
+
+        <Style x:Key="SidebarShellStyle" TargetType="Border">
+            <Setter Property="Width" Value="260" />
+            <Setter Property="Background" Value="{StaticResource AppBrushSidebar}" />
+            <Setter Property="BorderBrush" Value="{StaticResource AppBrushBorder}" />
+            <Setter Property="BorderThickness" Value="1,0,0,0" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsSidebarCollapsed}" Value="True">
+                    <Setter Property="Width" Value="72" />
+                </DataTrigger>
+            </Style.Triggers>
         </Style>
-        <Style x:Key="ButtonIconPath" TargetType="Path">
-            <Setter Property="Width" Value="16" />
-            <Setter Property="Height" Value="16" />
-            <Setter Property="Stretch" Value="Uniform" />
-            <Setter Property="Stroke" Value="#111827" />
-            <Setter Property="StrokeThickness" Value="2" />
-            <Setter Property="StrokeStartLineCap" Value="Round" />
-            <Setter Property="StrokeEndLineCap" Value="Round" />
-            <Setter Property="StrokeLineJoin" Value="Round" />
-            <Setter Property="Margin" Value="0,0,6,0" />
+
+        <Style x:Key="SidebarTextPanelStyle" TargetType="StackPanel">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding DataContext.IsSidebarCollapsed, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
+            </Style.Triggers>
         </Style>
-        <Style x:Key="NavIconPath" TargetType="Path" BasedOn="{StaticResource ButtonIconPath}">
-            <Setter Property="Width" Value="15" />
-            <Setter Property="Height" Value="15" />
+
+        <Style x:Key="SidebarHeaderTextPanelStyle" TargetType="StackPanel">
+            <Setter Property="Visibility" Value="Visible" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsSidebarCollapsed}" Value="True">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
+            </Style.Triggers>
         </Style>
-        <Style x:Key="OperationProgressBar" TargetType="ProgressBar">
-            <Setter Property="Height" Value="22" />
-            <Setter Property="Foreground" Value="#2563eb" />
-            <Setter Property="Background" Value="#243244" />
-            <Setter Property="BorderBrush" Value="#3b4a5f" />
+
+        <Style x:Key="SidebarButtonStyle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="MinHeight" Value="58" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="0,0,0,8" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
             <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template" Value="{StaticResource AppButtonControlTemplate}" />
+            <Setter Property="shell:WindowChrome.IsHitTestVisibleInChrome" Value="True" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{StaticResource AppBrushAccentSoft}" />
+                    <Setter Property="BorderBrush" Value="{StaticResource AppBrushBorderStrong}" />
+                </Trigger>
+                <Trigger Property="IsKeyboardFocused" Value="True">
+                    <Setter Property="BorderBrush" Value="{StaticResource AppBrushAccent}" />
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Opacity" Value="0.45" />
+                </Trigger>
+                <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                    <Setter Property="Background" Value="{StaticResource AppBrushAccentSoft}" />
+                    <Setter Property="BorderBrush" Value="{StaticResource AppBrushAccent}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding DataContext.IsSidebarCollapsed, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                    <Setter Property="MinHeight" Value="44" />
+                    <Setter Property="Margin" Value="0,0,0,4" />
+                </DataTrigger>
+            </Style.Triggers>
         </Style>
 
-        <DataTemplate DataType="{x:Type vm:SettingsViewModel}">
-            <ScrollViewer VerticalScrollBarVisibility="Auto">
-                <Grid Margin="24">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
+        <Style x:Key="SelectedAccentStyle" TargetType="Border">
+            <Setter Property="Background" Value="Transparent" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                    <Setter Property="Background" Value="{StaticResource AppBrushAccent}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
 
-                    <TextBlock Text="Settings" FontSize="24" FontWeight="SemiBold" Margin="0,0,0,20" />
+        <Style x:Key="SidebarOverflowButtonStyle" TargetType="Button" BasedOn="{StaticResource SidebarButtonStyle}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsOverflowSelected}" Value="True">
+                    <Setter Property="Background" Value="{StaticResource AppBrushAccentSoft}" />
+                    <Setter Property="BorderBrush" Value="{StaticResource AppBrushAccent}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
 
-                    <TextBlock Grid.Row="1" Text="State folder" FontWeight="SemiBold" />
-                    <DockPanel Grid.Row="2" Margin="0,4,0,12" LastChildFill="True">
-                        <Button DockPanel.Dock="Right" Content="Browse" Command="{Binding BrowseStateFolderCommand}" Margin="8,0,0,0" />
-                        <TextBox Text="{Binding StateFolder, UpdateSourceTrigger=PropertyChanged}" Margin="0" />
-                    </DockPanel>
+        <Style x:Key="OverflowSelectedAccentStyle" TargetType="Border">
+            <Setter Property="Background" Value="Transparent" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsOverflowSelected}" Value="True">
+                    <Setter Property="Background" Value="{StaticResource AppBrushAccent}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
 
-                    <TextBlock Grid.Row="3" Text="Source folders" FontWeight="SemiBold" />
-                    <Grid Grid.Row="4" Margin="0,4,0,16">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="150" />
-                            <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
-                        <ListBox Grid.Row="0"
-                                 ItemsSource="{Binding SourceFolders}"
-                                 SelectedItem="{Binding SelectedSourceFolder, Mode=TwoWay}"
-                                 HorizontalContentAlignment="Stretch"
-                                 ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                                 ScrollViewer.VerticalScrollBarVisibility="Auto" />
-                        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,10,0,0">
-                            <Button Content="Add Source Folder" Command="{Binding AddSourceFolderCommand}" />
-                            <Button Content="Remove Selected Source Folder" Command="{Binding RemoveSelectedSourceFolderCommand}" />
-                        </StackPanel>
-                    </Grid>
+        <DataTemplate x:Key="SidebarNavButtonTemplate">
+            <Button Style="{StaticResource SidebarButtonStyle}"
+                    Command="{Binding DataContext.NavigateCommand, ElementName=RootWindow}"
+                    CommandParameter="{Binding}"
+                    ToolTip="{Binding Label}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="4" />
+                        <ColumnDefinition Width="46" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
 
-                    <TextBlock Grid.Row="5" Text="Generated library folder name" FontWeight="SemiBold" />
-                    <TextBox Grid.Row="6" Text="{Binding DefaultLibraryFolderName, UpdateSourceTrigger=PropertyChanged}" />
+                    <Border Grid.Column="0"
+                            Style="{StaticResource SelectedAccentStyle}" />
 
-                    <Grid Grid.Row="7" Margin="0,0,0,16">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" MinWidth="360" />
-                            <ColumnDefinition Width="20" />
-                            <ColumnDefinition Width="520" MinWidth="420" />
-                        </Grid.ColumnDefinitions>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="170" />
-                        </Grid.RowDefinitions>
+                    <iconPacks:PackIconLucide Grid.Column="1"
+                                              Kind="{Binding IconKind}"
+                                              Width="22"
+                                              Height="22"
+                                              Foreground="{StaticResource AppBrushText}"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
 
-                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Auto per-drive Jellyfin output roots" FontWeight="SemiBold" />
-                        <ListBox Grid.Row="1"
-                                 Grid.Column="0"
-                                 ItemsSource="{Binding LibraryRootPreview}"
-                                 Margin="0,4,0,0"
-                                 FontFamily="Consolas"
-                                 ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                                 ScrollViewer.VerticalScrollBarVisibility="Auto" />
-
-                        <Border Grid.Row="0"
-                                Grid.RowSpan="2"
-                                Grid.Column="2"
-                                Background="#f6f8fa"
-                                BorderBrush="#d0d7de"
-                                BorderThickness="1"
-                                Padding="14"
-                                Margin="0,4,0,0">
-                            <StackPanel>
-                                <TextBlock Text="How multi-drive output works" FontWeight="SemiBold" Margin="0,0,0,8" />
-                                <TextBlock TextWrapping="Wrap"
-                                           Margin="0,0,0,8"
-                                           Text="Hardlinks only work when the source file and linked file are on the same drive. This app creates a Jellyfin library root on each source drive." />
-                                <TextBlock TextWrapping="Wrap"
-                                           Margin="0,0,0,8"
-                                           Text="Example: files from D:\ go to D:\MediaManagerLibrary. Files from E:\ go to E:\MediaManagerLibrary." />
-                                <TextBlock TextWrapping="Wrap"
-                                           Text="In Jellyfin, add every generated Shows path to one Shows library. Add every generated Movies path to one Movies library." />
-                            </StackPanel>
-                        </Border>
-                    </Grid>
-
-                    <TextBlock Grid.Row="8" Text="TMDb API Read Access Token" FontWeight="SemiBold" />
-                    <TextBox Grid.Row="9" Text="{Binding TmdbReadAccessToken, UpdateSourceTrigger=PropertyChanged}" />
-
-                    <StackPanel Grid.Row="10" Orientation="Horizontal">
-                        <Button Content="Save Settings" Command="{Binding SaveCommand}" />
+                    <StackPanel Grid.Column="2"
+                                VerticalAlignment="Center"
+                                Margin="4,0,12,0"
+                                Style="{StaticResource SidebarTextPanelStyle}">
+                        <TextBlock Text="{Binding Label}"
+                                   FontSize="16"
+                                   FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding Description}"
+                                   Foreground="{StaticResource AppBrushMutedText}"
+                                   FontSize="11"
+                                   TextTrimming="CharacterEllipsis"
+                                   TextWrapping="NoWrap" />
                     </StackPanel>
-                    <TextBlock Grid.Row="10" Text="{Binding StatusMessage}" Margin="140,7,0,0" Foreground="#2f6f3e" />
                 </Grid>
-            </ScrollViewer>
+            </Button>
         </DataTemplate>
 
-        <DataTemplate DataType="{x:Type vm:InboxViewModel}">
-            <DockPanel Margin="24">
-                <DockPanel DockPanel.Dock="Top" Margin="0,0,0,12">
-                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
-                        <Button Command="{Binding ScanCommand}">
-                            <StackPanel Orientation="Horizontal">
-                                <Path Style="{StaticResource ButtonIconPath}" Data="M4,7 L4,5 A1,1 0 0 1 5,4 L7,4 M17,4 L19,4 A1,1 0 0 1 20,5 L20,7 M20,17 L20,19 A1,1 0 0 1 19,20 L17,20 M7,20 L5,20 A1,1 0 0 1 4,19 L4,17 M7,12 L17,12 M9,8 L15,8 M9,16 L15,16" />
-                                <TextBlock Text="Scan Sources" />
-                            </StackPanel>
-                        </Button>
-                        <Button Command="{Binding AcceptSuggestedMatchesCommand}">
-                            <StackPanel Orientation="Horizontal">
-                                <Path Style="{StaticResource ButtonIconPath}" Data="M20,6 L9,17 L4,12" />
-                                <TextBlock Text="Accept Suggested Match" />
-                            </StackPanel>
-                        </Button>
-                        <Button Command="{Binding CreateHardlinksCommand}">
-                            <StackPanel Orientation="Horizontal">
-                                <Path Style="{StaticResource ButtonIconPath}" Data="M10,13 A5,5 0 0 0 17.07,13 L19.07,11 A5,5 0 0 0 12,3.93 L10.85,5.08 M14,11 A5,5 0 0 0 6.93,11 L4.93,13 A5,5 0 0 0 12,20.07 L13.15,18.92" />
-                                <TextBlock Text="Create Hardlinks" />
-                            </StackPanel>
-                        </Button>
-                        <Button Command="{Binding RemoveHardlinksCommand}">
-                            <StackPanel Orientation="Horizontal">
-                                <Path Style="{StaticResource ButtonIconPath}" Data="M9,7 L6.93,9.07 A5,5 0 0 0 6.93,16.14 A5,5 0 0 0 14,16.14 L16,14 M15,17 L17.07,14.93 A5,5 0 0 0 17.07,7.86 A5,5 0 0 0 10,7.86 L8,10 M5,5 L19,19" />
-                                <TextBlock Text="Remove Hardlinks" />
-                            </StackPanel>
-                        </Button>
-                        <Button Command="{Binding CleanupDeletedCommand}">
-                            <StackPanel Orientation="Horizontal">
-                                <Path Style="{StaticResource ButtonIconPath}" Data="M3,6 L21,6 M8,6 L8,4 L16,4 L16,6 M6,6 L7,20 L17,20 L18,6 M10,11 L10,16 M14,11 L14,16" />
-                                <TextBlock Text="Cleanup Deleted" />
-                            </StackPanel>
-                        </Button>
-                        <Button Command="{Binding IgnoreSelectedCommand}">
-                            <StackPanel Orientation="Horizontal">
-                                <Path Style="{StaticResource ButtonIconPath}" Data="M4,4 L20,20 M20,4 L4,20 M12,3 A9,9 0 1 1 12,21 A9,9 0 0 1 12,3" />
-                                <TextBlock Text="Ignore Selected" />
-                            </StackPanel>
-                        </Button>
+        <DataTemplate x:Key="SidebarOverflowNavButtonTemplate">
+            <Button Style="{StaticResource SidebarButtonStyle}"
+                    Command="{Binding DataContext.NavigateCommand, ElementName=RootWindow}"
+                    CommandParameter="{Binding}"
+                    ToolTip="{Binding Label}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="4" />
+                        <ColumnDefinition Width="46" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <Border Grid.Column="0"
+                            Style="{StaticResource SelectedAccentStyle}" />
+
+                    <iconPacks:PackIconLucide Grid.Column="1"
+                                              Kind="{Binding IconKind}"
+                                              Width="22"
+                                              Height="22"
+                                              Foreground="{StaticResource AppBrushText}"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+
+                    <StackPanel Grid.Column="2"
+                                VerticalAlignment="Center"
+                                Margin="4,0,12,0">
+                        <TextBlock Text="{Binding Label}"
+                                   FontSize="16"
+                                   FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding Description}"
+                                   Foreground="{StaticResource AppBrushMutedText}"
+                                   FontSize="11"
+                                   TextTrimming="CharacterEllipsis"
+                                   TextWrapping="NoWrap" />
                     </StackPanel>
-                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal">
-                        <TextBlock Text="State" VerticalAlignment="Center" Margin="0,0,6,0" />
-                        <ComboBox ItemsSource="{Binding StateFilterOptions}"
-                                  SelectedItem="{Binding SelectedStateFilter, Mode=TwoWay}"
-                                  DisplayMemberPath="Label"
-                                  Width="140"
-                                  Margin="0,0,16,0" />
-                        <TextBlock Text="Kind" VerticalAlignment="Center" Margin="0,0,6,0" />
-                        <ComboBox ItemsSource="{Binding KindFilterOptions}"
-                                  SelectedItem="{Binding SelectedKindFilter, Mode=TwoWay}"
-                                  DisplayMemberPath="Label"
-                                  Width="140"
-                                  Margin="0,0,16,0" />
-                        <TextBlock Text="Search" VerticalAlignment="Center" Margin="0,0,6,0" />
-                        <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
-                                 Width="260"
-                                 Margin="0,0,16,0"
-                                 ToolTip="Filter by show, movie, matched title, file name, source path, linked path, or notes." />
-                        <Button Command="{Binding ResetFiltersCommand}"
-                                Padding="8,4"
-                                Margin="0,0,16,0">
-                            <StackPanel Orientation="Horizontal">
-                                <Path Style="{StaticResource ButtonIconPath}" Data="M4,4 L4,10 L10,10 M20,20 L20,14 L14,14 M20,9 A8,8 0 0 0 6.34,4.34 L4,6 M4,15 A8,8 0 0 0 17.66,19.66 L20,18" />
-                                <TextBlock Text="Reset Filters" />
-                            </StackPanel>
-                        </Button>
-                        <TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center" />
-                    </StackPanel>
-                </DockPanel>
-
-                <DataGrid x:Name="InboxGrid"
-                          ItemsSource="{Binding Items}"
-                          SelectedItem="{Binding SelectedItem, Mode=TwoWay}"
-                          AutoGenerateColumns="False"
-                          IsReadOnly="True"
-                          CanUserAddRows="False"
-                          GridLinesVisibility="All"
-                          HorizontalGridLinesBrush="#9ca3af"
-                          VerticalGridLinesBrush="#d1d5db"
-                          AlternatingRowBackground="#f8fafc"
-                          RowHeight="24"
-                          HeadersVisibility="Column"
-                          SelectionMode="Extended"
-                          SelectionUnit="FullRow"
-                          SelectionChanged="InboxGrid_SelectionChanged"
-                          ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                          ScrollViewer.VerticalScrollBarVisibility="Auto"
-                          EnableRowVirtualization="True"
-                          EnableColumnVirtualization="True"
-                          ColumnWidth="SizeToHeader">
-                    <DataGrid.Columns>
-                        <DataGridTextColumn Header="#" Binding="{Binding DisplayIndex}" Width="48" />
-                        <DataGridTextColumn Header="State" Binding="{Binding State}" Width="90" />
-                        <DataGridTextColumn Header="Kind" Binding="{Binding MediaKind}" Width="90" />
-                        <DataGridTextColumn Header="Show/Movie" Binding="{Binding DisplayTitle}" Width="240">
-                            <DataGridTextColumn.ElementStyle>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
-                                    <Setter Property="ToolTip" Value="{Binding DisplayTitle}" />
-                                </Style>
-                            </DataGridTextColumn.ElementStyle>
-                        </DataGridTextColumn>
-                        <DataGridTextColumn Header="Year" Binding="{Binding MovieYear}" Width="65" />
-                        <DataGridTextColumn Header="Season" Binding="{Binding SeasonNumber}" Width="70" />
-                        <DataGridTextColumn Header="Episode" Binding="{Binding EpisodeNumber}" Width="75" />
-                        <DataGridTextColumn Header="Mapped S" Binding="{Binding MappedSeasonNumber}" Width="85" />
-                        <DataGridTextColumn Header="Mapped E" Binding="{Binding MappedEpisodeNumber}" Width="85" />
-                        <DataGridTextColumn Header="Pattern" Binding="{Binding ParserPattern}" Width="120" />
-                        <DataGridTextColumn Header="Matched" Binding="{Binding MatchedTitle}" Width="190">
-                            <DataGridTextColumn.ElementStyle>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
-                                    <Setter Property="ToolTip" Value="{Binding MatchedTitle}" />
-                                </Style>
-                            </DataGridTextColumn.ElementStyle>
-                        </DataGridTextColumn>
-                        <DataGridTextColumn Header="Match Year" Binding="{Binding MatchedYear}" Width="85" />
-                        <DataGridTextColumn Header="Provider ID" Binding="{Binding ProviderId}" Width="95" />
-                        <DataGridTextColumn Header="Confidence" Binding="{Binding MatchConfidence, StringFormat={}{0:0}}" Width="90" />
-                        <DataGridCheckBoxColumn Header="Review" Binding="{Binding RequiresManualReview}" Width="70" />
-                        <DataGridTextColumn Header="Episode Mapping" Binding="{Binding EpisodeMappingReason}" Width="260">
-                            <DataGridTextColumn.ElementStyle>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
-                                    <Setter Property="ToolTip" Value="{Binding EpisodeMappingReason}" />
-                                </Style>
-                            </DataGridTextColumn.ElementStyle>
-                        </DataGridTextColumn>
-                        <DataGridTextColumn Header="Source Path" Binding="{Binding FilePath}" Width="360">
-                            <DataGridTextColumn.ElementStyle>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
-                                    <Setter Property="ToolTip" Value="{Binding FilePath}" />
-                                </Style>
-                            </DataGridTextColumn.ElementStyle>
-                        </DataGridTextColumn>
-                        <DataGridTextColumn Header="Linked Path" Binding="{Binding LinkedPath}" Width="320">
-                            <DataGridTextColumn.ElementStyle>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
-                                    <Setter Property="ToolTip" Value="{Binding LinkedPath}" />
-                                </Style>
-                            </DataGridTextColumn.ElementStyle>
-                        </DataGridTextColumn>
-                        <DataGridTextColumn Header="Notes" Binding="{Binding Notes}" Width="240">
-                            <DataGridTextColumn.ElementStyle>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
-                                    <Setter Property="ToolTip" Value="{Binding Notes}" />
-                                </Style>
-                            </DataGridTextColumn.ElementStyle>
-                        </DataGridTextColumn>
-                    </DataGrid.Columns>
-                </DataGrid>
-            </DockPanel>
+                </Grid>
+            </Button>
         </DataTemplate>
 
-        <DataTemplate DataType="{x:Type vm:ReviewViewModel}">
-            <Grid Margin="24">
-                <TextBlock Text="{Binding Message}" FontSize="20" />
-            </Grid>
-        </DataTemplate>
+        <Style x:Key="StatusPillStyle" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource AppBrushSurfaceRaised}" />
+            <Setter Property="BorderBrush" Value="{StaticResource AppBrushBorder}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Padding" Value="10,5" />
+            <Setter Property="Margin" Value="8,3,0,3" />
+        </Style>
+
+        <Style x:Key="SidebarToggleOpenIconStyle" TargetType="iconPacks:PackIconLucide" BasedOn="{StaticResource AppIconStyle}">
+            <Setter Property="Kind" Value="PanelRightOpen" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsSidebarCollapsed}" Value="False">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="SidebarToggleCloseIconStyle" TargetType="iconPacks:PackIconLucide" BasedOn="{StaticResource AppIconStyle}">
+            <Setter Property="Kind" Value="PanelRightClose" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsSidebarCollapsed}" Value="True">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
     </Window.Resources>
+    <!-- #endregion -->
 
-    <DockPanel>
-        <Border DockPanel.Dock="Left" Width="180" Background="#f3f3f3" BorderBrush="#d0d0d0" BorderThickness="0,0,1,0">
-            <StackPanel Margin="12">
-                <TextBlock Text="Media Manager" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,16" />
-                <Button Command="{Binding ShowInboxCommand}" Margin="0,0,0,8">
-                    <StackPanel Orientation="Horizontal">
-                        <Path Style="{StaticResource NavIconPath}" Data="M4,4 L20,4 L20,20 L4,20 Z M4,13 L9,13 A3,3 0 0 0 15,13 L20,13" />
-                        <TextBlock Text="Inbox" />
-                    </StackPanel>
-                </Button>
-                <Button Command="{Binding ShowReviewCommand}" Margin="0,0,0,8">
-                    <StackPanel Orientation="Horizontal">
-                        <Path Style="{StaticResource NavIconPath}" Data="M12,3 L20,7.5 L20,16.5 L12,21 L4,16.5 L4,7.5 Z M9,12 L11,14 L15,10" />
-                        <TextBlock Text="Review" />
-                    </StackPanel>
-                </Button>
-                <Button Command="{Binding ShowSettingsCommand}" Margin="0,0,0,8">
-                    <StackPanel Orientation="Horizontal">
-                        <Path Style="{StaticResource NavIconPath}" Data="M12,8 A4,4 0 1 1 12,16 A4,4 0 0 1 12,8 M12,2 L14,5 L18,5 L19,9 L22,11 L20,15 L21,19 L17,20 L14,23 L10,23 L7,20 L3,19 L4,15 L2,11 L5,9 L6,5 L10,5 Z" />
-                        <TextBlock Text="Settings" />
-                    </StackPanel>
-                </Button>
-            </StackPanel>
-        </Border>
+    <!-- #region App shell -->
+    <Border x:Name="ShellBorder"
+            Background="{StaticResource AppBrushCanvas}"
+            BorderBrush="{StaticResource AppBrushBorder}"
+            BorderThickness="1">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="46" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="46" />
+            </Grid.RowDefinitions>
 
-        <Border DockPanel.Dock="Bottom" Height="205" Background="#111111" BorderBrush="#303030" BorderThickness="0,1,0,0">
-            <DockPanel>
-                <Grid DockPanel.Dock="Top" Margin="10,8,10,4">
-                    <ProgressBar Style="{StaticResource OperationProgressBar}"
-                                 Minimum="0"
-                                 Maximum="100"
-                                 Value="{Binding OperationProgressPercent}" />
-                    <TextBlock Text="{Binding OperationProgressMessage}"
-                               Foreground="#f8fafc"
-                               FontSize="12"
-                               FontWeight="SemiBold"
-                               HorizontalAlignment="Center"
-                               VerticalAlignment="Center"
-                               TextTrimming="CharacterEllipsis" />
+            <!-- #region Title bar -->
+            <Border Grid.Row="0"
+                    Background="{StaticResource AppBrushSurface}"
+                    BorderBrush="{StaticResource AppBrushBorder}"
+                    BorderThickness="0,0,0,1"
+                    MouseLeftButtonDown="Header_MouseLeftButtonDown">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Orientation="Horizontal"
+                                VerticalAlignment="Center"
+                                Margin="14,0,0,0">
+                        <Border Width="25"
+                                Height="25"
+                                Background="{StaticResource AppBrushAccent}"
+                                CornerRadius="5"
+                                Margin="0,0,9,0">
+                            <Grid>
+                                <iconPacks:PackIconLucide Kind="MonitorPlay"
+                                                          Width="16"
+                                                          Height="16"
+                                                          Foreground="{StaticResource AppBrushOnAccent}"
+                                                          HorizontalAlignment="Center"
+                                                          VerticalAlignment="Center" />
+                                <Border Width="5"
+                                        Height="5"
+                                        Background="{StaticResource AppBrushOnAccent}"
+                                        Opacity="0.85"
+                                        CornerRadius="2.5"
+                                        HorizontalAlignment="Right"
+                                        VerticalAlignment="Bottom"
+                                        Margin="0,0,4,4" />
+                            </Grid>
+                        </Border>
+                        <TextBlock Text="Media Manager"
+                                   FontSize="14"
+                                   FontWeight="SemiBold"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="1"
+                                Orientation="Horizontal"
+                                HorizontalAlignment="Right">
+                        <Button Style="{StaticResource TitleButtonStyle}"
+                                Focusable="False"
+                                Click="MinimizeButton_Click"
+                                ToolTip="Minimize">
+                            <iconPacks:PackIconLucide Kind="Minus" Style="{StaticResource ChromeIconStyle}" />
+                        </Button>
+                        <Button Focusable="False"
+                                Click="MaximizeRestoreButton_Click"
+                                Content=" "
+                                ContentTemplate="{StaticResource MaximizeRestoreButtonContent}">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource TitleButtonStyle}">
+                                    <Setter Property="ToolTip" Value="Maximize" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding WindowState, RelativeSource={RelativeSource AncestorType=Window}}" Value="Maximized">
+                                            <Setter Property="ToolTip" Value="Restore" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+                        <Button Style="{StaticResource CloseTitleButtonStyle}"
+                                Focusable="False"
+                                Click="CloseButton_Click"
+                                ToolTip="Close">
+                            <iconPacks:PackIconLucide Kind="X" Style="{StaticResource ChromeIconStyle}" />
+                        </Button>
+                    </StackPanel>
                 </Grid>
-                <TextBlock DockPanel.Dock="Top"
-                           Text="Console Log"
-                           Foreground="#d6d6d6"
-                           FontWeight="SemiBold"
-                           Margin="10,8,10,4" />
-                <ListBox x:Name="ConsoleLogList"
-                         ItemsSource="{Binding UiLogs}"
-                         Background="#111111"
-                         BorderThickness="0"
-                         Foreground="#d6d6d6"
-                         FontFamily="Consolas"
-                         FontSize="12"
-                         ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                         ScrollViewer.VerticalScrollBarVisibility="Auto">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <TextBlock Text="{Binding}" TextWrapping="NoWrap" />
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
-            </DockPanel>
-        </Border>
+            </Border>
+            <!-- #endregion -->
 
-        <ContentControl Content="{Binding CurrentView}" />
-    </DockPanel>
+            <!-- #region Workspace content and navigation -->
+            <Grid Grid.Row="1">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <!-- #region Current workspace host -->
+                <Border Grid.Column="0"
+                        Background="{StaticResource AppBrushSurfaceRaised}">
+                    <controls:WorkspaceViewCache Workspace="{Binding CurrentView}"
+                                                 ContentTemplate="{x:Null}" />
+                </Border>
+                <!-- #endregion -->
+
+                <!-- #region Sidebar navigation -->
+                <Border Grid.Column="1"
+                        Style="{StaticResource SidebarShellStyle}">
+                    <DockPanel LastChildFill="True">
+                        <Border DockPanel.Dock="Top"
+                                BorderBrush="{StaticResource AppBrushBorder}"
+                                BorderThickness="0,0,0,1"
+                                Padding="14,14,14,12">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Style="{StaticResource SidebarHeaderTextPanelStyle}">
+                                    <TextBlock Text="Workspace"
+                                               FontSize="15"
+                                               FontWeight="SemiBold" />
+                                   <TextBlock Text="{Binding SelectedWorkspaceLabel}"
+                                               Foreground="{StaticResource AppBrushMutedText}"
+                                               FontSize="12"
+                                               Margin="0,2,0,0" />
+                                </StackPanel>
+                                <Button Grid.Column="1"
+                                        Style="{StaticResource AppIconButtonStyle}"
+                                        Command="{Binding ToggleSidebarCommand}"
+                                        ToolTip="Collapse sidebar">
+                                    <Grid>
+                                        <iconPacks:PackIconLucide Style="{StaticResource SidebarToggleOpenIconStyle}" />
+                                        <iconPacks:PackIconLucide Style="{StaticResource SidebarToggleCloseIconStyle}" />
+                                    </Grid>
+                                </Button>
+                            </Grid>
+                        </Border>
+
+                        <ContentPresenter DockPanel.Dock="Bottom"
+                                          Margin="12,0,12,8"
+                                          Content="{Binding SettingsItem}"
+                                          ContentTemplate="{StaticResource SidebarNavButtonTemplate}" />
+
+                        <Border x:Name="SidebarNavHost"
+                                Margin="12,14,12,0">
+                            <DockPanel LastChildFill="True">
+                                <Grid DockPanel.Dock="Bottom"
+                                      Visibility="{Binding HasOverflowItems, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                    <Button x:Name="OverflowButton"
+                                            Style="{StaticResource SidebarOverflowButtonStyle}"
+                                            Click="OverflowButton_Click"
+                                            ToolTip="More">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="4" />
+                                                <ColumnDefinition Width="46" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+
+                                            <Border Grid.Column="0"
+                                                    Style="{StaticResource OverflowSelectedAccentStyle}" />
+
+                                            <iconPacks:PackIconLucide Grid.Column="1"
+                                                                      Kind="Ellipsis"
+                                                                      Width="22"
+                                                                      Height="22"
+                                                                      Foreground="{StaticResource AppBrushText}"
+                                                                      HorizontalAlignment="Center"
+                                                                      VerticalAlignment="Center" />
+
+                                            <StackPanel Grid.Column="2"
+                                                        VerticalAlignment="Center"
+                                                        Margin="4,0,12,0"
+                                                        Style="{StaticResource SidebarTextPanelStyle}">
+                                                <TextBlock Text="More"
+                                                           FontSize="16"
+                                                           FontWeight="SemiBold" />
+                                                <TextBlock Text="Hidden workspaces"
+                                                           Foreground="{StaticResource AppBrushMutedText}"
+                                                           FontSize="11"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           TextWrapping="NoWrap" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Button>
+                                    <Popup x:Name="OverflowPopup"
+                                           PlacementTarget="{Binding ElementName=OverflowButton}"
+                                           Placement="Left"
+                                           HorizontalOffset="-8"
+                                           AllowsTransparency="True"
+                                           StaysOpen="False"
+                                           Closed="OverflowPopup_Closed">
+                                        <Border Background="{StaticResource AppBrushSurfaceRaised}"
+                                                BorderBrush="{StaticResource AppBrushBorder}"
+                                                BorderThickness="1"
+                                                CornerRadius="8"
+                                                Padding="8,10,8,6"
+                                                MinWidth="220">
+                                            <ItemsControl ItemsSource="{Binding DataContext.OverflowNavigationItems, ElementName=RootWindow}"
+                                                          ItemTemplate="{StaticResource SidebarOverflowNavButtonTemplate}" />
+                                        </Border>
+                                    </Popup>
+                                </Grid>
+
+                                <ItemsControl ItemsSource="{Binding VisibleNavigationItems}"
+                                              ItemTemplate="{StaticResource SidebarNavButtonTemplate}" />
+                            </DockPanel>
+                        </Border>
+                    </DockPanel>
+                </Border>
+                <!-- #endregion -->
+            </Grid>
+            <!-- #endregion -->
+
+            <!-- #region Bottom status bar -->
+            <Border Grid.Row="2"
+                    Background="{StaticResource AppBrushSurface}"
+                    BorderBrush="{StaticResource AppBrushBorder}"
+                    BorderThickness="0,1,0,0">
+                <Grid Margin="14,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0"
+                                Orientation="Horizontal"
+                                VerticalAlignment="Center">
+                        <Button Command="{Binding OpenConsoleCommand}"
+                                MinHeight="30"
+                                Padding="8,5"
+                                Margin="0"
+                                ToolTip="Open console log">
+                            <iconPacks:PackIconLucide Kind="Terminal"
+                                                       Width="16"
+                                                       Height="16"
+                                                       Foreground="{StaticResource AppBrushText}" />
+                        </Button>
+                    </StackPanel>
+
+                    <Border Grid.Column="1"
+                            Style="{StaticResource StatusPillStyle}"
+                            Width="250"
+                            Margin="8,3,8,3"
+                            HorizontalAlignment="Left"
+                            VerticalAlignment="Center">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <iconPacks:PackIconLucide Kind="Activity"
+                                                       Width="15"
+                                                       Height="15"
+                                                       VerticalAlignment="Center"
+                                                       Margin="0,0,6,0">
+                                <iconPacks:PackIconLucide.Style>
+                                    <Style TargetType="iconPacks:PackIconLucide">
+                                        <Setter Property="Foreground" Value="{StaticResource AppBrushMutedText}" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsJobActive}" Value="True">
+                                                <Setter Property="Foreground" Value="{StaticResource AppBrushAccent}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </iconPacks:PackIconLucide.Style>
+                            </iconPacks:PackIconLucide>
+                            <TextBlock Grid.Column="1"
+                                       Text="{Binding JobStatus}"
+                                       TextTrimming="CharacterEllipsis"
+                                       TextWrapping="NoWrap"
+                                       VerticalAlignment="Center" />
+                        </Grid>
+                    </Border>
+
+                    <WrapPanel Grid.Column="2"
+                               HorizontalAlignment="Right"
+                               VerticalAlignment="Center">
+                        <ItemsControl ItemsSource="{Binding DriveStatuses}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Button Style="{StaticResource StatusPillButtonStyle}"
+                                            Command="{Binding DataContext.OpenDriveFolderCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                            CommandParameter="{Binding}"
+                                            ToolTip="{Binding OpenToolTip}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <Ellipse Width="8"
+                                                     Height="8"
+                                                     VerticalAlignment="Center"
+                                                     Margin="0,0,7,0">
+                                                <Ellipse.Style>
+                                                    <Style TargetType="Ellipse">
+                                                        <Setter Property="Fill" Value="{StaticResource AppBrushAccent}" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsLowSpace}" Value="True">
+                                                                <Setter Property="Fill" Value="{StaticResource AppBrushWarning}" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Ellipse.Style>
+                                            </Ellipse>
+                                            <iconPacks:PackIconLucide Kind="HardDrive"
+                                                                       Width="14"
+                                                                       Height="14"
+                                                                       Foreground="{StaticResource AppBrushText}"
+                                                                       VerticalAlignment="Center"
+                                                                       Margin="0,0,6,0" />
+                                            <TextBlock Text="{Binding DriveLetterDisplay}"
+                                                       Foreground="{StaticResource AppBrushMutedText}"
+                                                       VerticalAlignment="Center"
+                                                       Margin="0,0,6,0" />
+                                            <TextBlock Text="{Binding StatsDisplay}"
+                                                       VerticalAlignment="Center"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       MaxWidth="280">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Foreground" Value="{StaticResource AppBrushAccent}" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsLowSpace}" Value="True">
+                                                                <Setter Property="Foreground" Value="{StaticResource AppBrushWarning}" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </StackPanel>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <Button Style="{StaticResource StatusPillButtonStyle}"
+                                Command="{Binding OpenQbittorrentCommand}"
+                                ToolTip="{Binding QbittorrentToolTip}">
+                            <StackPanel Orientation="Horizontal">
+                                <Ellipse Width="8"
+                                         Height="8"
+                                         VerticalAlignment="Center"
+                                         Margin="0,0,7,0">
+                                    <Ellipse.Style>
+                                        <Style TargetType="Ellipse">
+                                            <Setter Property="Fill" Value="{StaticResource AppBrushDanger}" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding QbittorrentDependency.IsConfigured}" Value="False">
+                                                    <Setter Property="Fill" Value="{StaticResource AppBrushMutedText}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding QbittorrentDependency.IsOk}" Value="True">
+                                                    <Setter Property="Fill" Value="{StaticResource AppBrushAccent}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Ellipse.Style>
+                                </Ellipse>
+                                <iconPacks:PackIconLucide Kind="Download"
+                                                           Width="14"
+                                                           Height="14"
+                                                           Foreground="{StaticResource AppBrushText}"
+                                                           VerticalAlignment="Center"
+                                                           Margin="0,0,6,0" />
+                                <TextBlock Text="qBittorrent"
+                                           Foreground="{StaticResource AppBrushMutedText}"
+                                           VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+
+                        <controls:WarpStatusPill />
+
+                        <Button Style="{StaticResource StatusPillButtonStyle}"
+                                Command="{Binding OpenJellyfinCommand}"
+                                ToolTip="{Binding JellyfinToolTip}">
+                            <StackPanel Orientation="Horizontal">
+                                <Ellipse Width="8"
+                                         Height="8"
+                                         VerticalAlignment="Center"
+                                         Margin="0,0,7,0">
+                                    <Ellipse.Style>
+                                        <Style TargetType="Ellipse">
+                                            <Setter Property="Fill" Value="{StaticResource AppBrushDanger}" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding JellyfinDependency.IsConfigured}" Value="False">
+                                                    <Setter Property="Fill" Value="{StaticResource AppBrushMutedText}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding JellyfinDependency.IsOk}" Value="True">
+                                                    <Setter Property="Fill" Value="{StaticResource AppBrushAccent}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Ellipse.Style>
+                                </Ellipse>
+                                <iconPacks:PackIconLucide Kind="Clapperboard"
+                                                           Width="14"
+                                                           Height="14"
+                                                           Foreground="{StaticResource AppBrushJellyfinBrand}"
+                                                           VerticalAlignment="Center"
+                                                           Margin="0,0,6,0" />
+                                <TextBlock Text="Jellyfin"
+                                           Foreground="{StaticResource AppBrushJellyfinBrand}"
+                                           VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+
+                        <Button Style="{StaticResource StatusPillButtonStyle}"
+                                Command="{Binding OpenGoogleDriveBackupCommand}"
+                                ToolTip="{Binding GoogleDriveBackupToolTip}">
+                            <StackPanel Orientation="Horizontal">
+                                <Ellipse Width="8"
+                                         Height="8"
+                                         VerticalAlignment="Center"
+                                         Margin="0,0,7,0">
+                                    <Ellipse.Style>
+                                        <Style TargetType="Ellipse">
+                                            <Setter Property="Fill" Value="{StaticResource AppBrushDanger}" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding GoogleDriveDependency.IsConfigured}" Value="False">
+                                                    <Setter Property="Fill" Value="{StaticResource AppBrushMutedText}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding GoogleDriveDependency.IsOk}" Value="True">
+                                                    <Setter Property="Fill" Value="{StaticResource AppBrushAccent}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Ellipse.Style>
+                                </Ellipse>
+                                <iconPacks:PackIconLucide Width="14"
+                                                           Height="14"
+                                                           Foreground="{StaticResource AppBrushText}"
+                                                           VerticalAlignment="Center"
+                                                           Margin="0,0,6,0">
+                                    <iconPacks:PackIconLucide.Style>
+                                        <Style TargetType="iconPacks:PackIconLucide">
+                                            <Setter Property="Kind" Value="Cloud" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsBackupRunning}" Value="True">
+                                                    <Setter Property="Kind" Value="CloudUpload" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </iconPacks:PackIconLucide.Style>
+                                </iconPacks:PackIconLucide>
+                                <TextBlock Text="Drive"
+                                           Foreground="{StaticResource AppBrushMutedText}"
+                                           VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                    </WrapPanel>
+                </Grid>
+            </Border>
+            <!-- #endregion -->
+        </Grid>
+    </Border>
+    <!-- #endregion -->
 </Window>

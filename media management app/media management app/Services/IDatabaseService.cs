@@ -7,6 +7,12 @@ public interface IDatabaseService
 {
     void Initialize(string stateFolder);
 
+    /// <summary>Absolute path of the SQLite database file, valid after <see cref="Initialize"/>.</summary>
+    string DatabaseFilePath { get; }
+
+    /// <summary>Writes a consistent point-in-time copy of the database to <paramref name="destinationFilePath"/> using SQLite's online backup API, safe to call while the app is actively writing to the database.</summary>
+    void CreateSafeSnapshot(string destinationFilePath);
+
     IReadOnlyList<SourceItem> GetSourceItems();
 
     void UpsertSourceItem(SourceItem item);
@@ -14,6 +20,8 @@ public interface IDatabaseService
     void UpsertSourceItems(IEnumerable<SourceItem> items);
 
     void UpdateSourceItem(SourceItem item);
+
+    void UpdateSourceItemSymlinkPath(long id, string? symlinkPath);
 
     int MarkMissingSourceItems(IEnumerable<string> sourceFolders, IEnumerable<string> seenFilePaths);
 
@@ -24,4 +32,213 @@ public interface IDatabaseService
     SeriesMapping? GetSeriesMapping(string parsedTitle, ParserPattern parserPattern);
 
     void UpsertSeriesMapping(SeriesMapping mapping);
+
+    IReadOnlyList<TrackedShow> GetTrackedShows();
+
+    IReadOnlyList<TrackedShow> GetTrackedShowsBySeriesStatus(ShowSeriesStatus seriesStatus);
+
+    IReadOnlyList<TrackedShow> GetAutoTrackedShows();
+
+    void UpdateTrackedShowAutoTrack(long showId, int? fromSeason, int? fromEpisode);
+
+    void UpdateTrackedShowAutoTrackSettings(
+        long showId,
+        int? fromSeason,
+        int? fromEpisode,
+        string? downloadFolder,
+        bool? autoReconcileAndLink);
+
+    void UpdateTrackedShowAutoTrackDownloadFolder(long showId, string? downloadFolder);
+
+    void UpdateTrackedShowAutoTrackReconcileAndLink(long showId, bool autoReconcileAndLink);
+
+    void UpdateTrackedShowAutoTrackTmdbState(
+        long showId,
+        AutoTrackTmdbState tmdbState,
+        string? lastTmdbWeekKey,
+        DateTime? lastTmdbRefreshLocal);
+
+    void UpdateTrackedShowAutoTrackScheduleOverrides(
+        long showId,
+        DayOfWeek? anchorDayOfWeek,
+        string? anchorTimeLocal,
+        bool clearOverrides);
+
+    TrackedShow? GetTrackedShow(long id);
+
+    TrackedShow? GetTrackedShowByTmdbId(int tmdbId);
+
+    long UpsertTrackedShow(TrackedShow show);
+
+    void DeleteTrackedSeasonsAndEpisodes(long showId);
+
+    void DeleteTrackedShow(long showId);
+
+    int DeleteAllTrackedShows();
+
+    void DeleteTrackedMovie(long movieId);
+
+    int DeleteAllTrackedMovies();
+
+    int DeleteFetchJobsForMedia(long mediaId, MediaKind targetKind);
+
+    int DeleteAllFetchJobs();
+
+    void UpsertTrackedSeason(TrackedSeason season);
+
+    IReadOnlyList<TrackedSeason> GetTrackedSeasons(long showId);
+
+    void UpdateTrackedSeasonDownloadFolder(long showId, int seasonNumber, string? downloadFolder);
+
+    void UpdateTrackedSeasonPackMode(long showId, int seasonNumber, SeasonManagementMode mode);
+
+    void UpdateTrackedSeasonHidden(long showId, int seasonNumber, bool isHidden);
+
+    void UpdateTrackedSeasonSelectedPack(long showId, int ownerSeasonNumber, SeasonPackCandidate candidate);
+
+    void ClearTrackedSeasonSelectedPacksForSeasons(long showId, IReadOnlyList<int> seasonNumbers);
+
+    void ClearTrackedSeasonSelectedPack(long showId, int ownerSeasonNumber);
+
+    void UpdateTrackedSeasonPackTorrent(long showId, int ownerSeasonNumber, AddedTorrentResult torrent);
+
+    void UpdateTrackedSeasonLastPackLink(long showId, int ownerSeasonNumber, string torrentHash, DateTime linkedUtc);
+
+    void UpdateTrackedSeasonPackInspection(long showId, int ownerSeasonNumber, PackTorrentInventory inventory);
+
+    void MarkTrackedSeasonPackTorrentRemoved(long showId, int ownerSeasonNumber, string torrentHash);
+
+    void ClearSelectedEpisodeCandidates();
+
+    void ClearSelectedSeasonPackCandidates();
+
+    void ClearSelectedMovieCandidates();
+
+    void UpsertTrackedEpisode(TrackedEpisode episode);
+
+    IReadOnlyList<TrackedEpisode> GetTrackedEpisodes(long showId);
+
+    void UpdateTrackedEpisodeAvailability(long episodeId, EpisodeAvailability availability);
+
+    void UpdateTrackedEpisodeTorrent(
+        long episodeId,
+        string torrentHash,
+        string torrentName,
+        string torrentState,
+        double torrentProgress);
+
+    void UpdateTrackedEpisodeSelectedCandidate(long episodeId, EpisodeFetchCandidate candidate);
+
+    void ClearTrackedEpisodeSelectedCandidate(long episodeId);
+
+    void UpdateTrackedShowPreferredQuality(long showId, string preferredQuality);
+
+    void UpdateTrackedShowPreferences(long showId, string preferredQuality, string preferredAudioCodec, int minimumSeeders);
+
+    void UpdateTrackedShowRecipe(long showId, string? recipeId);
+
+    void UpdateTrackedShowPackRecipe(long showId, string? packRecipeId);
+
+    void UpdateTrackedShowCartOverridesJson(long showId, MediaKind targetKind, string? overridesJson);
+
+    void UpdateTrackedShowAutoTrackRecipeOverridesJson(long showId, string? overridesJson);
+
+    void UpdateTrackedShowSeriesStatus(long showId, ShowSeriesStatus seriesStatus);
+
+    void UpdateTrackedShowWatchProgress(long showId, UserWatchStatus watchStatus, int watchedEpisodes);
+
+    void UpdateTrackedShowRating(long showId, double? rating, string? thought);
+
+    void UpdateTrackedEpisodeRating(long episodeId, double? rating, string? thought);
+
+    IReadOnlyList<EpisodeRatingPoint> GetEpisodeRatingsForShow(long showId);
+
+    IReadOnlyList<EpisodeUserRatingRow> GetAllEpisodeUserRatings();
+
+    void UpdateTrackedShowExcludedAlternativeTitles(long showId, string? excludedAlternativeTitlesJson);
+
+    void UpdateTrackedShowEpisodeOrganization(long showId, string? episodeGroupId, string? episodeGroupName);
+
+    IReadOnlyList<TrackedMovie> GetTrackedMovies();
+
+    TrackedMovie? GetTrackedMovie(long id);
+
+    TrackedMovie? GetTrackedMovieByTmdbId(int tmdbId);
+
+    long UpsertTrackedMovie(TrackedMovie movie);
+
+    void UpdateTrackedMovieAvailability(long movieId, EpisodeAvailability availability);
+
+    void UpdateTrackedMovieWatchStatus(long movieId, UserWatchStatus watchStatus);
+
+    void UpdateTrackedMovieRating(long movieId, double? rating, string? thought);
+
+    void UpdateTrackedMovieTorrent(
+        long movieId,
+        string torrentHash,
+        string torrentName,
+        string torrentState,
+        double torrentProgress);
+
+    void UpdateTrackedMovieSelectedCandidate(long movieId, EpisodeFetchCandidate candidate);
+
+    void ClearTrackedMovieSelectedCandidate(long movieId);
+
+    void UpdateTrackedMoviePreferences(long movieId, string preferredQuality, string preferredAudioCodec, int minimumSeeders);
+
+    void UpdateTrackedMovieRecipe(long movieId, string? recipeId);
+
+    void UpdateTrackedMovieCartOverridesJson(long movieId, string? overridesJson);
+
+    void UpdateTrackedMovieExcludedAlternativeTitles(long movieId, string? excludedAlternativeTitlesJson);
+
+    IReadOnlyList<TorrentCartOrder> GetTorrentCartOrders(MediaKind? mediaKind = null, long? mediaId = null);
+
+    TorrentCartOrder? GetTorrentCartOrder(long orderId);
+
+    long UpsertTorrentCartOrder(TorrentCartOrder order);
+
+    int DeleteTorrentCartOrders(MediaKind? mediaKind = null, long? mediaId = null);
+
+    int DeleteTorrentCartOrder(long orderId);
+
+    int DeleteTorrentCartOrderCandidates(long orderId);
+
+    int DeleteTorrentCartOrderCandidate(long candidateId);
+
+    IReadOnlyList<TorrentCartOrderCandidate> GetTorrentCartOrderCandidates(long orderId);
+
+    void ReplaceTorrentCartOrderCandidates(long orderId, IReadOnlyList<TorrentCartOrderCandidate> candidates);
+
+    void UpdateTorrentCartOrderCandidateSelection(long orderId, long candidateId);
+
+    void UpdateTorrentCartOrderCandidateAccepted(long orderId, long candidateId, bool isAccepted);
+
+    long CreateFetchJob(FetchJob job);
+
+    IReadOnlyList<FetchJob> GetFetchJobs();
+
+    FetchJob? GetFetchJob(long id);
+
+    void UpdateFetchJob(FetchJob job);
+
+    void DeleteFetchJob(long id);
+
+    #region Torrent Blacklist Methods
+
+    IReadOnlyList<TorrentBlacklistEntry> GetTorrentBlacklist(long showId);
+
+    bool IsTorrentBlacklisted(long showId, string? listingUrl, string? infoHash);
+
+    void AddTorrentToBlacklist(
+        long showId,
+        string listingUrl,
+        string infoHash,
+        string reason,
+        string? suspiciousFilesJson = null,
+        string? notes = null);
+
+    void RemoveTorrentFromBlacklist(long showId, string? listingUrl, string? infoHash);
+
+    #endregion
 }

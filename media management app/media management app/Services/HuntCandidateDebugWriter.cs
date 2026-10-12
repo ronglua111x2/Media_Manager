@@ -1,0 +1,163 @@
+using media_management_app.Common;
+using media_management_app.Models;
+
+namespace media_management_app.Services;
+
+public static class HuntCandidateDebugWriter
+{
+    public static CartCandidateDebugSession? TryCreateSession(
+        SearchRecipe recipe,
+        ISettingsService settingsService,
+        IAppLogger logger,
+        RecipeExecutionOverrides? overrides = null,
+        RecipeTermGuardResult? termGuard = null,
+        string? mediaTitle = null)
+    {
+        if (!RecipeRuntimeSettings.GetEnableCandidateDebugLog(recipe, overrides))
+        {
+            return null;
+        }
+
+        var session = new CartCandidateDebugSession(
+            settingsService.Current.StateFolder,
+            settingsService.Current.Logs.MaxLinesPerFile);
+        var debugLogFolder = Path.Combine(settingsService.Current.StateFolder, AppConstants.LogFolderName);
+        logger.Info(
+            $"Cart debug mode is enabled for recipe '{recipe.Name}'. Candidate debug log will be written under '{debugLogFolder}'.",
+            LogTarget.All);
+        if (termGuard is not null)
+        {
+            foreach (var line in termGuard.FormatDebugHeader(SanitizeForLog(mediaTitle)))
+            {
+                session.WriteLine(line);
+            }
+        }
+
+        return session;
+    }
+
+    /// <summary>Applies RecipeTermGuard for one run and writes the one-line summary to the console and system log.</summary>
+    public static RecipeTermGuardResult ApplyTermGuard(
+        SearchRecipe recipe,
+        string? primaryTitle,
+        IEnumerable<string>? alternativeTitles,
+        string mediaDisplayTitle,
+        IAppLogger logger)
+    {
+        var guard = RecipeTermGuard.Apply(recipe, primaryTitle, alternativeTitles);
+        var summary = guard.FormatSummary(recipe.Name, mediaDisplayTitle);
+        if (summary is not null)
+        {
+            logger.Info(summary, LogTarget.All);
+        }
+
+        return guard;
+    }
+
+    public static void WriteRecipeEvaluation(
+        CartCandidateDebugSession session,
+        SearchRecipe recipe,
+        string targetTitle,
+        MediaKind targetKind,
+        IReadOnlyList<string> queries,
+        IReadOnlyList<TorrentSearchResult> searchResults,
+        IReadOnlyList<RecipeCandidateResult> evaluated,
+        int timeoutSeconds,
+        RecipeExecutionOverrides? overrides = null,
+        SearchRecipe? stockRecipe = null)
+    {
+        var stock = stockRecipe ?? recipe;
+        var hasOverrides = overrides is not null;
+        session.WriteLine(
+            $"Media='{SanitizeForLog(targetTitle)}' Recipe='{SanitizeForLog(recipe.Name)}' RecipeId='{recipe.RecipeId}' Target='{FormatTarget(targetKind)}' Overrides={HuntOverrideDebugFormatter.FormatOverridesFlag(hasOverrides)}");
+        session.WriteLine($"Queries={queries.Count} => {string.Join(" | ", queries.Select(SanitizeForLog))}");
+        session.WriteLine(
+            $"SearchResults={searchResults.Count} TimeoutSeconds={timeoutSeconds} Accepted={evaluated.Count(item => item.IsAccepted)} Rejected={evaluated.Count(item => !item.IsAccepted)}");
+        foreach (var summary in evaluated
+                     .Where(item => !item.IsAccepted)
+                     .GroupBy(item => item.RejectReason)
+                     .OrderByDescending(group => group.Count()))
+        {
+            session.WriteLine($"RejectSummary reason={summary.Key} count={summary.Count()}");
+        }
+
+        var overrideRejects = RecipeOverrideReject.CountOverrideRejects(evaluated, overrides, stock);
+        var huntOverride = HuntOverrideDebugFormatter.FormatHuntOverrideSummary(
+            evaluated.Count(item => item.IsAccepted) + overrideRejects.Values.Sum(),
+            evaluated.Count(item => item.IsAccepted),
+            overrideRejects);
+        if (huntOverride is not null)
+        {
+            session.WriteLine(huntOverride);
+        }
+
+        foreach (var item in evaluated)
+        {
+            var result = item.SearchResult;
+            var sizeGb = result.FileSize > 0
+                ? (result.FileSize / (1024d * 1024d * 1024d)).ToString("0.00")
+                : "unknown";
+            var verdict = item.IsAccepted ? "ACCEPT" : "REJECT";
+            var detail = item.IsAccepted ? "-" : SanitizeForLog(item.RejectDetail);
+            var rejectedByOverride = !item.IsAccepted &&
+                RecipeOverrideReject.IsOverrideReject(
+                    overrides,
+                    stock,
+                    item.RejectReason,
+                    result.Seeders,
+                    result.FileSize);
+            session.WriteLine(
+                $"{verdict} reason={item.RejectReason}{HuntOverrideDebugFormatter.FormatRejectOverrideSuffix(rejectedByOverride)} detail='{detail}' quality='{TorrentQuality.Detect(result.FileName)}' sizeGB={sizeGb} seeders={result.Seeders} " +
+                $"Q={item.QualityScore} A={item.AudioScore} Pref={item.PreferTermsScore} Size={item.SizeScore} Total={item.TotalScore} " +
+                $"engine='{SanitizeForLog(result.EngineName)}' linkType='{result.LinkType}' name='{SanitizeForLog(result.FileName)}'");
+        }
+    }
+
+    public static void WriteHuntMatch(
+        CartCandidateDebugSession session,
+        SearchRecipe recipe,
+        string showTitle,
+        string episodeLabel,
+        int searchRows,
+        IReadOnlyList<EpisodeFetchCandidate> recipeMatched,
+        RecipeExecutionOverrides? overrides = null)
+    {
+        session.WriteLine(
+            $"HuntMatch Media='{SanitizeForLog(showTitle)}' Episode='{SanitizeForLog(episodeLabel)}' Recipe='{SanitizeForLog(recipe.Name)}' RecipeId='{recipe.RecipeId}' Overrides={HuntOverrideDebugFormatter.FormatOverridesFlag(overrides is not null)}");
+        session.WriteLine($"SearchRows={searchRows} RecipeMatched={recipeMatched.Count}");
+        foreach (var candidate in recipeMatched)
+        {
+            session.WriteLine(
+                $"MATCH size={HuntLogFormatter.FormatSizeMiB(candidate.FileSize)} seeders={candidate.Seeders} quality='{SanitizeForLog(candidate.QualityLabel)}' " +
+                $"engine='{SanitizeForLog(candidate.PluginName)}' name='{SanitizeForLog(candidate.FileName)}'");
+        }
+    }
+
+    public static void LogSessionPath(IAppLogger logger, CartCandidateDebugSession session)
+    {
+        logger.Info($"Cart debug log: {session.FirstFilePath}", LogTarget.All);
+    }
+
+    private static string FormatTarget(MediaKind targetKind) => targetKind switch
+    {
+        MediaKind.TvEpisode => "TV episode",
+        MediaKind.TvSeasonPack => "TV season pack",
+        MediaKind.Movie => "Movie",
+        _ => targetKind.ToString()
+    };
+
+    public static string SanitizeForLog(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        return value
+            .Replace('\r', ' ')
+            .Replace('\n', ' ')
+            .Replace('\t', ' ')
+            .Replace("'", "''")
+            .Trim();
+    }
+}

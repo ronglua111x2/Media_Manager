@@ -1,0 +1,40 @@
+<UserControl x:Class="media_management_app.Views.Controls.WarpStatusPill"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
+             Focusable="False">
+    <Button Style="{StaticResource StatusPillButtonStyle}"
+            Command="{Binding ToggleWarpCommand}"
+            ToolTip="{Binding WarpDependency.Detail}"
+            Focusable="False">
+        <StackPanel Orientation="Horizontal">
+            <Ellipse Width="8"
+                     Height="8"
+                     VerticalAlignment="Center"
+                     Margin="0,0,7,0">
+                <Ellipse.Style>
+                    <Style TargetType="Ellipse">
+                        <Setter Property="Fill" Value="{StaticResource AppBrushDanger}" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding WarpDependency.IsConfigured}" Value="False">
+                                <Setter Property="Fill" Value="{StaticResource AppBrushMutedText}" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding WarpDependency.IsOk}" Value="True">
+                                <Setter Property="Fill" Value="{StaticResource AppBrushAccent}" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Ellipse.Style>
+            </Ellipse>
+            <iconPacks:PackIconLucide Kind="ShieldCheck"
+                                       Width="14"
+                                       Height="14"
+                                       Foreground="{StaticResource AppBrushWarpBrand}"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,6,0" />
+            <TextBlock Text="WARP"
+                       Foreground="{StaticResource AppBrushWarpBrand}"
+                       VerticalAlignment="Center" />
+        </StackPanel>
+    </Button>
+</UserControl>

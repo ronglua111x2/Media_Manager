@@ -14,13 +14,20 @@ public sealed class AppLogger : IAppLogger, IDisposable
     private readonly CancellationTokenSource _shutdown = new();
     private readonly Task _worker;
     private readonly object _fileLock = new();
+    private readonly int _maxLogLinesPerFile;
     private string? _currentLogFilePath;
     private string? _currentLogFolder;
+    private string? _sessionLogTimestamp;
+    private int _currentLogFileIndex;
     private int _currentLogFileLineCount;
 
     public AppLogger(ISettingsService settingsService)
     {
         _settingsService = settingsService;
+        _maxLogLinesPerFile = Math.Clamp(
+            settingsService.Current.Logs.MaxLinesPerFile,
+            AppConstants.MinLogLinesPerFile,
+            AppConstants.MaxConfigurableLogLinesPerFile);
         UiLogs = [];
         _queue = Channel.CreateUnbounded<AppLogEntry>(new UnboundedChannelOptions
         {
@@ -31,6 +38,17 @@ public sealed class AppLogger : IAppLogger, IDisposable
     }
 
     public ObservableCollection<string> UiLogs { get; }
+
+    public string? ActiveLogFilePath
+    {
+        get
+        {
+            lock (_fileLock)
+            {
+                return _currentLogFilePath;
+            }
+        }
+    }
 
     public void Trace(string message, LogTarget targets = LogTarget.All, string filePath = "", string memberName = "")
         => Enqueue(AppLogLevel.Trace, message, null, targets, filePath, memberName);
@@ -133,14 +151,20 @@ public sealed class AppLogger : IAppLogger, IDisposable
 
     private void WriteUiLog(string line)
     {
-        var dispatcher = System.Windows.Application.Current?.Dispatcher;
-        if (dispatcher is null || dispatcher.CheckAccess())
+        try
         {
-            AddUiLogLine(line);
-            return;
-        }
+            var dispatcher = System.Windows.Application.Current?.Dispatcher;
+            if (dispatcher is null || dispatcher.CheckAccess())
+            {
+                AddUiLogLine(line);
+                return;
+            }
 
-        dispatcher.BeginInvoke(AddUiLogLine, line);
+            dispatcher.BeginInvoke(AddUiLogLine, line);
+        }
+        catch
+        {
+        }
     }
 
     private static void WriteConsoleLog(string line)
@@ -154,17 +178,36 @@ public sealed class AppLogger : IAppLogger, IDisposable
         var folder = Path.Combine(_settingsService.Current.StateFolder, AppConstants.LogFolderName);
         if (!string.IsNullOrWhiteSpace(_currentLogFilePath) &&
             string.Equals(_currentLogFolder, folder, StringComparison.OrdinalIgnoreCase) &&
-            _currentLogFileLineCount < AppConstants.MaxLogLinesPerFile)
+            _currentLogFileLineCount < _maxLogLinesPerFile)
         {
             return _currentLogFilePath;
         }
 
         Directory.CreateDirectory(folder);
-        var timestamp = DateTime.Now.ToString(AppConstants.LogFileTimestampFormat);
-        _currentLogFilePath = Path.Combine(folder, $"{timestamp}_{AppConstants.LogFileSuffix}{AppConstants.LogFileExtension}");
+
+        if (!string.Equals(_currentLogFolder, folder, StringComparison.OrdinalIgnoreCase) ||
+            string.IsNullOrWhiteSpace(_sessionLogTimestamp))
+        {
+            _sessionLogTimestamp = DateTime.Now.ToString(AppConstants.LogFileTimestampFormat);
+            _currentLogFileIndex = 0;
+        }
+        else
+        {
+            _currentLogFileIndex++;
+        }
+
+        _currentLogFilePath = GetSessionLogFilePath(folder);
         _currentLogFolder = folder;
         _currentLogFileLineCount = 0;
         return _currentLogFilePath;
+    }
+
+    private string GetSessionLogFilePath(string folder)
+    {
+        var suffix = _currentLogFileIndex == 0 ? string.Empty : $"_{_currentLogFileIndex}";
+        return Path.Combine(
+            folder,
+            $"{_sessionLogTimestamp}_{AppConstants.LogFileSuffix}{suffix}{AppConstants.LogFileExtension}");
     }
 
     private void AddUiLogLine(string line)

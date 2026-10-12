@@ -1,0 +1,1763 @@
+using System.Text.Json;
+using media_management_app.Common;
+using media_management_app.Models;
+
+namespace media_management_app.Services;
+
+public sealed class AutoTrackService : IAutoTrackService
+{
+    private readonly ISettingsService _settingsService;
+    private readonly IDatabaseService _databaseService;
+    private readonly ITrackedShowService _trackedShowService;
+    private readonly ITorrentCartService _torrentCartService;
+    private readonly IFetchJobService _fetchJobService;
+    private readonly IRecipeService _recipeService;
+    private readonly IWarpCliService _warpCliService;
+    private readonly IQbittorrentProcessRestartService _qbittorrentProcessRestartService;
+    private readonly ITorrentReconciliationService _torrentReconciliationService;
+    private readonly IAutoTorrentLinkService _autoTorrentLinkService;
+    private readonly IWindowsNotificationService _windowsNotificationService;
+    private readonly IPosterImageService _posterImageService;
+    private readonly ITorrentAddGateService _addGateService;
+    private readonly ITorrentBlacklistService _blacklistService;
+    private readonly IOperationProgressService _progressService;
+    private readonly IAppLogger _logger;
+    private readonly SemaphoreSlim _discoveryLock = new(1, 1);
+    private readonly SemaphoreSlim _huntLock = new(1, 1);
+    private readonly SemaphoreSlim _reconcileLock = new(1, 1);
+
+    public AutoTrackService(
+        ISettingsService settingsService,
+        IDatabaseService databaseService,
+        ITrackedShowService trackedShowService,
+        ITorrentCartService torrentCartService,
+        IFetchJobService fetchJobService,
+        IRecipeService recipeService,
+        IWarpCliService warpCliService,
+        IQbittorrentProcessRestartService qbittorrentProcessRestartService,
+        ITorrentReconciliationService torrentReconciliationService,
+        IAutoTorrentLinkService autoTorrentLinkService,
+        IWindowsNotificationService windowsNotificationService,
+        IPosterImageService posterImageService,
+        ITorrentAddGateService addGateService,
+        ITorrentBlacklistService blacklistService,
+        IOperationProgressService progressService,
+        IAppLogger logger)
+    {
+        _settingsService = settingsService;
+        _databaseService = databaseService;
+        _trackedShowService = trackedShowService;
+        _torrentCartService = torrentCartService;
+        _fetchJobService = fetchJobService;
+        _recipeService = recipeService;
+        _warpCliService = warpCliService;
+        _qbittorrentProcessRestartService = qbittorrentProcessRestartService;
+        _torrentReconciliationService = torrentReconciliationService;
+        _autoTorrentLinkService = autoTorrentLinkService;
+        _windowsNotificationService = windowsNotificationService;
+        _posterImageService = posterImageService;
+        _addGateService = addGateService;
+        _blacklistService = blacklistService;
+        _progressService = progressService;
+        _logger = logger;
+    }
+
+    public bool IsRunning => IsTmdbDiscoveryRunning || IsTorrentHuntRunning || IsReconcileRunning;
+
+    public bool IsTmdbDiscoveryRunning => _discoveryLock.CurrentCount == 0;
+
+    public bool IsTorrentHuntRunning => _huntLock.CurrentCount == 0;
+
+    public bool IsReconcileRunning => _reconcileLock.CurrentCount == 0;
+
+    public async Task<AutoTrackRunResult> RunAsync(CancellationToken cancellationToken = default)
+    {
+        // TMDB discovery (bypass weekly anchor) then hunts eligible pending with schedule bypass.
+        var result = await RunTmdbDiscoveryAsync(bypassAnchor: true, cancellationToken);
+        PersistRunResult(result);
+        NotifyRunSummary(result);
+        return result;
+    }
+
+    public async Task<AutoTrackRunResult> RunTmdbDiscoveryAsync(bool bypassAnchor = false, CancellationToken cancellationToken = default)
+    {
+        if (!await _discoveryLock.WaitAsync(0, cancellationToken))
+        {
+            return SkippedResult("TMDB discovery is already running.");
+        }
+
+        try
+        {
+            return await RunTmdbDiscoveryCoreAsync(bypassAnchor, cancellationToken);
+        }
+        finally
+        {
+            _discoveryLock.Release();
+        }
+    }
+
+    public async Task<AutoTrackRunResult> RunTorrentHuntAsync(
+        CancellationToken cancellationToken = default,
+        bool resumeOnly = false,
+        bool bypassSchedule = false)
+    {
+        if (!await _huntLock.WaitAsync(0, cancellationToken))
+        {
+            return SkippedResult("Torrent hunt is already running.");
+        }
+
+        try
+        {
+            return await RunTorrentHuntCoreAsync(cancellationToken, resumeOnly, bypassSchedule);
+        }
+        finally
+        {
+            _huntLock.Release();
+        }
+    }
+
+    public async Task<AutoTrackRunResult> RunBackgroundReconcileAsync(CancellationToken cancellationToken = default)
+    {
+        if (!await _reconcileLock.WaitAsync(0, cancellationToken))
+        {
+            return SkippedResult("Background reconcile is already running.");
+        }
+
+        try
+        {
+            return await RunBackgroundReconcileCoreAsync(cancellationToken);
+        }
+        finally
+        {
+            _reconcileLock.Release();
+        }
+    }
+
+    private async Task<AutoTrackRunResult> RunTmdbDiscoveryCoreAsync(bool bypassAnchor, CancellationToken cancellationToken)
+    {
+        var result = new AutoTrackRunResult { Succeeded = true };
+        var settings = GetAutoTrackSettings();
+        var nowLocal = DateTime.Now;
+        var shows = _trackedShowService.GetAutoTrackedShows();
+        if (shows.Count == 0)
+        {
+            result.Summary = "No auto-tracked shows.";
+            return result;
+        }
+
+        var budget = settings.DailyBudget ??= new TmdbDailyBudget();
+        var maxPerDay = settings.MaxTmdbRefreshesPerDay;
+        var remainingCap = budget.Remaining(maxPerDay, nowLocal);
+        var budgetMutated = false;
+        var enforceDailyBudget = !bypassAnchor;
+        var pendingHuntCount = BuildHuntQueue(shows, bypassSchedule: bypassAnchor, resumeOnly: false).Count;
+
+        if (bypassAnchor)
+        {
+            _logger.Info(
+                $"Auto-track TMDB discovery started for {shows.Count} show(s). Manual Run Now — daily budget not applied (remaining would be {remainingCap}/{maxPerDay}).",
+                LogTarget.All);
+        }
+        else if (remainingCap == 0 && pendingHuntCount == 0)
+        {
+            result.Summary = $"Daily cap reached ({maxPerDay}/day); no pending episodes to hunt.";
+            _logger.Debug(result.Summary, LogTarget.File | LogTarget.Console);
+            return result;
+        }
+        else if (remainingCap == 0)
+        {
+            _logger.Info(
+                $"TMDB daily cap already exhausted ({maxPerDay}/day). Skipping refreshes; hunting {pendingHuntCount} pending episode(s).",
+                LogTarget.All);
+        }
+        else
+        {
+            _logger.Info(
+                $"Auto-track TMDB discovery started for {shows.Count} show(s). Cap remaining={remainingCap}/{maxPerDay}.",
+                LogTarget.All);
+        }
+
+        var warpSettings = _settingsService.Current.Warp;
+        var autoRecoverOnSsl = (warpSettings?.Enabled ?? true) &&
+                               (warpSettings?.AutoRecoverOnSsl ?? true) &&
+                               _warpCliService.IsAvailable;
+
+        try
+        {
+            var showList = shows.OrderBy(item => item.Title, StringComparer.OrdinalIgnoreCase).ToList();
+            _progressService.Start(
+                $"Fetching TMDB (1/{showList.Count}): {JobMessageFormat.Truncate(showList[0].DisplayTitle)}",
+                0);
+            try
+            {
+                for (var showIndex = 0; showIndex < showList.Count; showIndex++)
+                {
+                    var show = showList[showIndex];
+                    cancellationToken.ThrowIfCancellationRequested();
+                    result.ShowsProcessed++;
+                    _progressService.Report(
+                        showIndex + 1,
+                        $"Fetching TMDB ({showIndex + 1}/{showList.Count}): {JobMessageFormat.Truncate(show.DisplayTitle)}");
+
+                    var currentShow = _databaseService.GetTrackedShow(show.Id) ?? show;
+                var episodes = _trackedShowService.GetEpisodes(currentShow.Id);
+
+                var isPastAnchorNow = AutoTrackWeekAnchor.IsPastAnchorThisWeek(currentShow, nowLocal, settings);
+                var isSatisfiedThisWeek = AutoTrackTmdbEligibility.HasSatisfiedPostAnchorRefreshThisWeek(currentShow, settings, nowLocal);
+                _logger.Info(
+                    $"Anchor check '{currentShow.DisplayTitle}': anchor={AutoTrackWeekAnchor.FormatEffectiveAnchor(currentShow, settings)}, now={nowLocal:yyyy-MM-dd HH:mm}, pastAnchor={isPastAnchorNow}, satisfiedThisWeek={isSatisfiedThisWeek}, state={currentShow.AutoTrackTmdbState}, weekKey={currentShow.AutoTrackLastTmdbWeekKey}, lastRefresh={currentShow.AutoTrackLastTmdbRefreshLocal:yyyy-MM-dd HH:mm}.",
+                    LogTarget.All);
+
+                if (AutoTrackTmdbEligibility.ShouldResetDormantState(currentShow, settings, nowLocal))
+                {
+                    _databaseService.UpdateTrackedShowAutoTrackTmdbState(
+                        currentShow.Id,
+                        AutoTrackTmdbState.Active,
+                        currentShow.AutoTrackLastTmdbWeekKey,
+                        currentShow.AutoTrackLastTmdbRefreshLocal);
+                    currentShow = _databaseService.GetTrackedShow(currentShow.Id) ?? currentShow;
+                }
+
+                if (currentShow.SeriesStatus == ShowSeriesStatus.Finished &&
+                    AutoTrackTmdbEligibility.IsFullyCaughtUp(currentShow, episodes) &&
+                    currentShow.AutoTrackTmdbState != AutoTrackTmdbState.FinishedComplete)
+                {
+                    _databaseService.UpdateTrackedShowAutoTrackTmdbState(
+                        currentShow.Id,
+                        AutoTrackTmdbState.FinishedComplete,
+                        currentShow.AutoTrackLastTmdbWeekKey,
+                        currentShow.AutoTrackLastTmdbRefreshLocal);
+                    // Don't skip refresh - continue to check if refresh should occur
+                    // to detect any new specials/OVAs that may have been added
+                }
+
+                if (!AutoTrackTmdbEligibility.ShouldRefreshTmdb(currentShow, settings, episodes, nowLocal, out var skipReason, bypassAnchor))
+                {
+                    if (!string.IsNullOrEmpty(skipReason))
+                    {
+                        _logger.Debug(
+                            $"Skipping TMDB refresh for '{currentShow.DisplayTitle}': {skipReason}",
+                            LogTarget.File | LogTarget.Console);
+                    }
+                    continue;
+                }
+
+                if (enforceDailyBudget && remainingCap <= 0)
+                {
+                    _logger.Info(
+                        $"Auto-track TMDB daily cap reached ({budget.Used}/{maxPerDay} used). Stopping further refreshes.",
+                        LogTarget.All);
+                    break;
+                }
+
+                try
+                {
+                    var refreshedShow = await RefreshShowWithSslWarpRecoveryAsync(
+                        currentShow,
+                        autoRecoverOnSsl,
+                        cancellationToken);
+
+                    result.TmdbRefreshed++;
+                    if (enforceDailyBudget)
+                    {
+                        if (!budget.TryConsume(maxPerDay, nowLocal))
+                        {
+                            _logger.Warning(
+                                $"TMDB budget consume failed after successful refresh (used={budget.Used}/{maxPerDay}).",
+                                LogTarget.All);
+                        }
+
+                        remainingCap = budget.Remaining(maxPerDay, nowLocal);
+                        budgetMutated = true;
+                        _logger.Info(
+                            $"TMDB refresh ok for '{refreshedShow.DisplayTitle}'. Budget {budget.Used}/{maxPerDay} used, remaining={remainingCap}.",
+                            LogTarget.File | LogTarget.Console);
+                    }
+                    else
+                    {
+                        _logger.Info(
+                            $"TMDB refresh ok for '{refreshedShow.DisplayTitle}' (manual Run Now — budget unchanged).",
+                            LogTarget.File | LogTarget.Console);
+                    }
+
+                    var refreshedEpisodes = _trackedShowService.GetEpisodes(refreshedShow.Id);
+                    var pastAnchor = AutoTrackWeekAnchor.IsPastAnchorThisWeek(refreshedShow, nowLocal, settings);
+                    var hasPendingLatest = AutoTrackTmdbEligibility.HasPendingLatestEpisode(
+                        refreshedShow,
+                        refreshedEpisodes,
+                        IsAutoTrackHuntBlocked,
+                        nowLocal);
+
+                    AutoTrackTmdbState nextState;
+                    string? weekKeyToStore = refreshedShow.AutoTrackLastTmdbWeekKey;
+                    if (hasPendingLatest)
+                    {
+                        nextState = AutoTrackTmdbState.Active;
+                        if (pastAnchor)
+                        {
+                            weekKeyToStore = AutoTrackWeekAnchor.WeekKey(nowLocal);
+                        }
+                    }
+                    else if (refreshedShow.SeriesStatus == ShowSeriesStatus.Finished &&
+                             AutoTrackTmdbEligibility.IsFullyCaughtUp(refreshedShow, refreshedEpisodes))
+                    {
+                        nextState = AutoTrackTmdbState.FinishedComplete;
+                        if (pastAnchor)
+                        {
+                            weekKeyToStore = AutoTrackWeekAnchor.WeekKey(nowLocal);
+                        }
+                    }
+                    else if (refreshedShow.SeriesStatus == ShowSeriesStatus.Ongoing &&
+                             AutoTrackTmdbEligibility.IsFullyCaughtUp(refreshedShow, refreshedEpisodes))
+                    {
+                        // Pre-anchor Run Now must not mark dormant / satisfy this week's schedule.
+                        if (pastAnchor)
+                        {
+                            nextState = AutoTrackTmdbState.DormantCaughtUp;
+                            weekKeyToStore = AutoTrackWeekAnchor.WeekKey(nowLocal);
+                        }
+                        else
+                        {
+                            nextState = AutoTrackTmdbState.Active;
+                        }
+                    }
+                    else
+                    {
+                        nextState = AutoTrackTmdbState.Active;
+                        if (pastAnchor)
+                        {
+                            weekKeyToStore = AutoTrackWeekAnchor.WeekKey(nowLocal);
+                        }
+                    }
+
+                    _databaseService.UpdateTrackedShowAutoTrackTmdbState(
+                        refreshedShow.Id,
+                        nextState,
+                        weekKeyToStore,
+                        nowLocal);
+
+                    if (hasPendingLatest)
+                    {
+                        var latest = AutoTrackTmdbEligibility.FindLatestPendingEpisode(
+                            refreshedShow,
+                            refreshedEpisodes,
+                            IsAutoTrackHuntBlocked,
+                            nowLocal);
+                        if (latest is not null)
+                        {
+                            NotifyStage(
+                                "Auto-Track",
+                                $"{refreshedShow.DisplayTitle} — New episode S{latest.SeasonNumber:00}E{latest.EpisodeNumber:00} detected.",
+                                refreshedShow,
+                                NotificationKind.AutoTrackNewEpisode);
+                        }
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    result.Failed++;
+                    result.Succeeded = false;
+                    _logger.Warning($"Auto-track TMDB refresh failed for '{currentShow.DisplayTitle}': {ex.Message}", LogTarget.All);
+                }
+                }
+            }
+            finally
+            {
+                _progressService.Finish("Idle");
+            }
+
+            // New hunts run after TMDB checks: schedule-eligible pending episodes (or all if bypassAnchor).
+            var hunt = await RunTorrentHuntAsync(
+                cancellationToken,
+                resumeOnly: false,
+                bypassSchedule: bypassAnchor);
+            MergeHuntIntoDiscoveryResult(result, hunt);
+        }
+        finally
+        {
+            await _warpCliService.ReleaseAsync(WarpLeaseReason.TmdbSslRecover, CancellationToken.None);
+        }
+
+        result.Summary =
+            $"TMDB refreshed={result.TmdbRefreshed}, hunt queued={result.EpisodesQueued}, candidates={result.CandidatesFound}, added={result.TorrentsAdded}, failed={result.Failed}.";
+        if (budgetMutated)
+        {
+            try
+            {
+                _settingsService.Save();
+            }
+            catch (IOException ex)
+            {
+                _logger.Warning($"Failed to persist TMDB daily budget after discovery: {ex.Message}. Retrying once.", LogTarget.All);
+                try
+                {
+                    _settingsService.Save();
+                }
+                catch (Exception retryEx)
+                {
+                    _logger.Warning($"TMDB daily budget persist retry failed: {retryEx.Message}", LogTarget.All);
+                }
+            }
+        }
+
+        if (result.TmdbRefreshed > 0 ||
+            result.EpisodesQueued > 0 ||
+            result.CandidatesFound > 0 ||
+            result.TorrentsAdded > 0 ||
+            result.Failed > 0)
+        {
+            _logger.Info($"Auto-track TMDB discovery complete. {result.Summary}", LogTarget.All);
+        }
+        else
+        {
+            _logger.Debug($"Auto-track TMDB discovery complete. {result.Summary}", LogTarget.File | LogTarget.Console);
+        }
+
+        return result;
+    }
+
+    private async Task<TrackedShow> RefreshShowWithSslWarpRecoveryAsync(
+        TrackedShow show,
+        bool autoRecoverOnSsl,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _trackedShowService.RefreshShowAsync(show, cancellationToken);
+        }
+        catch (Exception ex) when (autoRecoverOnSsl && SslTlsErrorDetector.IsSslOrTlsError(ex))
+        {
+            _logger.Warning(
+                $"TMDB SSL/TLS error for '{show.DisplayTitle}': {ex.Message}. Attempting WARP self-recover.",
+                LogTarget.All);
+
+            var timeout = TimeSpan.FromSeconds(_settingsService.Current.Warp?.ConnectTimeoutSeconds ?? 30);
+            var attempt = await _warpCliService.AcquireAsync(
+                WarpLeaseReason.TmdbSslRecover,
+                timeout,
+                cancellationToken);
+            if (!attempt.Connected)
+            {
+                _logger.Warning(
+                    "WARP connect for SSL self-recover failed or timed out. Re-throwing original TMDB error.",
+                    LogTarget.All);
+                throw;
+            }
+
+            if (attempt.StartedByThisAcquire)
+            {
+                _logger.Info("WARP connected for Auto-Track TMDB SSL recover.", LogTarget.File | LogTarget.Console);
+            }
+
+            _logger.Info($"Retrying TMDB refresh for '{show.DisplayTitle}' with WARP.", LogTarget.All);
+            return await _trackedShowService.RefreshShowAsync(show, cancellationToken);
+        }
+    }
+
+    private static void MergeHuntIntoDiscoveryResult(AutoTrackRunResult discovery, AutoTrackRunResult hunt)
+    {
+        if (hunt.Summary?.Contains("already running", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            return;
+        }
+
+        discovery.EpisodesQueued += hunt.EpisodesQueued;
+        discovery.CandidatesFound += hunt.CandidatesFound;
+        discovery.TorrentsAdded += hunt.TorrentsAdded;
+        discovery.Failed += hunt.Failed;
+        discovery.Succeeded = discovery.Succeeded && hunt.Succeeded;
+        discovery.ShowsProcessed += hunt.ShowsProcessed;
+        discovery.EpisodeOutcomes.AddRange(hunt.EpisodeOutcomes);
+    }
+
+    private async Task<AutoTrackRunResult> RunTorrentHuntCoreAsync(
+        CancellationToken cancellationToken,
+        bool resumeOnly,
+        bool bypassSchedule)
+    {
+        var result = new AutoTrackRunResult { Succeeded = true };
+        var settings = GetAutoTrackSettings();
+        var shows = _trackedShowService.GetAutoTrackedShows();
+        if (shows.Count == 0)
+        {
+            result.Summary = "No auto-tracked shows.";
+            return result;
+        }
+
+        var huntQueue = BuildHuntQueue(shows, bypassSchedule, resumeOnly);
+        if (huntQueue.Count == 0)
+        {
+            result.Summary = resumeOnly
+                ? "No CandidatesFound orders to resume."
+                : "No pending episodes to hunt.";
+            return result;
+        }
+
+        var batchSize = Math.Clamp(settings.Search.MaxShowsPerHuntCycle, 1, 20);
+        var batch = huntQueue.Take(batchSize).ToList();
+
+        var preflight = await EnsureHuntPreflightAsync(cancellationToken);
+        if (!preflight.Ok)
+        {
+            result.Succeeded = false;
+            result.Summary = preflight.AbortSummary ?? "Hunt aborted: dependency preflight failed.";
+            _logger.Warning($"Auto-track torrent hunt aborted. {result.Summary}", LogTarget.All);
+            NotifyHuntBlocked(result.Summary);
+            return result;
+        }
+
+        var pendingOrdersByShow = new Dictionary<long, (TrackedShow Show, List<TorrentCartOrder> Orders)>();
+
+        foreach (var (show, episodesToHunt) in batch)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            result.ShowsProcessed++;
+
+            if (string.IsNullOrWhiteSpace(show.AutoTrackDownloadFolder))
+            {
+                NotifyStage(
+                    "Auto-Track",
+                    $"{show.DisplayTitle} — Skipped: assign download folder on Home.",
+                    show,
+                    NotificationKind.AutoTrackHuntProgress);
+                continue;
+            }
+
+            var orders = new List<TorrentCartOrder>();
+            foreach (var episode in episodesToHunt)
+            {
+                TorrentCartOrder? order = null;
+                try
+                {
+                    if (_torrentCartService.TryGetAutoTrackHuntBlockingEpisodeOrder(episode.Id, out var blockingOrder))
+                    {
+                        if (TryResumeAutoTrackCandidatesFoundOrder(show, blockingOrder, out order))
+                        {
+                            orders.Add(order);
+                            result.EpisodesQueued++;
+                            NotifyStage(
+                                "Auto-Track",
+                                $"{show.DisplayTitle} — Resuming accept/add for {order.Title}.",
+                                show,
+                                NotificationKind.AutoTrackHuntProgress);
+                        }
+
+                        continue;
+                    }
+
+                    if (resumeOnly)
+                    {
+                        continue;
+                    }
+
+                    order = _torrentCartService.PrepareAutoTrackEpisodeOrder(
+                        show.Id,
+                        episode.Id,
+                        episode.SeasonNumber,
+                        episode.EpisodeNumber,
+                        episode.Title);
+                    orders.Add(order);
+                    result.EpisodesQueued++;
+                }
+                catch (InvalidOperationException ex) when (ex.Message.Contains("manual cart order", StringComparison.OrdinalIgnoreCase))
+                {
+                    _logger.Info(
+                        $"Auto-track skipped S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00} for '{show.DisplayTitle}': manual cart order in progress.",
+                        LogTarget.All);
+                }
+                catch (Exception ex)
+                {
+                    result.Failed++;
+                    _logger.Warning(
+                        $"Auto-track failed to queue S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00} for '{show.DisplayTitle}': {ex.Message}",
+                        LogTarget.All);
+                }
+            }
+
+            if (orders.Count > 0)
+            {
+                pendingOrdersByShow[show.Id] = (show, orders);
+                NotifyStage(
+                    "Auto-Track",
+                    $"{show.DisplayTitle} — {FormatHuntBatchStage(episodesToHunt)}.",
+                    show,
+                    NotificationKind.AutoTrackHuntProgress);
+            }
+        }
+
+        if (pendingOrdersByShow.Count == 0)
+        {
+            if (preflight.HuntLeaseHeld)
+            {
+                await TryReleaseHuntWarpAsync();
+            }
+
+            result.Summary = "No hunt orders queued.";
+            return result;
+        }
+
+        try
+        {
+            await RunFetchAndAddPhaseAsync(
+                pendingOrdersByShow,
+                settings,
+                result,
+                preflight.HuntLeaseHeld,
+                cancellationToken);
+        }
+        catch (TorrentCleanupFailedException ex)
+        {
+            result.Succeeded = false;
+            if (result.Failed == 0)
+            {
+                result.Failed++;
+            }
+
+            result.Summary = ex.OrderStatusDetail;
+            _logger.Error(
+                $"Auto-track hunt halted after unverified torrent cleanup. Hash={ex.TorrentHash}.",
+                ex,
+                LogTarget.File | LogTarget.Console);
+            return result;
+        }
+
+        result.Succeeded = result.Failed == 0;
+        result.Summary =
+            $"Hunt: shows={result.ShowsProcessed}, queued={result.EpisodesQueued}, candidates={result.CandidatesFound}, added={result.TorrentsAdded}, failed={result.Failed}.";
+
+        _logger.Info($"Auto-track torrent hunt complete. {result.Summary}", LogTarget.All);
+        return result;
+    }
+
+    private async Task<AutoTrackRunResult> RunBackgroundReconcileCoreAsync(CancellationToken cancellationToken)
+    {
+        var result = new AutoTrackRunResult { Succeeded = true };
+        var pendingShowIds = GetPendingAutoTrackReconcileShowIds();
+        if (pendingShowIds.Count == 0)
+        {
+            result.Summary = "Reconcile skipped: no pending download queue.";
+            _logger.Info(result.Summary, LogTarget.File | LogTarget.Console);
+            return result;
+        }
+
+        var shows = _trackedShowService.GetAutoTrackedShows()
+            .Where(show => pendingShowIds.Contains(show.Id))
+            .ToList();
+
+        var probe = await _qbittorrentProcessRestartService.ProbeAsync(cancellationToken);
+        if (!probe.IsOk)
+        {
+            result.Succeeded = false;
+            result.Summary = $"Reconcile skipped: qBittorrent WebUI unavailable ({probe.Detail}).";
+            _logger.Warning(result.Summary, LogTarget.All);
+            return result;
+        }
+
+        _progressService.Start("Reconciling…", 0);
+        try
+        {
+            foreach (var show in shows)
+            {
+                if (!show.AutoTrackAutoReconcileAndLink)
+                {
+                    continue;
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+                result.ShowsProcessed++;
+                _progressService.Report(0, $"Reconciling: {JobMessageFormat.Truncate(show.DisplayTitle)}");
+
+                try
+                {
+                    var episodes = _trackedShowService.GetEpisodes(show.Id);
+                    var availableBefore = GetAvailableCheckpointEpisodeKeys(show, episodes);
+
+                    await _torrentReconciliationService.ReconcileAsync(
+                        TorrentReconciliationScope.ForMedia(MediaKind.TvEpisode, show.Id),
+                        cancellationToken);
+                    await LinkReadyAutoTrackEpisodesAsync(show, cancellationToken);
+
+                    var sourceItems = _databaseService.GetSourceItems();
+                    _trackedShowService.RefreshAvailability(show.Id, sourceItems);
+                    var newlyLinked = GetNewlyAvailableCheckpointEpisodes(
+                        show,
+                        _trackedShowService.GetEpisodes(show.Id),
+                        availableBefore);
+                    result.LinkedCount += newlyLinked.Count;
+
+                    foreach (var episode in newlyLinked)
+                    {
+                        NotifyHardlinkedEpisode(show, episode);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    result.Failed++;
+                    result.Succeeded = false;
+                    _logger.Warning($"Auto-track reconcile failed for '{show.DisplayTitle}': {ex.Message}", LogTarget.All);
+                }
+            }
+        }
+        finally
+        {
+            _progressService.Finish("Idle");
+        }
+
+        result.Summary = $"Reconcile: shows={result.ShowsProcessed}, linked={result.LinkedCount}.";
+        return result;
+    }
+
+    public bool HasPendingAutoTrackDownloadQueue()
+    {
+        return GetPendingAutoTrackReconcileShowIds().Count > 0;
+    }
+
+    private HashSet<long> GetPendingAutoTrackReconcileShowIds()
+    {
+        var pendingShowIds = new HashSet<long>();
+
+        foreach (var order in _databaseService.GetTorrentCartOrders())
+        {
+            if (order.Source != TorrentOrderSource.AutoTrack ||
+                order.TargetKind != MediaKind.TvEpisode)
+            {
+                continue;
+            }
+
+            if (order.Status is TorrentOrderStatus.AddedToClient or TorrentOrderStatus.Downloading)
+            {
+                pendingShowIds.Add(order.MediaId);
+            }
+        }
+
+        foreach (var show in _trackedShowService.GetAutoTrackedShows())
+        {
+            if (!show.AutoTrackAutoReconcileAndLink)
+            {
+                continue;
+            }
+
+            foreach (var episode in _trackedShowService.GetEpisodes(show.Id))
+            {
+                if (!string.IsNullOrWhiteSpace(episode.TorrentHash) &&
+                    episode.Availability != EpisodeAvailability.Available)
+                {
+                    pendingShowIds.Add(show.Id);
+                    break;
+                }
+            }
+        }
+
+        return pendingShowIds;
+    }
+
+    private async Task LinkReadyAutoTrackEpisodesAsync(TrackedShow show, CancellationToken cancellationToken)
+    {
+        if (!show.AutoTrackAutoReconcileAndLink ||
+            show.AutoTrackFromSeason is null ||
+            show.AutoTrackFromEpisode is null)
+        {
+            return;
+        }
+
+        var fromSeason = show.AutoTrackFromSeason.Value;
+        var fromEpisode = show.AutoTrackFromEpisode.Value;
+
+        foreach (var episode in _trackedShowService.GetEpisodes(show.Id))
+        {
+            if (episode.Availability == EpisodeAvailability.Available ||
+                string.IsNullOrWhiteSpace(episode.TorrentHash) ||
+                episode.TorrentProgress < 0.999)
+            {
+                continue;
+            }
+
+            if (episode.SeasonNumber < fromSeason ||
+                (episode.SeasonNumber == fromSeason && episode.EpisodeNumber < fromEpisode))
+            {
+                continue;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            _progressService.Report(
+                0,
+                $"Linking S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00}: {JobMessageFormat.Truncate(show.DisplayTitle)}");
+            await _autoTorrentLinkService.LinkEpisodeAsync(
+                show.Id,
+                episode.SeasonNumber,
+                episode.EpisodeNumber,
+                cancellationToken);
+        }
+    }
+
+    private List<(TrackedShow Show, IReadOnlyList<TrackedEpisode> Episodes)> BuildHuntQueue(
+        IReadOnlyList<TrackedShow> shows,
+        bool bypassSchedule,
+        bool resumeOnly)
+    {
+        var settings = GetAutoTrackSettings();
+        var huntDelayHours = Math.Clamp(settings.HuntMinHoursAfterAirDate, 0, 48);
+        var maxEpisodesPerShow = Math.Clamp(settings.Search.MaxEpisodesPerShowPerHuntCycle, 1, 50);
+        var nowLocal = DateTime.Now;
+        var queue = new List<(TrackedShow Show, IReadOnlyList<TrackedEpisode> Episodes)>();
+        foreach (var show in shows.OrderBy(item => item.Title, StringComparer.OrdinalIgnoreCase))
+        {
+            if (string.IsNullOrWhiteSpace(show.AutoTrackDownloadFolder))
+            {
+                continue;
+            }
+
+            if (!bypassSchedule &&
+                !resumeOnly &&
+                !AutoTrackWeekAnchor.IsPastAnchorThisWeek(show, nowLocal, settings))
+            {
+                continue;
+            }
+
+            var episodes = _trackedShowService.GetEpisodes(show.Id);
+            var pending = AutoTrackTmdbEligibility.FindPendingEpisodes(
+                show,
+                episodes,
+                IsAutoTrackHuntBlocked,
+                nowLocal,
+                resumeOnly ? 0 : huntDelayHours);
+            if (pending.Count == 0)
+            {
+                continue;
+            }
+
+            List<TrackedEpisode> batch;
+            if (resumeOnly)
+            {
+                batch = pending
+                    .Where(episode =>
+                        _torrentCartService.TryGetAutoTrackHuntBlockingEpisodeOrder(episode.Id, out var blocking) &&
+                        blocking is not null &&
+                        blocking.Status == TorrentOrderStatus.CandidatesFound)
+                    .Take(maxEpisodesPerShow)
+                    .ToList();
+                if (batch.Count == 0)
+                {
+                    continue;
+                }
+            }
+            else
+            {
+                batch = pending.Take(maxEpisodesPerShow).ToList();
+            }
+
+            queue.Add((show, batch));
+        }
+
+        return queue;
+    }
+
+    private static string FormatHuntBatchStage(IReadOnlyList<TrackedEpisode> episodes)
+    {
+        var line = AutoTrackTmdbEligibility.FormatHuntStatusLine(episodes);
+        return string.IsNullOrEmpty(line) ? "No pending hunt" : line.Replace("Hunting: ", "Hunting ", StringComparison.Ordinal);
+    }
+
+    private async Task RunFetchAndAddPhaseAsync(
+        Dictionary<long, (TrackedShow Show, List<TorrentCartOrder> Orders)> pendingOrdersByShow,
+        AutoTrackSettings settings,
+        AutoTrackRunResult result,
+        bool huntLeaseHeld,
+        CancellationToken cancellationToken)
+    {
+        var fetchBaseOptions = new EpisodeFetchOptions
+        {
+            ForceParallelEpisodeSearch = settings.Search.ForceParallelEpisodeSearch,
+            MaxParallelWorkers = settings.Search.MaxParallelWorkersPerShow
+        };
+
+        var warpEnabled = _settingsService.Current.Warp?.Enabled ?? true;
+        if (warpEnabled && huntLeaseHeld)
+        {
+            var orderCount = pendingOrdersByShow.Sum(entry => entry.Value.Orders.Count);
+            _logger.Info(
+                $"WARP hunt lease active for fetch/add ({pendingOrdersByShow.Count} show(s), {orderCount} order(s)).",
+                LogTarget.File | LogTarget.Console);
+        }
+        else if (warpEnabled)
+        {
+            _logger.Info(
+                "WARP already connected; Auto-Track hunt will reuse the existing session.",
+                LogTarget.File | LogTarget.Console);
+        }
+
+        _progressService.Start("Hunting…", 0);
+        var approvedFetchOutcomes = new Dictionary<long, HuntEpisodeOutcome>();
+        try
+        {
+            foreach (var (showId, entry) in pendingOrdersByShow)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var show = _databaseService.GetTrackedShow(showId) ?? entry.Show;
+                _progressService.Report(0, $"Hunting: {JobMessageFormat.Truncate(show.DisplayTitle)}");
+                var orders = entry.Orders
+                    .Select(item => _torrentCartService.GetOrder(item.Id) ?? item)
+                    .ToList();
+                var ordersNeedingSearch = orders
+                    .Where(order => order.Status is TorrentOrderStatus.Draft)
+                    .ToList();
+
+                if (ordersNeedingSearch.Count == 0)
+                {
+                    continue;
+                }
+
+                var recipe = _recipeService.GetRecipeOrDefault(show.RecipeId, MediaKind.TvEpisode);
+                var fetchOptions = new EpisodeFetchOptions
+                {
+                    ForceParallelEpisodeSearch = fetchBaseOptions.ForceParallelEpisodeSearch,
+                    MaxParallelWorkers = fetchBaseOptions.MaxParallelWorkers,
+                    Overrides = CartRecipeOverrideSet.Parse(show.AutoTrackEpisodeOverridesJson).ToExecutionOverrides()
+                };
+                var episodeIds = ordersNeedingSearch
+                    .Where(order => order.EpisodeId is not null)
+                    .Select(order => order.EpisodeId!.Value)
+                    .Distinct()
+                    .ToList();
+
+                foreach (var order in ordersNeedingSearch)
+                {
+                    _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.Searching, $"Auto-track search with recipe: {recipe.Name}");
+                }
+
+                try
+                {
+                    var candidatesByEpisodeId = await _fetchJobService.FetchEpisodeCandidatesAsync(
+                        show.Id,
+                        episodeIds,
+                        recipe.RecipeId,
+                        (episodeId, detail) =>
+                        {
+                            var order = ordersNeedingSearch.FirstOrDefault(item => item.EpisodeId == episodeId);
+                            if (order is not null)
+                            {
+                                _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.Searching, detail);
+                            }
+                        },
+                        cancellationToken,
+                        fetchOptions,
+                        finalizeDebugLog: false);
+                    var huntDebugSession = _fetchJobService.TakeHuntDebugSession();
+
+                    foreach (var order in ordersNeedingSearch)
+                    {
+                        if (order.EpisodeId is null)
+                        {
+                            continue;
+                        }
+
+                        var episodeLabel = BuildOrderEpisodeLabel(order);
+                        var searchRows = _fetchJobService.GetSearchRowCount(order.EpisodeId.Value);
+                        var overrideRejects = _fetchJobService.GetOverrideRejectCounts(order.EpisodeId.Value);
+
+                        if (!candidatesByEpisodeId.TryGetValue(order.EpisodeId.Value, out var candidates) ||
+                            candidates.Count == 0)
+                        {
+                            result.Failed++;
+                            var rejectedByOverride = searchRows > 0 && overrideRejects.Count > 0;
+                            var stage = searchRows > 0 ? HuntEpisodeStage.RecipeMatch : HuntEpisodeStage.Search;
+                            var failureReason = rejectedByOverride
+                                ? HuntLogFormatter.FormatOverrideRejectFailure(overrideRejects)
+                                : searchRows > 0
+                                    ? "No recipe matches"
+                                    : "Search returned no rows";
+                            var statusDetail = rejectedByOverride
+                                ? $"{failureReason}."
+                                : searchRows > 0
+                                    ? $"No recipe matches from {searchRows} search row(s)."
+                                    : "No candidates found.";
+                            _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.NoCandidates, statusDetail);
+                            RecordAndLogEpisodeOutcome(
+                                result,
+                                BuildEpisodeOutcome(
+                                    order,
+                                    show.DisplayTitle,
+                                    episodeLabel,
+                                    searchRows,
+                                    recipeMatched: rejectedByOverride ? overrideRejects.Values.Sum() : 0,
+                                    policyKept: 0,
+                                    stage,
+                                    failureReason));
+                            continue;
+                        }
+
+                        result.CandidatesFound++;
+                        _torrentCartService.ReplaceCandidates(order.Id, ToCartCandidates(candidates));
+                        approvedFetchOutcomes[order.Id] = BuildEpisodeOutcome(
+                            order,
+                            show.DisplayTitle,
+                            episodeLabel,
+                            searchRows,
+                            candidates.Count,
+                            candidates.Count,
+                            HuntEpisodeStage.Accept,
+                            failureReason: null);
+                    }
+
+                    if (huntDebugSession is not null)
+                    {
+                        HuntCandidateDebugWriter.LogSessionPath(_logger, huntDebugSession);
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    result.Failed += ordersNeedingSearch.Count;
+                    foreach (var order in ordersNeedingSearch)
+                    {
+                        _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.Failed, ex.Message);
+                    }
+
+                    _logger.Warning($"Auto-track search failed for '{show.DisplayTitle}': {ex.Message}", LogTarget.All);
+                }
+            }
+
+            foreach (var (showId, entry) in pendingOrdersByShow)
+            {
+                var show = _databaseService.GetTrackedShow(showId) ?? entry.Show;
+                var batchOrderIds = entry.Orders.Select(order => order.Id).ToList();
+                _torrentCartService.AcceptSelectedCandidates(MediaKind.TvEpisode, showId, batchOrderIds);
+
+                foreach (var queued in entry.Orders)
+                {
+                    var approved = _torrentCartService.GetOrder(queued.Id);
+                    if (approved is null || approved.Status != TorrentOrderStatus.Approved)
+                    {
+                        continue;
+                    }
+
+                    NotifyStage(
+                        "Auto-Track",
+                        $"{show.DisplayTitle} — {approved.Title} candidate: {approved.SelectedCandidateName}",
+                        show,
+                        NotificationKind.AutoTrackHuntProgress);
+                }
+            }
+
+            foreach (var (showId, entry) in pendingOrdersByShow)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var show = _databaseService.GetTrackedShow(showId) ?? entry.Show;
+                var savePath = show.AutoTrackDownloadFolder?.Trim();
+                if (string.IsNullOrWhiteSpace(savePath))
+                {
+                    continue;
+                }
+
+                var approvedOrders = _torrentCartService.GetOrders(MediaKind.TvEpisode, showId)
+                    .Where(order => entry.Orders.Any(queued => queued.Id == order.Id))
+                    .Where(order => order.Status == TorrentOrderStatus.Approved && order.HasSelectedCandidate)
+                    .ToList();
+
+                foreach (var seasonNumber in approvedOrders
+                             .Where(order => order.SeasonNumber is not null)
+                             .Select(order => order.SeasonNumber!.Value)
+                             .Distinct())
+                {
+                    _trackedShowService.UpdateSeasonDownloadFolder(showId, seasonNumber, savePath);
+                }
+
+                foreach (var order in approvedOrders)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    try
+                    {
+                        var added = await TryAddOrderWithCandidateRetriesAsync(
+                            show,
+                            order,
+                            savePath,
+                            result,
+                            approvedFetchOutcomes,
+                            cancellationToken);
+                        if (!added)
+                        {
+                            result.Failed++;
+                            var refreshed = _torrentCartService.GetOrder(order.Id) ?? order;
+                            if (refreshed.Status != TorrentOrderStatus.Failed)
+                            {
+                                refreshed.Status = TorrentOrderStatus.Failed;
+                                refreshed.StatusDetail = string.IsNullOrWhiteSpace(refreshed.LastFailureReason)
+                                    ? "All candidates failed."
+                                    : $"All candidates failed. Last error: {refreshed.LastFailureReason}";
+                                _torrentCartService.SaveOrder(refreshed);
+                            }
+
+                            if (approvedFetchOutcomes.TryGetValue(order.Id, out var fetchOutcome))
+                            {
+                                fetchOutcome.Stage = HuntEpisodeStage.Add;
+                                fetchOutcome.FailureReason = "Add failed";
+                                fetchOutcome.FailureDetail = refreshed.LastFailureReason;
+                                RecordAndLogEpisodeOutcome(result, fetchOutcome);
+                                approvedFetchOutcomes.Remove(order.Id);
+                            }
+                        }
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
+                    catch (TorrentCleanupFailedException ex)
+                    {
+                        result.Failed++;
+                        RecordCleanupFailedOutcome(order, ex, approvedFetchOutcomes, result);
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        result.Failed++;
+                        _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.Failed, ex.Message);
+                        _logger.Warning($"Auto-track add failed for '{order.Title}': {ex.Message}", LogTarget.All);
+                    }
+                }
+            }
+        }
+        finally
+        {
+            _progressService.Finish("Idle");
+            if (huntLeaseHeld)
+            {
+                var orderCount = pendingOrdersByShow.Sum(entry => entry.Value.Orders.Count);
+                _logger.Info(
+                    $"Releasing WARP hunt lease after fetch/add ({pendingOrdersByShow.Count} show(s), {orderCount} order(s)).",
+                    LogTarget.File | LogTarget.Console);
+                await TryReleaseHuntWarpAsync();
+            }
+        }
+    }
+
+    private async Task<bool> TryAddOrderWithCandidateRetriesAsync(
+        TrackedShow show,
+        TorrentCartOrder order,
+        string savePath,
+        AutoTrackRunResult result,
+        Dictionary<long, HuntEpisodeOutcome> approvedFetchOutcomes,
+        CancellationToken cancellationToken)
+    {
+        var candidates = _torrentCartService.GetCandidates(order.Id)
+            .OrderBy(candidate => candidate.Rank)
+            .ToList();
+        if (candidates.Count == 0)
+        {
+            _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.Failed, "No approved candidates available.");
+            return false;
+        }
+
+        var failedCandidateUrls = GetFailedCandidateUrls(order);
+        var candidatesToTry = candidates
+            .Where(candidate => !failedCandidateUrls.Contains(candidate.Url))
+            .Where(candidate => !_blacklistService.IsBlacklisted(order.MediaId, candidate.Url))
+            .ToList();
+        if (candidatesToTry.Count == 0)
+        {
+            _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.Failed, "All candidates are blacklisted or were already attempted.");
+            return false;
+        }
+
+        var attemptCount = 0;
+        for (var index = 0; index < candidatesToTry.Count; index++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var candidate = candidatesToTry[index];
+            attemptCount++;
+            _logger.Info(
+                $"Auto-track trying candidate {attemptCount}/{candidatesToTry.Count} for '{order.Title}': rank={candidate.Rank}, engine='{candidate.PluginName}', name='{candidate.Name}'.",
+                LogTarget.File | LogTarget.Console);
+
+            if (!string.Equals(order.SelectedCandidateUrl, candidate.Url, StringComparison.Ordinal))
+            {
+                SelectCandidateForRetry(order, candidate);
+            }
+
+            try
+            {
+                _progressService.Report(0, $"Adding: {JobMessageFormat.Truncate(order.Title)}");
+                await AddOrderToClientAsync(order, savePath, cancellationToken);
+                result.TorrentsAdded++;
+                if (approvedFetchOutcomes.TryGetValue(order.Id, out var fetchOutcome))
+                {
+                    fetchOutcome.Stage = HuntEpisodeStage.Succeeded;
+                    fetchOutcome.AddedCandidateName = order.SelectedCandidateName;
+                    RecordAndLogEpisodeOutcome(result, fetchOutcome);
+                    approvedFetchOutcomes.Remove(order.Id);
+                }
+
+                NotifyStage(
+                    "Auto-Track",
+                    $"{show.DisplayTitle} — Added {order.Title} → {savePath}",
+                    show,
+                    NotificationKind.AutoTrackHuntProgress);
+                return true;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (TorrentCleanupFailedException ex)
+            {
+                failedCandidateUrls.Add(candidate.Url);
+                order.FailedCandidateUrls = SerializeFailedCandidateUrls(failedCandidateUrls);
+                PersistCleanupFailedOrder(order, ex);
+                throw;
+            }
+            catch (MaliciousTorrentException ex)
+            {
+                failedCandidateUrls.Add(candidate.Url);
+                order.FailedCandidateUrls = SerializeFailedCandidateUrls(failedCandidateUrls);
+                order.LastFailureReason = ex.Message;
+                order.StatusDetail = $"Candidate failed: {candidate.Name} — {ex.Message}";
+                _torrentCartService.SaveOrder(order);
+                _logger.Warning(
+                    $"Auto-track malware reject for '{order.Title}' candidate '{candidate.Name}': {ex.Message}",
+                    LogTarget.File | LogTarget.Console);
+
+                if (_torrentCartService.RemoveCandidate(order.Id, candidate.Id))
+                {
+                    _logger.Info(
+                        $"Removed malware candidate from cart for '{order.Title}'.",
+                        LogTarget.File | LogTarget.Console);
+                    _logger.Debug(
+                        $"Removed cart candidate id={candidate.Id} url='{candidate.Url}' from order {order.Id}.",
+                        LogTarget.File);
+                }
+            }
+            catch (Exception ex)
+            {
+                failedCandidateUrls.Add(candidate.Url);
+                order.FailedCandidateUrls = SerializeFailedCandidateUrls(failedCandidateUrls);
+                order.LastFailureReason = ex.Message;
+                order.StatusDetail = $"Candidate failed: {candidate.Name} — {ex.Message}";
+                _torrentCartService.SaveOrder(order);
+                _logger.Warning(
+                    $"Auto-track add failed for '{order.Title}' candidate '{candidate.Name}': {ex.Message}",
+                    LogTarget.File | LogTarget.Console);
+            }
+        }
+
+        _logger.Warning(
+            $"Auto-track exhausted all {attemptCount} candidate(s) for '{order.Title}'. Last error: {order.LastFailureReason}",
+            LogTarget.File | LogTarget.Console);
+
+        return false;
+    }
+
+    private void PersistCleanupFailedOrder(TorrentCartOrder order, TorrentCleanupFailedException ex)
+    {
+        order.LastFailureReason = ex.Message;
+        order.Status = TorrentOrderStatus.Failed;
+        order.StatusDetail = ex.OrderStatusDetail;
+        _torrentCartService.SaveOrder(order);
+        _logger.Error(
+            $"Auto-track cleanup failed for '{order.Title}' hash={ex.TorrentHash}. Halting add run.",
+            ex,
+            LogTarget.File | LogTarget.Console);
+    }
+
+    private void RecordCleanupFailedOutcome(
+        TorrentCartOrder order,
+        TorrentCleanupFailedException ex,
+        Dictionary<long, HuntEpisodeOutcome> approvedFetchOutcomes,
+        AutoTrackRunResult result)
+    {
+        var refreshed = _torrentCartService.GetOrder(order.Id) ?? order;
+        if (refreshed.Status != TorrentOrderStatus.Failed)
+        {
+            PersistCleanupFailedOrder(refreshed, ex);
+        }
+
+        if (approvedFetchOutcomes.TryGetValue(order.Id, out var fetchOutcome))
+        {
+            fetchOutcome.Stage = HuntEpisodeStage.Add;
+            fetchOutcome.FailureReason = "Cleanup failed";
+            fetchOutcome.FailureDetail = ex.OrderStatusDetail;
+            RecordAndLogEpisodeOutcome(result, fetchOutcome);
+            approvedFetchOutcomes.Remove(order.Id);
+        }
+    }
+
+    private void SelectCandidateForRetry(TorrentCartOrder order, TorrentCartOrderCandidate candidate)
+    {
+        _databaseService.UpdateTorrentCartOrderCandidateSelection(order.Id, candidate.Id);
+        order.SelectedCandidateName = candidate.Name;
+        order.SelectedCandidateUrl = candidate.Url;
+        order.SelectedCandidatePlugin = candidate.PluginName;
+        order.SelectedCandidateFileSize = candidate.FileSize;
+        order.SelectedCandidateSeeders = candidate.Seeders;
+        order.SelectedCandidateLeechers = candidate.Leechers;
+        order.SelectedCandidateQuality = candidate.Quality;
+        order.SelectedCandidateAudioCodec = candidate.AudioCodec;
+        order.SelectedCandidateCoveredSeasons = candidate.CoveredSeasons;
+        order.SelectedCandidateContentProfile = candidate.ContentProfileJson;
+        order.SelectedCandidateTotalScore = candidate.TotalScore;
+        order.StatusDetail = $"Retrying with candidate: {candidate.Name}";
+        _torrentCartService.SaveOrder(order);
+        _logger.Debug(
+            $"Auto-track retrying next candidate for '{order.Title}': rank={candidate.Rank}, name='{candidate.Name}'.",
+            LogTarget.File);
+    }
+
+    private static HashSet<string> GetFailedCandidateUrls(TorrentCartOrder order)
+    {
+        if (string.IsNullOrWhiteSpace(order.FailedCandidateUrls))
+        {
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        try
+        {
+            var urls = JsonSerializer.Deserialize<List<string>>(order.FailedCandidateUrls) ?? [];
+            return new HashSet<string>(urls.Where(url => !string.IsNullOrWhiteSpace(url)), StringComparer.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
+    private static string SerializeFailedCandidateUrls(IEnumerable<string> urls)
+    {
+        return JsonSerializer.Serialize(urls.Where(url => !string.IsNullOrWhiteSpace(url)).Distinct(StringComparer.OrdinalIgnoreCase));
+    }
+
+    private bool IsAutoTrackHuntBlocked(long episodeId)
+    {
+        if (_torrentCartService.TryGetAutoTrackHuntBlockingEpisodeOrder(episodeId, out var order) &&
+            order is { Source: TorrentOrderSource.AutoTrack, Status: TorrentOrderStatus.CandidatesFound })
+        {
+            return false;
+        }
+
+        return _torrentCartService.TryGetAutoTrackHuntBlockingEpisodeOrder(episodeId, out _) ||
+               _torrentCartService.HasActiveManualEpisodeOrder(episodeId);
+    }
+
+    private static bool TryResumeAutoTrackCandidatesFoundOrder(
+        TrackedShow show,
+        TorrentCartOrder? blockingOrder,
+        out TorrentCartOrder order)
+    {
+        order = blockingOrder!;
+        if (blockingOrder is null ||
+            blockingOrder.Source != TorrentOrderSource.AutoTrack ||
+            blockingOrder.Status != TorrentOrderStatus.CandidatesFound ||
+            string.IsNullOrWhiteSpace(show.AutoTrackDownloadFolder))
+        {
+            order = null!;
+            return false;
+        }
+
+        order = blockingOrder;
+        return true;
+    }
+
+    private AutoTrackSettings GetAutoTrackSettings()
+    {
+        _settingsService.Current.AutoTrack ??= new AutoTrackSettings();
+        var autoTrack = _settingsService.Current.AutoTrack;
+        autoTrack.Search ??= new AutoTrackSearchSettings();
+        return autoTrack;
+    }
+
+    private async Task<(bool Ok, string? AbortSummary, bool HuntLeaseHeld)> EnsureHuntPreflightAsync(
+        CancellationToken cancellationToken)
+    {
+        var huntLeaseHeld = false;
+        var warpEnabled = _settingsService.Current.Warp?.Enabled ?? true;
+        if (warpEnabled)
+        {
+            if (!_warpCliService.IsAvailable)
+            {
+                return (false,
+                    $"Hunt aborted: WARP is enabled but warp-cli was not found at {_warpCliService.ResolvedExecutablePath}.",
+                    false);
+            }
+
+            var timeout = TimeSpan.FromSeconds(_settingsService.Current.Warp?.ConnectTimeoutSeconds ?? 30);
+            var attempt = await _warpCliService.AcquireAsync(
+                WarpLeaseReason.Hunt,
+                timeout,
+                cancellationToken);
+            if (!attempt.Connected)
+            {
+                return (false,
+                    $"Hunt aborted: WARP connect failed or timed out after {timeout.TotalSeconds:0}s.",
+                    false);
+            }
+
+            huntLeaseHeld = true;
+            if (attempt.StartedByThisAcquire)
+            {
+                _logger.Info("WARP connected for hunt preflight.", LogTarget.File | LogTarget.Console);
+            }
+            else
+            {
+                _logger.Info(
+                    "WARP already connected during hunt preflight; hunt lease acquired.",
+                    LogTarget.File | LogTarget.Console);
+            }
+        }
+
+        try
+        {
+            var (probe, restart) = await _qbittorrentProcessRestartService.EnsureWebUiForHuntAsync(cancellationToken);
+            if (probe.IsOk)
+            {
+                if (restart?.Kind == QbittorrentRestartOutcomeKind.Succeeded)
+                {
+                    _logger.Info(
+                        $"Hunt preflight: qBittorrent WebUI recovered via process restart. {restart.Detail}",
+                        LogTarget.All);
+                }
+
+                return (true, null, huntLeaseHeld);
+            }
+
+            var detail = probe.Detail ?? probe.Status.ToString();
+            if (restart is not null &&
+                restart.Kind is not QbittorrentRestartOutcomeKind.NotAttempted and
+                    not QbittorrentRestartOutcomeKind.Succeeded)
+            {
+                detail = $"{detail} ({restart.Kind}: {restart.Detail})";
+            }
+
+            if (huntLeaseHeld)
+            {
+                await TryReleaseHuntWarpAsync();
+            }
+
+            return (false, $"Hunt aborted: qBittorrent WebUI unavailable — {detail}", false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            if (huntLeaseHeld)
+            {
+                await TryReleaseHuntWarpAsync();
+            }
+
+            return (false, $"Hunt aborted: qBittorrent preflight failed — {ex.Message}", false);
+        }
+    }
+
+    private async Task TryReleaseHuntWarpAsync()
+    {
+        try
+        {
+            await _warpCliService.ReleaseAsync(WarpLeaseReason.Hunt, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning($"WARP hunt lease release failed: {ex.Message}", LogTarget.All);
+        }
+    }
+
+    private void NotifyHuntBlocked(string message)
+    {
+        _windowsNotificationService.TryShow(new WindowsNotificationRequest
+        {
+            Title = "Auto-Track",
+            Message = message,
+            Kind = NotificationKind.AutoTrackHuntBlocked
+        });
+    }
+
+    private static AutoTrackRunResult SkippedResult(string summary)
+    {
+        return new AutoTrackRunResult
+        {
+            Succeeded = false,
+            Summary = summary
+        };
+    }
+
+    private async Task AddOrderToClientAsync(TorrentCartOrder order, string savePath, CancellationToken cancellationToken)
+    {
+        var existing = await _addGateService.TryGetExistingByListingUrlAsync(
+            order.SelectedCandidateUrl,
+            cancellationToken);
+        if (existing is not null)
+        {
+            _logger.Info(
+                $"Using existing qBittorrent download '{existing.Name}' for '{order.Title}' (hash={existing.Hash}).",
+                LogTarget.File | LogTarget.Console);
+        }
+
+        var addedTorrent = await _addGateService.AddPausedValidateAndResumeAsync(
+            order,
+            savePath,
+            cancellationToken,
+            existing);
+
+        if (order.EpisodeId is null)
+        {
+            throw new InvalidOperationException("Episode order is missing episode id.");
+        }
+
+        var candidate = ToEpisodeCandidate(order);
+        _trackedShowService.UpdateSelectedCandidate(order.EpisodeId.Value, candidate);
+        _trackedShowService.UpdateTorrentState(order.EpisodeId.Value, addedTorrent);
+
+        order.TorrentHash = addedTorrent.Hash;
+        order.TorrentName = addedTorrent.Name;
+        order.TorrentState = QbittorrentTorrentStateNormalizer.Normalize(addedTorrent.State, addedTorrent.IsComplete);
+        order.TorrentProgress = addedTorrent.Progress;
+        order.Status = addedTorrent.IsComplete ? TorrentOrderStatus.Completed : TorrentOrderStatus.Downloading;
+        order.StatusDetail = addedTorrent.IsComplete
+            ? $"Ready to link: {addedTorrent.Name}"
+            : $"Downloading: {addedTorrent.Name} ({addedTorrent.ProgressDisplay})";
+        _torrentCartService.SaveOrder(order);
+
+        if (addedTorrent.IsComplete)
+        {
+            var show = _databaseService.GetTrackedShow(order.MediaId);
+            if (show is { IsAutoTracked: true, AutoTrackAutoReconcileAndLink: true })
+            {
+                var episode = _databaseService.GetTrackedEpisodes(show.Id)
+                    .FirstOrDefault(item => item.Id == order.EpisodeId);
+                if (episode is not null)
+                {
+                    var linkResult = await _autoTorrentLinkService.LinkEpisodeAsync(
+                        show.Id,
+                        episode.SeasonNumber,
+                        episode.EpisodeNumber,
+                        cancellationToken);
+                    if (linkResult.LinkedCount > 0)
+                    {
+                        _trackedShowService.RefreshAvailability(show.Id);
+                        NotifyHardlinkedEpisode(show, episode);
+                    }
+                }
+            }
+        }
+    }
+
+    public void RecordRunResult(AutoTrackRunResult result)
+    {
+        PersistRunResult(result);
+    }
+
+    private void PersistRunResult(AutoTrackRunResult result)
+    {
+        var autoTrack = GetAutoTrackSettings();
+        autoTrack.LastRunUtc = DateTime.UtcNow;
+        autoTrack.LastRunSummary = result.FormatHumanSummary();
+        _settingsService.Save();
+    }
+
+    private void RecordAndLogEpisodeOutcome(AutoTrackRunResult result, HuntEpisodeOutcome outcome)
+    {
+        result.EpisodeOutcomes.Add(outcome);
+        var line = HuntLogFormatter.FormatEpisodeLine(outcome);
+        if (outcome.IsFailure)
+        {
+            _logger.Warning(line, LogTarget.All);
+            return;
+        }
+
+        _logger.Info(line, LogTarget.All);
+    }
+
+    private static HuntEpisodeOutcome BuildEpisodeOutcome(
+        TorrentCartOrder order,
+        string showTitle,
+        string episodeLabel,
+        int searchRows,
+        int recipeMatched,
+        int policyKept,
+        HuntEpisodeStage stage,
+        string? failureReason)
+    {
+        return new HuntEpisodeOutcome
+        {
+            OrderId = order.Id,
+            ShowTitle = showTitle,
+            EpisodeLabel = episodeLabel,
+            SearchRows = searchRows,
+            RecipeMatched = recipeMatched,
+            PolicyKept = policyKept,
+            Stage = stage,
+            FailureReason = failureReason,
+            FailureDetail = failureReason
+        };
+    }
+
+    private static string BuildOrderEpisodeLabel(TorrentCartOrder order)
+    {
+        if (order.SeasonNumber is null || order.EpisodeNumber is null)
+        {
+            return order.Title;
+        }
+
+        var code = $"S{order.SeasonNumber:00}E{order.EpisodeNumber:00}";
+        var trimmedTitle = order.Title?.Trim();
+        if (string.IsNullOrWhiteSpace(trimmedTitle))
+        {
+            return code;
+        }
+
+        // Some sources already include the episode code in order.Title (e.g. "S01E05 - David").
+        // Avoid producing "S01E05 S01E05 - David".
+        if (trimmedTitle.StartsWith(code, StringComparison.OrdinalIgnoreCase))
+        {
+            return trimmedTitle;
+        }
+
+        return $"{code} {trimmedTitle}";
+    }
+
+    private void NotifyStage(string title, string message, TrackedShow show, NotificationKind kind)
+    {
+        var poster = _posterImageService.GetNotificationHeroImage(
+            MediaKind.TvEpisode,
+            show.TmdbId,
+            show.PosterPath);
+        _windowsNotificationService.TryShow(new WindowsNotificationRequest
+        {
+            Title = title,
+            Message = message,
+            Kind = kind,
+            Tag = null,
+            HeroImagePathOrUrl = poster,
+            AppLogoOverridePathOrUrl = poster
+        });
+    }
+
+    private void NotifyHardlinkedEpisode(TrackedShow show, TrackedEpisode episode)
+    {
+        NotifyStage(
+            "Auto-Track",
+            $"{show.DisplayTitle} — Hardlinked {FormatEpisodeLabel(episode)}",
+            show,
+            NotificationKind.AutoTrackHardlinked);
+    }
+
+    private static string FormatEpisodeLabel(TrackedEpisode episode)
+    {
+        var code = $"S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00}";
+        return string.IsNullOrWhiteSpace(episode.Title) ? code : $"{code}: {episode.Title}";
+    }
+
+    private static HashSet<(int Season, int Episode)> GetAvailableCheckpointEpisodeKeys(
+        TrackedShow show,
+        IReadOnlyList<TrackedEpisode> episodes)
+    {
+        if (show.AutoTrackFromSeason is null || show.AutoTrackFromEpisode is null)
+        {
+            return [];
+        }
+
+        var fromSeason = show.AutoTrackFromSeason.Value;
+        var fromEpisode = show.AutoTrackFromEpisode.Value;
+        return episodes
+            .Where(episode => episode.Availability == EpisodeAvailability.Available)
+            .Where(episode =>
+                episode.SeasonNumber > fromSeason ||
+                (episode.SeasonNumber == fromSeason && episode.EpisodeNumber >= fromEpisode))
+            .Select(episode => (episode.SeasonNumber, episode.EpisodeNumber))
+            .ToHashSet();
+    }
+
+    private static List<TrackedEpisode> GetNewlyAvailableCheckpointEpisodes(
+        TrackedShow show,
+        IReadOnlyList<TrackedEpisode> episodes,
+        HashSet<(int Season, int Episode)> availableBefore)
+    {
+        if (show.AutoTrackFromSeason is null || show.AutoTrackFromEpisode is null)
+        {
+            return [];
+        }
+
+        var fromSeason = show.AutoTrackFromSeason.Value;
+        var fromEpisode = show.AutoTrackFromEpisode.Value;
+        return episodes
+            .Where(episode => episode.Availability == EpisodeAvailability.Available)
+            .Where(episode =>
+                episode.SeasonNumber > fromSeason ||
+                (episode.SeasonNumber == fromSeason && episode.EpisodeNumber >= fromEpisode))
+            .Where(episode => !availableBefore.Contains((episode.SeasonNumber, episode.EpisodeNumber)))
+            .ToList();
+    }
+
+    private void NotifyRunSummary(AutoTrackRunResult result)
+    {
+        if (result.EpisodesQueued == 0 &&
+            result.TorrentsAdded == 0 &&
+            result.LinkedCount == 0 &&
+            result.CandidatesFound == 0 &&
+            result.TmdbRefreshed == 0)
+        {
+            return;
+        }
+
+        _windowsNotificationService.TryShow(new WindowsNotificationRequest
+        {
+            Title = "Auto-Track",
+            Message = result.Summary,
+            Kind = NotificationKind.AutoTrackRunSummary,
+            Tag = null
+        });
+    }
+
+    private static IReadOnlyList<TorrentCartOrderCandidate> ToCartCandidates(IReadOnlyList<EpisodeFetchCandidate> candidates)
+    {
+        return candidates.Select((candidate, index) => new TorrentCartOrderCandidate
+        {
+            Rank = index + 1,
+            IsSelected = index == 0,
+            Name = candidate.FileName,
+            Url = candidate.FileUrl,
+            PluginName = candidate.PluginName,
+            FileSize = candidate.FileSize,
+            Seeders = candidate.Seeders,
+            Leechers = candidate.Leechers,
+            Quality = candidate.QualityLabel,
+            AudioCodec = candidate.AudioCodecLabel,
+            CoveredSeasons = string.Empty,
+            TotalScore = candidate.TotalScore
+        }).ToList();
+    }
+
+    private static EpisodeFetchCandidate ToEpisodeCandidate(TorrentCartOrder order)
+    {
+        return new EpisodeFetchCandidate
+        {
+            EpisodeId = order.EpisodeId ?? 0,
+            FileName = order.SelectedCandidateName,
+            FileUrl = order.SelectedCandidateUrl,
+            FileSize = order.SelectedCandidateFileSize,
+            Seeders = order.SelectedCandidateSeeders,
+            Leechers = order.SelectedCandidateLeechers,
+            PluginName = order.SelectedCandidatePlugin,
+            QualityLabel = order.SelectedCandidateQuality,
+            AudioCodecLabel = order.SelectedCandidateAudioCodec,
+            TotalScore = order.SelectedCandidateTotalScore
+        };
+    }
+
+    private static string FirstNonEmpty(params string?[] values)
+    {
+        foreach (var value in values)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return value.Trim();
+            }
+        }
+
+        return string.Empty;
+    }
+}

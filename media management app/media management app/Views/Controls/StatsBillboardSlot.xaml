@@ -1,0 +1,105 @@
+<UserControl x:Class="media_management_app.Views.Controls.StatsBillboardSlot"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:converters="clr-namespace:media_management_app.Converters"
+             xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
+             MinHeight="108">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
+        <converters:EpisodeRatingBandToBrushConverter x:Key="EpisodeRatingBandToBrushConverter" />
+
+        <DataTemplate x:Key="BillboardCardTemplate">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Border Width="56"
+                        Height="84"
+                        CornerRadius="4"
+                        ClipToBounds="True"
+                        VerticalAlignment="Top"
+                        Background="{StaticResource AppBrushCanvas}">
+                    <Image Source="{Binding PosterImage}"
+                           Width="56"
+                           Height="84"
+                           Stretch="UniformToFill" />
+                </Border>
+                <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Top">
+                        <TextBlock Text="{Binding KindLabel}"
+                                   FontSize="11"
+                                   Foreground="{StaticResource AppBrushMutedText}" />
+                        <TextBlock Text="{Binding Headline}"
+                                   FontWeight="SemiBold"
+                                   FontSize="14"
+                                   Foreground="{StaticResource AppBrushText}"
+                                   TextTrimming="CharacterEllipsis"
+                                   Margin="0,2,0,0" />
+                        <TextBlock Text="{Binding Subtitle}"
+                                   FontSize="12"
+                                   Foreground="{StaticResource AppBrushMutedText}"
+                                   TextTrimming="CharacterEllipsis"
+                                   Visibility="{Binding HasSubtitle, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                        <Border Width="52"
+                                Height="22"
+                                CornerRadius="4"
+                                Margin="0,8,0,0"
+                                HorizontalAlignment="Left"
+                                Background="{Binding Band, Converter={StaticResource EpisodeRatingBandToBrushConverter}}">
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <iconPacks:PackIconLucide Kind="Star"
+                                                          Width="10"
+                                                          Height="10"
+                                                          Margin="0,0,3,0"
+                                                          VerticalAlignment="Center"
+                                                          Foreground="{StaticResource AppBrushOnAccent}" />
+                                <TextBlock Text="{Binding RatingText}"
+                                           FontSize="11"
+                                           FontWeight="Bold"
+                                           Foreground="{StaticResource AppBrushOnAccent}" />
+                            </StackPanel>
+                        </Border>
+                        <TextBlock Text="{Binding ThoughtDisplay}"
+                                   Margin="0,8,0,0"
+                                   FontSize="12"
+                                   Foreground="{StaticResource AppBrushText}"
+                                   TextWrapping="Wrap"
+                                   TextTrimming="CharacterEllipsis"
+                                   MaxHeight="36">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding HasThought}" Value="False">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </StackPanel>
+            </Grid>
+        </DataTemplate>
+    </UserControl.Resources>
+
+    <Grid x:Name="Viewport" ClipToBounds="True">
+        <ContentControl x:Name="LayerA"
+                        ContentTemplate="{StaticResource BillboardCardTemplate}"
+                        HorizontalContentAlignment="Stretch"
+                        VerticalContentAlignment="Stretch">
+            <ContentControl.RenderTransform>
+                <TranslateTransform x:Name="LayerATransform" />
+            </ContentControl.RenderTransform>
+        </ContentControl>
+        <ContentControl x:Name="LayerB"
+                        ContentTemplate="{StaticResource BillboardCardTemplate}"
+                        HorizontalContentAlignment="Stretch"
+                        VerticalContentAlignment="Stretch"
+                        IsHitTestVisible="False"
+                        Opacity="0">
+            <ContentControl.RenderTransform>
+                <TranslateTransform x:Name="LayerBTransform" />
+            </ContentControl.RenderTransform>
+        </ContentControl>
+    </Grid>
+</UserControl>

@@ -1,0 +1,2177 @@
+<UserControl x:Class="media_management_app.Views.SettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:common="clr-namespace:media_management_app.Common"
+             xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
+             xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+             mc:Ignorable="d">
+    <!-- #region Local styles and templates -->
+    <UserControl.Resources>
+        <Style x:Key="SettingsCardStyle" TargetType="materialDesign:Card">
+            <Setter Property="Background" Value="{StaticResource AppBrushSurfaceRaised}" />
+            <Setter Property="Padding" Value="18" />
+            <Setter Property="Margin" Value="0,0,0,14" />
+            <Setter Property="UniformCornerRadius" Value="8" />
+            <Setter Property="materialDesign:ElevationAssist.Elevation" Value="Dp1" />
+        </Style>
+
+        <Style x:Key="SettingsGuidePanelStyle" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource AppBrushSurface}" />
+            <Setter Property="BorderBrush" Value="{StaticResource AppBrushBorder}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="16" />
+        </Style>
+
+        <Style x:Key="SettingsGuideItemStyle" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource AppBrushSurfaceRaised}" />
+            <Setter Property="BorderBrush" Value="{StaticResource AppBrushBorder}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Padding" Value="10,8" />
+            <Setter Property="Margin" Value="0,0,0,8" />
+        </Style>
+
+        <Style x:Key="SettingsLabelStyle" TargetType="TextBlock">
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{StaticResource AppBrushText}" />
+            <Setter Property="Margin" Value="0,0,0,5" />
+        </Style>
+
+        <Style x:Key="SettingsHintStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource AppBrushMutedText}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="LineHeight" Value="17" />
+        </Style>
+
+        <Style x:Key="SettingsSectionTitleStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="16" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Margin" Value="0,0,0,12" />
+            <Setter Property="Foreground" Value="{StaticResource AppBrushText}" />
+        </Style>
+
+        <Style x:Key="SettingsTextBoxStyle" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+            <Setter Property="MinHeight" Value="36" />
+            <Setter Property="MaxWidth" Value="760" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="Padding" Value="10,7" />
+            <Setter Property="Margin" Value="0,0,0,10" />
+            <Setter Property="Foreground" Value="{StaticResource AppBrushText}" />
+            <Setter Property="CaretBrush" Value="{StaticResource AppBrushText}" />
+        </Style>
+
+        <Style x:Key="SettingsListBoxStyle" TargetType="ListBox" BasedOn="{StaticResource {x:Type ListBox}}">
+            <Setter Property="MinHeight" Value="130" />
+            <Setter Property="MaxHeight" Value="180" />
+            <Setter Property="Background" Value="{StaticResource AppBrushSurface}" />
+            <Setter Property="BorderBrush" Value="{StaticResource AppBrushBorder}" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Auto" />
+            <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto" />
+            <Setter Property="Margin" Value="0,0,0,10" />
+        </Style>
+
+        <Style TargetType="ListBoxItem">
+            <Setter Property="Padding" Value="8,5" />
+            <Setter Property="Margin" Value="3,2" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="Root"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="5"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="{StaticResource AppBrushAccentSoft}" />
+                                <Setter TargetName="Root" Property="BorderBrush" Value="{StaticResource AppBrushBorder}" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="{StaticResource AppBrushAccentSoft}" />
+                                <Setter TargetName="Root" Property="BorderBrush" Value="{StaticResource AppBrushAccent}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="SettingsNumericChromeStyle" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource AppBrushSurface}" />
+            <Setter Property="BorderBrush" Value="{StaticResource AppBrushBorder}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Padding" Value="1" />
+            <Setter Property="Width" Value="220" />
+            <Setter Property="MinHeight" Value="38" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+            <Setter Property="Margin" Value="0,0,0,12" />
+        </Style>
+
+        <Style x:Key="SettingsNumericUpDownStyle" TargetType="materialDesign:NumericUpDown">
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="VerticalAlignment" Value="Stretch" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="Padding" Value="10,6,4,6" />
+            <Setter Property="MinHeight" Value="34" />
+            <Setter Property="Foreground" Value="{StaticResource AppBrushText}" />
+            <Setter Property="FontSize" Value="14" />
+        </Style>
+
+        <Style x:Key="SettingsIconTextButtonStyle" TargetType="Button" BasedOn="{StaticResource AppOutlinedButtonStyle}">
+            <Setter Property="MinHeight" Value="36" />
+            <Setter Property="Padding" Value="12,7" />
+            <Setter Property="Margin" Value="0,0,8,0" />
+        </Style>
+
+        <Style x:Key="SettingsPrimaryIconTextButtonStyle" TargetType="Button" BasedOn="{StaticResource AppPrimaryButtonStyle}">
+            <Setter Property="MinHeight" Value="36" />
+            <Setter Property="Padding" Value="12,7" />
+            <Setter Property="Margin" Value="0,0,8,0" />
+        </Style>
+
+        <Style x:Key="SettingsSectionSelectorStyle" TargetType="ListBox">
+            <Setter Property="Background" Value="{StaticResource AppBrushSurfaceRaised}" />
+            <Setter Property="BorderBrush" Value="{StaticResource AppBrushBorder}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="5" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+            <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Disabled" />
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+            <Setter Property="UseLayoutRounding" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBox">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="9"
+                                Padding="{TemplateBinding Padding}"
+                                SnapsToDevicePixels="True">
+                            <ItemsPresenter />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="ItemsPanel">
+                <Setter.Value>
+                    <ItemsPanelTemplate>
+                        <StackPanel Orientation="Horizontal" />
+                    </ItemsPanelTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="SettingsSectionSelectorItemStyle" TargetType="ListBoxItem">
+            <Setter Property="Foreground" Value="{StaticResource AppBrushMutedText}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="MinHeight" Value="40" />
+            <Setter Property="Padding" Value="16,9" />
+            <Setter Property="Margin" Value="1" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+            <Setter Property="UseLayoutRounding" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="Root"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="7"
+                                Padding="{TemplateBinding Padding}"
+                                SnapsToDevicePixels="True">
+                            <ContentPresenter ContentSource="Content"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              SnapsToDevicePixels="True"
+                                              TextOptions.TextFormattingMode="Display"
+                                              TextOptions.TextRenderingMode="ClearType" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="{StaticResource AppBrushAccentSoft}" />
+                                <Setter Property="Foreground" Value="{StaticResource AppBrushText}" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="{StaticResource AppBrushAccent}" />
+                                <Setter Property="Foreground" Value="{StaticResource AppBrushOnAccent}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="SettingsSectionPanelBaseStyle" TargetType="ScrollViewer">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Setter Property="VerticalScrollBarVisibility" Value="Auto" />
+            <Setter Property="HorizontalScrollBarVisibility" Value="Disabled" />
+        </Style>
+
+        <Style x:Key="SystemSettingsSectionPanelStyle" TargetType="ScrollViewer" BasedOn="{StaticResource SettingsSectionPanelBaseStyle}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding SelectedSettingsSection}" Value="{x:Static common:SettingsSection.System}">
+                    <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="LibrarySettingsSectionPanelStyle" TargetType="ScrollViewer" BasedOn="{StaticResource SettingsSectionPanelBaseStyle}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding SelectedSettingsSection}" Value="{x:Static common:SettingsSection.Library}">
+                    <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="AutoTrackSettingsSectionPanelStyle" TargetType="ScrollViewer" BasedOn="{StaticResource SettingsSectionPanelBaseStyle}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding SelectedSettingsSection}" Value="{x:Static common:SettingsSection.AutoTrack}">
+                    <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="IntegrationsSettingsSectionPanelStyle" TargetType="ScrollViewer" BasedOn="{StaticResource SettingsSectionPanelBaseStyle}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding SelectedSettingsSection}" Value="{x:Static common:SettingsSection.Integrations}">
+                    <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="TorrentStorageSettingsSectionPanelStyle" TargetType="ScrollViewer" BasedOn="{StaticResource SettingsSectionPanelBaseStyle}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding SelectedSettingsSection}" Value="{x:Static common:SettingsSection.TorrentStorage}">
+                    <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="NotificationsSettingsSectionPanelStyle" TargetType="ScrollViewer" BasedOn="{StaticResource SettingsSectionPanelBaseStyle}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding SelectedSettingsSection}" Value="{x:Static common:SettingsSection.Notifications}">
+                    <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="BackupSettingsSectionPanelStyle" TargetType="ScrollViewer" BasedOn="{StaticResource SettingsSectionPanelBaseStyle}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding SelectedSettingsSection}" Value="{x:Static common:SettingsSection.Backup}">
+                    <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Resources>
+    <!-- #endregion -->
+
+    <!-- #region Settings workspace shell -->
+    <Grid Background="{StaticResource AppBrushCanvas}"
+          Margin="16"
+          SnapsToDevicePixels="True"
+          UseLayoutRounding="True"
+          TextOptions.TextFormattingMode="Display"
+          TextOptions.TextRenderingMode="ClearType">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- #region Header -->
+        <DockPanel Grid.Row="0" Margin="0,0,0,16">
+            <TextBlock DockPanel.Dock="Left"
+                       Text="System Settings"
+                       FontSize="26"
+                       FontWeight="SemiBold" />
+            <TextBlock Text="{Binding StatusMessage}"
+                       Foreground="{StaticResource AppBrushAccent}"
+                       TextTrimming="CharacterEllipsis"
+                       VerticalAlignment="Center"
+                       Margin="18,6,0,0" />
+        </DockPanel>
+        <!-- #endregion -->
+
+        <!-- #region Settings section selector and panels -->
+        <Grid Grid.Row="1">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <!-- #region Section selector -->
+            <ListBox Grid.Row="0"
+                     Style="{StaticResource SettingsSectionSelectorStyle}"
+                     ItemContainerStyle="{StaticResource SettingsSectionSelectorItemStyle}"
+                     SelectedValue="{Binding SelectedSettingsSection, Mode=TwoWay}"
+                     SelectedValuePath="Tag">
+                <ListBoxItem Content="System"
+                             Tag="{x:Static common:SettingsSection.System}"
+                             Style="{StaticResource SettingsSectionSelectorItemStyle}" />
+                <ListBoxItem Content="Library"
+                             Tag="{x:Static common:SettingsSection.Library}"
+                             Style="{StaticResource SettingsSectionSelectorItemStyle}" />
+                <ListBoxItem Content="Auto-Track"
+                             Tag="{x:Static common:SettingsSection.AutoTrack}"
+                             Style="{StaticResource SettingsSectionSelectorItemStyle}" />
+                <ListBoxItem Content="Integrations"
+                             Tag="{x:Static common:SettingsSection.Integrations}"
+                             Style="{StaticResource SettingsSectionSelectorItemStyle}" />
+                <ListBoxItem Content="Torrent Storage"
+                             Tag="{x:Static common:SettingsSection.TorrentStorage}"
+                             Style="{StaticResource SettingsSectionSelectorItemStyle}" />
+                <ListBoxItem Content="Notifications"
+                             Tag="{x:Static common:SettingsSection.Notifications}"
+                             Style="{StaticResource SettingsSectionSelectorItemStyle}" />
+                <ListBoxItem Content="Backup"
+                             Tag="{x:Static common:SettingsSection.Backup}"
+                             Style="{StaticResource SettingsSectionSelectorItemStyle}" />
+            </ListBox>
+            <!-- #endregion -->
+
+            <!-- #region Section panels -->
+            <Grid Grid.Row="1">
+            <!-- #region System panel -->
+                <ScrollViewer Style="{StaticResource SystemSettingsSectionPanelStyle}">
+                    <Grid Margin="0,16,8,0"
+                          MaxWidth="1220"
+                          HorizontalAlignment="Left">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="24" />
+                            <ColumnDefinition Width="380" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0">
+                            <materialDesign:Card Style="{StaticResource SettingsCardStyle}">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <Border Width="8"
+                                                Height="24"
+                                                CornerRadius="4"
+                                                Background="{StaticResource AppBrushAccent}"
+                                                Margin="0,0,8,0" />
+                                        <TextBlock Text="Storage" Style="{StaticResource SettingsSectionTitleStyle}" Margin="0" />
+                                    </StackPanel>
+                                    <TextBlock Text="State Folder" Style="{StaticResource SettingsLabelStyle}" />
+                                    <DockPanel LastChildFill="True">
+                                        <Button DockPanel.Dock="Right"
+                                                Command="{Binding BrowseStateFolderCommand}"
+                                                Style="{StaticResource SettingsIconTextButtonStyle}"
+                                                Margin="8,0,0,10">
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconLucide Kind="FolderOpen" Width="16" Height="16" Margin="0,0,7,0" />
+                                                <TextBlock Text="Browse" />
+                                            </StackPanel>
+                                        </Button>
+                                        <TextBox Text="{Binding StateFolder, UpdateSourceTrigger=PropertyChanged}"
+                                                 Style="{StaticResource SettingsTextBoxStyle}" />
+                                    </DockPanel>
+                                </StackPanel>
+                            </materialDesign:Card>
+
+                            <materialDesign:Card Style="{StaticResource SettingsCardStyle}">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <Border Width="8"
+                                                Height="24"
+                                                CornerRadius="4"
+                                                Background="{StaticResource AppBrushWarning}"
+                                                Margin="0,0,8,0" />
+                                        <TextBlock Text="Logging" Style="{StaticResource SettingsSectionTitleStyle}" Margin="0" />
+                                    </StackPanel>
+                                    <TextBlock Text="Max log lines per file" Style="{StaticResource SettingsLabelStyle}" />
+                                    <Border Style="{StaticResource SettingsNumericChromeStyle}">
+                                        <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
+                                                                      Value="{Binding LogMaxLinesPerFile, UpdateSourceTrigger=PropertyChanged}"
+                                                                      Minimum="100"
+                                                                      Maximum="100000" />
+                                    </Border>
+                                    <TextBlock Text="Cleanup retention days" Style="{StaticResource SettingsLabelStyle}" />
+                                    <Border Style="{StaticResource SettingsNumericChromeStyle}">
+                                        <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
+                                                                      Value="{Binding LogCleanupRetentionDays, UpdateSourceTrigger=PropertyChanged}"
+                                                                      Minimum="1"
+                                                                      Maximum="3650" />
+                                    </Border>
+                                    <CheckBox IsChecked="{Binding LogAutoCloseConsoleOnBackground, Mode=TwoWay}"
+                                              Margin="0,8,0,0"
+                                              Content="Auto-close console log window when the app enters background mode" />
+                                </StackPanel>
+                            </materialDesign:Card>
+
+                            <materialDesign:Card Style="{StaticResource SettingsCardStyle}">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <Border Width="8"
+                                                Height="24"
+                                                CornerRadius="4"
+                                                Background="{StaticResource AppBrushAccent}"
+                                                Margin="0,0,8,0" />
+                                        <TextBlock Text="Startup &amp; Tray" Style="{StaticResource SettingsSectionTitleStyle}" Margin="0" />
+                                    </StackPanel>
+                                    <CheckBox IsChecked="{Binding RunAtStartup, Mode=TwoWay}"
+                                              Margin="0,0,0,8"
+                                              Content="Run at Windows startup" />
+                                    <CheckBox IsChecked="{Binding StartMinimized, Mode=TwoWay}"
+                                              Margin="0,0,0,8"
+                                              Content="Start minimized to tray" />
+                                    <CheckBox IsChecked="{Binding CloseToTray, Mode=TwoWay}"
+                                              Margin="0,4,0,0"
+                                              Content="Close button minimizes to tray" />
+                                </StackPanel>
+                            </materialDesign:Card>
+
+                            <materialDesign:Card Style="{StaticResource SettingsCardStyle}">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <Border Width="8"
+                                                Height="24"
+                                                CornerRadius="4"
+                                                Background="{StaticResource AppBrushAccent}"
+                                                Margin="0,0,8,0" />
+                                        <TextBlock Text="Appearance" Style="{StaticResource SettingsSectionTitleStyle}" Margin="0" />
+                                    </StackPanel>
+                                    <TextBlock Text="Theme" Style="{StaticResource SettingsLabelStyle}" />
+                                    <ComboBox SelectedItem="{Binding SelectedTheme, Mode=TwoWay}"
+                                              ItemsSource="{Binding ThemeOptions}"
+                                              Margin="0,0,0,8"
+                                              MinWidth="220"
+                                              HorizontalAlignment="Left" />
+                                    <TextBlock Text="Choose Light or Dark for the application interface."
+                                               Style="{StaticResource SettingsHintStyle}" />
+                                </StackPanel>
+                            </materialDesign:Card>
+                        </StackPanel>
+
+                        <Border Grid.Column="2" Style="{StaticResource SettingsGuidePanelStyle}">
+                            <StackPanel>
+                                <TextBlock Text="Guide" Style="{StaticResource SettingsSectionTitleStyle}" />
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="State folder" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Stores settings, database, recipes, logs, and app state."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Log rotation" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Max lines applies the next time the app starts. During one session, extra files rotate with _1, _2, and later suffixes."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Log cleanup" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="After Save, cleanup uses the retention value on the next background wakeup and deletes only old managed log files."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Console window" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="When enabled, the console log window is closed (not only hidden) after the app enters background mode — the same debounce as standalone viewer auto-close when minimized or hidden to tray."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Windows startup" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Registers the app in the current user's Windows Run key. Save settings to apply."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Tray behavior" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Start minimized and close-to-tray keep the app running in the notification area. Minimize also goes to tray when either tray option is enabled."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Exit" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="When close-to-tray is off, the X button exits the app. Use the tray menu Exit option when the app is hidden to tray."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Theme" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Theme changes apply after you click Save. The selected theme is stored in settings.json and restored on the next launch."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                </ScrollViewer>
+            <!-- #endregion -->
+
+            <!-- #region Auto-Track panel -->
+                <ScrollViewer Style="{StaticResource AutoTrackSettingsSectionPanelStyle}">
+                    <Grid Margin="0,16,8,0"
+                          MaxWidth="1220"
+                          HorizontalAlignment="Left">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="24" />
+                            <ColumnDefinition Width="380" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0">
+                            <materialDesign:Card Style="{StaticResource SettingsCardStyle}">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <Border Width="8"
+                                                Height="24"
+                                                CornerRadius="4"
+                                                Background="{StaticResource AppBrushShowAccent}"
+                                                Margin="0,0,8,0" />
+                                        <TextBlock Text="Auto-Track" Style="{StaticResource SettingsSectionTitleStyle}" Margin="0" />
+                                    </StackPanel>
+                                    <CheckBox IsChecked="{Binding AutoTrackEnabled, Mode=TwoWay}"
+                                              Margin="0,0,0,8"
+                                              Content="Enable scheduled auto-track runs" />
+                                    <CheckBox IsChecked="{Binding AutoTrackEnforceGlobalWeeklySchedule, Mode=TwoWay}"
+                                              Margin="0,0,0,4"
+                                              Content="Enforce default weekly hunt schedule" />
+                                    <TextBlock Style="{StaticResource SettingsHintStyle}" Margin="0,0,0,8"
+                                               Text="When off, shows without a custom schedule run on the TMDB check interval. Per-show custom schedules still apply." />
+                                    <TextBlock Text="Default hunt schedule day" Style="{StaticResource SettingsLabelStyle}" />
+                                    <ComboBox ItemsSource="{Binding AnchorDayOptions}"
+                                              SelectedItem="{Binding AutoTrackAnchorDay, Mode=TwoWay}"
+                                              IsEnabled="{Binding AutoTrackEnforceGlobalWeeklySchedule}"
+                                              Margin="0,0,0,8"
+                                              MaxWidth="200"
+                                              HorizontalAlignment="Left" />
+                                    <TextBlock Text="Default hunt schedule time" Style="{StaticResource SettingsLabelStyle}" />
+                                    <materialDesign:TimePicker Is24Hours="True"
+                                                               SelectedTimeFormat="Short"
+                                                               SelectedTime="{Binding AutoTrackAnchorTime, Mode=TwoWay}"
+                                                               IsEnabled="{Binding AutoTrackEnforceGlobalWeeklySchedule}"
+                                                               Foreground="{StaticResource AppBrushText}"
+                                                               Margin="0,0,0,8"
+                                                               MaxWidth="160"
+                                                               HorizontalAlignment="Left"
+                                                               FontSize="13" />
+                                    <TextBlock Text="TMDB check interval (minutes)" Style="{StaticResource SettingsLabelStyle}" />
+                                    <Border Style="{StaticResource SettingsNumericChromeStyle}" Margin="0,0,0,4">
+                                        <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
+                                                                      Value="{Binding AutoTrackTmdbCheckIntervalMinutes, UpdateSourceTrigger=PropertyChanged}"
+                                                                      Minimum="5"
+                                                                      Maximum="1440" />
+                                    </Border>
+                                    <TextBlock Style="{StaticResource SettingsHintStyle}" Margin="0,0,0,8"
+                                               Text="Torrent hunt runs only when this check finds pending episodes (or when you press Run Now). There is no separate blind hunt timer." />
+                                    <TextBlock Text="Min hours after air date before hunting (0 = no delay)" Style="{StaticResource SettingsLabelStyle}" />
+                                    <Border Style="{StaticResource SettingsNumericChromeStyle}" Margin="0,0,0,8">
+                                        <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
+                                                                      Value="{Binding AutoTrackHuntMinHoursAfterAirDate, UpdateSourceTrigger=PropertyChanged}"
+                                                                      Minimum="0"
+                                                                      Maximum="48" />
+                                    </Border>
+                                    <TextBlock Text="Reconcile poll while downloads pending (minutes)" Style="{StaticResource SettingsLabelStyle}" />
+                                    <Border Style="{StaticResource SettingsNumericChromeStyle}" Margin="0,0,0,4">
+                                        <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
+                                                                      Value="{Binding AutoTrackReconcileIntervalMinutes, UpdateSourceTrigger=PropertyChanged}"
+                                                                      Minimum="5"
+                                                                      Maximum="1440" />
+                                    </Border>
+                                    <TextBlock Style="{StaticResource SettingsHintStyle}" Margin="0,0,0,8"
+                                               Text="Runs only after Auto-Track successfully adds torrents, and only while downloads are still pending. Idle Auto-Track does not reconcile on a timer." />
+                                    <TextBlock Text="Max TMDB refreshes per day" Style="{StaticResource SettingsLabelStyle}" />
+                                    <Border Style="{StaticResource SettingsNumericChromeStyle}" Margin="0,0,0,8">
+                                        <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
+                                                                      Value="{Binding AutoTrackMaxTmdbRefreshesPerDay, UpdateSourceTrigger=PropertyChanged}"
+                                                                      Minimum="1"
+                                                                      Maximum="500" />
+                                    </Border>
+                                    <TextBlock Text="Shows per hunt cycle" Style="{StaticResource SettingsLabelStyle}" />
+                                    <Border Style="{StaticResource SettingsNumericChromeStyle}" Margin="0,0,0,8">
+                                        <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
+                                                                      Value="{Binding AutoTrackMaxShowsPerHuntCycle, UpdateSourceTrigger=PropertyChanged}"
+                                                                      Minimum="1"
+                                                                      Maximum="20" />
+                                    </Border>
+                                    <TextBlock Text="Episodes per show per hunt cycle" Style="{StaticResource SettingsLabelStyle}" />
+                                    <Border Style="{StaticResource SettingsNumericChromeStyle}" Margin="0,0,0,8">
+                                        <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
+                                                                      Value="{Binding AutoTrackMaxEpisodesPerShowPerHuntCycle, UpdateSourceTrigger=PropertyChanged}"
+                                                                      Minimum="1"
+                                                                      Maximum="50" />
+                                    </Border>
+                                    <CheckBox IsChecked="{Binding AutoTrackForceParallelEpisodeSearch, Mode=TwoWay}"
+                                              Margin="0,0,0,8"
+                                              Content="Force parallel episode search (no snapshot)" />
+                                </StackPanel>
+                            </materialDesign:Card>
+
+                            <materialDesign:Card Style="{StaticResource SettingsCardStyle}">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <Border Width="8"
+                                                Height="24"
+                                                CornerRadius="4"
+                                                Background="{StaticResource AppBrushJellyfinBrand}"
+                                                Margin="0,0,8,0" />
+                                        <TextBlock Text="Jellyfin path refresh" Style="{StaticResource SettingsSectionTitleStyle}" Margin="0" />
+                                    </StackPanel>
+                                    <CheckBox IsChecked="{Binding AutoTrackJellyfinRefreshEnabled, Mode=TwoWay}"
+                                              Margin="0,0,0,8"
+                                              Content="Notify Jellyfin after Auto-Track symlink create/repair (path-based)" />
+                                    <TextBlock Style="{StaticResource SettingsHintStyle}" Margin="0,0,0,8"
+                                               Text="Uses Library/Media/Updated for new paths only. Skips episode-group shows (NFO). TMDB SSL uses WARP Auto-Recover when needed." />
+                                    <TextBlock Text="Keep WARP on after Jellyfin notify (seconds)" Style="{StaticResource SettingsLabelStyle}" />
+                                    <Border Style="{StaticResource SettingsNumericChromeStyle}" Margin="0,0,0,4">
+                                        <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
+                                                                      Value="{Binding AutoTrackJellyfinWarpHoldSeconds, UpdateSourceTrigger=PropertyChanged}"
+                                                                      Minimum="15"
+                                                                      Maximum="600" />
+                                    </Border>
+                                    <TextBlock Style="{StaticResource SettingsHintStyle}" Margin="0,0,0,8"
+                                               Text="Owned WARP stays connected after path notify so Jellyfin LibraryMonitor/TMDB can finish. Extends if a library scan task is still running (capped)." />
+                                    <CheckBox IsChecked="{Binding AutoTrackJellyfinLogEarlyDisconnectEnabled, Mode=TwoWay}"
+                                              Margin="0,0,0,4"
+                                              Content="Early WARP disconnect via Jellyfin log" />
+                                    <TextBlock Style="{StaticResource SettingsHintStyle}" Margin="0,0,0,8"
+                                               Text="Only while WARP hold runs: tails new log lines (append-only). Invalid/empty path keeps timer-only behavior even if checked." />
+                                    <TextBlock Text="Jellyfin log path (folder or .log file)" Style="{StaticResource SettingsLabelStyle}"
+                                               IsEnabled="{Binding AutoTrackJellyfinLogEarlyDisconnectEnabled}" />
+                                    <Grid Margin="0,0,0,4" IsEnabled="{Binding AutoTrackJellyfinLogEarlyDisconnectEnabled}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBox Grid.Column="0"
+                                                 Text="{Binding AutoTrackJellyfinLogPath, UpdateSourceTrigger=PropertyChanged}"
+                                                 Margin="0,0,8,0" />
+                                        <Button Grid.Column="1"
+                                                Command="{Binding BrowseJellyfinLogPathCommand}"
+                                                Content="Browse folder"
+                                                Margin="0,0,8,0"
+                                                Style="{StaticResource MaterialDesignOutlinedButton}" />
+                                        <Button Grid.Column="2"
+                                                Command="{Binding BrowseJellyfinLogFileCommand}"
+                                                Content="Browse file"
+                                                Style="{StaticResource MaterialDesignOutlinedButton}" />
+                                    </Grid>
+                                    <TextBlock Text="Quiet seconds after last refresh/metadata log line" Style="{StaticResource SettingsLabelStyle}"
+                                               IsEnabled="{Binding AutoTrackJellyfinLogEarlyDisconnectEnabled}" />
+                                    <Border Style="{StaticResource SettingsNumericChromeStyle}" Margin="0,0,0,4"
+                                            IsEnabled="{Binding AutoTrackJellyfinLogEarlyDisconnectEnabled}">
+                                        <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
+                                                                      Value="{Binding AutoTrackJellyfinLogQuietSeconds, UpdateSourceTrigger=PropertyChanged}"
+                                                                      Minimum="10"
+                                                                      Maximum="120" />
+                                    </Border>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,4"
+                                                IsEnabled="{Binding AutoTrackJellyfinLogEarlyDisconnectEnabled}">
+                                        <Button Command="{Binding TestJellyfinLogPathCommand}"
+                                                Content="Test log path"
+                                                Style="{StaticResource MaterialDesignOutlinedButton}" />
+                                    </StackPanel>
+                                    <TextBlock Text="{Binding AutoTrackJellyfinLogPathTestStatus}"
+                                               Style="{StaticResource SettingsHintStyle}"
+                                               Margin="0,0,0,8"
+                                               TextWrapping="Wrap" />
+                                    <Button Command="{Binding FlushJellyfinRefreshQueueCommand}"
+                                            Content="Flush refresh queue"
+                                            HorizontalAlignment="Left"
+                                            Margin="0,0,0,8"
+                                            Style="{StaticResource MaterialDesignOutlinedButton}" />
+                                    <TextBlock Style="{StaticResource SettingsHintStyle}"
+                                               Text="Jellyfin base URL and API key live under Integrations." />
+                                </StackPanel>
+                            </materialDesign:Card>
+                        </StackPanel>
+
+                        <Border Grid.Column="2" Style="{StaticResource SettingsGuidePanelStyle}">
+                            <StackPanel>
+                                <TextBlock Text="Guide" Style="{StaticResource SettingsSectionTitleStyle}" />
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="TMDB check interval" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Controls how often the scheduler wakes up to check eligibility. Actual TMDB API calls are still limited to once per show per week."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Daily TMDB budget" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Limits total TMDB API calls per calendar day across all shows. Resets automatically at midnight. Manual Run Now bypasses this limit."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Weekly schedule" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="TMDB metadata is fetched at most once per show per week, after the configured anchor day/time (API load protection)."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Schedule enforcement" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="When enforced, all shows without a custom schedule follow the default anchor day/time above. When off, those shows run on the TMDB check interval instead; per-show custom schedules always still apply."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Hunt after TMDB" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="After each TMDB check, torrent hunt runs only for shows past their hunt schedule and past the air-date delay."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Hunt cycle limits" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Shows per hunt cycle and episodes per show per hunt cycle cap how much work one hunt pass does. Reconcile poll only runs after Auto-Track adds torrents, checking qBittorrent at this interval while downloads are still pending."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Standalone hunt loop" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="The standalone hunt loop only resumes shows with CandidatesFound status, independent of the TMDB schedule."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Force parallel episode search" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Hunt-only search-mode override. When on, Auto-Track always searches each episode in parallel and ignores the recipe's snapshot flag. Cart still follows the recipe. Quality, seeders, and size stay on the recipe and the Auto-Track recipe card."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Jellyfin path refresh" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Notifies Jellyfin's Library/Media/Updated endpoint with the new path right after Auto-Track creates or repairs a symlink. Only new paths are sent; episode-group (NFO) shows are skipped. Base URL and API key are configured under Integrations."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="WARP hold after notify" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="If Auto-Track owns the WARP connection, it stays connected for this many seconds after notifying Jellyfin so LibraryMonitor/TMDB metadata lookups can finish. The hold extends (capped) while a library scan task is still running."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Early WARP disconnect" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Only active during a WARP hold: tails new lines from the Jellyfin log (folder or .log file) and disconnects as soon as it goes quiet for the configured seconds, instead of waiting out the full hold. An invalid or empty log path falls back to timer-only behavior even when this is checked. Use Test log path to verify the path resolves before saving."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Flush refresh queue" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Immediately sends any path notifications still waiting to be delivered. Test Jellyfin (base URL / API key) is under Integrations."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                </ScrollViewer>
+            <!-- #endregion -->
+
+            <!-- #region Library panel -->
+                <ScrollViewer Style="{StaticResource LibrarySettingsSectionPanelStyle}">
+                    <Grid Margin="0,16,8,0"
+                          MaxWidth="1220"
+                          HorizontalAlignment="Left">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="24" />
+                            <ColumnDefinition Width="380" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0">
+                            <materialDesign:Card Style="{StaticResource SettingsCardStyle}">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <Border Width="8"
+                                                Height="24"
+                                                CornerRadius="4"
+                                                Background="{StaticResource AppBrushShowAccent}"
+                                                Margin="0,0,8,0" />
+                                        <TextBlock Text="Source Folders" Style="{StaticResource SettingsSectionTitleStyle}" Margin="0" />
+                                    </StackPanel>
+                                    <ListBox ItemsSource="{Binding SourceFolders}"
+                                             SelectedItem="{Binding SelectedSourceFolder, Mode=TwoWay}"
+                                             Style="{StaticResource SettingsListBoxStyle}" />
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button Command="{Binding AddSourceFolderCommand}"
+                                                Style="{StaticResource SettingsIconTextButtonStyle}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconLucide Kind="Plus" Width="16" Height="16" Margin="0,0,7,0" />
+                                                <TextBlock Text="Add" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Command="{Binding RemoveSelectedSourceFolderCommand}"
+                                                Style="{StaticResource SettingsIconTextButtonStyle}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconLucide Kind="Trash2" Width="16" Height="16" Margin="0,0,7,0" />
+                                                <TextBlock Text="Remove" />
+                                            </StackPanel>
+                                        </Button>
+                                    </StackPanel>
+                                </StackPanel>
+                            </materialDesign:Card>
+
+                            <materialDesign:Card Style="{StaticResource SettingsCardStyle}">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <Border Width="8"
+                                                Height="24"
+                                                CornerRadius="4"
+                                                Background="{StaticResource AppBrushMovieAccent}"
+                                                Margin="0,0,8,0" />
+                                        <TextBlock Text="Generated Library" Style="{StaticResource SettingsSectionTitleStyle}" Margin="0" />
+                                    </StackPanel>
+                                    <TextBlock Text="Generated library folder" Style="{StaticResource SettingsLabelStyle}" />
+                                    <TextBox Text="{Binding DefaultLibraryFolderName, UpdateSourceTrigger=PropertyChanged}"
+                                             Style="{StaticResource SettingsTextBoxStyle}" />
+                                    <TextBlock Text="Output preview" Style="{StaticResource SettingsLabelStyle}" />
+                                    <ListBox ItemsSource="{Binding LibraryRootPreview}"
+                                             Style="{StaticResource SettingsListBoxStyle}"
+                                             FontFamily="Consolas"
+                                             MinHeight="140" />
+                                </StackPanel>
+                            </materialDesign:Card>
+
+                            <materialDesign:Card Style="{StaticResource SettingsCardStyle}">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <Border Width="8"
+                                                Height="24"
+                                                CornerRadius="4"
+                                                Background="{StaticResource AppBrushAccent}"
+                                                Margin="0,0,8,0" />
+                                        <TextBlock Text="Jellyfin Symlink Library" Style="{StaticResource SettingsSectionTitleStyle}" Margin="0" />
+                                    </StackPanel>
+                                    <CheckBox Content="Enable symlink aggregation for Jellyfin"
+                                              IsChecked="{Binding SymlinkEnabled}"
+                                              Margin="0,0,0,8" />
+                                    <CheckBox Content="Reconcile symlinks on app startup"
+                                              IsChecked="{Binding SymlinkSyncOnStartup}"
+                                              Margin="0,0,0,8" />
+                                    <TextBlock Text="Unified Jellyfin root" Style="{StaticResource SettingsLabelStyle}" />
+                                    <Grid Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBox Grid.Column="0"
+                                                 Text="{Binding SymlinkUnifiedRoot, UpdateSourceTrigger=PropertyChanged}"
+                                                 Style="{StaticResource SettingsTextBoxStyle}" />
+                                        <Button Grid.Column="1"
+                                                Command="{Binding BrowseSymlinkUnifiedRootCommand}"
+                                                Style="{StaticResource SettingsIconTextButtonStyle}"
+                                                Margin="8,0,0,0">
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconLucide Kind="FolderOpen" Width="16" Height="16" Margin="0,0,7,0" />
+                                                <TextBlock Text="Browse" />
+                                            </StackPanel>
+                                        </Button>
+                                    </Grid>
+                                    <TextBlock Text="Jellyfin library paths" Style="{StaticResource SettingsLabelStyle}" />
+                                    <TextBlock Text="{Binding SymlinkPreviewShowsPath, StringFormat=Shows: {0}}"
+                                               Style="{StaticResource SettingsHintStyle}"
+                                               FontFamily="Consolas"
+                                               Margin="0,0,0,4" />
+                                    <TextBlock Text="{Binding SymlinkPreviewMoviesPath, StringFormat=Movies: {0}}"
+                                               Style="{StaticResource SettingsHintStyle}"
+                                               FontFamily="Consolas"
+                                               Margin="0,0,0,8" />
+                                    <TextBlock Text="Administrator status" Style="{StaticResource SettingsLabelStyle}" />
+                                    <TextBlock Text="{Binding AdministratorStatusLabel}"
+                                               Style="{StaticResource SettingsHintStyle}"
+                                               Margin="0,0,0,8" />
+                                    <Button Command="{Binding SyncSymlinksNowCommand}"
+                                            Style="{StaticResource SettingsIconTextButtonStyle}"
+                                            HorizontalAlignment="Left">
+                                        <StackPanel Orientation="Horizontal">
+                                            <iconPacks:PackIconLucide Kind="RefreshCw" Width="16" Height="16" Margin="0,0,7,0" />
+                                            <TextBlock Text="Sync Symlinks Now" />
+                                        </StackPanel>
+                                    </Button>
+                                </StackPanel>
+                            </materialDesign:Card>
+                        </StackPanel>
+
+                        <Border Grid.Column="2" Style="{StaticResource SettingsGuidePanelStyle}">
+                            <StackPanel>
+                                <TextBlock Text="Guide" Style="{StaticResource SettingsSectionTitleStyle}" />
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Source folders" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Add folders where downloaded media is stored. The app uses these roots to derive per-drive output paths."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Hardlinks" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Hardlinks only work when source and linked files are on the same drive, so the app creates a library root on each source drive."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Jellyfin" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Point Jellyfin only to the unified symlink library on drive C (Shows and Movies folders). Do not add per-drive hardlink folders."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Symlinks" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="When a hardlink is created, the app mirrors it to the unified root via symlink. Startup reconcile repairs missing links. Administrator elevation is required by the app manifest."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                </ScrollViewer>
+            <!-- #endregion -->
+
+            <!-- #region Integrations panel -->
+                <ScrollViewer Style="{StaticResource IntegrationsSettingsSectionPanelStyle}">
+                    <Grid Margin="0,16,8,0"
+                          MaxWidth="1220"
+                          HorizontalAlignment="Left">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="24" />
+                            <ColumnDefinition Width="380" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0">
+                            <materialDesign:Card Style="{StaticResource SettingsCardStyle}">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <Border Width="8"
+                                                Height="24"
+                                                CornerRadius="4"
+                                                Background="{StaticResource AppBrushMovieAccent}"
+                                                Margin="0,0,8,0" />
+                                        <TextBlock Text="TMDB" Style="{StaticResource SettingsSectionTitleStyle}" Margin="0" />
+                                    </StackPanel>
+                                    <TextBlock Text="API read access token" Style="{StaticResource SettingsLabelStyle}" />
+                                    <Grid Margin="0,0,0,10">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <Grid Grid.Column="0">
+                                            <TextBox Text="{Binding TmdbReadAccessToken, UpdateSourceTrigger=PropertyChanged}"
+                                                     Margin="0"
+                                                     MaxHeight="90"
+                                                     TextWrapping="Wrap"
+                                                     VerticalScrollBarVisibility="Auto">
+                                                <TextBox.Style>
+                                                    <Style TargetType="TextBox" BasedOn="{StaticResource SettingsTextBoxStyle}">
+                                                        <Setter Property="Margin" Value="0" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsTmdbTokenVisible}" Value="False">
+                                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBox.Style>
+                                            </TextBox>
+                                            <TextBox Text="{Binding TmdbReadAccessTokenMasked}"
+                                                     IsReadOnly="True"
+                                                     Margin="0"
+                                                     MaxHeight="90"
+                                                     TextWrapping="Wrap"
+                                                     VerticalScrollBarVisibility="Auto">
+                                                <TextBox.Style>
+                                                    <Style TargetType="TextBox" BasedOn="{StaticResource SettingsTextBoxStyle}">
+                                                        <Setter Property="Margin" Value="0" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsTmdbTokenVisible}" Value="True">
+                                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBox.Style>
+                                            </TextBox>
+                                        </Grid>
+                                        <Button Grid.Column="1"
+                                                Command="{Binding ToggleTmdbTokenVisibilityCommand}"
+                                                Margin="8,0,0,0"
+                                                Padding="10,7"
+                                                VerticalAlignment="Top">
+                                            <Button.Style>
+                                                <Style TargetType="Button" BasedOn="{StaticResource SettingsIconTextButtonStyle}">
+                                                    <Setter Property="Content">
+                                                        <Setter.Value>
+                                                            <iconPacks:PackIconLucide Kind="Eye" Width="16" Height="16" />
+                                                        </Setter.Value>
+                                                    </Setter>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsTmdbTokenVisible}" Value="True">
+                                                            <Setter Property="Content">
+                                                                <Setter.Value>
+                                                                    <iconPacks:PackIconLucide Kind="EyeOff" Width="16" Height="16" />
+                                                                </Setter.Value>
+                                                            </Setter>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Button.Style>
+                                        </Button>
+                                    </Grid>
+                                    <Button Command="{Binding TestTmdbTokenCommand}"
+                                            Style="{StaticResource SettingsIconTextButtonStyle}"
+                                            HorizontalAlignment="Left">
+                                        <StackPanel Orientation="Horizontal">
+                                            <iconPacks:PackIconLucide Kind="ShieldCheck" Width="16" Height="16" Margin="0,0,7,0" />
+                                            <TextBlock Text="Test Token" />
+                                        </StackPanel>
+                                    </Button>
+                                </StackPanel>
+                            </materialDesign:Card>
+
+                            <materialDesign:Card Style="{StaticResource SettingsCardStyle}">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <Border Width="8"
+                                                Height="24"
+                                                CornerRadius="4"
+                                                Background="{StaticResource AppBrushAccent}"
+                                                Margin="0,0,8,0" />
+                                        <TextBlock Text="Gemini AI" Style="{StaticResource SettingsSectionTitleStyle}" Margin="0" />
+                                    </StackPanel>
+                                    <CheckBox Content="Enable Gemini for pack special/OVA mapping"
+                                              IsChecked="{Binding GeminiEnabled}"
+                                              Margin="0,0,0,8" />
+                                    <TextBlock Text="API key" Style="{StaticResource SettingsLabelStyle}" />
+                                    <Grid Margin="0,0,0,10">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <Grid Grid.Column="0">
+                                            <TextBox Text="{Binding GeminiApiKey, UpdateSourceTrigger=PropertyChanged}"
+                                                     Margin="0">
+                                                <TextBox.Style>
+                                                    <Style TargetType="TextBox" BasedOn="{StaticResource SettingsTextBoxStyle}">
+                                                        <Setter Property="Margin" Value="0" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsGeminiApiKeyVisible}" Value="False">
+                                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBox.Style>
+                                            </TextBox>
+                                            <TextBox Text="{Binding GeminiApiKeyMasked}"
+                                                     IsReadOnly="True"
+                                                     Margin="0">
+                                                <TextBox.Style>
+                                                    <Style TargetType="TextBox" BasedOn="{StaticResource SettingsTextBoxStyle}">
+                                                        <Setter Property="Margin" Value="0" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsGeminiApiKeyVisible}" Value="True">
+                                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBox.Style>
+                                            </TextBox>
+                                        </Grid>
+                                        <Button Grid.Column="1"
+                                                Command="{Binding ToggleGeminiApiKeyVisibilityCommand}"
+                                                Margin="8,0,0,0"
+                                                Padding="10,7"
+                                                VerticalAlignment="Top">
+                                            <Button.Style>
+                                                <Style TargetType="Button" BasedOn="{StaticResource SettingsIconTextButtonStyle}">
+                                                    <Setter Property="Content">
+                                                        <Setter.Value>
+                                                            <iconPacks:PackIconLucide Kind="Eye" Width="16" Height="16" />
+                                                        </Setter.Value>
+                                                    </Setter>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsGeminiApiKeyVisible}" Value="True">
+                                                            <Setter Property="Content">
+                                                                <Setter.Value>
+                                                                    <iconPacks:PackIconLucide Kind="EyeOff" Width="16" Height="16" />
+                                                                </Setter.Value>
+                                                            </Setter>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Button.Style>
+                                        </Button>
+                                    </Grid>
+                                    <TextBlock Text="Model" Style="{StaticResource SettingsLabelStyle}" />
+                                    <ComboBox ItemsSource="{Binding GeminiModelOptions}"
+                                              SelectedItem="{Binding SelectedGeminiModel, Mode=TwoWay}"
+                                              DisplayMemberPath="DisplayLabel"
+                                              Margin="0,0,0,10"
+                                              MinWidth="260"
+                                              HorizontalAlignment="Left" />
+                                    <TextBlock Text="Fallback models (try-order)"
+                                               Style="{StaticResource SettingsLabelStyle}" />
+                                    <TextBlock Text="{Binding GeminiModelChainSummary}"
+                                               Style="{StaticResource SettingsHintStyle}"
+                                               Margin="0,0,0,6" />
+                                    <Grid Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <ListBox Grid.Column="0"
+                                                 ItemsSource="{Binding GeminiFallbackModels}"
+                                                 SelectedItem="{Binding SelectedGeminiFallback, Mode=TwoWay}"
+                                                 DisplayMemberPath="DisplayLabel"
+                                                 MinHeight="72"
+                                                 MaxHeight="120"
+                                                 Margin="0,0,8,0" />
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                            <Button Command="{Binding MoveGeminiFallbackUpCommand}"
+                                                    Style="{StaticResource SettingsIconTextButtonStyle}"
+                                                    Margin="0,0,0,4"
+                                                    ToolTip="Move up">
+                                                <iconPacks:PackIconLucide Kind="ChevronUp" Width="16" Height="16" />
+                                            </Button>
+                                            <Button Command="{Binding MoveGeminiFallbackDownCommand}"
+                                                    Style="{StaticResource SettingsIconTextButtonStyle}"
+                                                    Margin="0,0,0,4"
+                                                    ToolTip="Move down">
+                                                <iconPacks:PackIconLucide Kind="ChevronDown" Width="16" Height="16" />
+                                            </Button>
+                                            <Button Command="{Binding RemoveGeminiFallbackCommand}"
+                                                    Style="{StaticResource SettingsIconTextButtonStyle}"
+                                                    ToolTip="Remove">
+                                                <iconPacks:PackIconLucide Kind="Trash2" Width="16" Height="16" />
+                                            </Button>
+                                        </StackPanel>
+                                    </Grid>
+                                    <WrapPanel Margin="0,0,0,10">
+                                        <ComboBox ItemsSource="{Binding GeminiFallbackPickerOptions}"
+                                                  SelectedItem="{Binding SelectedGeminiFallbackToAdd, Mode=TwoWay}"
+                                                  DisplayMemberPath="DisplayLabel"
+                                                  MinWidth="220"
+                                                  Margin="0,0,8,0" />
+                                        <Button Command="{Binding AddGeminiFallbackCommand}"
+                                                Style="{StaticResource SettingsIconTextButtonStyle}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconLucide Kind="Plus" Width="16" Height="16" Margin="0,0,7,0" />
+                                                <TextBlock Text="Add fallback" />
+                                            </StackPanel>
+                                        </Button>
+                                    </WrapPanel>
+                                    <TextBlock Style="{StaticResource SettingsHintStyle}"
+                                               Text="Up to 3 fallbacks. On 429/503 the app retries the current model, then tries fallbacks in order."
+                                               Margin="0,0,0,8" />
+                                    <TextBlock Style="{StaticResource SettingsHintStyle}"
+                                               Margin="0,0,0,8">
+                                        <Hyperlink Command="{Binding OpenGeminiModelsFileCommand}">
+                                            <Run Text="Models file: " />
+                                            <Run Text="{Binding GeminiModelsFilePath, Mode=OneWay}" />
+                                        </Hyperlink>
+                                    </TextBlock>
+                                    <TextBlock Text="{Binding GeminiDailyUsageLabel}"
+                                               Style="{StaticResource SettingsLabelStyle}"
+                                               Margin="0,0,0,8" />
+                                    <WrapPanel Margin="0,0,0,8">
+                                        <Button Command="{Binding RefreshGeminiModelsCommand}"
+                                                Style="{StaticResource SettingsIconTextButtonStyle}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconLucide Kind="RefreshCw" Width="16" Height="16" Margin="0,0,7,0" />
+                                                <TextBlock Text="Refresh models" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Command="{Binding TestGeminiCommand}"
+                                                Style="{StaticResource SettingsIconTextButtonStyle}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconLucide Kind="Sparkles" Width="16" Height="16" Margin="0,0,7,0" />
+                                                <TextBlock Text="Test Gemini" />
+                                            </StackPanel>
+                                        </Button>
+                                    </WrapPanel>
+                                </StackPanel>
+                            </materialDesign:Card>
+
+                            <materialDesign:Card Style="{StaticResource SettingsCardStyle}">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <Border Width="8"
+                                                Height="24"
+                                                CornerRadius="4"
+                                                Background="{StaticResource AppBrushNewAccent}"
+                                                Margin="0,0,8,0" />
+                                        <TextBlock Text="qBittorrent" Style="{StaticResource SettingsSectionTitleStyle}" Margin="0" />
+                                    </StackPanel>
+                                    <TextBlock Text="Web UI URL" Style="{StaticResource SettingsLabelStyle}" />
+                                    <TextBox Text="{Binding QbittorrentWebUiUrl, UpdateSourceTrigger=PropertyChanged}"
+                                             Style="{StaticResource SettingsTextBoxStyle}" />
+                                    <TextBlock Text="Username" Style="{StaticResource SettingsLabelStyle}" />
+                                    <TextBox Text="{Binding QbittorrentUsername, UpdateSourceTrigger=PropertyChanged}"
+                                             Style="{StaticResource SettingsTextBoxStyle}" />
+                                    <TextBlock Text="Password" Style="{StaticResource SettingsLabelStyle}" />
+                                    <TextBox Text="{Binding QbittorrentPassword, UpdateSourceTrigger=PropertyChanged}"
+                                             Style="{StaticResource SettingsTextBoxStyle}" />
+                                    <TextBlock Text="API key" Style="{StaticResource SettingsLabelStyle}" />
+                                    <Grid Margin="0,0,0,4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <Grid Grid.Column="0">
+                                            <TextBox Text="{Binding QbittorrentApiKey, UpdateSourceTrigger=PropertyChanged}"
+                                                     Margin="0">
+                                                <TextBox.Style>
+                                                    <Style TargetType="TextBox" BasedOn="{StaticResource SettingsTextBoxStyle}">
+                                                        <Setter Property="Margin" Value="0" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsQbittorrentApiKeyVisible}" Value="False">
+                                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBox.Style>
+                                            </TextBox>
+                                            <TextBox Text="{Binding QbittorrentApiKeyMasked}"
+                                                     IsReadOnly="True"
+                                                     Margin="0">
+                                                <TextBox.Style>
+                                                    <Style TargetType="TextBox" BasedOn="{StaticResource SettingsTextBoxStyle}">
+                                                        <Setter Property="Margin" Value="0" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsQbittorrentApiKeyVisible}" Value="True">
+                                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBox.Style>
+                                            </TextBox>
+                                        </Grid>
+                                        <Button Grid.Column="1"
+                                                Command="{Binding ToggleQbittorrentApiKeyVisibilityCommand}"
+                                                Margin="8,0,0,0"
+                                                Padding="10,7"
+                                                VerticalAlignment="Top">
+                                            <Button.Style>
+                                                <Style TargetType="Button" BasedOn="{StaticResource SettingsIconTextButtonStyle}">
+                                                    <Setter Property="Content">
+                                                        <Setter.Value>
+                                                            <iconPacks:PackIconLucide Kind="Eye" Width="16" Height="16" />
+                                                        </Setter.Value>
+                                                    </Setter>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsQbittorrentApiKeyVisible}" Value="True">
+                                                            <Setter Property="Content">
+                                                                <Setter.Value>
+                                                                    <iconPacks:PackIconLucide Kind="EyeOff" Width="16" Height="16" />
+                                                                </Setter.Value>
+                                                            </Setter>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Button.Style>
+                                        </Button>
+                                    </Grid>
+                                    <TextBlock Style="{StaticResource SettingsHintStyle}"
+                                               Margin="0,0,0,8"
+                                               Text="qBittorrent 5.2+. If set, used instead of username/password for WebAPI. Does not log into the embedded WebUI." />
+                                    <Button Command="{Binding TestQbittorrentConnectionCommand}"
+                                            Style="{StaticResource SettingsIconTextButtonStyle}"
+                                            HorizontalAlignment="Left"
+                                            Margin="0,0,0,8">
+                                        <StackPanel Orientation="Horizontal">
+                                            <iconPacks:PackIconLucide Kind="Wifi" Width="16" Height="16" Margin="0,0,7,0" />
+                                            <TextBlock Text="Test Connection" />
+                                        </StackPanel>
+                                    </Button>
+                                    <CheckBox IsChecked="{Binding QbittorrentConfirmCloseViewer, Mode=TwoWay}"
+                                              Margin="0,0,0,8"
+                                              Content="Ask before closing the qBittorrent window" />
+                                    <CheckBox IsChecked="{Binding QbittorrentAutoCloseViewerOnBackground, Mode=TwoWay}"
+                                              Margin="0,0,0,8"
+                                              Content="Auto-close qBittorrent window when the app enters background mode" />
+                                    <TextBlock Text="Process recovery" Style="{StaticResource SettingsSectionTitleStyle}" Margin="0,8,0,8" />
+                                    <CheckBox IsChecked="{Binding QbittorrentProcessRestartEnabled, Mode=TwoWay}"
+                                              Margin="0,0,0,8"
+                                              Content="Enable auto-restart when WebUI is down" />
+                                    <TextBlock Style="{StaticResource SettingsHintStyle}" Margin="0,0,0,8"
+                                               Text="Only when WebUI is connection-refused/timeout and qbittorrent is running. Never for bad password/403/wrong URL. Opt-in; cooldown; verify WebUI after start." />
+                                    <StackPanel IsEnabled="{Binding QbittorrentProcessRestartEnabled}">
+                                        <TextBlock Text="Executable path" Style="{StaticResource SettingsLabelStyle}" />
+                                        <DockPanel LastChildFill="True">
+                                            <Button DockPanel.Dock="Right"
+                                                    Command="{Binding BrowseQbittorrentExecutablePathCommand}"
+                                                    Style="{StaticResource SettingsIconTextButtonStyle}"
+                                                    Margin="8,0,0,10">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <iconPacks:PackIconLucide Kind="FolderOpen" Width="16" Height="16" Margin="0,0,7,0" />
+                                                    <TextBlock Text="Browse" />
+                                                </StackPanel>
+                                            </Button>
+                                            <TextBox Text="{Binding QbittorrentProcessRestartExecutablePath, UpdateSourceTrigger=PropertyChanged}"
+                                                     Style="{StaticResource SettingsTextBoxStyle}" />
+                                        </DockPanel>
+                                        <TextBlock Text="Graceful close wait (seconds)" Style="{StaticResource SettingsLabelStyle}" />
+                                        <Border Style="{StaticResource SettingsNumericChromeStyle}">
+                                            <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
+                                                                          Value="{Binding QbittorrentProcessRestartGracefulShutdownSeconds, UpdateSourceTrigger=PropertyChanged}"
+                                                                          Minimum="5"
+                                                                          Maximum="120" />
+                                        </Border>
+                                        <TextBlock Text="Cooldown (minutes)" Style="{StaticResource SettingsLabelStyle}" />
+                                        <Border Style="{StaticResource SettingsNumericChromeStyle}">
+                                            <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
+                                                                          Value="{Binding QbittorrentProcessRestartCooldownMinutes, UpdateSourceTrigger=PropertyChanged}"
+                                                                          Minimum="5"
+                                                                          Maximum="120" />
+                                        </Border>
+                                        <TextBlock Text="Max restarts per hour" Style="{StaticResource SettingsLabelStyle}" />
+                                        <Border Style="{StaticResource SettingsNumericChromeStyle}">
+                                            <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
+                                                                          Value="{Binding QbittorrentProcessRestartMaxRestartsPerHour, UpdateSourceTrigger=PropertyChanged}"
+                                                                          Minimum="1"
+                                                                          Maximum="6" />
+                                        </Border>
+                                        <TextBlock Text="WebUI ready timeout (seconds)" Style="{StaticResource SettingsLabelStyle}" />
+                                        <Border Style="{StaticResource SettingsNumericChromeStyle}">
+                                            <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
+                                                                          Value="{Binding QbittorrentProcessRestartWebUiReadyTimeoutSeconds, UpdateSourceTrigger=PropertyChanged}"
+                                                                          Minimum="15"
+                                                                          Maximum="180" />
+                                        </Border>
+                                    </StackPanel>
+                                </StackPanel>
+                            </materialDesign:Card>
+
+                            <materialDesign:Card Style="{StaticResource SettingsCardStyle}">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <Border Width="8"
+                                                Height="24"
+                                                CornerRadius="4"
+                                                Background="{StaticResource AppBrushJellyfinBrand}"
+                                                Margin="0,0,8,0" />
+                                        <TextBlock Text="Jellyfin" Style="{StaticResource SettingsSectionTitleStyle}" Margin="0" />
+                                    </StackPanel>
+                                    <TextBlock Text="Jellyfin base URL" Style="{StaticResource SettingsLabelStyle}" />
+                                    <TextBox Text="{Binding AutoTrackJellyfinBaseUrl, UpdateSourceTrigger=PropertyChanged}"
+                                             Style="{StaticResource SettingsTextBoxStyle}" />
+                                    <TextBlock Text="Jellyfin API key" Style="{StaticResource SettingsLabelStyle}" />
+                                    <Grid Margin="0,0,0,10">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <Grid Grid.Column="0">
+                                            <TextBox Text="{Binding AutoTrackJellyfinApiKey, UpdateSourceTrigger=PropertyChanged}"
+                                                     Margin="0">
+                                                <TextBox.Style>
+                                                    <Style TargetType="TextBox" BasedOn="{StaticResource SettingsTextBoxStyle}">
+                                                        <Setter Property="Margin" Value="0" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsJellyfinApiKeyVisible}" Value="False">
+                                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBox.Style>
+                                            </TextBox>
+                                            <TextBox Text="{Binding AutoTrackJellyfinApiKeyMasked}"
+                                                     IsReadOnly="True"
+                                                     Margin="0">
+                                                <TextBox.Style>
+                                                    <Style TargetType="TextBox" BasedOn="{StaticResource SettingsTextBoxStyle}">
+                                                        <Setter Property="Margin" Value="0" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsJellyfinApiKeyVisible}" Value="True">
+                                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBox.Style>
+                                            </TextBox>
+                                        </Grid>
+                                        <Button Grid.Column="1"
+                                                Command="{Binding ToggleJellyfinApiKeyVisibilityCommand}"
+                                                Margin="8,0,0,0"
+                                                Padding="10,7"
+                                                VerticalAlignment="Top">
+                                            <Button.Style>
+                                                <Style TargetType="Button" BasedOn="{StaticResource SettingsIconTextButtonStyle}">
+                                                    <Setter Property="Content">
+                                                        <Setter.Value>
+                                                            <iconPacks:PackIconLucide Kind="Eye" Width="16" Height="16" />
+                                                        </Setter.Value>
+                                                    </Setter>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsJellyfinApiKeyVisible}" Value="True">
+                                                            <Setter Property="Content">
+                                                                <Setter.Value>
+                                                                    <iconPacks:PackIconLucide Kind="EyeOff" Width="16" Height="16" />
+                                                                </Setter.Value>
+                                                            </Setter>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Button.Style>
+                                        </Button>
+                                    </Grid>
+                                    <Button Command="{Binding TestJellyfinConnectionCommand}"
+                                            Style="{StaticResource SettingsIconTextButtonStyle}"
+                                            HorizontalAlignment="Left"
+                                            Margin="0,0,0,8">
+                                        <StackPanel Orientation="Horizontal">
+                                            <iconPacks:PackIconLucide Kind="Wifi" Width="16" Height="16" Margin="0,0,7,0" />
+                                            <TextBlock Text="Test Jellyfin" />
+                                        </StackPanel>
+                                    </Button>
+                                    <CheckBox IsChecked="{Binding AutoTrackJellyfinConfirmCloseViewer, Mode=TwoWay}"
+                                              Margin="0,0,0,8"
+                                              Content="Ask before closing the Jellyfin window" />
+                                    <CheckBox IsChecked="{Binding AutoTrackJellyfinAutoCloseViewerOnBackground, Mode=TwoWay}"
+                                              Margin="0,0,0,8"
+                                              Content="Auto-close Jellyfin window when the app enters background mode" />
+                                    <TextBlock Style="{StaticResource SettingsHintStyle}"
+                                               Text="Path-refresh and WARP-hold settings live under Auto-Track." />
+                                </StackPanel>
+                            </materialDesign:Card>
+
+                            <materialDesign:Card Style="{StaticResource SettingsCardStyle}">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <Border Width="8"
+                                                Height="24"
+                                                CornerRadius="4"
+                                                Background="{StaticResource AppBrushWarpBrand}"
+                                                Margin="0,0,8,0" />
+                                        <TextBlock Text="Cloudflare WARP" Style="{StaticResource SettingsSectionTitleStyle}" Margin="0" />
+                                    </StackPanel>
+                                    <CheckBox IsChecked="{Binding WarpEnabled, Mode=TwoWay}"
+                                              Margin="0,0,0,8"
+                                              Content="Enable WARP CLI integration" />
+                                    <CheckBox IsChecked="{Binding WarpAutoRecoverOnSsl, Mode=TwoWay}"
+                                              Margin="0,0,0,4"
+                                              Content="Auto-recover with WARP on SSL/TLS errors (Auto-Track only)" />
+                                    <TextBlock Style="{StaticResource SettingsHintStyle}" Margin="0,0,0,8"
+                                               Text="If an Auto-Track TMDB refresh fails with SSL/TLS, connect WARP, retry, keep WARP for the rest of that cycle, then disconnect. Does not affect Library TMDB." />
+                                    <CheckBox IsChecked="{Binding WarpConfirmDisconnectDuringAutoTrack, Mode=TwoWay}"
+                                              Margin="0,0,0,4"
+                                              Content="Ask before disconnecting WARP while Auto-Track is using it" />
+                                    <TextBlock Style="{StaticResource SettingsHintStyle}" Margin="0,0,0,8"
+                                               Text="When Auto-Track turned WARP on for TMDB recover, torrent hunt, or Jellyfin hold, the status pill asks before disconnecting. Turn off to disconnect immediately." />
+                                    <TextBlock Text="Executable path (optional override)" Style="{StaticResource SettingsLabelStyle}" />
+                                    <DockPanel LastChildFill="True">
+                                        <Button DockPanel.Dock="Right"
+                                                Command="{Binding BrowseWarpExecutablePathCommand}"
+                                                Style="{StaticResource SettingsIconTextButtonStyle}"
+                                                Margin="8,0,0,10">
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconLucide Kind="FolderOpen" Width="16" Height="16" Margin="0,0,7,0" />
+                                                <TextBlock Text="Browse" />
+                                            </StackPanel>
+                                        </Button>
+                                        <TextBox Text="{Binding WarpExecutablePath, UpdateSourceTrigger=PropertyChanged}"
+                                                 Style="{StaticResource SettingsTextBoxStyle}" />
+                                    </DockPanel>
+                                    <TextBlock Style="{StaticResource SettingsHintStyle}" Margin="0,0,0,8">
+                                        <Run Text="Resolved path: " />
+                                        <Run Text="{Binding WarpCliResolvedPath, Mode=OneWay}" />
+                                        <Run Text=" (" />
+                                        <Run Text="{Binding WarpCliAvailabilityLabel, Mode=OneWay}" />
+                                        <Run Text=")" />
+                                    </TextBlock>
+                                    <TextBlock Text="Connect timeout (seconds)" Style="{StaticResource SettingsLabelStyle}" />
+                                    <Border Style="{StaticResource SettingsNumericChromeStyle}">
+                                        <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
+                                                                      Value="{Binding WarpConnectTimeoutSeconds, UpdateSourceTrigger=PropertyChanged}"
+                                                                      Minimum="5"
+                                                                      Maximum="120" />
+                                    </Border>
+                                    <Button Command="{Binding TestWarpConnectionCommand}"
+                                            Style="{StaticResource SettingsIconTextButtonStyle}"
+                                            HorizontalAlignment="Left">
+                                        <StackPanel Orientation="Horizontal">
+                                            <iconPacks:PackIconLucide Kind="Wifi" Width="16" Height="16" Margin="0,0,7,0" />
+                                            <TextBlock Text="Test Connection" />
+                                        </StackPanel>
+                                    </Button>
+                                </StackPanel>
+                            </materialDesign:Card>
+                        </StackPanel>
+
+                        <Border Grid.Column="2" Style="{StaticResource SettingsGuidePanelStyle}">
+                            <StackPanel>
+                                <TextBlock Text="Guide" Style="{StaticResource SettingsSectionTitleStyle}" />
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="TMDB token" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Use the v4 read access token. Test validates the token only if the network/TLS connection reaches TMDB."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Gemini AI" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Used to map season pack specials/OVAs to episodes when filenames are ambiguous. Needs an API key and is off by default. Pick a primary model plus up to 3 fallbacks; on a 429/503 response the app retries the primary once, then tries fallbacks in order."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Gemini models &amp; usage" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Refresh models pulls the current list from Google and updates the models file link above. The daily usage label tracks calls made today. Test Gemini sends a small request using the selected model/API key."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="qBittorrent Web UI" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="The app connects through the Web UI API. Keep the URL pointed at the same host and port you open in the browser."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="qBittorrent window" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Torrent Open/Show launches a standalone qBittorrent window. Ask before closing shows a Yes/No prompt on the window close button. Auto-close runs when the app enters background mode (after the existing debounce when minimized or hidden to tray) and skips that prompt."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="qBittorrent process recovery" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Opt-in only. Restarts qbittorrent.exe when WebUI is connection-refused/timeout and the process is still running (bind-fail). Never on bad password, 403, or wrong URL. Skips if another PID owns the WebUI port. Cooldown and max/hour limit apply; WebUI is verified after start before hunt continues."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Hunt dependency gate" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Torrent hunt aborts early if WARP is enabled and cannot connect, or if qBittorrent WebUI is unavailable after any recovery attempt. Jellyfin offline does not abort hunt — path refresh stays queued until the server is back."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Saving" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Test buttons check the current form values. Use Save Settings to persist successful connection details."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Jellyfin connection" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Base URL and API key used for path refresh and Test Jellyfin. Path-refresh behavior and WARP-hold options are configured under Auto-Track."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Jellyfin window" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="News Open/Show launches a standalone Jellyfin window. Ask before closing shows a Yes/No prompt on the window close button. Auto-close runs when the app enters background mode (after the existing debounce when minimized or hidden to tray) and skips that prompt."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Cloudflare WARP" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Requires the Cloudflare WARP desktop client installed on Windows. The app uses warp-cli.exe to connect before Auto-Track hunt fetch/add and disconnect after torrents are added. Optionally, Auto-Track TMDB can self-recover on SSL/TLS by connecting WARP for that cycle then disconnecting. Library TMDB is unaffected. If WARP is already connected, the app leaves that session open unless Auto-Track owned the connect. The status pill toggles connect/disconnect."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Ask before disconnecting" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="When Auto-Track turned WARP on for TMDB recover, torrent hunt, or Jellyfin hold, clicking the status pill asks before disconnecting. Turn off to disconnect immediately."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Test Connection" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Checks status first. If not connected, connects briefly then disconnects to verify the CLI works. Save settings to persist changes."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Connect timeout" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="How long the app waits for warp-cli to report Connected before giving up and treating the attempt as failed."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Executable path" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Leave blank to use the default install path. Override only if warp-cli.exe is in a non-standard location."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                </ScrollViewer>
+            <!-- #endregion -->
+
+            <!-- #region Torrent storage panel -->
+                <ScrollViewer Style="{StaticResource TorrentStorageSettingsSectionPanelStyle}">
+                    <Grid Margin="0,16,8,0"
+                          MaxWidth="1220"
+                          HorizontalAlignment="Left">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="24" />
+                            <ColumnDefinition Width="380" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0">
+                            <materialDesign:Card Style="{StaticResource SettingsCardStyle}">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <Border Width="8"
+                                                Height="24"
+                                                CornerRadius="4"
+                                                Background="{StaticResource AppBrushAccent}"
+                                                Margin="0,0,8,0" />
+                                        <TextBlock Text="Default Storage" Style="{StaticResource SettingsSectionTitleStyle}" Margin="0" />
+                                    </StackPanel>
+                                    <TextBlock Text="Download folder" Style="{StaticResource SettingsLabelStyle}" />
+                                    <DockPanel LastChildFill="True">
+                                        <Button DockPanel.Dock="Right"
+                                                Command="{Binding BrowseAutoTorrentDownloadFolderCommand}"
+                                                Style="{StaticResource SettingsIconTextButtonStyle}"
+                                                Margin="8,0,0,10">
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconLucide Kind="FolderOpen" Width="16" Height="16" Margin="0,0,7,0" />
+                                                <TextBlock Text="Browse" />
+                                            </StackPanel>
+                                        </Button>
+                                        <TextBox Text="{Binding AutoTorrentDownloadFolder, UpdateSourceTrigger=PropertyChanged}"
+                                                 Style="{StaticResource SettingsTextBoxStyle}" />
+                                    </DockPanel>
+                                    <TextBlock Text="TV Show category" Style="{StaticResource SettingsLabelStyle}" />
+                                    <TextBox Text="{Binding AutoTorrentTvShowCategoryName, UpdateSourceTrigger=PropertyChanged}"
+                                             Style="{StaticResource SettingsTextBoxStyle}" />
+                                    <TextBlock Text="Movie category" Style="{StaticResource SettingsLabelStyle}" />
+                                    <TextBox Text="{Binding AutoTorrentMovieCategoryName, UpdateSourceTrigger=PropertyChanged}"
+                                             Style="{StaticResource SettingsTextBoxStyle}" />
+                                    <CheckBox IsChecked="{Binding AutoLinkCompletedDownloads, Mode=TwoWay}"
+                                              Margin="0,4,0,0"
+                                              Content="Auto-link completed downloads" />
+                                </StackPanel>
+                            </materialDesign:Card>
+
+                            <materialDesign:Card Style="{StaticResource SettingsCardStyle}">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <Border Width="8"
+                                                Height="24"
+                                                CornerRadius="4"
+                                                Background="{StaticResource AppBrushNewAccent}"
+                                                Margin="0,0,8,0" />
+                                        <TextBlock Text="Download Folder Options" Style="{StaticResource SettingsSectionTitleStyle}" Margin="0" />
+                                    </StackPanel>
+                                    <ListBox ItemsSource="{Binding AutoTorrentDownloadFolders}"
+                                             SelectedItem="{Binding SelectedAutoTorrentDownloadFolder, Mode=TwoWay}"
+                                             Style="{StaticResource SettingsListBoxStyle}" />
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button Command="{Binding AddAutoTorrentDownloadFolderCommand}"
+                                                Style="{StaticResource SettingsIconTextButtonStyle}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconLucide Kind="Plus" Width="16" Height="16" Margin="0,0,7,0" />
+                                                <TextBlock Text="Add Folder" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Command="{Binding RemoveSelectedAutoTorrentDownloadFolderCommand}"
+                                                Style="{StaticResource SettingsIconTextButtonStyle}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconLucide Kind="Trash2" Width="16" Height="16" Margin="0,0,7,0" />
+                                                <TextBlock Text="Remove Selected" />
+                                            </StackPanel>
+                                        </Button>
+                                    </StackPanel>
+                                </StackPanel>
+                            </materialDesign:Card>
+
+                            <materialDesign:Card Style="{StaticResource SettingsCardStyle}">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <Border Width="8"
+                                                Height="24"
+                                                CornerRadius="4"
+                                                Background="{StaticResource AppBrushDanger}"
+                                                Margin="0,0,8,0" />
+                                        <TextBlock Text="Candidate Maintenance" Style="{StaticResource SettingsSectionTitleStyle}" Margin="0" />
+                                    </StackPanel>
+                                    <WrapPanel>
+                                        <Button Command="{Binding ClearEpisodeSelectedCandidatesCommand}"
+                                                Style="{StaticResource SettingsIconTextButtonStyle}">
+                                            <TextBlock Text="Clear Episode Candidates" />
+                                        </Button>
+                                        <Button Command="{Binding ClearSeasonPackSelectedCandidatesCommand}"
+                                                Style="{StaticResource SettingsIconTextButtonStyle}">
+                                            <TextBlock Text="Clear Pack Candidates" />
+                                        </Button>
+                                        <Button Command="{Binding ClearMovieSelectedCandidatesCommand}"
+                                                Style="{StaticResource SettingsIconTextButtonStyle}">
+                                            <TextBlock Text="Clear Movie Candidates" />
+                                        </Button>
+                                        <Button Command="{Binding ClearAllSelectedCandidatesCommand}"
+                                                Style="{StaticResource SettingsIconTextButtonStyle}">
+                                            <TextBlock Text="Clear All Candidates" />
+                                        </Button>
+                                    </WrapPanel>
+                                </StackPanel>
+                            </materialDesign:Card>
+                        </StackPanel>
+
+                        <Border Grid.Column="2" Style="{StaticResource SettingsGuidePanelStyle}">
+                            <StackPanel>
+                                <TextBlock Text="Guide" Style="{StaticResource SettingsSectionTitleStyle}" />
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Download folder" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="This is the default save path used when adding torrents through the app."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Folder options" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Keep common download folders here so recipe and cart workflows can reuse known storage targets."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Candidate maintenance" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="These buttons clear saved candidate selections only. They do not delete media files or torrents."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                </ScrollViewer>
+            <!-- #endregion -->
+
+            <!-- #region Notifications panel -->
+                <ScrollViewer Style="{StaticResource NotificationsSettingsSectionPanelStyle}">
+                    <Grid Margin="0,16,8,0"
+                          MaxWidth="1220"
+                          HorizontalAlignment="Left">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="24" />
+                            <ColumnDefinition Width="380" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0">
+                            <materialDesign:Card Style="{StaticResource SettingsCardStyle}">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <Border Width="8"
+                                                Height="24"
+                                                CornerRadius="4"
+                                                Background="{StaticResource AppBrushAccent}"
+                                                Margin="0,0,8,0" />
+                                        <TextBlock Text="Notification preferences" Style="{StaticResource SettingsSectionTitleStyle}" Margin="0" />
+                                    </StackPanel>
+                                    <TextBlock Text="Choose which Action Center toasts to show. Changes apply after Save; no restart needed."
+                                               Style="{StaticResource SettingsHintStyle}"
+                                               Margin="0,0,0,12" />
+                                    <ItemsControl ItemsSource="{Binding NotificationPreferences}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Margin="0,0,0,10">
+                                                    <CheckBox IsChecked="{Binding IsEnabled, Mode=TwoWay}"
+                                                              Content="{Binding Title}" />
+                                                    <TextBlock Text="{Binding Description}"
+                                                               Style="{StaticResource SettingsHintStyle}"
+                                                               Margin="28,2,0,0"
+                                                               TextWrapping="Wrap" />
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </materialDesign:Card>
+
+                            <materialDesign:Card Style="{StaticResource SettingsCardStyle}">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <Border Width="8"
+                                                Height="24"
+                                                CornerRadius="4"
+                                                Background="{StaticResource AppBrushAccent}"
+                                                Margin="0,0,8,0" />
+                                        <TextBlock Text="Test Notification" Style="{StaticResource SettingsSectionTitleStyle}" Margin="0" />
+                                    </StackPanel>
+                                    <TextBlock Text="Title" Style="{StaticResource SettingsLabelStyle}" />
+                                    <TextBox Text="{Binding NotificationTestTitle, UpdateSourceTrigger=PropertyChanged}"
+                                             Style="{StaticResource SettingsTextBoxStyle}" />
+                                    <TextBlock Text="Message" Style="{StaticResource SettingsLabelStyle}" />
+                                    <TextBox Text="{Binding NotificationTestMessage, UpdateSourceTrigger=PropertyChanged}"
+                                             Style="{StaticResource SettingsTextBoxStyle}"
+                                             AcceptsReturn="True"
+                                             TextWrapping="Wrap"
+                                             MinHeight="72"
+                                             VerticalScrollBarVisibility="Auto" />
+                                    <TextBlock Text="Hero / cover image (optional, large banner)" Style="{StaticResource SettingsLabelStyle}" />
+                                    <DockPanel LastChildFill="True">
+                                        <Button DockPanel.Dock="Right"
+                                                Command="{Binding BrowseNotificationTestImageCommand}"
+                                                Style="{StaticResource SettingsIconTextButtonStyle}"
+                                                Margin="8,0,0,10">
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconLucide Kind="Image" Width="16" Height="16" Margin="0,0,7,0" />
+                                                <TextBlock Text="Browse" />
+                                            </StackPanel>
+                                        </Button>
+                                        <TextBox Text="{Binding NotificationTestImagePathOrUrl, UpdateSourceTrigger=PropertyChanged}"
+                                                 Style="{StaticResource SettingsTextBoxStyle}" />
+                                    </DockPanel>
+                                    <TextBlock Text="Local path or HTTPS URL. Leave empty for no banner."
+                                               Style="{StaticResource SettingsHintStyle}"
+                                               Margin="0,0,0,10" />
+                                    <TextBlock Text="Inline icon (optional, small image beside text)" Style="{StaticResource SettingsLabelStyle}" />
+                                    <DockPanel LastChildFill="True">
+                                        <Button DockPanel.Dock="Right"
+                                                Command="{Binding BrowseNotificationTestInlineImageCommand}"
+                                                Style="{StaticResource SettingsIconTextButtonStyle}"
+                                                Margin="8,0,0,10">
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconLucide Kind="Image" Width="16" Height="16" Margin="0,0,7,0" />
+                                                <TextBlock Text="Browse" />
+                                            </StackPanel>
+                                        </Button>
+                                        <TextBox Text="{Binding NotificationTestInlineImagePathOrUrl, UpdateSourceTrigger=PropertyChanged}"
+                                                 Style="{StaticResource SettingsTextBoxStyle}" />
+                                    </DockPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                        <Button Command="{Binding UseWarpLogoForTestInlineCommand}"
+                                                Content="Use WARP logo"
+                                                Margin="0,0,8,0"
+                                                Style="{StaticResource MaterialDesignOutlinedButton}" />
+                                        <Button Command="{Binding UseJellyfinLogoForTestInlineCommand}"
+                                                Content="Use Jellyfin logo"
+                                                Style="{StaticResource MaterialDesignOutlinedButton}" />
+                                    </StackPanel>
+                                    <TextBlock Text="Same slot as Auto-Track posters / WARP·Jellyfin status toasts. Prefer a square PNG."
+                                               Style="{StaticResource SettingsHintStyle}"
+                                               Margin="0,0,0,10" />
+                                    <Button Command="{Binding SendTestNotificationCommand}"
+                                            Style="{StaticResource SettingsPrimaryIconTextButtonStyle}"
+                                            Margin="0,4,0,0"
+                                            HorizontalAlignment="Left">
+                                        <StackPanel Orientation="Horizontal">
+                                            <iconPacks:PackIconLucide Kind="Bell" Width="16" Height="16" Margin="0,0,7,0" />
+                                            <TextBlock Text="Send test notification" />
+                                        </StackPanel>
+                                    </Button>
+                                </StackPanel>
+                            </materialDesign:Card>
+                        </StackPanel>
+
+                        <Border Grid.Column="2" Style="{StaticResource SettingsGuidePanelStyle}">
+                            <StackPanel>
+                                <TextBlock Text="Guide" Style="{StaticResource SettingsSectionTitleStyle}" />
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Preferences" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Toggle categories above, then Save. New toast types added in future updates appear here automatically and default to on."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Action Center" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Toasts appear in the Windows notification center. Edit the title and message, then send a test."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Click to open" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Clicking the notification should bring Media Manager to the foreground, including when the app is hidden in the tray."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Stacking" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Each test send creates a separate notification. Re-using the same tag replaces an existing toast instead of stacking."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Cover art" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Hero image shows as cover art in the toast. TMDB poster URLs work, for example: https://image.tmdb.org/t/p/w342/&lt;poster_path&gt;"
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Inline icon" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Use WARP logo / Use Jellyfin logo fill the inline icon field with the same image used by real WARP·Jellyfin status toasts, so a test looks identical to the real notification."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Troubleshooting" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="If nothing appears, check Windows notification permissions for Media Manager and whether Focus Assist is blocking alerts."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                </ScrollViewer>
+            <!-- #endregion -->
+
+            <!-- #region Backup panel -->
+                <ScrollViewer Style="{StaticResource BackupSettingsSectionPanelStyle}">
+                    <Grid Margin="0,16,8,0"
+                          MaxWidth="1220"
+                          HorizontalAlignment="Left">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="24" />
+                            <ColumnDefinition Width="380" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0">
+                            <materialDesign:Card Style="{StaticResource SettingsCardStyle}">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <Border Width="8"
+                                                Height="24"
+                                                CornerRadius="4"
+                                                Background="{StaticResource AppBrushAccent}"
+                                                Margin="0,0,8,0" />
+                                        <TextBlock Text="Google Drive Backup" Style="{StaticResource SettingsSectionTitleStyle}" Margin="0" />
+                                    </StackPanel>
+                                    <CheckBox IsChecked="{Binding BackupEnabled, Mode=TwoWay}"
+                                              Margin="0,0,0,8"
+                                              Content="Enable scheduled and event-driven backups" />
+                                    <TextBlock Style="{StaticResource SettingsHintStyle}" Margin="0,0,0,8"
+                                               Text="Backs up media-manager.db, settings.json (secrets excluded), and Recipes/ to Google Drive. Posters, logs, and cache files are never backed up." />
+
+                                    <TextBlock Text="Daily safety-net backup hour (0-23, local time)" Style="{StaticResource SettingsLabelStyle}" />
+                                    <Border Style="{StaticResource SettingsNumericChromeStyle}">
+                                        <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
+                                                                      Value="{Binding BackupDailyBackupHour, UpdateSourceTrigger=PropertyChanged}"
+                                                                      Minimum="0"
+                                                                      Maximum="23" />
+                                    </Border>
+
+                                    <TextBlock Text="Event-driven debounce (minutes, for settings/recipes changes)" Style="{StaticResource SettingsLabelStyle}" />
+                                    <Border Style="{StaticResource SettingsNumericChromeStyle}">
+                                        <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
+                                                                      Value="{Binding BackupEventDebounceMinutes, UpdateSourceTrigger=PropertyChanged}"
+                                                                      Minimum="5"
+                                                                      Maximum="240" />
+                                    </Border>
+
+                                    <TextBlock Text="Database backup throttle (hours)" Style="{StaticResource SettingsLabelStyle}" />
+                                    <Border Style="{StaticResource SettingsNumericChromeStyle}">
+                                        <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
+                                                                      Value="{Binding BackupDbThrottleHours, UpdateSourceTrigger=PropertyChanged}"
+                                                                      Minimum="1"
+                                                                      Maximum="24" />
+                                    </Border>
+
+                                    <TextBlock Text="History versions to keep on Drive" Style="{StaticResource SettingsLabelStyle}" />
+                                    <Border Style="{StaticResource SettingsNumericChromeStyle}">
+                                        <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
+                                                                      Value="{Binding BackupHistoryRetentionCount, UpdateSourceTrigger=PropertyChanged}"
+                                                                      Minimum="1"
+                                                                      Maximum="200" />
+                                    </Border>
+
+                                    <TextBlock Style="{StaticResource SettingsHintStyle}" Margin="0,8,0,8">
+                                        <Run Text="This machine's backup id: " />
+                                        <Run Text="{Binding BackupMachineId, Mode=OneWay}" FontFamily="Consolas" />
+                                    </TextBlock>
+
+                                    <TextBlock Style="{StaticResource SettingsHintStyle}" Margin="0,0,0,4">
+                                        <Run Text="Google Drive status: " />
+                                        <Run Text="{Binding BackupConnectionStatusLabel, Mode=OneWay}" FontWeight="SemiBold" />
+                                    </TextBlock>
+                                    <TextBlock Text="Google OAuth client JSON (downloaded from Google Cloud Console)" Style="{StaticResource SettingsLabelStyle}" />
+                                    <Grid Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBox Grid.Column="0"
+                                                 Text="{Binding BackupCredentialsFilePath, UpdateSourceTrigger=PropertyChanged}"
+                                                 Style="{StaticResource SettingsTextBoxStyle}"
+                                                 Margin="0,0,8,0" />
+                                        <Button Grid.Column="1"
+                                                Command="{Binding BrowseBackupCredentialsFileCommand}"
+                                                Style="{StaticResource SettingsIconTextButtonStyle}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconLucide Kind="FolderOpen" Width="16" Height="16" Margin="0,0,7,0" />
+                                                <TextBlock Text="Browse" />
+                                            </StackPanel>
+                                        </Button>
+                                    </Grid>
+                                    <TextBlock Text="{Binding BackupLastRunLabel, Mode=OneWay}"
+                                               Style="{StaticResource SettingsHintStyle}"
+                                               Margin="0,0,0,12" />
+
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button Command="{Binding ConnectGoogleDriveCommand}"
+                                                Style="{StaticResource SettingsIconTextButtonStyle}"
+                                                Margin="0,0,10,0">
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconLucide Kind="CloudCog" Width="16" Height="16" Margin="0,0,7,0" />
+                                                <TextBlock Text="Connect Google Drive" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Command="{Binding BackupNowCommand}"
+                                                Style="{StaticResource SettingsIconTextButtonStyle}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconLucide Kind="CloudUpload" Width="16" Height="16" Margin="0,0,7,0" />
+                                                <TextBlock Text="Backup Now" />
+                                            </StackPanel>
+                                        </Button>
+                                    </StackPanel>
+                                </StackPanel>
+                            </materialDesign:Card>
+
+                            <materialDesign:Card Style="{StaticResource SettingsCardStyle}">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <Border Width="8"
+                                                Height="24"
+                                                CornerRadius="4"
+                                                Background="{StaticResource AppBrushWarning}"
+                                                Margin="0,0,8,0" />
+                                        <TextBlock Text="Restore" Style="{StaticResource SettingsSectionTitleStyle}" Margin="0" />
+                                    </StackPanel>
+                                    <TextBlock Style="{StaticResource SettingsHintStyle}" Margin="0,0,0,8"
+                                               Text="Restores the database and Recipes from a backup on this machine. Settings.json from the backup (secrets already excluded) is saved next to the live settings file for manual review instead of being applied automatically." />
+                                    <Button Command="{Binding RefreshBackupHistoryCommand}"
+                                            Style="{StaticResource SettingsIconTextButtonStyle}"
+                                            HorizontalAlignment="Left"
+                                            Margin="0,0,0,8">
+                                        <StackPanel Orientation="Horizontal">
+                                            <iconPacks:PackIconLucide Kind="RefreshCw" Width="16" Height="16" Margin="0,0,7,0" />
+                                            <TextBlock Text="Refresh History" />
+                                        </StackPanel>
+                                    </Button>
+                                    <ListBox ItemsSource="{Binding BackupHistory}"
+                                             SelectedItem="{Binding SelectedBackupHistoryItem, Mode=TwoWay}"
+                                             DisplayMemberPath="DisplayLabel"
+                                             Style="{StaticResource SettingsListBoxStyle}" />
+                                    <Button Command="{Binding RestoreSelectedBackupCommand}"
+                                            Style="{StaticResource SettingsIconTextButtonStyle}"
+                                            HorizontalAlignment="Left"
+                                            Margin="0,8,0,0">
+                                        <StackPanel Orientation="Horizontal">
+                                            <iconPacks:PackIconLucide Kind="History" Width="16" Height="16" Margin="0,0,7,0" />
+                                            <TextBlock Text="Restore Selected Backup" />
+                                        </StackPanel>
+                                    </Button>
+                                </StackPanel>
+                            </materialDesign:Card>
+                        </StackPanel>
+
+                        <Border Grid.Column="2" Style="{StaticResource SettingsGuidePanelStyle}">
+                            <StackPanel>
+                                <TextBlock Text="Guide" Style="{StaticResource SettingsSectionTitleStyle}" />
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="What gets backed up" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Only media-manager.db, settings.json (with API keys/passwords cleared), and Recipes/. Posters, logs, and Gemini cache files are regenerable and never included."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Scheduling" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Settings/Recipes changes trigger a backup after the debounce window with no further changes. The database is backed up at most once per throttle window since it changes continuously. A daily run acts as a safety net regardless."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Connecting Google Drive" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Browse to the OAuth client JSON you downloaded from Google Cloud Console (e.g. client_secret_....json) — no need to rename or move it. Then click Connect Google Drive to sign in. The app only requests access to files it creates (drive.file scope)."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsGuideItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="Restoring on another machine" Style="{StaticResource SettingsLabelStyle}" />
+                                        <TextBlock Text="Machine-specific paths and API keys/passwords are not restored automatically; re-enter them after a cross-machine restore."
+                                                   Style="{StaticResource SettingsHintStyle}" />
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                </ScrollViewer>
+            <!-- #endregion -->
+            </Grid>
+            <!-- #endregion -->
+        </Grid>
+        <!-- #endregion -->
+
+        <!-- #region Save action bar -->
+        <Border Grid.Row="2"
+                Background="{StaticResource AppBrushSurface}"
+                BorderBrush="{StaticResource AppBrushBorder}"
+                BorderThickness="0,1,0,0"
+                Padding="0,12,0,0">
+            <DockPanel LastChildFill="True">
+                <Button DockPanel.Dock="Left"
+                        Command="{Binding SaveCommand}"
+                        Style="{StaticResource SettingsPrimaryIconTextButtonStyle}">
+                    <StackPanel Orientation="Horizontal">
+                        <iconPacks:PackIconLucide Kind="Save" Width="16" Height="16" Margin="0,0,7,0" />
+                        <TextBlock Text="Save Settings" />
+                    </StackPanel>
+                </Button>
+                <TextBlock Text="{Binding StatusMessage}"
+                           Margin="12,7,0,0"
+                           Foreground="{StaticResource AppBrushAccent}"
+                           TextWrapping="Wrap" />
+            </DockPanel>
+        </Border>
+        <!-- #endregion -->
+    </Grid>
+    <!-- #endregion -->
+</UserControl>
