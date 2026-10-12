@@ -58,13 +58,11 @@ jobs:
         shell: pwsh
         run: |
           $stage = "out/stage"
-          New-Item -ItemType Directory -Force $stage, "$stage/licenses", "$stage/updater" | Out-Null
+          New-Item -ItemType Directory -Force $stage, "$stage/licenses" | Out-Null
           Copy-Item -Recurse out/publish/* $stage
           Copy-Item "$env:APP_DIR/THIRD_PARTY_NOTICES.md" $stage
           Copy-Item "$env:APP_DIR/ThirdParty/Sonarr.Parser/LICENSE.md" "$stage/licenses/Sonarr.Parser-LICENSE.md"
           Copy-Item "$env:APP_DIR/ThirdParty/Sonarr.Parser/ATTRIBUTION.md" "$stage/licenses/Sonarr.Parser-ATTRIBUTION.md"
-          # Ship the updater with every release so the installed auto-update task updates itself.
-          Copy-Item "$env:APP_DIR/scripts/install-release.ps1" "$stage/updater/install-release.ps1"
           $zip = "out/MediaManager-$env:TAG-win-x64.zip"
           Compress-Archive -Path "$stage/*" -DestinationPath $zip
           $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
