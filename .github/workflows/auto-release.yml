@@ -1,0 +1,92 @@
+name: Auto release
+
+# Every merge to main becomes a release:
+#   default            -> patch bump
+#   label release:minor -> minor bump (use for new features / DB migrations)
+#   label release:major -> major bump
+#   label release:skip  -> no release
+# Commits that only touch docs (*.md, docs/) or .github/ are skipped automatically.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: auto-release
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.next.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Decide bump
+        id: bump
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            echo "bump=${{ inputs.bump }}" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if git describe --exact-match --tags --match 'v*' HEAD >/dev/null 2>&1; then
+            echo "HEAD already tagged"; echo "bump=skip" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          labels=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" --jq '[.[0].labels[]?.name] | join(",")' || true)
+          echo "PR labels: ${labels:-<none>}"
+          if [[ ",$labels," == *",release:skip,"* ]]; then bump=skip
+          elif [[ ",$labels," == *",release:major,"* ]]; then bump=major
+          elif [[ ",$labels," == *",release:minor,"* ]]; then bump=minor
+          else bump=patch; fi
+          if [[ "$bump" == patch ]]; then
+            changed=$(git diff --name-only "$GITHUB_SHA^1" "$GITHUB_SHA")
+            if [[ -n "$changed" ]] && ! grep -qvE '(\.md$|^\.github/|/docs/)' <<<"$changed"; then
+              echo "Docs/CI-only change"; bump=skip
+            fi
+          fi
+          echo "bump=$bump" >> "$GITHUB_OUTPUT"
+
+      - name: Compute and push tag
+        id: next
+        if: steps.bump.outputs.bump != 'skip'
+        run: |
+          set -euo pipefail
+          last=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' | grep -vE -- '-' | sort -V | tail -1 || true)
+          if [[ -z "$last" ]]; then
+            next=v1.0.0
+          else
+            IFS=. read -r ma mi pa <<<"${last#v}"
+            case "${{ steps.bump.outputs.bump }}" in
+              major) next="v$((ma+1)).0.0" ;;
+              minor) next="v$ma.$((mi+1)).0" ;;
+              *)     next="v$ma.$mi.$((pa+1))" ;;
+            esac
+          fi
+          echo "last=${last:-<none>} next=$next"
+          git tag "$next" "$GITHUB_SHA"
+          git push origin "$next"
+          echo "tag=$next" >> "$GITHUB_OUTPUT"
+
+  release:
+    needs: tag
+    if: needs.tag.outputs.tag != ''
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ needs.tag.outputs.tag }}
+    permissions:
+      contents: write
