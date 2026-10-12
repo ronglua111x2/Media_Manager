@@ -3,7 +3,7 @@
 **Audience:** Solo developer (part-time, ~10–15 h/week)  
 **Initiative scope:** E1 Stability + E2 Correctness + E3 UX freshness + E4 Maintainability  
 **Status:** **Initiative complete at E1+E2+E3.** Sprints 0–4 done on `auto-torrent`. **Sprints 5–10 (E4 structural splits) are frozen/cancelled.** Do not resume Sprint 5–10. Poster flash is a surgical follow-up, not Sprint 8.  
-**Canonical dev branch:** `auto-torrent` (not `origin/main`, which is ~76 commits behind)  
+**Canonical dev branch:** `main` (protected, PR + CI). Sprints 0–4 history lives on the retired `auto-torrent` branch.  
 **Workflow:** Git check + Plan Mode local plan before every new sprint — see [06-ai-execution-guide.md §2.0](./06-ai-execution-guide.md#20-mandatory-pre-sprint-workflow-git--plan-mode). After each closed sprint: [progress review §2.1a](./06-ai-execution-guide.md#21a-post-sprint-progress-review-mandatory-after-each-closed-sprint).  
 **Related:** [00-integrated-roadmap.md](./00-integrated-roadmap.md) · [01](./01-database-migration-versioning.md) · [02](./02-unit-tests-critical-paths.md) · [03](./03-split-large-viewmodels-services.md) · [04](./04-transient-vs-singleton-viewmodels.md) · [06-ai-execution-guide.md](./06-ai-execution-guide.md)
 

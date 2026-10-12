@@ -2,7 +2,7 @@
 
 Pre-implementation planning for **High priority** technical debt identified in [IMPROVEMENTS.md](../IMPROVEMENTS.md). **Sprints 0–4 complete** on **`auto-torrent`**. **Sprints 5–10 (E4) frozen/cancelled.** Do not resume Sprint 5. Next code work: [poster-flash-surgical-fix.md](./sprint-plans/poster-flash-surgical-fix.md).
 
-**Branch context:** `auto-torrent` (Sprint 1 tagged `four-pillars-sprint-01`; Sprint 2 tagged `four-pillars-sprint-02`)
+**Branch context:** Sprints 0–4 were done on `auto-torrent` (now retired; tags `four-pillars-sprint-*`). New work: short-lived branch from `main` + PR — see [06 §2.5](./06-ai-execution-guide.md#25-branch-strategy).
 
 **Before every new sprint:** [06 §2.0 — git check + Plan Mode local plan](./06-ai-execution-guide.md#20-mandatory-pre-sprint-workflow-git--plan-mode)
 

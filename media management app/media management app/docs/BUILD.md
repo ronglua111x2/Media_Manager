@@ -2,9 +2,9 @@
 
 Canonical build/test commands for this repo on **Windows x64**, verified with **.NET SDK 10.0.400** and **Visual Studio 2026 MSBuild 18.9** (Aug 2026).
 
-## Project layout (no solution file)
+## Project layout
 
-**Before any sprint work:** confirm git branch (`auto-torrent`) — see [06-ai-execution-guide.md §2.0](planning/06-ai-execution-guide.md#20-mandatory-pre-sprint-workflow-git--plan-mode).
+**Before any work:** branch from up-to-date `main` and land changes through a PR with green CI — see [CI](#ci-github-actions) and [06-ai-execution-guide.md §2.0](planning/06-ai-execution-guide.md#20-mandatory-pre-sprint-workflow-git--plan-mode).
 
 | Item | Path (relative to app root) |
 |------|-----------------------------|
@@ -14,8 +14,8 @@ Canonical build/test commands for this repo on **Windows x64**, verified with **
 | **Unit tests** | `MediaManager.Core.Tests\MediaManager.Core.Tests.csproj` |
 | **App tests** | `MediaManager.App.Tests\MediaManager.App.Tests.csproj` (Windows cleanup/halt) |
 | **Third-party parser** | `ThirdParty\Sonarr.Parser\MediaManager.Sonarr.Parser.csproj` |
-| **Solution (`.slnx`)** | `media management app.slnx` (parent folder — includes WPF + Core + Tests) |
-| **Solution (`.sln`)** | *None* — open `.slnx` or build the main `.csproj` directly. |
+| **Solution (`.slnx`)** | `..\media management app.slnx` (parent folder — WPF + Core + both test projects; used by CI) |
+| **SDK pin** | `global.json` at the git root (`D:\VScode\Misc\Media_Manager`) — SDK 10.0.4xx (`rollForward: latestFeature`) |
 
 ### Target framework & platform
 
@@ -90,6 +90,32 @@ dotnet publish "$PROJ" -c Release -p:Platform=x64 -v minimal
 ```
 
 Output: `bin\x64\Release\net8.0-windows10.0.17763.0\win-x64\publish\`
+
+---
+
+## CI (GitHub Actions)
+
+Workflow: `.github/workflows/ci.yml` at the git root. Runs on every PR into `main`, every push to `main`, and manually (`workflow_dispatch`). Runner: `windows-latest` (WPF + App.Tests need Windows).
+
+Steps (identical to the merge gate above, but via the solution):
+
+```bash
+SLN="media management app/media management app.slnx"   # from git root
+dotnet restore "$SLN"
+dotnet build "$SLN" -c Release -p:Platform=x64 --no-restore
+dotnet test  "$SLN" -c Release -p:Platform=x64 --no-build --logger trx
+dotnet publish "media management app/media management app/media management app.csproj" -c Release -p:Platform=x64 -o out/publish
+```
+
+| Output | Where |
+|--------|-------|
+| Pass/fail | PR **Checks** tab — required check `build-test` (branch protection on `main`) |
+| Test results (`.trx`) | Run page → Artifacts → `test-results-<sha>` |
+| Publish build of the PR | Run page → Artifacts → `MediaManager-pr<N>-<sha>` (kept 7 days) — use it to try a PR build before merging |
+
+Run the same commands locally before pushing. If the app is running from `bin\x64\Release\…`, the build fails with `MSB3027` (exe locked) — exit the app from the tray first.
+
+**Daily flow:** `git switch main && git pull --ff-only` → `git switch -c feat/<name>` → commit → `git push -u origin HEAD` → `gh pr create` → squash-merge when `build-test` is green.
 
 ---
 

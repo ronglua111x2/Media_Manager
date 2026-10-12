@@ -20,13 +20,13 @@ Per-sprint **Plan Mode** output before Agent Mode implementation.
 ```markdown
 # Sprint NN — Local plan
 
-**Branch:** auto-torrent @ `<commit>`
+**Branch:** `<feat/…>` from main @ `<commit>`
 **Date:**
 **Source:** 05-sprint-timeline.md § Sprint NN
 
 ## Git baseline
 - [ ] `git status -sb` reviewed
-- [ ] On `auto-torrent`
+- [ ] On a branch cut from up-to-date `main`
 
 ## Scope IN / OUT
 (paste from 05)

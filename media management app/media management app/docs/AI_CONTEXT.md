@@ -9,7 +9,7 @@ meta:
   framework: WPF .NET 8
   language: C#
   database: SQLite
-  branch: auto-torrent  # canonical dev branch; origin/main is ~76 commits behind
+  branch: main  # protected; work on short-lived branches + PR (CI must pass). auto-torrent is retired
   commit: 26d1476fb9719cf7d3898d35ae040f46097b0eb6
   commit_message: update imported media link
   audit: docs/code-review/  # 2026-09-16; AUD-002 implemented; AUD-001 accepted trade-off
@@ -28,7 +28,7 @@ meta:
   workflow_doc: docs/planning/06-ai-execution-guide.md#20-mandatory-pre-sprint-workflow-git--plan-mode
   sprint_plan_folder: docs/planning/sprint-plans/
   settings_audit_folder: docs/settings-modernization/
-  before_coding: "git check on auto-torrent; Plan Mode local plan for each new sprint"
+  before_coding: "branch from up-to-date main; Plan Mode local plan for each new sprint; PR + green CI to merge"
   when_touching_code: >
     After any code change in a sprint/session, update progress in the relevant docs in the same change set:
     AI_CONTEXT.md (structure/DI/navigation/policy), APP_OVERVIEW.md / FEATURES.md when behavior changes,

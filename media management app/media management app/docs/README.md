@@ -2,7 +2,7 @@
 
 Comprehensive documentation for the **Media Manager** Windows desktop application — a WPF/C# media library and torrent automation tool integrated with qBittorrent, Jellyfin, TMDB, Gemini, and Google Drive.
 
-**Documentation generated from branch:** `auto-torrent`  
+**Documentation generated from branch:** `auto-torrent` (now merged into `main`, the canonical branch)  
 **Behavior snapshot:** 2026-09-16 whole-project audit + AUD-002 cleanup-failure safety (add-then-validate while running remains the accepted trade-off).
 
 ## Documents

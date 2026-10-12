@@ -49,16 +49,14 @@ cd "d:/VScode/Misc/Media_Manager"
 git status -sb
 git branch --show-current
 git log --oneline -5
-# Compare canonical branch vs remote:
-git rev-list --left-right --count auto-torrent...origin/auto-torrent
-git rev-list --left-right --count auto-torrent...origin/main
+git fetch origin
+git rev-list --left-right --count main...origin/main
 ```
 
 | Check | Action if wrong |
 | ----- | ---------------- |
-| On **`auto-torrent`** (canonical dev branch) | `git checkout auto-torrent` — do **not** implement on stale `origin/main` |
+| On a short-lived branch cut from up-to-date **`main`** (`feat/…`, `fix/…`, `docs/…`) | `git switch main && git pull --ff-only && git switch -c feat/<name>` — do **not** commit on `main` (protected) or on the retired `auto-torrent` |
 | Working tree clean or intentionally stashed | Stash/commit before switching sprints |
-| Sprint 0 docs merged if starting S1+ | `git merge main --ff-only` only when bringing planning commits forward |
 | No surprise untracked files in diff | Remove or `.gitignore` before merge |
 
 **Rule:** If git state is unclear, stop and fix branch/checkout **before** coding. Wrong-branch work was the root cause of Debug build confusion (Core DLL path / missing `MediaKind`).
@@ -239,11 +237,12 @@ dotnet build "$PROJ" -c Release -p:Platform=x64 -v minimal --no-restore
 Checklist:
 
 ```
-[ ] Git: on auto-torrent (or agreed sprint branch); status reviewed (§2.0)
+[ ] Git: on a branch cut from main; status reviewed (§2.0)
 [ ] Sprint local plan exists: docs/planning/sprint-plans/sprint-NN-local-plan.md
 [ ] git diff reviewed — no unrelated files, no .env/secrets
 [ ] Release x64 build green (commands above, or ./scripts/build.sh Release x64)
 [ ] dotnet test on MediaManager.Core.Tests — all green
+[ ] PR opened into main; CI `build-test` green before squash merge
 [ ] Sprint-specific manual checklist from 05 §4 — each item checked
 [ ] AI_CONTEXT.md updated if structure/DI changed
 [ ] No duplicate event subscriptions (grep += for new handlers; verify -= or weak refs)
@@ -253,22 +252,15 @@ Checklist:
 
 ### 2.5 Branch strategy
 
-**Canonical development branch:** `auto-torrent`  
-(`origin/main` is ~76 commits behind — do not treat it as the active codebase.)
-
-**Recommended:**
+**Canonical branch:** `main` (protected; changes land only through PRs with a green CI `build-test` check — see [BUILD.md § CI](../BUILD.md#ci-github-actions)).  
+`auto-torrent` was the integration branch through Oct 2026 and is retired; sprint tags `four-pillars-sprint-*` point at its history.
 
 ```
-auto-torrent                         ← primary integration branch for this initiative
- └── sprint/00-kickoff-design        ← merged (Sprint 0 tag: four-pillars-sprint-00)
- └── sprint/01-core-parser           ← optional; or commit directly on auto-torrent
- └── sprint/02-migration-runner
- └── … through sprint/10-closeout
+main                                 ← protected, squash-merged PRs only
+ └── feat/<name> | fix/<name> | docs/<name>   ← one short-lived branch per change
 ```
 
-- **Small initiative:** merge each `sprint/NN-*` into **`auto-torrent`** after gates pass; optionally fast-forward local `main` when ready to publish.
-- **Safer initiative:** use `initiative/four-pillars` as intermediate, merge to `auto-torrent` at Sprint 10.
-- **Tag** each merge: `four-pillars-sprint-01`, etc. (Sprint 0 tagged; Sprint 1 tag pending commit).
+- Cut each branch from up-to-date `main`, push, open a PR (`gh pr create`), squash-merge when CI is green, delete the branch.
 
 **Never:** combine migration runner (S2) with Library or Torrent VM splits (S8/S9) in one PR.
 
