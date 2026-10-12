@@ -44,7 +44,7 @@ public sealed class CrashLogService : ICrashLogService, IDisposable
 
         var note = previous is null
             ? "Previous session did not clear session.alive (unclean shutdown or native kill)."
-            : $"Previous session pid={previous.Pid} startedUtc={previous.StartedUtc:o} lastBeatUtc={previous.LastBeatUtc:o} did not exit cleanly.";
+            : $"Previous session version={previous.Version ?? "unknown"} pid={previous.Pid} startedUtc={previous.StartedUtc:o} lastBeatUtc={previous.LastBeatUtc:o} did not exit cleanly.";
 
         WriteCrashFile(
             kind: "UncleanShutdown",
@@ -269,6 +269,7 @@ public sealed class CrashLogService : ICrashLogService, IDisposable
             var state = new SessionAliveState
             {
                 Pid = Environment.ProcessId,
+                Version = AppVersionInfo.Informational,
                 StartedUtc = _sessionStartedUtc == default ? DateTime.UtcNow : _sessionStartedUtc,
                 LastBeatUtc = DateTime.UtcNow
             };
@@ -307,6 +308,7 @@ public sealed class CrashLogService : ICrashLogService, IDisposable
                 builder.AppendLine($"Kind: {kind}");
                 builder.AppendLine($"TimeLocal: {nowLocal:yyyy-MM-dd HH:mm:ss.fff}");
                 builder.AppendLine($"TimeUtc: {nowUtc:yyyy-MM-dd HH:mm:ss.fff}Z");
+                builder.AppendLine($"Version: {AppVersionInfo.Informational}");
                 builder.AppendLine($"Pid: {Environment.ProcessId}");
                 builder.AppendLine($"Exe: {Environment.ProcessPath ?? AppContext.BaseDirectory}");
                 builder.AppendLine($"OS: {Environment.OSVersion}");
@@ -368,7 +370,8 @@ public sealed class CrashLogService : ICrashLogService, IDisposable
                 Note = note,
                 ExitCode = exitCode,
                 TimeUtc = DateTime.UtcNow,
-                Pid = Environment.ProcessId
+                Pid = Environment.ProcessId,
+                Version = AppVersionInfo.Informational
             };
             File.WriteAllText(path, JsonSerializer.Serialize(payload, JsonOptions));
         }
@@ -395,6 +398,8 @@ public sealed class CrashLogService : ICrashLogService, IDisposable
     {
         public int Pid { get; set; }
 
+        public string? Version { get; set; }
+
         public DateTime StartedUtc { get; set; }
 
         public DateTime LastBeatUtc { get; set; }
@@ -411,5 +416,7 @@ public sealed class CrashLogService : ICrashLogService, IDisposable
         public DateTime TimeUtc { get; set; }
 
         public int Pid { get; set; }
+
+        public string? Version { get; set; }
     }
 }

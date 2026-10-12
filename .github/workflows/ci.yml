@@ -31,29 +31,7 @@ jobs:
         shell: bash
         run: echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/setup-dotnet@v4
-        with:
-          global-json-file: global.json
-          # Test projects target net8.0 and need the 8.0 runtime to execute.
-          dotnet-version: 8.0.x
-
-      - uses: actions/cache@v4
-        with:
-          path: ~/.nuget/packages
-          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/Directory.Build.props', 'global.json') }}
-          restore-keys: nuget-${{ runner.os }}-
-
-      - name: Restore
-        run: dotnet restore "${{ env.SLN }}"
-
-      - name: Build (Release x64)
-        run: dotnet build "${{ env.SLN }}" -c Release -p:Platform=x64 --no-restore -v minimal
-
-      - name: Test
-        run: dotnet test "${{ env.SLN }}" -c Release -p:Platform=x64 --no-build --logger trx --results-directory TestResults
-
-      - name: Publish (single-file smoke)
-        run: dotnet publish "${{ env.APP_PROJ }}" -c Release -p:Platform=x64 -o out/publish -v minimal
+      - uses: ./.github/actions/build-test
 
       - name: Upload build
         uses: actions/upload-artifact@v4

@@ -429,7 +429,7 @@ public sealed class BackupService : IBackupService
 
     private static string GetAppVersion()
     {
-        return System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "unknown";
+        return AppVersionInfo.Informational;
     }
 
     private static void TryDeleteFile(string path)

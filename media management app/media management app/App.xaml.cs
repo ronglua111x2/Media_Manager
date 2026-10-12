@@ -67,6 +67,7 @@ public partial class App : System.Windows.Application
         settings.Load(launchOptions.StateFolder);
 
         var logger = _serviceProvider.GetRequiredService<IAppLogger>();
+        logger.Info($"Media Manager {AppVersionInfo.Informational} starting (pid {Environment.ProcessId}).", LogTarget.All);
         LogLaunchOptions(logger, launchOptions, settings);
 
         var crashLog = _serviceProvider.GetRequiredService<ICrashLogService>();

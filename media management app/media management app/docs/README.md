@@ -18,7 +18,8 @@ Comprehensive documentation for the **Media Manager** Windows desktop applicatio
 | [planning/06-ai-execution-guide.md](./planning/06-ai-execution-guide.md) | Humans / AI | **How to execute** — AI-assisted workflow, prompts, compressed timeline |
 | [planning/00-integrated-roadmap.md](./planning/00-integrated-roadmap.md) | Humans | How the 4 High items connect, phased timeline, industry standards |
 | [planning/](./planning/) | Humans | Per-item deep dives (migrations, tests, splits, VM lifetime) |
-| [BUILD.md](./BUILD.md) | Humans / AI | **Build & test commands** — x64, MSBuild, Git Bash quirks, ThirdParty restore |
+| [BUILD.md](./BUILD.md) | Humans / AI | **Build & test commands** — x64, MSBuild, Git Bash quirks, ThirdParty restore, CI |
+| [RELEASING.md](./RELEASING.md) | Humans / AI | **Versioning & releases** — git-tag versions, release workflow, install/rollback script |
 | [ui-polish/](./ui-polish/README.md) | Humans / AI | Dark theme tokens, layout stability, TwoWay binding rules, Lucide Kind catalog |
 | [STATE_FOLDER.md](./STATE_FOLDER.md) | Humans / AI | Live state folder layout, OAuth paths, FetchJobs purge, sensitive fields |
 | [RECIPE_SCHEMA.md](./RECIPE_SCHEMA.md) | Humans / AI | Recipe `.rcp` JSON schema with examples from real state files |

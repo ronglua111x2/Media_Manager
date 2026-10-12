@@ -1,6 +1,18 @@
 <Project>
+  <!-- Version comes from the nearest git tag vX.Y.Z (MinVer). See docs/RELEASING.md. -->
+  <PropertyGroup>
+    <MinVerTagPrefix>v</MinVerTagPrefix>
+    <MinVerMinimumMajorMinor>1.0</MinVerMinimumMajorMinor>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MinVer" Version="6.0.0" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!-- Embedded symbols: crash logs get file:line and dumps resolve without loose .pdb files
+       (PublishJunkCleanup deletes *.pdb next to the exe at startup). -->
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
-    <DebugType>none</DebugType>
-    <DebugSymbols>false</DebugSymbols>
+    <DebugType>embedded</DebugType>
+    <DebugSymbols>true</DebugSymbols>
   </PropertyGroup>
 </Project>
