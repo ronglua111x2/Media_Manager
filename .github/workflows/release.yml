@@ -1,11 +1,24 @@
 name: Release
 
+# Builds and publishes a GitHub Release for a vX.Y.Z tag.
+# Triggered by a manually pushed tag, or called by auto-release.yml after it tags a merge to main
+# (tags pushed with GITHUB_TOKEN do not trigger workflows, hence workflow_call).
 on:
   push:
     tags: ['v*.*.*']
+  workflow_call:
+    inputs:
+      tag:
+        description: Tag to release (must already exist)
+        required: true
+        type: string
 
 permissions:
   contents: write
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
 
 env:
   DOTNET_NOLOGO: true
@@ -13,6 +26,7 @@ env:
   SLN: media management app/media management app.slnx
   APP_PROJ: media management app/media management app/media management app.csproj
   APP_DIR: media management app/media management app
+  TAG: ${{ inputs.tag || github.ref_name }}
 
 jobs:
   release:
@@ -21,13 +35,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
           fetch-depth: 0
 
       - name: Tag must be on main
         shell: bash
         run: |
           git fetch origin main
-          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "::error::Tag $GITHUB_REF_NAME is not on main"; exit 1; }
+          git merge-base --is-ancestor "$(git rev-parse "$TAG^{commit}")" origin/main || { echo "::error::Tag $TAG is not on main"; exit 1; }
 
       - uses: ./.github/actions/build-test
 
@@ -35,21 +50,20 @@ jobs:
         shell: pwsh
         run: |
           $v = (Get-Item "out/publish/media management app.exe").VersionInfo.ProductVersion
-          $expected = "$env:GITHUB_REF_NAME".TrimStart('v')
+          $expected = "$env:TAG".TrimStart('v')
           Write-Host "ProductVersion=$v expected=$expected"
-          if (-not $v.StartsWith($expected)) { throw "Exe version '$v' does not match tag '$env:GITHUB_REF_NAME'" }
+          if (-not $v.StartsWith("$expected+") -and $v -ne $expected) { throw "Exe version '$v' does not match tag '$env:TAG'" }
 
       - name: Package
         shell: pwsh
         run: |
-          $tag = $env:GITHUB_REF_NAME
           $stage = "out/stage"
           New-Item -ItemType Directory -Force $stage, "$stage/licenses" | Out-Null
           Copy-Item -Recurse out/publish/* $stage
           Copy-Item "$env:APP_DIR/THIRD_PARTY_NOTICES.md" $stage
           Copy-Item "$env:APP_DIR/ThirdParty/Sonarr.Parser/LICENSE.md" "$stage/licenses/Sonarr.Parser-LICENSE.md"
           Copy-Item "$env:APP_DIR/ThirdParty/Sonarr.Parser/ATTRIBUTION.md" "$stage/licenses/Sonarr.Parser-ATTRIBUTION.md"
-          $zip = "out/MediaManager-$tag-win-x64.zip"
+          $zip = "out/MediaManager-$env:TAG-win-x64.zip"
           Compress-Archive -Path "$stage/*" -DestinationPath $zip
           $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $(Split-Path $zip -Leaf)" | Out-File -Encoding ascii out/SHA256SUMS.txt
@@ -60,6 +74,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          flags=(--verify-tag --generate-notes --title "Media Manager $GITHUB_REF_NAME")
-          [[ "$GITHUB_REF_NAME" == *-* ]] && flags+=(--prerelease)
-          gh release create "$GITHUB_REF_NAME" "${flags[@]}" out/MediaManager-*-win-x64.zip out/SHA256SUMS.txt
+          flags=(--verify-tag --generate-notes --title "Media Manager $TAG")
+          [[ "$TAG" == *-* ]] && flags+=(--prerelease)
+          gh release create "$TAG" "${flags[@]}" out/MediaManager-*-win-x64.zip out/SHA256SUMS.txt

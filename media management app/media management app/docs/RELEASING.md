@@ -27,6 +27,8 @@ Where the version shows up:
 
 ### Which number to bump
 
+Chosen by PR label, see [Version bump = PR label](#1-version-bump--pr-label).
+
 | Bump | When |
 |------|------|
 | **patch** `1.2.0 → 1.2.1` | Bug fixes only, no schema change |
@@ -37,48 +39,55 @@ Rule of thumb: rolling back across a **minor** may cross a migration (see [Rollb
 
 ---
 
-## Cutting a release
+## Continuous delivery (automatic)
 
-1. All changes are merged into `main` through PRs (CI green).
-2. Tag `main` and push the tag:
+Every merge to `main` produces a GitHub Release automatically. Installing it on the machine is manual ([Installing](#installing-on-the-real-machine)).
 
-   ```bash
-   git switch main && git pull --ff-only
-   git tag v1.3.0
-   git push origin v1.3.0
-   ```
+```
+PR merged into main ──► auto-release.yml ──► tag vX.Y.Z ──► release.yml ──► GitHub Release
+```
 
-3. `release.yml` runs on the tag:
-   - fails if the tagged commit is not on `main`
-   - restore → build → test → single-file publish (same composite action as CI)
-   - checks the exe `ProductVersion` matches the tag
-   - creates the GitHub Release with auto-generated notes and assets:
-     - `MediaManager-v1.3.0-win-x64.zip` — exe, `Assets/`, `THIRD_PARTY_NOTICES.md`, `licenses/` (Sonarr.Parser GPL-3.0 license + attribution)
-     - `SHA256SUMS.txt`
+### 1. Version bump = PR label
 
-Pre-release: a tag with a hyphen (`v1.3.0-rc.1`) is published as a **pre-release**. `install-release.ps1` without `-Tag` ignores pre-releases (GitHub "latest" is stable only).
+| PR label | Result of merging |
+|----------|-------------------|
+| *(none)* | **patch** release `1.2.0 → 1.2.1` |
+| `release:minor` | **minor** `1.2.1 → 1.3.0` — new features, **any new DB migration** |
+| `release:major` | **major** `1.3.0 → 2.0.0` — breaking state-folder / settings format |
+| `release:skip` | no release |
 
-A failed release workflow leaves no Release. Fix on a branch → PR → merge, delete the bad tag (`git push origin :refs/tags/v1.3.0`, `git tag -d v1.3.0`) and tag again.
+PRs that only touch `*.md`, `docs/` or `.github/` are skipped automatically. The bump starts from the newest **stable** `vX.Y.Z` tag (pre-release tags are ignored); the first release is `v1.0.0`.
+
+Release without a merge: Actions → **Auto release** → *Run workflow* (choose the bump). A hand-pushed tag also works (`git tag v1.3.0-rc.1 && git push origin v1.3.0-rc.1`); a hyphenated tag becomes a **pre-release** (not picked by `install-release.ps1` without `-Tag`).
+
+### 2. `release.yml` (called by auto-release, or on a pushed tag)
+
+- fails if the tagged commit is not on `main`
+- restore → build → test → single-file publish (same composite action as CI)
+- checks the exe `ProductVersion` matches the tag
+- GitHub Release with generated notes and assets:
+  - `MediaManager-vX.Y.Z-win-x64.zip` — exe, `Assets/`, `THIRD_PARTY_NOTICES.md`, `licenses/` (Sonarr.Parser GPL-3.0)
+  - `SHA256SUMS.txt`
+
+A failed release leaves the tag without a Release. Fix it through a PR (that merge releases the next patch) and delete the orphan tag: `git push origin :refs/tags/vX.Y.Z`.
 
 ---
 
 ## Installing on the real machine
 
 ```powershell
-& "D:\VScode\Misc\Media_Manager\media management app\media management app\scripts\install-release.ps1"            # latest stable
-& "...\scripts\install-release.ps1" -Tag v1.3.0                                                                      # specific version
+& "D:\VScode\Misc\Media_Manager\media management app\media management app\scripts\install-release.ps1"   # latest stable
+& "...\scripts\install-release.ps1" -Tag v1.3.0                                                             # specific version, incl. pre-releases
 ```
 
 Default install folder: `D:\App-Disk-D\Media_Manager\App` (`-InstallDir` to change).
-
-What it does:
 
 1. Downloads the release zip + `SHA256SUMS.txt`, verifies the hash.
 2. If the installed exe is running, asks you to **exit from the tray** and waits (120 s). `-Force` kills it instead (next start reports `UncleanShutdown`; avoid during Auto-Track/backup).
 3. Renames the current exe to `media management app.exe.bak-<old version>` (date if unversioned); keeps the newest 3 backups.
 4. Extracts the zip over the install folder (other files such as WebView2 data are untouched) and starts the app.
 
-Do not copy `bin\…\publish` builds onto the real machine any more — install only tagged releases so every crash report maps to a tag.
+Do not copy `bin\…\publish` builds onto the real machine — install only releases so every crash report maps to a tag.
 
 ## Rollback
 

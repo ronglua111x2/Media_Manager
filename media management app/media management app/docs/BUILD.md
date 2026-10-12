@@ -115,7 +115,7 @@ dotnet publish "media management app/media management app/media management app.c
 
 Run the same commands locally before pushing. If the app is running from `bin\x64\Release\…`, the build fails with `MSB3027` (exe locked) — exit the app from the tray first.
 
-**Daily flow:** `git switch main && git pull --ff-only` → `git switch -c feat/<name>` → commit → `git push -u origin HEAD` → `gh pr create` → squash-merge when `build-test` is green.
+**Daily flow:** `git switch main && git pull --ff-only` → `git switch -c feat/<name>` → commit → `git push -u origin HEAD` → `gh pr create` (add label `release:minor` / `release:major` / `release:skip` if the default patch release is wrong) → squash-merge when `build-test` is green → the merge becomes a GitHub Release automatically; install it with `scripts/install-release.ps1` when you want it ([RELEASING.md](./RELEASING.md#continuous-delivery-automatic)).
 
 ---
 
