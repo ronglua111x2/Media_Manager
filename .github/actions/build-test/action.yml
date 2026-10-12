@@ -1,0 +1,33 @@
+name: Build, test, publish
+description: Restore, build (Release x64), test and single-file publish Media Manager into out/publish.
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-dotnet@v4
+      with:
+        global-json-file: global.json
+        # Test projects target net8.0 and need the 8.0 runtime to execute.
+        dotnet-version: 8.0.x
+
+    - uses: actions/cache@v4
+      with:
+        path: ~/.nuget/packages
+        key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/Directory.Build.props', 'global.json') }}
+        restore-keys: nuget-${{ runner.os }}-
+
+    - name: Restore
+      shell: bash
+      run: dotnet restore "$SLN"
+
+    - name: Build (Release x64)
+      shell: bash
+      run: dotnet build "$SLN" -c Release -p:Platform=x64 --no-restore -v minimal
+
+    - name: Test
+      shell: bash
+      run: dotnet test "$SLN" -c Release -p:Platform=x64 --no-build --logger trx --results-directory TestResults
+
+    - name: Publish (single-file)
+      shell: bash
+      run: dotnet publish "$APP_PROJ" -c Release -p:Platform=x64 -o out/publish -v minimal

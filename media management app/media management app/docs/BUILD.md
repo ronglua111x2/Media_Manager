@@ -190,6 +190,15 @@ No separate restore step is required for ThirdParty beyond building the main pro
 
 ---
 
+## Versioning & symbols
+
+- Version is stamped from the nearest `vX.Y.Z` git tag by **MinVer** (`Directory.Build.props`). Local/PR builds look like `1.2.1-alpha.0.3+<sha>`; only tagged builds are plain `1.2.0`. Full rules: [RELEASING.md](./RELEASING.md).
+- A shallow clone or a source copy without `.git` builds as `0.0.0-alpha.0` / `1.0.0-alpha.0` — expected, not an error.
+- Release builds use `DebugType=embedded` (no `.pdb` files in output; symbols are inside the assemblies).
+- Code reads the version through `Common/AppVersionInfo.Informational`.
+
+---
+
 ## Quick reference
 
 | Task | Command |
