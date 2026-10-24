@@ -78,7 +78,7 @@ APP_TEST_PROJ="$APP_ROOT/MediaManager.App.Tests/MediaManager.App.Tests.csproj"
 dotnet test "$TEST_PROJ" -c Release -p:Platform=x64 -v normal
 # Expected (2026-10-12): 248 passed; Core.Tests references Core only (no WPF).
 dotnet test "$APP_TEST_PROJ" -c Release -p:Platform=x64 -v minimal
-# Expected (2026-10-12): 23 passed.
+# Expected (2026-10-15): 31 passed.
 ```
 
 ### Publish (single-file self-contained)
@@ -90,6 +90,8 @@ dotnet publish "$PROJ" -c Release -p:Platform=x64 -v minimal
 ```
 
 Output: `bin\x64\Release\net8.0-windows10.0.17763.0\win-x64\publish\`
+
+Publish output is `media management app.exe` plus `PenImc_cor3.dll` (WPF stylus/touch). `PenImc_cor3.dll` is excluded from the single-file bundle (`KeepPenImcBesideExe` target in the `.csproj`): bundled, it is self-extracted to `%TEMP%`, and a cleaned temp copy crashed the app with `DllNotFoundException` on a device-change message (2026-10-23). Ship both files; the release zip and `install-release.ps1` already copy everything in the publish folder.
 
 ---
 
@@ -256,5 +258,5 @@ Commands run on this repo (Windows, Git Bash):
 | `dotnet publish -c Release -p:Platform=x64` | OK |
 | `dotnet test` on WPF `.csproj` | OK exit, **no tests** (tests live in Core.Tests / App.Tests) |
 | `dotnet test` Core.Tests Release/x64 | **248 passed** (2026-10-12, clean clone) |
-| `dotnet test` App.Tests Release/x64 | **23 passed** (2026-10-12, clean clone) |
+| `dotnet test` App.Tests Release/x64 | **31 passed** (2026-10-15) |
 

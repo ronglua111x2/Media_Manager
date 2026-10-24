@@ -70,7 +70,9 @@ Exhaustive list of user-facing and background features. Each entry includes purp
 ### 1.10 Windows Startup Registration
 - **What:** Register app to run at Windows login
 - **User interaction:** Settings → System → Run at startup checkbox
-- **Code:** `Services/WindowsStartupService.cs`, `Models/AppStartupSettings.cs`
+- **Mechanism:** Task Scheduler task `\MediaManager\AutoStart`, registered from XML (`schtasks /create /xml`): logon trigger for the current user with a 10 s delay, highest run level, **runs on battery and is not stopped when AC is unplugged**, no run time limit, normal priority, start when available. The old `schtasks /sc ONLOGON` registration had AC-only, stop-on-battery, and 72 h defaults; the stop-on-battery setting ended the app on every AC unplug (see `docs/debug/unclean-exit`).
+- **Self-heal:** on every start with Run at startup on (not with `--state-folder`), `EnsureRegistered` re-registers the task if it is missing, points at another exe, or still has the old defaults. A dev build under `bin\…\net*` never takes over a task that points at another existing exe (on start or on Settings save); it logs a warning instead.
+- **Code:** `Services/WindowsStartupService.cs`, `Models/AppStartupSettings.cs`, `App.xaml.cs` (`EnsureStartupTaskRegistered`)
 - **DB:** None
 
 ### 1.11 First-run Host setup

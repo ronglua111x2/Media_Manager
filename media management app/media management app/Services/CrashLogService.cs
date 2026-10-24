@@ -46,10 +46,12 @@ public sealed class CrashLogService : ICrashLogService, IDisposable
             ? "Previous session did not clear session.alive (unclean shutdown or native kill)."
             : $"Previous session version={previous.Version ?? "unknown"} pid={previous.Pid} startedUtc={previous.StartedUtc:o} lastBeatUtc={previous.LastBeatUtc:o} did not exit cleanly.";
 
+        // "Exe:" in the crash file is this (reporting) process. The session that died may have run another exe,
+        // e.g. the logon task launching a dev build.
         WriteCrashFile(
             kind: "UncleanShutdown",
             note: note,
-            extra: null,
+            extra: $"PreviousSessionExe: {previous?.ExePath ?? "unknown"}",
             exception: null,
             nativeDumpPid: previous?.Pid);
         WriteLastExit("UncleanShutdown", note, exitCode: null);
@@ -270,6 +272,7 @@ public sealed class CrashLogService : ICrashLogService, IDisposable
             {
                 Pid = Environment.ProcessId,
                 Version = AppVersionInfo.Informational,
+                ExePath = Environment.ProcessPath,
                 StartedUtc = _sessionStartedUtc == default ? DateTime.UtcNow : _sessionStartedUtc,
                 LastBeatUtc = DateTime.UtcNow
             };
@@ -399,6 +402,8 @@ public sealed class CrashLogService : ICrashLogService, IDisposable
         public int Pid { get; set; }
 
         public string? Version { get; set; }
+
+        public string? ExePath { get; set; }
 
         public DateTime StartedUtc { get; set; }
 
