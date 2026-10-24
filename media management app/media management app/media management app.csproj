@@ -35,6 +35,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- WPF loads PenIMC lazily on the first tablet/device-change message. In the single-file build that native DLL
+         is self-extracted to %TEMP%; if it is gone by then the process dies with DllNotFoundException (crash 2026-10-23). -->
+    <RuntimeHostConfigurationOption Include="Switch.System.Windows.Input.Stylus.DisableStylusAndTouchSupport" Value="true" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Compile Remove="MediaManager.Core/**" />
     <None Remove="MediaManager.Core/**" />
     <EmbeddedResource Remove="MediaManager.Core/**" />

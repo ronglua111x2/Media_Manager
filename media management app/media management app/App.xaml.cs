@@ -132,6 +132,11 @@ public partial class App : System.Windows.Application
             }
         }
 
+        if (setupCompleted && !launchOptions.HasStateFolderOverride && settings.Current.Startup?.RunAtStartup == true)
+        {
+            EnsureStartupTaskRegistered(logger);
+        }
+
         _serviceProvider.GetRequiredService<IWindowsNotificationService>().Initialize();
 
         var showFirstRun = gated || launchOptions.ForceFirstRun;
@@ -451,6 +456,27 @@ public partial class App : System.Windows.Application
         _singleInstanceMutex?.Dispose();
         _singleInstanceMutex = null;
         _ownsSingleInstanceMutex = false;
+    }
+
+    private void EnsureStartupTaskRegistered(IAppLogger logger)
+    {
+        var startupService = _serviceProvider?.GetRequiredService<IWindowsStartupService>();
+        if (startupService is null)
+        {
+            return;
+        }
+
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                startupService.EnsureRegistered();
+            }
+            catch (Exception ex)
+            {
+                logger.Warning($"Windows startup task check failed: {ex.Message}", LogTarget.All);
+            }
+        });
     }
 
     private void WarmupPosterCache()

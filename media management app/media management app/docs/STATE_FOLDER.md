@@ -33,7 +33,7 @@ This PC’s live library stays at `D:\MediaManagerState` via the pointer after t
 | `media-manager.db` | Primary SQLite database |
 | `media-manager*.db` | Manual/automatic DB backups (naming varies) |
 | `logs/` | Session logs (see [Logs](#logs)) |
-| `session.alive` | Live-session sentinel (pid + last heartbeat). Present while the app is running; deleted on a clean exit. If it remains on the next start, the previous run did not shut down cleanly. |
+| `session.alive` | Live-session sentinel (pid, version, exe path, last heartbeat). Present while the app is running; deleted on a clean exit. If it remains on the next start, the previous run did not shut down cleanly. |
 | `last-exit.json` | Last *documented* exit (`CleanExit`, `SessionEnding`, or `ProcessExit`). Missing/stale while `session.alive` remains means the process died without going through shutdown. |
 | `posters/` | Cached TMDB poster/still images (keyed by provider id) |
 | `Recipes/` | Torrent search recipe files (`*.rcp`, JSON) |
