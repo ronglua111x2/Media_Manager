@@ -91,6 +91,8 @@ dotnet publish "$PROJ" -c Release -p:Platform=x64 -v minimal
 
 Output: `bin\x64\Release\net8.0-windows10.0.17763.0\win-x64\publish\`
 
+Publish output is `media management app.exe` plus `PenImc_cor3.dll` (WPF stylus/touch). `PenImc_cor3.dll` is excluded from the single-file bundle (`KeepPenImcBesideExe` target in the `.csproj`): bundled, it is self-extracted to `%TEMP%`, and a cleaned temp copy crashed the app with `DllNotFoundException` on a device-change message (2026-10-23). Ship both files; the release zip and `install-release.ps1` already copy everything in the publish folder.
+
 ---
 
 ## CI (GitHub Actions)
