@@ -94,17 +94,6 @@
       <None Remove="nul" />
     </ItemGroup>
 
-  <!-- PenIMC (WPF stylus/touch) is loaded lazily on the first tablet/device-change message. Bundled into the
-       single file it is extracted to %TEMP%, and if that copy is cleaned the app dies with DllNotFoundException
-       (crash 2026-10-23). Keep it as a real file beside the exe; the release zip and install-release.ps1 copy it. -->
-  <Target Name="KeepPenImcBesideExe" AfterTargets="ComputeResolvedFilesToPublishList">
-    <ItemGroup>
-      <ResolvedFileToPublish Condition="'%(Filename)' == 'PenImc_cor3'">
-        <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
-      </ResolvedFileToPublish>
-    </ItemGroup>
-  </Target>
-
   <Target Name="RemovePublishJunk" AfterTargets="Publish">
     <PropertyGroup>
       <_PublishJunkDir>$([MSBuild]::EnsureTrailingSlash('$(PublishDir)'))</_PublishJunkDir>
