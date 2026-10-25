@@ -20,6 +20,8 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
 
     private bool _inFlight;
     private bool _lastKnownConnected;
+    // True when this app connected the tunnel; a tunnel already up before the first lease is left connected on release.
+    private bool _tunnelOwnedByApp;
     private bool _disposed;
 
     public WarpCliService(
@@ -121,6 +123,14 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
             var alreadyConnected = await QueryConnectedUnlockedAsync(ct);
             if (alreadyConnected)
             {
+                lock (_stateLock)
+                {
+                    if (_leases.Count == 0)
+                    {
+                        _tunnelOwnedByApp = false;
+                    }
+                }
+
                 AddLease(reason);
                 _logger.Debug(
                     $"WARP lease acquired ({WarpLeaseReasonText.Label(reason)}); tunnel already up.",
@@ -143,6 +153,11 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
                 SetLastKnown(false);
                 RaiseChanged(WarpConnectionChangeSource.Cli);
                 return new WarpLeaseResult(false, false);
+            }
+
+            lock (_stateLock)
+            {
+                _tunnelOwnedByApp = true;
             }
 
             AddLease(reason);
@@ -175,10 +190,12 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
         {
             bool removed;
             int remaining;
+            bool ownedByApp;
             lock (_stateLock)
             {
                 removed = _leases.Remove(reason);
                 remaining = _leases.Count;
+                ownedByApp = _tunnelOwnedByApp;
             }
 
             if (!removed)
@@ -193,6 +210,15 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
             {
                 _logger.Debug(
                     $"WARP lease released ({WarpLeaseReasonText.Label(reason)}); {remaining} lease(s) remain.",
+                    LogTarget.File | LogTarget.Console);
+                RaiseChanged(WarpConnectionChangeSource.Cli);
+                return;
+            }
+
+            if (!ownedByApp)
+            {
+                _logger.Debug(
+                    $"WARP lease released ({WarpLeaseReasonText.Label(reason)}); tunnel was already up before acquire — leaving connected.",
                     LogTarget.File | LogTarget.Console);
                 RaiseChanged(WarpConnectionChangeSource.Cli);
                 return;
@@ -225,6 +251,7 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
             {
                 remaining = WarpLeaseReasonText.Describe(_leases);
                 _leases.Clear();
+                _tunnelOwnedByApp = false;
             }
 
             if (!string.IsNullOrEmpty(remaining))

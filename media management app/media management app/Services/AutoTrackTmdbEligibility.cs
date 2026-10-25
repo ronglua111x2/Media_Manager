@@ -21,15 +21,11 @@ public static class AutoTrackTmdbEligibility
             return false;
         }
 
-        if (!bypassAnchor && !AutoTrackWeekAnchor.IsPastAnchorThisWeek(show, nowLocal, settings))
+        if (!bypassAnchor && HasSatisfiedCurrentCycle(show, settings, nowLocal))
         {
-            skipReason = "Anchor time not yet reached this week";
-            return false;
-        }
-
-        if (!bypassAnchor && HasSatisfiedPostAnchorRefreshThisWeek(show, settings, nowLocal))
-        {
-            skipReason = "Already refreshed once after anchor this week";
+            var cycleAnchor = AutoTrackWeekAnchor.GetCurrentCycleAnchor(show, nowLocal, settings);
+            skipReason =
+                $"Already refreshed for current cycle (anchor {cycleAnchor:yyyy-MM-dd HH:mm}, next {cycleAnchor.AddDays(7):yyyy-MM-dd HH:mm})";
             return false;
         }
 
@@ -39,11 +35,14 @@ public static class AutoTrackTmdbEligibility
     public static bool ShouldResetDormantState(TrackedShow show, AutoTrackSettings settings, DateTime nowLocal)
     {
         return show.AutoTrackTmdbState == AutoTrackTmdbState.DormantCaughtUp &&
-               AutoTrackWeekAnchor.IsPastAnchorThisWeek(show, nowLocal, settings) &&
-               !HasSatisfiedPostAnchorRefreshThisWeek(show, settings, nowLocal);
+               !HasSatisfiedCurrentCycle(show, settings, nowLocal);
     }
 
-    public static bool HasSatisfiedPostAnchorRefreshThisWeek(
+    /// <summary>
+    /// True when the show was refreshed at or after its most recent anchor. A missed anchor
+    /// (app closed, network down) stays unsatisfied until a refresh succeeds.
+    /// </summary>
+    public static bool HasSatisfiedCurrentCycle(
         TrackedShow show,
         AutoTrackSettings settings,
         DateTime nowLocal)
@@ -58,9 +57,20 @@ public static class AutoTrackTmdbEligibility
             return false;
         }
 
-        var (day, time) = AutoTrackWeekAnchor.GetEffectiveAnchor(show, settings);
-        var anchorThisWeek = AutoTrackWeekAnchor.GetAnchorDateTimeThisWeek(day, time, nowLocal);
-        return show.AutoTrackLastTmdbRefreshLocal.Value >= anchorThisWeek;
+        var cycleAnchor = AutoTrackWeekAnchor.GetCurrentCycleAnchor(show, nowLocal, settings);
+        return show.AutoTrackLastTmdbRefreshLocal.Value >= cycleAnchor;
+    }
+
+    /// <summary>
+    /// Hunt gate for scheduled shows: only episodes that aired by the current cycle anchor.
+    /// </summary>
+    public static IReadOnlyList<TrackedEpisode> FilterToCycle(
+        IReadOnlyList<TrackedEpisode> pending,
+        DateTime cycleAnchor)
+    {
+        return pending
+            .Where(episode => episode.AirDate is null || episode.AirDate.Value <= cycleAnchor)
+            .ToList();
     }
 
     public static bool IsFullyCaughtUp(TrackedShow show, IReadOnlyList<TrackedEpisode> episodes)

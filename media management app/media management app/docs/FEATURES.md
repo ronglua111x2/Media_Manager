@@ -153,26 +153,31 @@ Exhaustive list of user-facing and background features. Each entry includes purp
 | Condition | Effect |
 |-----------|--------|
 | Show not auto-tracked | Skip refresh |
-| Weekly schedule enforced and before anchor this week | Skip (unless `bypassAnchor`, e.g. Run Now) |
-| Already refreshed after anchor this week | Skip |
-| Finished show + all checkpoint episodes Available | Skip |
-| State `FinishedComplete` | Skip (unless bypass) |
+| Weekly schedule enforced and already refreshed at/after the current cycle anchor | Skip (unless `bypassAnchor`, e.g. Run Now) |
+| Weekly schedule not enforced (no custom schedule, global schedule off) | Refresh every TMDB check interval |
+| Never refreshed | Refresh |
 
-**Dormant reset** (`ShouldResetDormantState`): State `DormantCaughtUp` + past anchor + not yet refreshed this week → reset to `Active`.
+**Rolling anchor cycle** (`AutoTrackWeekAnchor.GetCurrentCycleAnchor`): the cycle anchor is the most recent anchor at or before now (it may fall in the previous calendar week). A cycle runs 7 days, anchor to next anchor. A missed anchor (app closed, TMDB/network down) stays due until a refresh succeeds — e.g. Saturday 06:00 anchor missed, app opened Sunday → refresh on the next discovery cycle, not next Saturday. Any successful refresh (including Run Now) satisfies the current cycle and stores `AutoTrackLastTmdbWeekKey` = week of the cycle anchor (display only). Finished shows keep refreshing once per cycle so new specials/OVAs are picked up.
 
-**Pending episode hunt** (`FindPendingEpisodes`): At/after checkpoint, aired (+ `HuntMinHoursAfterAirDate` delay), `Missing`, no torrent hash, no active cart order.
+**Dormant reset** (`ShouldResetDormantState`): State `DormantCaughtUp` + current cycle not yet satisfied → reset to `Active`.
+
+**Pending episode hunt** (`FindPendingEpisodes`): At/after checkpoint, aired (+ `HuntMinHoursAfterAirDate` delay), `Missing`, no torrent hash, no active cart order. For scheduled shows the hunt queue also applies `FilterToCycle`: only episodes whose air date is at or before the current cycle anchor (or unknown). Hunting continues for the whole cycle.
+
+**Not covered (deferred):** TMDB adding an episode late or changing an air date after the cycle refresh — the show waits for the next cycle (or Run Now). A skipped week keeps the same behavior.
 
 **TMDB state machine** (after refresh, `AutoTrackService`):
 
 | State | Meaning |
 |-------|---------|
 | `Active` | Normal; may hunt pending episodes |
-| `DormantCaughtUp` | Ongoing show fully caught up past anchor; skip TMDB until next anchor week |
+| `DormantCaughtUp` | Ongoing show fully caught up after a cycle refresh; skip TMDB until the next cycle anchor |
 | `FinishedComplete` | Ended show fully caught up; permanent skip |
 
 **Weekly air day inference** (`ShowWeeklyAirDay.Infer`): Uses up to 12 recent non-special episodes with air dates; counts `DayOfWeek` in UTC+7 calendar; returns day only on **strict plurality** (tie → null). Respects auto-track checkpoint season/episode when provided.
 
-**Code:** `Services/AutoTrackTmdbEligibility.cs`, `Services/ShowWeeklyAirDay.cs`, `Services/AutoTrackWeekAnchor.cs`, `Models/AutoTrackTmdbState.cs`
+**Code:** `Services/AutoTrackTmdbEligibility.cs`, `Services/ShowWeeklyAirDay.cs`, `Services/AutoTrackWeekAnchor.cs`, `Models/AutoTrackTmdbState.cs`  
+**Tests:** `MediaManager.App.Tests/Services/AutoTrackAnchorCycleTests.cs`  
+**Investigation:** [debug/auto-track/a-certain-dark-item-missed-anchor-2026-10-25.md](./debug/auto-track/a-certain-dark-item-missed-anchor-2026-10-25.md)
 
 ---
 
@@ -541,12 +546,12 @@ Setup details: [STATE_FOLDER.md](./STATE_FOLDER.md#google-drive-oauth)
 - **Notifications:** Run summary toast, hunt progress, new episode, hardlinked, blocked
 
 ### 10.2 TMDB Discovery (Auto-Track)
-- **What:** Refresh shows, detect new episodes, enforce weekly anchor and daily budget
-- **Code:** `Services/AutoTrackService.cs` (`RunTmdbDiscoveryAsync`)
+- **What:** Refresh shows, detect new episodes, enforce the rolling anchor cycle (§3.7) and daily budget. A TMDB transport failure (SSL/TLS, refused/reset connection, DNS, timeout — `Common/TmdbNetworkBlockDetector.cs`) connects WARP and retries when `Warp.AutoRecoverOnSsl` is on; one failed WARP connect stops further attempts for that cycle. After connecting, it waits up to 15 s for `api.themoviedb.org` to stop resolving to loopback (the local DNS answers 127.0.0.1/::1; `Common/TmdbDnsProbe.cs`), then retries up to 3 times (3 s, 5 s apart) while the error still looks like a network block. WARP stays up for the rest of the cycle and is disconnected only if the app connected it.
+- **Code:** `Services/AutoTrackService.cs` (`RunTmdbDiscoveryAsync`, `RefreshShowWithWarpRecoveryAsync`), `Services/WarpCliService.cs`
 - **DB:** `TrackedShows`, `TrackedSeasons`, `TrackedEpisodes`
 
 ### 10.3 Torrent Hunt (Auto-Track)
-- **What:** Search qBittorrent for pending episodes, score candidates, create cart orders, add torrents. Hunt applies the assigned episode recipe plus `AutoTrackEpisodeOverridesJson`. If the magnet is already in qBittorrent, hunt attaches that copy with no dialog and still runs remaining add-gate checks.
+- **What:** Search qBittorrent for pending episodes (scheduled shows: only episodes aired by the current cycle anchor), score candidates, create cart orders, add torrents. Hunt applies the assigned episode recipe plus `AutoTrackEpisodeOverridesJson`. If the magnet is already in qBittorrent, hunt attaches that copy with no dialog and still runs remaining add-gate checks.
 - **Code:** `Services/AutoTrackService.cs` (`RunTorrentHuntAsync`)
 - **DB:** `TorrentCartOrders`, `TorrentCartOrderCandidates`, `TrackedShows.AutoTrackEpisodeOverridesJson`
 - **External:** WARP connect, qBittorrent restart if WebUI down

@@ -304,13 +304,17 @@ events:
   - AutoTrackSchedulerService.RunCompleted -> tray notification, News refresh
 tmdb_eligibility:
   service: Services/AutoTrackTmdbEligibility.cs
-  should_refresh: [is_auto_tracked, past_anchor, not_satisfied_this_week, not_finished_complete, not_fully_caught_up_finished]
+  should_refresh: [is_auto_tracked, current_cycle_not_satisfied]  # bypassAnchor (Run Now) skips the cycle check
   pending_hunt: [at_or_after_checkpoint, air_date_plus_delay, missing, no_hash, no_active_cart]
+  hunt_cycle_gate: "scheduled shows: FilterToCycle keeps episodes with AirDate <= current cycle anchor (or null)"
   tmdb_states: [Active=0, DormantCaughtUp=1, FinishedComplete=2]
   weekly_air_day: Services/ShowWeeklyAirDay.cs
     method: strict_plurality_of_last_12_episodes_utc_plus_7
   anchor: Services/AutoTrackWeekAnchor.cs
-    week_starts: Sunday
+    cycle: "rolling — most recent anchor <= now (GetCurrentCycleAnchor); missed anchors stay due across the calendar week"
+    week_key: "WeekKey(cycle anchor), Sunday week start; display only"
+  warp_recover: "RefreshShowWithWarpRecoveryAsync + Common/TmdbNetworkBlockDetector (SSL/TLS, refused/reset, DNS, timeout); one failed connect per cycle stops further attempts; after connect waits for DNS (Common/TmdbDnsProbe, local DNS answers loopback) then retries 3x spaced 3s/5s"
+  tests: MediaManager.App.Tests/Services/AutoTrackAnchorCycleTests.cs, TmdbNetworkBlockDetectorTests.cs, TmdbDnsProbeTests.cs
 ```
 
 ### Torrent Cart Acquisition
@@ -484,7 +488,8 @@ integrations:
   warp:
     service: Services/WarpCliService.cs
     config: WarpSettings
-    use_case: SSL recovery during torrent hunt
+    use_case: "Auto-Track only — hunt preflight; TMDB refresh recovery on SSL/TLS or connection block (TMDB blocks this network's IP)"
+    lease_ownership: "release disconnects only a tunnel the app connected; a tunnel already up before the first lease stays up"
   google_drive:
     client: Services/Backup/GoogleDriveClient.cs
     config: BackupSettings
@@ -603,8 +608,8 @@ core:
   tests: MediaManager.Core.Tests/MediaManager.Core.Tests.csproj
   app_tests: MediaManager.App.Tests/MediaManager.App.Tests.csproj
   test_stack: [xUnit, FluentAssertions, coverlet.collector]
-  test_count_core: 207
-  test_count_app: 9  # Windows-targeted AUD-002 cleanup/halt; no extra assertion library
+  test_count_core: 248
+  test_count_app: 53  # Windows-targeted: AUD-002 cleanup/halt, startup task, Auto-Track anchor cycle + TMDB network-block detector; xUnit Assert only
   wpf_reference: media management app.csproj -> ProjectReference MediaManager.Core
   moved_types:
     - TorrentCandidateParser (+ TorrentCandidateParseResult)
@@ -647,7 +652,7 @@ build:
   test_command: >
     dotnet test MediaManager.Core.Tests/MediaManager.Core.Tests.csproj -c Release -p:Platform=x64;
     dotnet test MediaManager.App.Tests/MediaManager.App.Tests.csproj -c Release -p:Platform=x64
-  test_counts: { core: 207, app: 9 }
+  test_counts: { core: 248, app: 53 }
   publish: single-file self-contained win-x64
   third_party: ThirdParty/Sonarr.Parser/MediaManager.Sonarr.Parser.csproj
 ```

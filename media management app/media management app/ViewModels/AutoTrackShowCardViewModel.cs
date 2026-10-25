@@ -265,12 +265,12 @@ public sealed partial class AutoTrackShowCardViewModel : ObservableObject
             return $"Last TMDB week: {show.AutoTrackLastTmdbWeekKey}";
         }
 
-        if (AutoTrackWeekAnchor.IsPastAnchorThisWeek(show, now, settings))
+        if (!AutoTrackTmdbEligibility.HasSatisfiedCurrentCycle(show, settings, now))
         {
             return "Next TMDB: pending discovery";
         }
 
-        return $"Next TMDB: after {AutoTrackWeekAnchor.FormatEffectiveAnchor(show, settings)}";
+        return $"Next TMDB: after {AutoTrackWeekAnchor.GetNextCycleAnchor(show, now, settings):ddd dd/MM HH:mm}";
     }
 
     private static string BuildHuntStatusLine(

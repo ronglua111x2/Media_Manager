@@ -25,6 +25,11 @@ public sealed class AutoTrackService : IAutoTrackService
     private readonly SemaphoreSlim _discoveryLock = new(1, 1);
     private readonly SemaphoreSlim _huntLock = new(1, 1);
     private readonly SemaphoreSlim _reconcileLock = new(1, 1);
+    private static readonly TimeSpan WarpDnsReadyTimeout = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan[] WarpRetryDelays = [TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(5)];
+
+    // Guarded by _discoveryLock; reset at the start of each TMDB discovery cycle.
+    private bool _warpRecoverFailedThisCycle;
 
     public AutoTrackService(
         ISettingsService settingsService,
@@ -178,9 +183,10 @@ public sealed class AutoTrackService : IAutoTrackService
         }
 
         var warpSettings = _settingsService.Current.Warp;
-        var autoRecoverOnSsl = (warpSettings?.Enabled ?? true) &&
-                               (warpSettings?.AutoRecoverOnSsl ?? true) &&
-                               _warpCliService.IsAvailable;
+        var autoRecoverOnNetworkBlock = (warpSettings?.Enabled ?? true) &&
+                                        (warpSettings?.AutoRecoverOnSsl ?? true) &&
+                                        _warpCliService.IsAvailable;
+        _warpRecoverFailedThisCycle = false;
 
         try
         {
@@ -202,10 +208,10 @@ public sealed class AutoTrackService : IAutoTrackService
                     var currentShow = _databaseService.GetTrackedShow(show.Id) ?? show;
                 var episodes = _trackedShowService.GetEpisodes(currentShow.Id);
 
-                var isPastAnchorNow = AutoTrackWeekAnchor.IsPastAnchorThisWeek(currentShow, nowLocal, settings);
-                var isSatisfiedThisWeek = AutoTrackTmdbEligibility.HasSatisfiedPostAnchorRefreshThisWeek(currentShow, settings, nowLocal);
+                var cycleAnchor = AutoTrackWeekAnchor.GetCurrentCycleAnchor(currentShow, nowLocal, settings);
+                var isSatisfiedCycle = AutoTrackTmdbEligibility.HasSatisfiedCurrentCycle(currentShow, settings, nowLocal);
                 _logger.Info(
-                    $"Anchor check '{currentShow.DisplayTitle}': anchor={AutoTrackWeekAnchor.FormatEffectiveAnchor(currentShow, settings)}, now={nowLocal:yyyy-MM-dd HH:mm}, pastAnchor={isPastAnchorNow}, satisfiedThisWeek={isSatisfiedThisWeek}, state={currentShow.AutoTrackTmdbState}, weekKey={currentShow.AutoTrackLastTmdbWeekKey}, lastRefresh={currentShow.AutoTrackLastTmdbRefreshLocal:yyyy-MM-dd HH:mm}.",
+                    $"Anchor check '{currentShow.DisplayTitle}': anchor={AutoTrackWeekAnchor.FormatEffectiveAnchor(currentShow, settings)}, now={nowLocal:yyyy-MM-dd HH:mm}, cycleAnchor={cycleAnchor:yyyy-MM-dd HH:mm}, next={cycleAnchor.AddDays(7):yyyy-MM-dd HH:mm}, satisfiedCycle={isSatisfiedCycle}, state={currentShow.AutoTrackTmdbState}, weekKey={currentShow.AutoTrackLastTmdbWeekKey}, lastRefresh={currentShow.AutoTrackLastTmdbRefreshLocal:yyyy-MM-dd HH:mm}.",
                     LogTarget.All);
 
                 if (AutoTrackTmdbEligibility.ShouldResetDormantState(currentShow, settings, nowLocal))
@@ -252,9 +258,9 @@ public sealed class AutoTrackService : IAutoTrackService
 
                 try
                 {
-                    var refreshedShow = await RefreshShowWithSslWarpRecoveryAsync(
+                    var refreshedShow = await RefreshShowWithWarpRecoveryAsync(
                         currentShow,
-                        autoRecoverOnSsl,
+                        autoRecoverOnNetworkBlock,
                         cancellationToken);
 
                     result.TmdbRefreshed++;
@@ -281,7 +287,9 @@ public sealed class AutoTrackService : IAutoTrackService
                     }
 
                     var refreshedEpisodes = _trackedShowService.GetEpisodes(refreshedShow.Id);
-                    var pastAnchor = AutoTrackWeekAnchor.IsPastAnchorThisWeek(refreshedShow, nowLocal, settings);
+                    // Rolling cycle: every refresh lands at/after the current cycle anchor, so it satisfies the cycle.
+                    var cycleWeekKey = AutoTrackWeekAnchor.WeekKey(
+                        AutoTrackWeekAnchor.GetCurrentCycleAnchor(refreshedShow, nowLocal, settings));
                     var hasPendingLatest = AutoTrackTmdbEligibility.HasPendingLatestEpisode(
                         refreshedShow,
                         refreshedEpisodes,
@@ -289,51 +297,29 @@ public sealed class AutoTrackService : IAutoTrackService
                         nowLocal);
 
                     AutoTrackTmdbState nextState;
-                    string? weekKeyToStore = refreshedShow.AutoTrackLastTmdbWeekKey;
                     if (hasPendingLatest)
                     {
                         nextState = AutoTrackTmdbState.Active;
-                        if (pastAnchor)
-                        {
-                            weekKeyToStore = AutoTrackWeekAnchor.WeekKey(nowLocal);
-                        }
                     }
                     else if (refreshedShow.SeriesStatus == ShowSeriesStatus.Finished &&
                              AutoTrackTmdbEligibility.IsFullyCaughtUp(refreshedShow, refreshedEpisodes))
                     {
                         nextState = AutoTrackTmdbState.FinishedComplete;
-                        if (pastAnchor)
-                        {
-                            weekKeyToStore = AutoTrackWeekAnchor.WeekKey(nowLocal);
-                        }
                     }
                     else if (refreshedShow.SeriesStatus == ShowSeriesStatus.Ongoing &&
                              AutoTrackTmdbEligibility.IsFullyCaughtUp(refreshedShow, refreshedEpisodes))
                     {
-                        // Pre-anchor Run Now must not mark dormant / satisfy this week's schedule.
-                        if (pastAnchor)
-                        {
-                            nextState = AutoTrackTmdbState.DormantCaughtUp;
-                            weekKeyToStore = AutoTrackWeekAnchor.WeekKey(nowLocal);
-                        }
-                        else
-                        {
-                            nextState = AutoTrackTmdbState.Active;
-                        }
+                        nextState = AutoTrackTmdbState.DormantCaughtUp;
                     }
                     else
                     {
                         nextState = AutoTrackTmdbState.Active;
-                        if (pastAnchor)
-                        {
-                            weekKeyToStore = AutoTrackWeekAnchor.WeekKey(nowLocal);
-                        }
                     }
 
                     _databaseService.UpdateTrackedShowAutoTrackTmdbState(
                         refreshedShow.Id,
                         nextState,
-                        weekKeyToStore,
+                        cycleWeekKey,
                         nowLocal);
 
                     if (hasPendingLatest)
@@ -420,19 +406,21 @@ public sealed class AutoTrackService : IAutoTrackService
         return result;
     }
 
-    private async Task<TrackedShow> RefreshShowWithSslWarpRecoveryAsync(
+    private async Task<TrackedShow> RefreshShowWithWarpRecoveryAsync(
         TrackedShow show,
-        bool autoRecoverOnSsl,
+        bool autoRecoverOnNetworkBlock,
         CancellationToken cancellationToken)
     {
         try
         {
             return await _trackedShowService.RefreshShowAsync(show, cancellationToken);
         }
-        catch (Exception ex) when (autoRecoverOnSsl && SslTlsErrorDetector.IsSslOrTlsError(ex))
+        catch (Exception ex) when (autoRecoverOnNetworkBlock &&
+                                   !_warpRecoverFailedThisCycle &&
+                                   TmdbNetworkBlockDetector.IsLikelyBlocked(ex, cancellationToken))
         {
             _logger.Warning(
-                $"TMDB SSL/TLS error for '{show.DisplayTitle}': {ex.Message}. Attempting WARP self-recover.",
+                $"TMDB network error ({TmdbNetworkBlockDetector.Describe(ex, cancellationToken)}) for '{show.DisplayTitle}': {ex.Message}. Attempting WARP self-recover.",
                 LogTarget.All);
 
             var timeout = TimeSpan.FromSeconds(_settingsService.Current.Warp?.ConnectTimeoutSeconds ?? 30);
@@ -442,19 +430,56 @@ public sealed class AutoTrackService : IAutoTrackService
                 cancellationToken);
             if (!attempt.Connected)
             {
+                // Skip further connect attempts this cycle (e.g. machine fully offline).
+                _warpRecoverFailedThisCycle = true;
                 _logger.Warning(
-                    "WARP connect for SSL self-recover failed or timed out. Re-throwing original TMDB error.",
+                    "WARP connect for TMDB self-recover failed or timed out. Re-throwing original TMDB error; no more WARP attempts this cycle.",
                     LogTarget.All);
                 throw;
             }
 
             if (attempt.StartedByThisAcquire)
             {
-                _logger.Info("WARP connected for Auto-Track TMDB SSL recover.", LogTarget.File | LogTarget.Console);
+                _logger.Info("WARP connected for Auto-Track TMDB recover.", LogTarget.File | LogTarget.Console);
             }
 
-            _logger.Info($"Retrying TMDB refresh for '{show.DisplayTitle}' with WARP.", LogTarget.All);
-            return await _trackedShowService.RefreshShowAsync(show, cancellationToken);
+            // Fresh WARP: the OS resolver can still hand out the loopback answer for a few seconds.
+            var dns = await TmdbDnsProbe.WaitUntilUsableAsync(
+                WarpDnsReadyTimeout,
+                TimeSpan.FromSeconds(1),
+                cancellationToken);
+            if (dns.Ready)
+            {
+                _logger.Info(
+                    $"TMDB DNS ready with WARP: {TmdbDnsProbe.ApiHost} -> {TmdbDnsProbe.Format(dns.Addresses)}.",
+                    LogTarget.File | LogTarget.Console);
+            }
+            else
+            {
+                _logger.Warning(
+                    $"TMDB DNS still not usable after {WarpDnsReadyTimeout.TotalSeconds:0}s with WARP: {TmdbDnsProbe.ApiHost} -> {TmdbDnsProbe.Format(dns.Addresses)}. Retrying anyway.",
+                    LogTarget.All);
+            }
+
+            for (var retry = 1; ; retry++)
+            {
+                _logger.Info(
+                    $"Retrying TMDB refresh for '{show.DisplayTitle}' with WARP (attempt {retry}/{WarpRetryDelays.Length + 1}).",
+                    LogTarget.All);
+                try
+                {
+                    return await _trackedShowService.RefreshShowAsync(show, cancellationToken);
+                }
+                catch (Exception retryEx) when (retry <= WarpRetryDelays.Length &&
+                                                TmdbNetworkBlockDetector.IsLikelyBlocked(retryEx, cancellationToken))
+                {
+                    var delay = WarpRetryDelays[retry - 1];
+                    _logger.Warning(
+                        $"TMDB still unreachable with WARP ({TmdbNetworkBlockDetector.Describe(retryEx, cancellationToken)}): {retryEx.Message}. Waiting {delay.TotalSeconds:0}s for the tunnel to settle.",
+                        LogTarget.File | LogTarget.Console);
+                    await Task.Delay(delay, cancellationToken);
+                }
+            }
         }
     }
 
@@ -811,13 +836,6 @@ public sealed class AutoTrackService : IAutoTrackService
                 continue;
             }
 
-            if (!bypassSchedule &&
-                !resumeOnly &&
-                !AutoTrackWeekAnchor.IsPastAnchorThisWeek(show, nowLocal, settings))
-            {
-                continue;
-            }
-
             var episodes = _trackedShowService.GetEpisodes(show.Id);
             var pending = AutoTrackTmdbEligibility.FindPendingEpisodes(
                 show,
@@ -825,6 +843,16 @@ public sealed class AutoTrackService : IAutoTrackService
                 IsAutoTrackHuntBlocked,
                 nowLocal,
                 resumeOnly ? 0 : huntDelayHours);
+            if (!bypassSchedule &&
+                !resumeOnly &&
+                AutoTrackWeekAnchor.IsWeeklyScheduleEnforced(show, settings))
+            {
+                // Episode-level cycle gate: hunt episodes that aired by the current cycle anchor.
+                pending = AutoTrackTmdbEligibility.FilterToCycle(
+                    pending,
+                    AutoTrackWeekAnchor.GetCurrentCycleAnchor(show, nowLocal, settings));
+            }
+
             if (pending.Count == 0)
             {
                 continue;
