@@ -18,17 +18,25 @@ public static class AutoTrackWeekAnchor
         return (day, ParseLocalTime(timeText));
     }
 
-    public static bool IsPastAnchorThisWeek(TrackedShow show, DateTime nowLocal, AutoTrackSettings settings)
+    /// <summary>
+    /// Most recent anchor at or before <paramref name="nowLocal"/>. The cycle runs from this anchor
+    /// to the next one, so a missed anchor stays due across the calendar-week boundary.
+    /// </summary>
+    public static DateTime GetCurrentCycleAnchor(TrackedShow show, DateTime nowLocal, AutoTrackSettings settings)
     {
-        if (!IsWeeklyScheduleEnforced(show, settings))
-        {
-            return true;
-        }
-
         var (day, time) = GetEffectiveAnchor(show, settings);
-        var anchorDateTime = GetAnchorDateTimeThisWeek(day, time, nowLocal);
-        return nowLocal >= anchorDateTime;
+        return GetCurrentCycleAnchor(day, time, nowLocal);
     }
+
+    public static DateTime GetCurrentCycleAnchor(DayOfWeek anchorDay, TimeSpan anchorTime, DateTime nowLocal)
+    {
+        var weekStart = GetStartOfWeekSunday(nowLocal.Date);
+        var anchor = weekStart.AddDays((int)anchorDay).Add(anchorTime);
+        return anchor > nowLocal ? anchor.AddDays(-7) : anchor;
+    }
+
+    public static DateTime GetNextCycleAnchor(TrackedShow show, DateTime nowLocal, AutoTrackSettings settings) =>
+        GetCurrentCycleAnchor(show, nowLocal, settings).AddDays(7);
 
     public static string WeekKey(DateTime dateTimeLocal)
     {
@@ -40,13 +48,6 @@ public static class AutoTrackWeekAnchor
     {
         var (day, time) = GetEffectiveAnchor(show, settings);
         return $"{day} {time:hh\\:mm}";
-    }
-
-    public static DateTime GetAnchorDateTimeThisWeek(DayOfWeek anchorDay, TimeSpan anchorTime, DateTime nowLocal)
-    {
-        var weekStart = GetStartOfWeekSunday(nowLocal.Date);
-        var daysFromSunday = (int)anchorDay;
-        return weekStart.AddDays(daysFromSunday).Add(anchorTime);
     }
 
     public static DateTime ToTimePickerValue(string? timeText)

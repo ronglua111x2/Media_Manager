@@ -1479,9 +1479,9 @@
                                               Content="Enable WARP CLI integration" />
                                     <CheckBox IsChecked="{Binding WarpAutoRecoverOnSsl, Mode=TwoWay}"
                                               Margin="0,0,0,4"
-                                              Content="Auto-recover with WARP on SSL/TLS errors (Auto-Track only)" />
+                                              Content="Auto-recover with WARP on TMDB SSL/TLS or connection errors (Auto-Track only)" />
                                     <TextBlock Style="{StaticResource SettingsHintStyle}" Margin="0,0,0,8"
-                                               Text="If an Auto-Track TMDB refresh fails with SSL/TLS, connect WARP, retry, keep WARP for the rest of that cycle, then disconnect. Does not affect Library TMDB." />
+                                               Text="If an Auto-Track TMDB refresh fails with SSL/TLS, a refused/reset connection, DNS failure or timeout, connect WARP, retry, keep WARP for the rest of that cycle, then disconnect (only if WARP was not already on). Does not affect Library TMDB." />
                                     <CheckBox IsChecked="{Binding WarpConfirmDisconnectDuringAutoTrack, Mode=TwoWay}"
                                               Margin="0,0,0,4"
                                               Content="Ask before disconnecting WARP while Auto-Track is using it" />

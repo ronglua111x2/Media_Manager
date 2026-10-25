@@ -13,6 +13,7 @@ Per-sprint **Plan Mode** output before Agent Mode implementation.
 | `sprint-04-local-plan.md` | 4 | ✅ Complete — tagged `four-pillars-sprint-04` |
 | `sprint-05-local-plan.md` | 5 | 🧊 **Frozen / cancelled** — do not resume. Audit: [settings-modernization/](../settings-modernization/README.md) |
 | `poster-flash-surgical-fix.md` | — | **Next code work** — Library poster flash (not Sprint 8 split) |
+| `auto-track-anchor-cycle-warp-fix.md` | — | One-PR bugfix — Auto-Track rolling anchor cycle + WARP recovery on TMDB connection errors |
 | — | 0–4 | ✅ Complete. E4 sprints 5–10 frozen. |
 
 ## Template (copy for each sprint)
