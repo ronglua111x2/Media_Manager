@@ -191,7 +191,7 @@ Contains refresh/access tokens — **do not share or document contents**.
 ## Database
 
 - **File:** `media-manager.db` (SQLite)
-- **Init:** `DatabaseService.Initialize()` runs `MigrationRunner.ApplyPendingMigrations()` first (`001_baseline` through `007_auto_track_episode_overrides`), then the existing `CREATE TABLE IF NOT EXISTS` + `EnsureColumn` safety net
+- **Init:** `DatabaseService.Initialize()` runs `MigrationRunner.ApplyPendingMigrations()` first (`001_baseline` through `008_torrentcart_pending_validation_hash`), then the existing `CREATE TABLE IF NOT EXISTS` + `EnsureColumn` safety net
 - **History table:** `SchemaMigrations` (`Id`, `Name`, `AppliedUtc`) records each applied script
 - **Safe snapshot:** `DatabaseService.CreateSafeSnapshot()` for backups (WAL checkpoint + copy)
 - **Migration failure:** startup is blocked with an error dialog; restore `media-manager.db` from a Google Drive backup (Settings → Backup) or a local snapshot from `CreateSafeSnapshot()`

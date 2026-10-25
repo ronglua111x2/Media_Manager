@@ -258,5 +258,5 @@ Commands run on this repo (Windows, Git Bash):
 | `dotnet publish -c Release -p:Platform=x64` | OK |
 | `dotnet test` on WPF `.csproj` | OK exit, **no tests** (tests live in Core.Tests / App.Tests) |
 | `dotnet test` Core.Tests Release/x64 | **248 passed** (2026-10-12, clean clone) |
-| `dotnet test` App.Tests Release/x64 | **53 passed** (2026-10-25) |
+| `dotnet test` App.Tests Release/x64 | **82 passed** (2026-10-26) |
 

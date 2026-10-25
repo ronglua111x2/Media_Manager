@@ -552,12 +552,21 @@ Setup details: [STATE_FOLDER.md](./STATE_FOLDER.md#google-drive-oauth)
 
 ### 10.3 Torrent Hunt (Auto-Track)
 - **What:** Search qBittorrent for pending episodes (scheduled shows: only episodes aired by the current cycle anchor), score candidates, create cart orders, add torrents. Hunt applies the assigned episode recipe plus `AutoTrackEpisodeOverridesJson`. If the magnet is already in qBittorrent, hunt attaches that copy with no dialog and still runs remaining add-gate checks.
-- **Code:** `Services/AutoTrackService.cs` (`RunTorrentHuntAsync`)
-- **DB:** `TorrentCartOrders`, `TorrentCartOrderCandidates`, `TrackedShows.AutoTrackEpisodeOverridesJson`
+- **Interrupted orders (shutdown, crash, kill, power loss):** an order left in `Searching` / `Approved` by an earlier app session would block its episode until Reset week. Once per app session, before the first hunt queue (or background reconcile), `RecoverInterruptedOrdersOnceAsync` checks every Auto-Track episode order still in `Searching`/`Approved` with no `TorrentHash` and `UpdatedUtc` before this session started. Only DB state survives a hard stop, so the rules use the stored order (`Services/InterruptedOrderRecovery.cs`):
+  - `Searching` → back to `Draft` (searched again).
+  - `Approved`, and qBittorrent has its `PendingValidationHash` or the selected magnet's infohash → re-run add-gate validation on that copy, then attach (`Downloading`). If validation rejects it → `Draft`. If cleanup is unverified → `Failed`, and the hash is kept.
+  - `Approved`, torrent not in qBittorrent → `CandidatesFound` (resume accept/add without re-searching), or `Draft` if it has no candidates.
+  - If qBittorrent WebUI is down, recovery waits for the next run instead of releasing `Approved` orders blindly.
+  - Graceful shutdown during search also rolls `Searching` orders back to `Draft`, best effort. Add/validate is not rolled back: the pending hash stays for startup recovery.
+  - **Status:** interrupted-order recovery is not yet verified in a real crash / power-loss test. It is published locally only, not released (branch `fix/autotrack-interrupted-orders`, draft PR, label `release:skip`).
+- **Code:** `Services/AutoTrackService.cs` (`RunTorrentHuntAsync`, `RecoverInterruptedOrdersOnceAsync`), `Services/InterruptedOrderRecovery.cs`, `TorrentCartService.ReleaseInterruptedAutoTrackOrder`
+- **DB:** `TorrentCartOrders` (incl. `PendingValidationHash`), `TorrentCartOrderCandidates`, `TrackedShows.AutoTrackEpisodeOverridesJson`
 - **External:** WARP connect, qBittorrent restart if WebUI down
+- **Tests:** `MediaManager.App.Tests/Services/InterruptedOrderRecoveryTests.cs`, `TorrentAddGatePendingHashTests.cs`
 
 ### 10.4 Background Reconcile (Auto-Track)
-- **What:** Sync torrent progress, hardlink completed, pack link, release hunt blocks
+- **What:** Sync torrent progress, hardlink completed, pack link, release hunt blocks. Runs interrupted-order recovery first (once per session, see §10.3), so an unvalidated torrent from a crashed session is validated before reconcile sees it.
+- **Unvalidated torrents are never adopted:** `TorrentReconciliationService` seeds its used-hash set with every order's `PendingValidationHash`. That stops `AdoptManualTorrentsAsync` from matching such a torrent by name, and `SyncOrdersFromTrackedItems` skips orders that have one.
 - **Code:** `Services/AutoTrackService.cs` (`RunBackgroundReconcileAsync`)
 - **DB:** `TrackedEpisodes`, `SourceItems`, `TorrentCartOrders`
 
@@ -572,6 +581,7 @@ Setup details: [STATE_FOLDER.md](./STATE_FOLDER.md#google-drive-oauth)
   1. Blacklist check (listing URL)
   2. If magnet infohash is already in qBittorrent (`TryGetExistingByListingUrlAsync`): cart Yes/No; Auto-Track auto-attaches. Apply category / save path / `media-manager` tag; do not rename; skip `AddTorrentAsync`. HTTP listings without a magnet hash stay on the add path
   3. Else add via qBittorrent (not paused; `Paused = false`)
+  3b. `onTorrentAdded` callback as soon as the hash is known, before validation. Auto-Track saves it to `TorrentCartOrders.PendingValidationHash`. On success it moves to `TorrentHash`. It is cleared on a verified reject and kept when cleanup is unverified.
   4. Infohash blacklist check → delete if matched
   5. If `EnableContentValidation` false → return immediately
   6. Poll `GetTorrentFilesAsync` every 1s until non-empty or timeout (default 90s, clamp 5–120)

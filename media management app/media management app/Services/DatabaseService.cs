@@ -1974,7 +1974,7 @@ public sealed class DatabaseService : IDatabaseService
                  SelectedCandidateSeeders, SelectedCandidateLeechers, SelectedCandidateQuality, SelectedCandidateAudioCodec,
                  SelectedCandidateCoveredSeasons, SelectedCandidateContentProfile, SelectedCandidateTotalScore,
                  TorrentHash, TorrentName, TorrentState, TorrentProgress, CreatedUtc, UpdatedUtc,
-                 FailedCandidateUrls, LastFailureReason, Source
+                 FailedCandidateUrls, LastFailureReason, Source, PendingValidationHash
             FROM TorrentCartOrders
             {(whereClauses.Count == 0 ? string.Empty : $"WHERE {string.Join(" AND ", whereClauses)}")}
             ORDER BY Id;
@@ -1999,7 +1999,7 @@ public sealed class DatabaseService : IDatabaseService
                  SelectedCandidateSeeders, SelectedCandidateLeechers, SelectedCandidateQuality, SelectedCandidateAudioCodec,
                  SelectedCandidateCoveredSeasons, SelectedCandidateContentProfile, SelectedCandidateTotalScore,
                  TorrentHash, TorrentName, TorrentState, TorrentProgress, CreatedUtc, UpdatedUtc,
-                 FailedCandidateUrls, LastFailureReason, Source
+                 FailedCandidateUrls, LastFailureReason, Source, PendingValidationHash
             FROM TorrentCartOrders
             WHERE Id = $Id
             LIMIT 1;
@@ -2025,14 +2025,14 @@ public sealed class DatabaseService : IDatabaseService
                     SelectedCandidateSeeders, SelectedCandidateLeechers, SelectedCandidateQuality, SelectedCandidateAudioCodec,
                     SelectedCandidateCoveredSeasons, SelectedCandidateContentProfile, SelectedCandidateTotalScore,
                     TorrentHash, TorrentName, TorrentState, TorrentProgress, CreatedUtc, UpdatedUtc,
-                    FailedCandidateUrls, LastFailureReason, Source)
+                    FailedCandidateUrls, LastFailureReason, Source, PendingValidationHash)
                 VALUES (
                     $TargetKind, $MediaId, $EpisodeId, $SeasonNumber, $EpisodeNumber, $Title, $Summary, $Status, $StatusDetail,
                     $SelectedCandidateName, $SelectedCandidateUrl, $SelectedCandidatePlugin, $SelectedCandidateFileSize,
                     $SelectedCandidateSeeders, $SelectedCandidateLeechers, $SelectedCandidateQuality, $SelectedCandidateAudioCodec,
                     $SelectedCandidateCoveredSeasons, $SelectedCandidateContentProfile, $SelectedCandidateTotalScore,
                     $TorrentHash, $TorrentName, $TorrentState, $TorrentProgress, $CreatedUtc, $UpdatedUtc,
-                    $FailedCandidateUrls, $LastFailureReason, $Source);
+                    $FailedCandidateUrls, $LastFailureReason, $Source, $PendingValidationHash);
                 SELECT last_insert_rowid();
                 """;
             AddTorrentCartOrderParameters(insert, order);
@@ -2050,14 +2050,14 @@ public sealed class DatabaseService : IDatabaseService
                 SelectedCandidateSeeders, SelectedCandidateLeechers, SelectedCandidateQuality, SelectedCandidateAudioCodec,
                 SelectedCandidateCoveredSeasons, SelectedCandidateContentProfile, SelectedCandidateTotalScore,
                 TorrentHash, TorrentName, TorrentState, TorrentProgress, CreatedUtc, UpdatedUtc,
-                FailedCandidateUrls, LastFailureReason, Source)
+                FailedCandidateUrls, LastFailureReason, Source, PendingValidationHash)
             VALUES (
                 $Id, $TargetKind, $MediaId, $EpisodeId, $SeasonNumber, $EpisodeNumber, $Title, $Summary, $Status, $StatusDetail,
                 $SelectedCandidateName, $SelectedCandidateUrl, $SelectedCandidatePlugin, $SelectedCandidateFileSize,
                 $SelectedCandidateSeeders, $SelectedCandidateLeechers, $SelectedCandidateQuality, $SelectedCandidateAudioCodec,
                 $SelectedCandidateCoveredSeasons, $SelectedCandidateContentProfile, $SelectedCandidateTotalScore,
                 $TorrentHash, $TorrentName, $TorrentState, $TorrentProgress, $CreatedUtc, $UpdatedUtc,
-                $FailedCandidateUrls, $LastFailureReason, $Source)
+                $FailedCandidateUrls, $LastFailureReason, $Source, $PendingValidationHash)
             ON CONFLICT(Id) DO UPDATE SET
                 TargetKind = excluded.TargetKind,
                 MediaId = excluded.MediaId,
@@ -2086,6 +2086,7 @@ public sealed class DatabaseService : IDatabaseService
                 FailedCandidateUrls = excluded.FailedCandidateUrls,
                 LastFailureReason = excluded.LastFailureReason,
                 Source = excluded.Source,
+                PendingValidationHash = excluded.PendingValidationHash,
                 UpdatedUtc = excluded.UpdatedUtc;
             """;
         command.Parameters.AddWithValue("$Id", order.Id);
@@ -2718,6 +2719,7 @@ public sealed class DatabaseService : IDatabaseService
         EnsureColumn(connection, "TorrentCartOrders", "FailedCandidateUrls", "TEXT NOT NULL DEFAULT ''");
         EnsureColumn(connection, "TorrentCartOrders", "LastFailureReason", "TEXT NOT NULL DEFAULT ''");
         EnsureColumn(connection, "TorrentCartOrders", "Source", "INTEGER NOT NULL DEFAULT 0");
+        EnsureColumn(connection, "TorrentCartOrders", "PendingValidationHash", "TEXT NOT NULL DEFAULT ''");
     }
 
     private static void InitializeTorrentCartOrderCandidates(SqliteConnection connection)
@@ -2998,6 +3000,7 @@ public sealed class DatabaseService : IDatabaseService
         command.Parameters.AddWithValue("$FailedCandidateUrls", order.FailedCandidateUrls);
         command.Parameters.AddWithValue("$LastFailureReason", order.LastFailureReason);
         command.Parameters.AddWithValue("$Source", (int)order.Source);
+        command.Parameters.AddWithValue("$PendingValidationHash", order.PendingValidationHash);
     }
 
     private static void AddTorrentCartOrderCandidateParameters(
@@ -3078,7 +3081,8 @@ public sealed class DatabaseService : IDatabaseService
             LastFailureReason = reader.FieldCount > 28 && !reader.IsDBNull(28) ? reader.GetString(28) : string.Empty,
             Source = reader.FieldCount > 29 && !reader.IsDBNull(29)
                 ? (TorrentOrderSource)reader.GetInt32(29)
-                : TorrentOrderSource.Manual
+                : TorrentOrderSource.Manual,
+            PendingValidationHash = reader.FieldCount > 30 && !reader.IsDBNull(30) ? reader.GetString(30) : string.Empty
         };
     }
 

@@ -171,6 +171,7 @@ migration_strategy:
     - 005_cart_recipe_max_candidate_overrides
     - 006_cart_recipe_override_sets
     - 007_auto_track_episode_overrides
+    - 008_torrentcart_pending_validation_hash
   init_file: Services/DatabaseService.cs
   methods: [MigrationRunner.ApplyPendingMigrations, CREATE TABLE IF NOT EXISTS, EnsureColumn]
   failure_policy: block_startup
@@ -290,7 +291,7 @@ phases:
   - name: torrent_hunt
     method: RunTorrentHuntAsync
     lock: _huntLock
-    actions: [search qbit, score candidates, create cart orders, add or attach existing torrents via gate]
+    actions: [recover interrupted orders (once per session), search qbit, score candidates, create cart orders, add or attach existing torrents via gate]
     dependencies: [IWarpCliService, IQbittorrentProcessRestartService, ITorrentAddGateService]
   - name: background_reconcile
     method: RunBackgroundReconcileAsync
@@ -315,6 +316,17 @@ tmdb_eligibility:
     week_key: "WeekKey(cycle anchor), Sunday week start; display only"
   warp_recover: "RefreshShowWithWarpRecoveryAsync + Common/TmdbNetworkBlockDetector (SSL/TLS, refused/reset, DNS, timeout); one failed connect per cycle stops further attempts; after connect waits for DNS (Common/TmdbDnsProbe, local DNS answers loopback) then retries 3x spaced 3s/5s"
   tests: MediaManager.App.Tests/Services/AutoTrackAnchorCycleTests.cs, TmdbNetworkBlockDetectorTests.cs, TmdbDnsProbeTests.cs
+interrupted_orders:
+  problem: "Searching/Approved orders from a session that ended mid-hunt (graceful, crash, kill, power loss) block the episode; a kill during add-gate validation leaves an unvalidated running torrent unknown to the DB"
+  entry: AutoTrackService.RecoverInterruptedOrdersOnceAsync — once per session (flag + _interruptedRecoveryLock), first thing in hunt core and background reconcile core
+  match: InterruptedOrderRecovery.IsInterrupted — AutoTrack + TvEpisode + Searching/Approved + empty TorrentHash + UpdatedUtc < session start
+  decide: InterruptedOrderRecovery.Decide — Searching->ResetToDraft; Approved+live torrent->RevalidateExisting (AddOrderToClientAsync with knownExisting); Approved+candidates->ReturnToCandidates; else ResetToDraft
+  live_lookup: TryGetExistingByHashAsync(PendingValidationHash) ?? TryGetExistingByListingUrlAsync(SelectedCandidateUrl)
+  defer: qBittorrent probe fails and any Approved order is pending -> no release, retry next run
+  graceful_cancel: search phase rolls Searching -> Draft (RollBackCanceledSearches); add/validate phase keeps PendingValidationHash for recovery
+  invariant: "An unvalidated hash lives only in TorrentCartOrders.PendingValidationHash (never on the episode); reconcile never adopts it"
+  status: "Not verified in a real crash/power-loss test; local publish only, no release"
+  tests: MediaManager.App.Tests/Services/InterruptedOrderRecoveryTests.cs, TorrentAddGatePendingHashTests.cs
 ```
 
 ### Torrent Cart Acquisition
@@ -348,6 +360,7 @@ steps:
   1: Blacklist check (listing URL)
   1b: Magnet already in qBittorrent -> cart AppMessageBox Yes/No; Auto-Track auto-attaches; ApplyManagedTorrentSettingsAsync; skip AddTorrentAsync
   2: Else add torrent RUNNING (Paused=false) via QbittorrentClient
+  2b: onTorrentAdded(hash) before validation -> Auto-Track persists TorrentCartOrders.PendingValidationHash (crash/power-loss trace)
   3: Infohash blacklist check -> delete if matched
   4: If EnableContentValidation=false -> return immediately
   5: Poll GetTorrentFilesAsync every 1s until files or timeout
@@ -567,7 +580,7 @@ startup_order:
   5: Gemini model catalog reload + normalize
   6: ThemeService.Apply()
   7: DatabaseService.Initialize(stateFolder)
-    side_effect: MigrationRunner applies pending SchemaMigrations (001_baseline through 007_auto_track_episode_overrides once)
+    side_effect: MigrationRunner applies pending SchemaMigrations (001_baseline through 008_torrentcart_pending_validation_hash once)
     on_failure: DatabaseMigrationException + dialog; App.OnStartup Shutdown()
   8: LogCleanupService.Start()
   9: Unless SafeTestMode (--state-folder without --enable-background) AND SetupCompleted:
@@ -609,7 +622,7 @@ core:
   app_tests: MediaManager.App.Tests/MediaManager.App.Tests.csproj
   test_stack: [xUnit, FluentAssertions, coverlet.collector]
   test_count_core: 248
-  test_count_app: 53  # Windows-targeted: AUD-002 cleanup/halt, startup task, Auto-Track anchor cycle + TMDB network-block detector; xUnit Assert only
+  test_count_app: 82  # Windows-targeted: AUD-002 cleanup/halt, startup task, Auto-Track anchor cycle + TMDB network-block detector, interrupted-order recovery + pending validation hash; xUnit Assert only
   wpf_reference: media management app.csproj -> ProjectReference MediaManager.Core
   moved_types:
     - TorrentCandidateParser (+ TorrentCandidateParseResult)

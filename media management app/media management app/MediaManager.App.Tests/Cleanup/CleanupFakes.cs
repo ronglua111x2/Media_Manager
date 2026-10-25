@@ -98,6 +98,8 @@ internal sealed class FakeValidationService : ITorrentContentValidationService
         Recommendation = TorrentHandleRecommendation.Safe
     };
 
+    public Action? OnValidateFiles { get; set; }
+
     public Task<TorrentContentValidationResult> ValidateAsync(
         string torrentHash,
         CancellationToken cancellationToken = default)
@@ -109,7 +111,10 @@ internal sealed class FakeValidationService : ITorrentContentValidationService
         CancellationToken cancellationToken = default,
         string? listingName = null,
         bool isPack = false)
-        => Task.FromResult(Result);
+    {
+        OnValidateFiles?.Invoke();
+        return Task.FromResult(Result);
+    }
 }
 
 internal sealed class FakeCleanupService : ITorrentCleanupService

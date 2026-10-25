@@ -72,7 +72,8 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
         var episodesById = LoadEpisodesById(shows);
         var seasons = LoadPackSeasons(shows);
 
-        var usedHashes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // Torrents still awaiting add-gate validation (live or interrupted by a crash) are never adopted by name.
+        var usedHashes = InterruptedOrderRecovery.CollectPendingValidationHashes(_databaseService.GetTorrentCartOrders());
         await RefreshSavedEpisodeHashesAsync(episodesById.Values, torrentsByHash, usedHashes, result, cancellationToken);
         await RefreshSavedSeasonPackHashesAsync(seasons, torrentsByHash, usedHashes, result, cancellationToken);
         await RefreshSavedMovieHashesAsync(movies, torrentsByHash, usedHashes, result, cancellationToken);
@@ -387,7 +388,9 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
         IReadOnlyDictionary<string, AddedTorrentResult> torrentsByHash,
         TorrentReconciliationResult result)
     {
-        foreach (var order in orders.Where(order => string.IsNullOrWhiteSpace(order.TorrentHash)))
+        foreach (var order in orders.Where(order =>
+                     string.IsNullOrWhiteSpace(order.TorrentHash) &&
+                     string.IsNullOrWhiteSpace(order.PendingValidationHash)))
         {
             var torrent = ResolveTorrentForOrder(order, episodesById, seasons, movies, torrentsByHash);
             if (torrent is null)
