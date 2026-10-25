@@ -94,6 +94,7 @@ public partial class App : System.Windows.Application
 
         _serviceProvider.GetRequiredService<ILogCleanupService>().Start();
         PublishJunkCleanup.Run(AppContext.BaseDirectory, logger);
+        BundleExtractionGuard.Run(logger);
 
         var setupCompleted = settings.Current.Startup?.SetupCompleted == true;
         var gated = !setupCompleted;
