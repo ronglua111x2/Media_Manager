@@ -58,6 +58,13 @@ public sealed class TorrentCartOrder
 
     public string LastFailureReason { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Infohash the add gate put into qBittorrent before validation finished. Cleared when the hash is
+    /// promoted to <see cref="TorrentHash"/> or the torrent is rejected. Non-empty after a crash means
+    /// an unvalidated download may still be running; startup recovery re-validates or releases it.
+    /// </summary>
+    public string PendingValidationHash { get; set; } = string.Empty;
+
     public DateTime CreatedUtc { get; set; } = DateTime.UtcNow;
 
     public DateTime UpdatedUtc { get; set; } = DateTime.UtcNow;

@@ -25,6 +25,9 @@ public sealed class AutoTrackService : IAutoTrackService
     private readonly SemaphoreSlim _discoveryLock = new(1, 1);
     private readonly SemaphoreSlim _huntLock = new(1, 1);
     private readonly SemaphoreSlim _reconcileLock = new(1, 1);
+    private readonly SemaphoreSlim _interruptedRecoveryLock = new(1, 1);
+    private readonly DateTime _sessionStartUtc = DateTime.UtcNow;
+    private volatile bool _interruptedRecoveryDone;
     // Guarded by _discoveryLock; reset at the start of each TMDB discovery cycle.
     private bool _warpRecoverFailedThisCycle;
 
@@ -458,6 +461,9 @@ public sealed class AutoTrackService : IAutoTrackService
         bool resumeOnly,
         bool bypassSchedule)
     {
+        // Before the hunt queue is built: orders a previous session left in Searching/Approved block their episode.
+        await RecoverInterruptedOrdersOnceAsync(cancellationToken);
+
         var result = new AutoTrackRunResult { Succeeded = true };
         var settings = GetAutoTrackSettings();
         var shows = _trackedShowService.GetAutoTrackedShows();
@@ -614,6 +620,8 @@ public sealed class AutoTrackService : IAutoTrackService
 
     private async Task<AutoTrackRunResult> RunBackgroundReconcileCoreAsync(CancellationToken cancellationToken)
     {
+        await RecoverInterruptedOrdersOnceAsync(cancellationToken);
+
         var result = new AutoTrackRunResult { Succeeded = true };
         var pendingShowIds = GetPendingAutoTrackReconcileShowIds();
         if (pendingShowIds.Count == 0)
@@ -993,6 +1001,7 @@ public sealed class AutoTrackService : IAutoTrackService
                 }
                 catch (OperationCanceledException)
                 {
+                    RollBackCanceledSearches(ordersNeedingSearch);
                     throw;
                 }
                 catch (Exception ex)
@@ -1201,6 +1210,7 @@ public sealed class AutoTrackService : IAutoTrackService
             {
                 failedCandidateUrls.Add(candidate.Url);
                 order.FailedCandidateUrls = SerializeFailedCandidateUrls(failedCandidateUrls);
+                order.PendingValidationHash = string.Empty;
                 order.LastFailureReason = ex.Message;
                 order.StatusDetail = $"Candidate failed: {candidate.Name} — {ex.Message}";
                 _torrentCartService.SaveOrder(order);
@@ -1222,6 +1232,7 @@ public sealed class AutoTrackService : IAutoTrackService
             {
                 failedCandidateUrls.Add(candidate.Url);
                 order.FailedCandidateUrls = SerializeFailedCandidateUrls(failedCandidateUrls);
+                order.PendingValidationHash = string.Empty;
                 order.LastFailureReason = ex.Message;
                 order.StatusDetail = $"Candidate failed: {candidate.Name} — {ex.Message}";
                 _torrentCartService.SaveOrder(order);
@@ -1236,6 +1247,188 @@ public sealed class AutoTrackService : IAutoTrackService
             LogTarget.File | LogTarget.Console);
 
         return false;
+    }
+
+    private void RollBackCanceledSearches(IEnumerable<TorrentCartOrder> ordersNeedingSearch)
+    {
+        // Best effort on graceful shutdown; a hard stop skips this and startup recovery handles it instead.
+        foreach (var order in ordersNeedingSearch)
+        {
+            try
+            {
+                if (_torrentCartService.GetOrder(order.Id)?.Status == TorrentOrderStatus.Searching)
+                {
+                    _torrentCartService.ReleaseInterruptedAutoTrackOrder(
+                        order.Id,
+                        keepCandidates: false,
+                        "Search canceled by app shutdown; will search again.");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning(
+                    $"Could not roll back canceled search for '{order.Title}': {ex.Message}",
+                    LogTarget.File | LogTarget.Console);
+            }
+        }
+    }
+
+    private async Task RecoverInterruptedOrdersOnceAsync(CancellationToken cancellationToken)
+    {
+        if (_interruptedRecoveryDone)
+        {
+            return;
+        }
+
+        await _interruptedRecoveryLock.WaitAsync(cancellationToken);
+        try
+        {
+            if (_interruptedRecoveryDone)
+            {
+                return;
+            }
+
+            var interrupted = _databaseService.GetTorrentCartOrders()
+                .Where(order => InterruptedOrderRecovery.IsInterrupted(order, _sessionStartUtc))
+                .ToList();
+            if (interrupted.Count == 0)
+            {
+                _interruptedRecoveryDone = true;
+                return;
+            }
+
+            if (interrupted.Any(order => order.Status == TorrentOrderStatus.Approved))
+            {
+                // Releasing an Approved order without asking qBittorrent could orphan a running download.
+                var probe = await _qbittorrentProcessRestartService.ProbeAsync(cancellationToken);
+                if (!probe.IsOk)
+                {
+                    _logger.Warning(
+                        $"Interrupted Auto-Track order recovery deferred: qBittorrent WebUI unavailable ({probe.Detail}).",
+                        LogTarget.File | LogTarget.Console);
+                    return;
+                }
+            }
+
+            var recovered = 0;
+            var failed = 0;
+            foreach (var order in interrupted)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                try
+                {
+                    if (await RecoverInterruptedOrderAsync(order, cancellationToken))
+                    {
+                        recovered++;
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // Never let recovery abort the hunt/reconcile; the order is retried next run.
+                    failed++;
+                    _logger.Warning(
+                        $"Interrupted Auto-Track order recovery failed for '{order.Title}': {ex.Message}",
+                        LogTarget.File | LogTarget.Console);
+                }
+            }
+
+            _interruptedRecoveryDone = failed == 0;
+            _logger.Info(
+                $"Recovered {recovered}/{interrupted.Count} Auto-Track order(s) interrupted by a previous app session.",
+                LogTarget.All);
+        }
+        finally
+        {
+            _interruptedRecoveryLock.Release();
+        }
+    }
+
+    private async Task<bool> RecoverInterruptedOrderAsync(TorrentCartOrder order, CancellationToken cancellationToken)
+    {
+        AddedTorrentResult? live = null;
+        if (order.Status == TorrentOrderStatus.Approved && order.HasSelectedCandidate)
+        {
+            live = await _addGateService.TryGetExistingByHashAsync(order.PendingValidationHash, cancellationToken)
+                   ?? await _addGateService.TryGetExistingByListingUrlAsync(order.SelectedCandidateUrl, cancellationToken);
+        }
+
+        var hasCandidates = _torrentCartService.GetCandidates(order.Id).Count > 0;
+        var action = InterruptedOrderRecovery.Decide(order, live is not null, hasCandidates);
+        _logger.Info(
+            $"Interrupted Auto-Track order '{order.Title}' ({order.Status}, pendingHash='{order.PendingValidationHash}', live={live is not null}): {action}.",
+            LogTarget.File | LogTarget.Console);
+
+        switch (action)
+        {
+            case InterruptedOrderAction.ResetToDraft:
+                _torrentCartService.ReleaseInterruptedAutoTrackOrder(
+                    order.Id,
+                    keepCandidates: false,
+                    "Interrupted by app shutdown; will search again.");
+                return true;
+            case InterruptedOrderAction.ReturnToCandidates:
+                _torrentCartService.ReleaseInterruptedAutoTrackOrder(
+                    order.Id,
+                    keepCandidates: true,
+                    "Interrupted by app shutdown before add; will retry add.");
+                return true;
+            case InterruptedOrderAction.RevalidateExisting:
+                return await RevalidateInterruptedOrderAsync(order, live!, cancellationToken);
+            default:
+                return false;
+        }
+    }
+
+    private async Task<bool> RevalidateInterruptedOrderAsync(
+        TorrentCartOrder order,
+        AddedTorrentResult live,
+        CancellationToken cancellationToken)
+    {
+        var show = _databaseService.GetTrackedShow(order.MediaId);
+        var savePath = show?.AutoTrackDownloadFolder?.Trim();
+        if (show is null || string.IsNullOrWhiteSpace(savePath))
+        {
+            // Keep the order (and its pending hash, which blocks adoption) until a download folder is assigned.
+            _logger.Warning(
+                $"Cannot re-validate interrupted '{order.Title}' (hash={live.Hash}): no Auto-Track download folder.",
+                LogTarget.File | LogTarget.Console);
+            return false;
+        }
+
+        try
+        {
+            await AddOrderToClientAsync(order, savePath, cancellationToken, live);
+            NotifyStage(
+                "Auto-Track",
+                $"{show.DisplayTitle} — Recovered {order.Title} after restart (re-validated).",
+                show,
+                NotificationKind.AutoTrackHuntProgress);
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (TorrentCleanupFailedException ex)
+        {
+            // Rejected but delete unverified: torrent may still be in qBittorrent, so the pending hash stays.
+            var failedCandidateUrls = GetFailedCandidateUrls(order);
+            failedCandidateUrls.Add(order.SelectedCandidateUrl);
+            order.FailedCandidateUrls = SerializeFailedCandidateUrls(failedCandidateUrls);
+            PersistCleanupFailedOrder(order, ex);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning(
+                $"Re-validation after restart rejected '{order.Title}' (hash={live.Hash}): {ex.Message}",
+                LogTarget.File | LogTarget.Console);
+            _torrentCartService.ReleaseInterruptedAutoTrackOrder(
+                order.Id,
+                keepCandidates: false,
+                $"Recovered torrent rejected after restart: {ex.Message}; will search again.");
+            return true;
+        }
     }
 
     private void PersistCleanupFailedOrder(TorrentCartOrder order, TorrentCleanupFailedException ex)
@@ -1466,9 +1659,13 @@ public sealed class AutoTrackService : IAutoTrackService
         };
     }
 
-    private async Task AddOrderToClientAsync(TorrentCartOrder order, string savePath, CancellationToken cancellationToken)
+    private async Task AddOrderToClientAsync(
+        TorrentCartOrder order,
+        string savePath,
+        CancellationToken cancellationToken,
+        AddedTorrentResult? knownExisting = null)
     {
-        var existing = await _addGateService.TryGetExistingByListingUrlAsync(
+        var existing = knownExisting ?? await _addGateService.TryGetExistingByListingUrlAsync(
             order.SelectedCandidateUrl,
             cancellationToken);
         if (existing is not null)
@@ -1478,11 +1675,18 @@ public sealed class AutoTrackService : IAutoTrackService
                 LogTarget.File | LogTarget.Console);
         }
 
+        // Persist the hash before validation (up to ~90 s) so a crash or power loss mid-validation leaves a
+        // trace that startup recovery can re-validate instead of an untracked download.
         var addedTorrent = await _addGateService.AddPausedValidateAndResumeAsync(
             order,
             savePath,
             cancellationToken,
-            existing);
+            existing,
+            onTorrentAdded: torrent =>
+            {
+                order.PendingValidationHash = torrent.Hash;
+                _torrentCartService.SaveOrder(order);
+            });
 
         if (order.EpisodeId is null)
         {
@@ -1494,6 +1698,7 @@ public sealed class AutoTrackService : IAutoTrackService
         _trackedShowService.UpdateTorrentState(order.EpisodeId.Value, addedTorrent);
 
         order.TorrentHash = addedTorrent.Hash;
+        order.PendingValidationHash = string.Empty;
         order.TorrentName = addedTorrent.Name;
         order.TorrentState = QbittorrentTorrentStateNormalizer.Normalize(addedTorrent.State, addedTorrent.IsComplete);
         order.TorrentProgress = addedTorrent.Progress;

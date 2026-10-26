@@ -13,6 +13,11 @@ public interface ITorrentAddGateService
         string? listingUrl,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Returns the live qBittorrent torrent with this infohash, or null.</summary>
+    Task<AddedTorrentResult?> TryGetExistingByHashAsync(
+        string? infoHash,
+        CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Adds the selected candidate while running, waits for the file list, validates malware/payload,
     /// then returns. When <paramref name="existingTorrent"/> is set, skips qBittorrent add and
@@ -20,12 +25,15 @@ public interface ITorrentAddGateService
     /// delete+blacklist. Throws <see cref="TorrentCleanupFailedException"/> when a rejected torrent
     /// cannot be verified deleted. Empty file list deletes without blacklisting. When content
     /// validation is disabled, returns immediately after add (plus infohash blacklist check).
+    /// <paramref name="onTorrentAdded"/> runs once the torrent is in qBittorrent and its hash is known,
+    /// before validation, so callers can persist the hash in case the app dies mid-validation.
     /// </summary>
     Task<AddedTorrentResult> AddPausedValidateAndResumeAsync(
         TorrentCartOrder order,
         string savePath,
         CancellationToken cancellationToken = default,
-        AddedTorrentResult? existingTorrent = null);
+        AddedTorrentResult? existingTorrent = null,
+        Action<AddedTorrentResult>? onTorrentAdded = null);
 }
 
 public sealed class TorrentAddGateService : ITorrentAddGateService
@@ -57,7 +65,15 @@ public sealed class TorrentAddGateService : ITorrentAddGateService
         string? listingUrl,
         CancellationToken cancellationToken = default)
     {
-        var infoHash = TorrentListingIdentity.TryParseInfoHashFromUrl(listingUrl);
+        return await TryGetExistingByHashAsync(
+            TorrentListingIdentity.TryParseInfoHashFromUrl(listingUrl),
+            cancellationToken);
+    }
+
+    public async Task<AddedTorrentResult?> TryGetExistingByHashAsync(
+        string? infoHash,
+        CancellationToken cancellationToken = default)
+    {
         if (string.IsNullOrWhiteSpace(infoHash))
         {
             return null;
@@ -72,7 +88,8 @@ public sealed class TorrentAddGateService : ITorrentAddGateService
         TorrentCartOrder order,
         string savePath,
         CancellationToken cancellationToken = default,
-        AddedTorrentResult? existingTorrent = null)
+        AddedTorrentResult? existingTorrent = null,
+        Action<AddedTorrentResult>? onTorrentAdded = null)
     {
         if (string.IsNullOrWhiteSpace(order.SelectedCandidateUrl))
         {
@@ -122,6 +139,11 @@ public sealed class TorrentAddGateService : ITorrentAddGateService
         _logger.Debug(
             $"Torrent added for '{order.Title}'. Hash={addedTorrent.Hash}, Name='{addedTorrent.Name}'.",
             LogTarget.File);
+
+        if (!string.IsNullOrWhiteSpace(addedTorrent.Hash))
+        {
+            onTorrentAdded?.Invoke(addedTorrent);
+        }
 
         if (_blacklistService.IsBlacklisted(order.MediaId, order.SelectedCandidateUrl, addedTorrent.Hash))
         {

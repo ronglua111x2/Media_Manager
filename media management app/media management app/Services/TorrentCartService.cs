@@ -60,6 +60,13 @@ public interface ITorrentCartService
     /// Does not touch orders that are already downloading or completed.
     /// </summary>
     int ReleaseAutoTrackHuntBlocks(long showId);
+
+    /// <summary>
+    /// Unblocks one Auto-Track order a previous session left mid-hunt. <paramref name="keepCandidates"/>
+    /// returns it to CandidatesFound (resume accept/add); otherwise candidates are wiped and it returns
+    /// to Draft (search again). Failed-candidate history is kept either way.
+    /// </summary>
+    void ReleaseInterruptedAutoTrackOrder(long orderId, bool keepCandidates, string statusDetail);
 }
 
 public sealed class TorrentCartService : ITorrentCartService
@@ -564,6 +571,32 @@ public sealed class TorrentCartService : ITorrentCartService
         }
 
         return released;
+    }
+
+    public void ReleaseInterruptedAutoTrackOrder(long orderId, bool keepCandidates, string statusDetail)
+    {
+        var order = _databaseService.GetTorrentCartOrder(orderId);
+        if (order is null)
+        {
+            return;
+        }
+
+        if (keepCandidates)
+        {
+            order.Status = TorrentOrderStatus.CandidatesFound;
+        }
+        else
+        {
+            _databaseService.DeleteTorrentCartOrderCandidates(order.Id);
+            ClearSelectedCandidate(order);
+            order.Status = TorrentOrderStatus.Draft;
+        }
+
+        ClearTorrentState(order);
+        order.PendingValidationHash = string.Empty;
+        order.StatusDetail = statusDetail;
+        _databaseService.UpsertTorrentCartOrder(order);
+        NotifyChanged();
     }
 
     private void NotifyChanged()
