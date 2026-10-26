@@ -7,7 +7,7 @@ namespace media_management_app.Services;
 
 public sealed class JellyfinLibraryRefreshService : IJellyfinLibraryRefreshService
 {
-    private static readonly TimeSpan DebounceDelay = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan DebounceDelay = JellyfinRetryBackoff.Initial;
     private static readonly TimeSpan TaskPollInterval = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan LogPollInterval = TimeSpan.FromSeconds(2);
 
@@ -22,6 +22,10 @@ public sealed class JellyfinLibraryRefreshService : IJellyfinLibraryRefreshServi
     private readonly HashSet<string> _pendingPaths = new(StringComparer.OrdinalIgnoreCase);
     private readonly SemaphoreSlim _flushGate = new(1, 1);
     private CancellationTokenSource? _debounceCts;
+    // Guarded by _queueLock: failed flushes in a row; drives JellyfinRetryBackoff.
+    private int _consecutiveFlushFailures;
+    // Set by the TMDB pre-probe when WARP could not connect; read after a failed flush.
+    private bool _lastWarpConnectFailed;
     private bool _disposed;
 
     public JellyfinLibraryRefreshService(
@@ -115,12 +119,14 @@ public sealed class JellyfinLibraryRefreshService : IJellyfinLibraryRefreshServi
                 }
             }
 
-            if (added == 0 && _pendingPaths.Count == 0)
+            if (added == 0)
             {
+                // Already queued; keep the current (possibly backed-off) retry timer.
                 return;
             }
 
-            ScheduleDebounceLocked();
+            _consecutiveFlushFailures = 0;
+            ScheduleDebounceLocked(DebounceDelay);
         }
 
         if (added > 0)
@@ -150,6 +156,7 @@ public sealed class JellyfinLibraryRefreshService : IJellyfinLibraryRefreshServi
         var requeued = await FlushPathsAsync(paths, cancellationToken);
         if (requeued)
         {
+            TimeSpan retryDelay;
             lock (_queueLock)
             {
                 foreach (var path in paths)
@@ -157,12 +164,21 @@ public sealed class JellyfinLibraryRefreshService : IJellyfinLibraryRefreshServi
                     _pendingPaths.Add(path);
                 }
 
-                ScheduleDebounceLocked();
+                _consecutiveFlushFailures++;
+                retryDelay = JellyfinRetryBackoff.Next(_consecutiveFlushFailures, _lastWarpConnectFailed);
+                ScheduleDebounceLocked(retryDelay);
             }
 
             _logger.Warning(
-                $"Jellyfin refresh: kept {paths.Count} path(s) queued for retry (server unreachable or notify failed).",
+                $"Jellyfin refresh: kept {paths.Count} path(s) queued for retry (server unreachable or notify failed); next retry in {FormatDelay(retryDelay)} (failures in a row={_consecutiveFlushFailures}).",
                 LogTarget.All);
+        }
+        else
+        {
+            lock (_queueLock)
+            {
+                _consecutiveFlushFailures = 0;
+            }
         }
     }
 
@@ -187,7 +203,7 @@ public sealed class JellyfinLibraryRefreshService : IJellyfinLibraryRefreshServi
         _flushGate.Dispose();
     }
 
-    private void ScheduleDebounceLocked()
+    private void ScheduleDebounceLocked(TimeSpan delay)
     {
         CancelDebounceLocked();
         var cts = new CancellationTokenSource();
@@ -196,7 +212,7 @@ public sealed class JellyfinLibraryRefreshService : IJellyfinLibraryRefreshServi
         {
             try
             {
-                await Task.Delay(DebounceDelay, cts.Token);
+                await Task.Delay(delay, cts.Token);
                 await FlushAsync(CancellationToken.None);
             }
             catch (OperationCanceledException)
@@ -249,7 +265,7 @@ public sealed class JellyfinLibraryRefreshService : IJellyfinLibraryRefreshServi
                 $"Jellyfin refresh flush starting for {paths.Count} path(s) → {jellyfinSettings.BaseUrl}.",
                 LogTarget.All);
 
-            await EnsureTmdbReachableWithWarpAsync(cancellationToken);
+            var recoveredWithWarp = await EnsureTmdbReachableWithWarpAsync(cancellationToken);
 
             await _jellyfinClient.ReportMediaUpdatedAsync(paths, cancellationToken);
             notifySucceeded = true;
@@ -261,14 +277,22 @@ public sealed class JellyfinLibraryRefreshService : IJellyfinLibraryRefreshServi
                 Kind = NotificationKind.JellyfinPathNotified
             });
 
-            if (_warpCliService.HasAutoTrackPipelineLease)
+            // Hold WARP while Jellyfin fetches TMDB metadata: when the pre-probe needed WARP, or a hunt holds it.
+            if (recoveredWithWarp || _warpCliService.HasAutoTrackPipelineLease)
             {
-                var timeout = TimeSpan.FromSeconds(_settingsService.Current.Warp?.ConnectTimeoutSeconds ?? 30);
-                var holdLease = await _warpCliService.AcquireAsync(
-                    WarpLeaseReason.JellyfinHold,
-                    timeout,
-                    cancellationToken);
-                if (holdLease.Connected)
+                // The pre-probe already holds the JellyfinHold lease with WARP up.
+                var holdConnected = recoveredWithWarp;
+                if (!holdConnected)
+                {
+                    var timeout = TimeSpan.FromSeconds(_settingsService.Current.Warp?.ConnectTimeoutSeconds ?? 30);
+                    var holdLease = await _warpCliService.AcquireAsync(
+                        WarpLeaseReason.JellyfinHold,
+                        timeout,
+                        cancellationToken);
+                    holdConnected = holdLease.Connected;
+                }
+
+                if (holdConnected)
                 {
                     heldOwnedWarp = true;
                     refreshWindowMessage = await HoldWarpForJellyfinAsync(jellyfinSettings, cancellationToken);
@@ -283,7 +307,7 @@ public sealed class JellyfinLibraryRefreshService : IJellyfinLibraryRefreshServi
             else
             {
                 _logger.Info(
-                    "Jellyfin refresh: no Auto-Track WARP lease; skipping post-notify hold.",
+                    "Jellyfin refresh: TMDB reachable without WARP and no Auto-Track WARP lease; skipping post-notify hold.",
                     LogTarget.All);
             }
 
@@ -337,6 +361,9 @@ public sealed class JellyfinLibraryRefreshService : IJellyfinLibraryRefreshServi
             _flushGate.Release();
         }
     }
+
+    private static string FormatDelay(TimeSpan delay) =>
+        delay.TotalMinutes >= 1 ? $"{delay.TotalMinutes:0} min" : $"{delay.TotalSeconds:0}s";
 
     private static bool IsTransientJellyfinFailure(Exception ex)
     {
@@ -645,50 +672,51 @@ public sealed class JellyfinLibraryRefreshService : IJellyfinLibraryRefreshServi
         }
     }
 
-    private async Task EnsureTmdbReachableWithWarpAsync(CancellationToken cancellationToken)
+    /// <returns>True when TMDB was reached only after connecting WARP (lease <see cref="WarpLeaseReason.JellyfinHold"/> held).</returns>
+    private async Task<bool> EnsureTmdbReachableWithWarpAsync(CancellationToken cancellationToken)
     {
+        _lastWarpConnectFailed = false;
         if (string.IsNullOrWhiteSpace(_settingsService.Current.TmdbReadAccessToken))
         {
             _logger.Warning(
                 "TMDB read access token missing; skipping pre-probe before Jellyfin refresh.",
                 LogTarget.All);
-            return;
+            return false;
         }
 
         try
         {
             await ProbeTmdbAsync(cancellationToken);
             _logger.Info("TMDB pre-probe OK before Jellyfin refresh.", LogTarget.All);
-            return;
+            return false;
         }
-        catch (Exception ex) when (CanAutoRecoverOnSsl() && SslTlsErrorDetector.IsSslOrTlsError(ex))
+        catch (Exception ex) when (CanAutoRecoverOnNetworkBlock() &&
+                                   TmdbNetworkBlockDetector.IsLikelyBlocked(ex, cancellationToken))
         {
-            _logger.Warning(
-                $"TMDB SSL/TLS error before Jellyfin refresh: {ex.Message}. Attempting WARP self-recover.",
-                LogTarget.All);
-        }
+            var timeout = TimeSpan.FromSeconds(_settingsService.Current.Warp?.ConnectTimeoutSeconds ?? 30);
+            try
+            {
+                await TmdbWarpRecovery.RetryWithWarpAsync(
+                    "Jellyfin refresh pre-probe",
+                    ex,
+                    async ct =>
+                    {
+                        await ProbeTmdbAsync(ct);
+                        return true;
+                    },
+                    ct => _warpCliService.AcquireAsync(WarpLeaseReason.JellyfinHold, timeout, ct),
+                    _logger,
+                    cancellationToken);
+            }
+            catch (TmdbWarpConnectFailedException)
+            {
+                _lastWarpConnectFailed = true;
+                throw;
+            }
 
-        var timeout = TimeSpan.FromSeconds(_settingsService.Current.Warp?.ConnectTimeoutSeconds ?? 30);
-        var attempt = await _warpCliService.AcquireAsync(
-            WarpLeaseReason.JellyfinHold,
-            timeout,
-            cancellationToken);
-        if (!attempt.Connected)
-        {
-            _logger.Warning(
-                "WARP connect for Jellyfin refresh SSL recover failed or timed out.",
-                LogTarget.All);
-            throw new InvalidOperationException("TMDB unreachable (SSL) and WARP connect failed.");
+            _logger.Info("TMDB pre-probe OK after WARP.", LogTarget.All);
+            return true;
         }
-
-        if (attempt.StartedByThisAcquire)
-        {
-            _logger.Info("WARP connected for Jellyfin refresh SSL recover.", LogTarget.All);
-        }
-
-        _logger.Info("Retrying TMDB pre-probe with WARP before Jellyfin refresh.", LogTarget.All);
-        await ProbeTmdbAsync(cancellationToken);
-        _logger.Info("TMDB pre-probe OK after WARP.", LogTarget.All);
     }
 
     private async Task ProbeTmdbAsync(CancellationToken cancellationToken)
@@ -711,7 +739,7 @@ public sealed class JellyfinLibraryRefreshService : IJellyfinLibraryRefreshServi
         }
     }
 
-    private bool CanAutoRecoverOnSsl()
+    private bool CanAutoRecoverOnNetworkBlock()
     {
         var warp = _settingsService.Current.Warp ?? new WarpSettings();
         return warp.Enabled && warp.AutoRecoverOnSsl && _warpCliService.IsAvailable;
