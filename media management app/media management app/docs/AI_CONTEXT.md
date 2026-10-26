@@ -314,7 +314,7 @@ tmdb_eligibility:
   anchor: Services/AutoTrackWeekAnchor.cs
     cycle: "rolling — most recent anchor <= now (GetCurrentCycleAnchor); missed anchors stay due across the calendar week"
     week_key: "WeekKey(cycle anchor), Sunday week start; display only"
-  warp_recover: "RefreshShowWithWarpRecoveryAsync + Common/TmdbNetworkBlockDetector (SSL/TLS, refused/reset, DNS, timeout); one failed connect per cycle stops further attempts; after connect waits for DNS (Common/TmdbDnsProbe, local DNS answers loopback) then retries 3x spaced 3s/5s"
+  warp_recover: "Services/TmdbWarpRecovery (shared by AutoTrackService.RefreshShowWithWarpRecoveryAsync and the Jellyfin refresh TMDB pre-probe) + Common/TmdbNetworkBlockDetector (SSL/TLS, refused/reset, DNS, timeout); one failed connect per cycle stops further attempts; after connect waits for DNS (Common/TmdbDnsProbe, local DNS answers loopback) then retries 3x spaced 3s/5s"
   tests: MediaManager.App.Tests/Services/AutoTrackAnchorCycleTests.cs, TmdbNetworkBlockDetectorTests.cs, TmdbDnsProbeTests.cs
 interrupted_orders:
   problem: "Searching/Approved orders from a session that ended mid-hunt (graceful, crash, kill, power loss) block the episode; a kill during add-gate validation leaves an unvalidated running torrent unknown to the DB"
@@ -391,7 +391,7 @@ types:
   movie: LinkMovieAsync
   show_bulk: LinkShowAsync
 symlink: SymlinkSyncService (via SymlinkCoordinatorService)
-jellyfin: JellyfinLibraryRefreshService.EnqueueFromSourceItem
+jellyfin: "JellyfinLibraryRefreshService.EnqueueFromSourceItem — TMDB pre-probe with WARP recover; failed flush retries with JellyfinRetryBackoff (3s/30s/2min/5min)"
 events: LibraryLinkEventHub.PublishHardlinkCreated
 ```
 
@@ -501,7 +501,7 @@ integrations:
   warp:
     service: Services/WarpCliService.cs
     config: WarpSettings
-    use_case: "Auto-Track only — hunt preflight; TMDB refresh recovery on SSL/TLS or connection block (TMDB blocks this network's IP)"
+    use_case: "Auto-Track only — hunt preflight; TMDB refresh recovery and Jellyfin refresh pre-probe + post-notify hold on SSL/TLS or connection block (TMDB blocks this network's IP)"
     lease_ownership: "release disconnects only a tunnel the app connected; a tunnel already up before the first lease stays up"
   google_drive:
     client: Services/Backup/GoogleDriveClient.cs
@@ -622,7 +622,7 @@ core:
   app_tests: MediaManager.App.Tests/MediaManager.App.Tests.csproj
   test_stack: [xUnit, FluentAssertions, coverlet.collector]
   test_count_core: 248
-  test_count_app: 82  # Windows-targeted: AUD-002 cleanup/halt, startup task, Auto-Track anchor cycle + TMDB network-block detector, interrupted-order recovery + pending validation hash; xUnit Assert only
+  test_count_app: 93  # Windows-targeted: AUD-002 cleanup/halt, startup task, Auto-Track anchor cycle, TMDB network-block detector/DNS probe/WARP recovery, Jellyfin retry backoff, interrupted-order recovery + pending validation hash; xUnit Assert only
   wpf_reference: media management app.csproj -> ProjectReference MediaManager.Core
   moved_types:
     - TorrentCandidateParser (+ TorrentCandidateParseResult)
@@ -665,7 +665,7 @@ build:
   test_command: >
     dotnet test MediaManager.Core.Tests/MediaManager.Core.Tests.csproj -c Release -p:Platform=x64;
     dotnet test MediaManager.App.Tests/MediaManager.App.Tests.csproj -c Release -p:Platform=x64
-  test_counts: { core: 248, app: 53 }
+  test_counts: { core: 248, app: 64 }
   publish: single-file self-contained win-x64
   third_party: ThirdParty/Sonarr.Parser/MediaManager.Sonarr.Parser.csproj
 ```

@@ -46,7 +46,7 @@ So the fix is mainly **startup recovery from persisted DB state**. Rollback on c
 
 - [x] Merge-gate build green (`dotnet build -c Release -p:Platform=x64`)
 - [x] Core.Tests green (248)
-- [x] App.Tests green (82; +29 in `Services/InterruptedOrderRecoveryTests.cs`, `Services/TorrentAddGatePendingHashTests.cs`)
+- [x] App.Tests green (93 after merging main @ 779bee7; +29 in `Services/InterruptedOrderRecoveryTests.cs`, `Services/TorrentAddGatePendingHashTests.cs`)
 - [x] `docs/FEATURES.md` §10.3/§10.4/§10.6, `docs/AI_CONTEXT.md`, `docs/BUILD.md`, `docs/STATE_FOLDER.md` updated
 - [x] Draft PR with `release:skip`
 - [x] Local publish to the install folder (exe backup kept)
