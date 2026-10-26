@@ -547,7 +547,7 @@ Setup details: [STATE_FOLDER.md](./STATE_FOLDER.md#google-drive-oauth)
 
 ### 10.2 TMDB Discovery (Auto-Track)
 - **What:** Refresh shows, detect new episodes, enforce the rolling anchor cycle (§3.7) and daily budget. A TMDB transport failure (SSL/TLS, refused/reset connection, DNS, timeout — `Common/TmdbNetworkBlockDetector.cs`) connects WARP and retries when `Warp.AutoRecoverOnSsl` is on; one failed WARP connect stops further attempts for that cycle. After connecting, it waits up to 15 s for `api.themoviedb.org` to stop resolving to loopback (the local DNS answers 127.0.0.1/::1; `Common/TmdbDnsProbe.cs`), then retries up to 3 times (3 s, 5 s apart) while the error still looks like a network block. WARP stays up for the rest of the cycle and is disconnected only if the app connected it.
-- **Code:** `Services/AutoTrackService.cs` (`RunTmdbDiscoveryAsync`, `RefreshShowWithWarpRecoveryAsync`), `Services/WarpCliService.cs`
+- **Code:** `Services/AutoTrackService.cs` (`RunTmdbDiscoveryAsync`, `RefreshShowWithWarpRecoveryAsync`), `Services/TmdbWarpRecovery.cs` (shared with §10.10), `Services/WarpCliService.cs`
 - **DB:** `TrackedShows`, `TrackedSeasons`, `TrackedEpisodes`
 
 ### 10.3 Torrent Hunt (Auto-Track)
@@ -603,7 +603,10 @@ Setup details: [STATE_FOLDER.md](./STATE_FOLDER.md#google-drive-oauth)
 
 ### 10.10 Jellyfin Library Refresh
 - **What:** Debounced path notifications after symlinks; WARP hold during refresh
-- **Code:** `Services/JellyfinLibraryRefreshService.cs`, `Services/JellyfinLogTailer.cs`
+- **TMDB pre-probe:** before notifying, the app probes `api.themoviedb.org` (Jellyfin's TMDb plugin needs it to fetch metadata). A network-block error (SSL/TLS, refused/reset, DNS, timeout) goes through the same WARP recover as §10.2 (`TmdbWarpRecovery`: connect WARP, wait for DNS, retry 3 s / 5 s apart) under lease `JellyfinHold`.
+- **Post-notify WARP hold:** runs when the pre-probe needed WARP **or** an Auto-Track hunt lease is active. It keeps WARP up while Jellyfin refreshes (log tail or timer, `WarpHoldSecondsAfterNotify`), then releases; WARP is disconnected only if the app connected it.
+- **Retry backoff:** a failed flush re-queues its paths and retries after 3 s → 30 s → 2 min → 5 min (cap); a failed WARP connect waits 5 min straight away. Newly queued paths and a successful flush reset it to 3 s (`Services/JellyfinRetryBackoff.cs`). The queue is in memory only — paths still pending when the app exits are not resent (Jellyfin's own library monitor usually picks the file up).
+- **Code:** `Services/JellyfinLibraryRefreshService.cs`, `Services/JellyfinRetryBackoff.cs`, `Services/TmdbWarpRecovery.cs`, `Services/JellyfinLogTailer.cs`
 - **DB:** None (API calls)
 
 ### 10.11 NFO Writer

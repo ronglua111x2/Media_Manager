@@ -25,9 +25,6 @@ public sealed class AutoTrackService : IAutoTrackService
     private readonly SemaphoreSlim _discoveryLock = new(1, 1);
     private readonly SemaphoreSlim _huntLock = new(1, 1);
     private readonly SemaphoreSlim _reconcileLock = new(1, 1);
-    private static readonly TimeSpan WarpDnsReadyTimeout = TimeSpan.FromSeconds(15);
-    private static readonly TimeSpan[] WarpRetryDelays = [TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(5)];
-
     // Guarded by _discoveryLock; reset at the start of each TMDB discovery cycle.
     private bool _warpRecoverFailedThisCycle;
 
@@ -419,66 +416,23 @@ public sealed class AutoTrackService : IAutoTrackService
                                    !_warpRecoverFailedThisCycle &&
                                    TmdbNetworkBlockDetector.IsLikelyBlocked(ex, cancellationToken))
         {
-            _logger.Warning(
-                $"TMDB network error ({TmdbNetworkBlockDetector.Describe(ex, cancellationToken)}) for '{show.DisplayTitle}': {ex.Message}. Attempting WARP self-recover.",
-                LogTarget.All);
-
             var timeout = TimeSpan.FromSeconds(_settingsService.Current.Warp?.ConnectTimeoutSeconds ?? 30);
-            var attempt = await _warpCliService.AcquireAsync(
-                WarpLeaseReason.TmdbSslRecover,
-                timeout,
-                cancellationToken);
-            if (!attempt.Connected)
+            try
+            {
+                return await TmdbWarpRecovery.RetryWithWarpAsync(
+                    $"'{show.DisplayTitle}'",
+                    ex,
+                    ct => _trackedShowService.RefreshShowAsync(show, ct),
+                    ct => _warpCliService.AcquireAsync(WarpLeaseReason.TmdbSslRecover, timeout, ct),
+                    _logger,
+                    cancellationToken);
+            }
+            catch (TmdbWarpConnectFailedException)
             {
                 // Skip further connect attempts this cycle (e.g. machine fully offline).
                 _warpRecoverFailedThisCycle = true;
-                _logger.Warning(
-                    "WARP connect for TMDB self-recover failed or timed out. Re-throwing original TMDB error; no more WARP attempts this cycle.",
-                    LogTarget.All);
+                _logger.Warning("No more WARP attempts this Auto-Track TMDB cycle.", LogTarget.All);
                 throw;
-            }
-
-            if (attempt.StartedByThisAcquire)
-            {
-                _logger.Info("WARP connected for Auto-Track TMDB recover.", LogTarget.File | LogTarget.Console);
-            }
-
-            // Fresh WARP: the OS resolver can still hand out the loopback answer for a few seconds.
-            var dns = await TmdbDnsProbe.WaitUntilUsableAsync(
-                WarpDnsReadyTimeout,
-                TimeSpan.FromSeconds(1),
-                cancellationToken);
-            if (dns.Ready)
-            {
-                _logger.Info(
-                    $"TMDB DNS ready with WARP: {TmdbDnsProbe.ApiHost} -> {TmdbDnsProbe.Format(dns.Addresses)}.",
-                    LogTarget.File | LogTarget.Console);
-            }
-            else
-            {
-                _logger.Warning(
-                    $"TMDB DNS still not usable after {WarpDnsReadyTimeout.TotalSeconds:0}s with WARP: {TmdbDnsProbe.ApiHost} -> {TmdbDnsProbe.Format(dns.Addresses)}. Retrying anyway.",
-                    LogTarget.All);
-            }
-
-            for (var retry = 1; ; retry++)
-            {
-                _logger.Info(
-                    $"Retrying TMDB refresh for '{show.DisplayTitle}' with WARP (attempt {retry}/{WarpRetryDelays.Length + 1}).",
-                    LogTarget.All);
-                try
-                {
-                    return await _trackedShowService.RefreshShowAsync(show, cancellationToken);
-                }
-                catch (Exception retryEx) when (retry <= WarpRetryDelays.Length &&
-                                                TmdbNetworkBlockDetector.IsLikelyBlocked(retryEx, cancellationToken))
-                {
-                    var delay = WarpRetryDelays[retry - 1];
-                    _logger.Warning(
-                        $"TMDB still unreachable with WARP ({TmdbNetworkBlockDetector.Describe(retryEx, cancellationToken)}): {retryEx.Message}. Waiting {delay.TotalSeconds:0}s for the tunnel to settle.",
-                        LogTarget.File | LogTarget.Console);
-                    await Task.Delay(delay, cancellationToken);
-                }
             }
         }
     }
