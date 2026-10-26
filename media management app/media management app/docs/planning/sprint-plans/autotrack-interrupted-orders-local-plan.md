@@ -2,7 +2,7 @@
 
 **Branch:** `fix/autotrack-interrupted-orders` (cut from `main` @ `dbc95c8`)
 **Date:** 2026-10-26
-**Status:** Implemented. **Not yet verified in a real crash or power-loss test.** Published to the local install only, with **no GitHub Release**. The PR stays a draft with label `release:skip` and must not be merged until the manual test below passes, because merging to `main` triggers `auto-release.yml`.
+**Status:** Implemented. **Not yet verified in a real crash or power-loss test.** Merged to `main` via PR #8 with label `release:skip`, so `auto-release.yml` creates **no GitHub Release**. Used from a local publish; migration 008 applied cleanly on the live DB (2026-10-26). Release once the manual test below passes.
 **Not a sprint:** one-PR bugfix.
 
 ## Git baseline
@@ -48,7 +48,8 @@ So the fix is mainly **startup recovery from persisted DB state**. Rollback on c
 - [x] Core.Tests green (248)
 - [x] App.Tests green (93 after merging main @ 779bee7; +29 in `Services/InterruptedOrderRecoveryTests.cs`, `Services/TorrentAddGatePendingHashTests.cs`)
 - [x] `docs/FEATURES.md` §10.3/§10.4/§10.6, `docs/AI_CONTEXT.md`, `docs/BUILD.md`, `docs/STATE_FOLDER.md` updated
-- [x] Draft PR with `release:skip`
+- [x] PR #8 with `release:skip`, merged without a release
+- [x] Live DB: `SchemaMigrations` has `008_torrentcart_pending_validation_hash`; app 1.0.5-alpha starts with no errors
 - [x] Local publish to the install folder (exe backup kept)
 - [ ] Manual test (user, later): start a hunt, `taskkill /F` the app during "Add with validation", restart. The log should show `Interrupted Auto-Track order ... RevalidateExisting` and `Recovered N/M`. The torrent should be re-validated and attached, or the order released. The episode should be hunted again without Reset week. Repeat with a kill during "Searching".
 

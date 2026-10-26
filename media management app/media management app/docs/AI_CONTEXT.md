@@ -325,7 +325,7 @@ interrupted_orders:
   defer: qBittorrent probe fails and any Approved order is pending -> no release, retry next run
   graceful_cancel: search phase rolls Searching -> Draft (RollBackCanceledSearches); add/validate phase keeps PendingValidationHash for recovery
   invariant: "An unvalidated hash lives only in TorrentCartOrders.PendingValidationHash (never on the episode); reconcile never adopts it"
-  status: "Not verified in a real crash/power-loss test; local publish only, no release"
+  status: "Not verified in a real crash/power-loss test; merged without a release (release:skip), local publish"
   tests: MediaManager.App.Tests/Services/InterruptedOrderRecoveryTests.cs, TorrentAddGatePendingHashTests.cs
 ```
 

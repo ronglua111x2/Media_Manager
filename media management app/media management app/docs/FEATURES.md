@@ -558,7 +558,7 @@ Setup details: [STATE_FOLDER.md](./STATE_FOLDER.md#google-drive-oauth)
   - `Approved`, torrent not in qBittorrent → `CandidatesFound` (resume accept/add without re-searching), or `Draft` if it has no candidates.
   - If qBittorrent WebUI is down, recovery waits for the next run instead of releasing `Approved` orders blindly.
   - Graceful shutdown during search also rolls `Searching` orders back to `Draft`, best effort. Add/validate is not rolled back: the pending hash stays for startup recovery.
-  - **Status:** interrupted-order recovery is not yet verified in a real crash / power-loss test. It is published locally only, not released (branch `fix/autotrack-interrupted-orders`, draft PR, label `release:skip`).
+  - **Status:** interrupted-order recovery is not yet verified in a real crash / power-loss test. Merged to `main` (PR #8, label `release:skip`, so no GitHub Release); used from a local publish. Migration 008 applied cleanly on the live DB (2026-10-26).
 - **Code:** `Services/AutoTrackService.cs` (`RunTorrentHuntAsync`, `RecoverInterruptedOrdersOnceAsync`), `Services/InterruptedOrderRecovery.cs`, `TorrentCartService.ReleaseInterruptedAutoTrackOrder`
 - **DB:** `TorrentCartOrders` (incl. `PendingValidationHash`), `TorrentCartOrderCandidates`, `TrackedShows.AutoTrackEpisodeOverridesJson`
 - **External:** WARP connect, qBittorrent restart if WebUI down
