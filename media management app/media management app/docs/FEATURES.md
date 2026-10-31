@@ -484,7 +484,7 @@ Settings organized in seven sections (`SettingsSection` enum). All saved to `set
 | qBittorrent | URL, credentials, API key, test | `Services/QbittorrentClient.cs` |
 | qBittorrent restart | Opt-in process recovery | `Services/QbittorrentProcessRestartService.cs` |
 | Jellyfin | URL, API key, test | `Services/JellyfinClient.cs` |
-| WARP CLI | Path, test, auto-recover | `Services/WarpCliService.cs` |
+| WARP CLI | Path, test, auto-recover (switches DNS-only mode to warp+doh for TMDB, §10.21) | `Services/WarpCliService.cs` |
 | Flush Jellyfin queue | Manual | `Services/JellyfinLibraryRefreshService.cs` |
 
 ### 8.5 Torrent Storage Section
@@ -671,6 +671,15 @@ Setup details: [STATE_FOLDER.md](./STATE_FOLDER.md#google-drive-oauth)
 ### 10.20 WARP Log Status Watcher
 - **What:** Monitor WARP CLI log for connection state changes
 - **Code:** `Services/WarpLogStatusWatcher.cs`, `Services/WarpCliService.cs`
+- **DB:** None
+
+### 10.21 WARP mode switch for TMDB
+- **Why:** this network blocks `api.themoviedb.org` twice: local DNS answers loopback, and TLS is cut by SNI. A DNS-only WARP mode (`doh`/`dot`) fixes DNS only, so TMDB still fails; a tunnel mode (`warp+doh`) gets through.
+- **What:** leases that need TMDB (`WarpLeaseReasonText.RequiresTunnel`: Auto-Track TMDB recover, Jellyfin hold, Host setup) read the mode (`warp-cli -j settings` → `settings.operation_mode`). A non-tunnel mode is switched to `warp+doh` before connect (an existing tunnel reconnects). When no held lease needs the tunnel any more (release, connect failure, or the user's force-disconnect), the original mode is restored — unless the user changed the mode meanwhile. Hunt, user and Settings-test leases keep the user's mode.
+- **Crash safety:** `{StateFolder}/warp-mode-restore.json` is written before switching and deleted after restoring; on the next start `RestorePendingModeAsync` restores the mode if the marker is still there.
+- **No recovery (Library, Find/Add, …):** when a TMDB call through `TmdbMetadataProvider` finally fails with a network block outside Auto-Track recovery, `TmdbBlockAdvisor` logs a console warning (≤ 1 per 10 min) with the WARP state and mode and tells the user to use "Traffic and DNS" (warp+doh). Auto-Track's last retry also runs outside the recovery scope, so a final failure there gets the same hint.
+- **Setting:** `Warp.SwitchModeForTmdb` (JSON only, default true).
+- **Code:** `Services/WarpCliService.cs`, `Services/WarpModePolicy.cs`, `Services/TmdbBlockAdvisor.cs`, `Services/TmdbWarpRecovery.cs`, `App.xaml.cs` (startup restore)
 - **DB:** None
 
 ### 10.21 Windows Notifications
