@@ -413,7 +413,10 @@ public sealed class AutoTrackService : IAutoTrackService
     {
         try
         {
-            return await _trackedShowService.RefreshShowAsync(show, cancellationToken);
+            using (TmdbWarpRecovery.EnterRecoveryScope(active: autoRecoverOnNetworkBlock && !_warpRecoverFailedThisCycle))
+            {
+                return await _trackedShowService.RefreshShowAsync(show, cancellationToken);
+            }
         }
         catch (Exception ex) when (autoRecoverOnNetworkBlock &&
                                    !_warpRecoverFailedThisCycle &&

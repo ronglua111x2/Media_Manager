@@ -35,6 +35,7 @@ This PC’s live library stays at `D:\MediaManagerState` via the pointer after t
 | `logs/` | Session logs (see [Logs](#logs)) |
 | `session.alive` | Live-session sentinel (pid, version, exe path, last heartbeat). Present while the app is running; deleted on a clean exit. If it remains on the next start, the previous run did not shut down cleanly. |
 | `last-exit.json` | Last *documented* exit (`CleanExit`, `SessionEnding`, or `ProcessExit`). Missing/stale while `session.alive` remains means the process died without going through shutdown. |
+| `warp-mode-restore.json` | Present only while the app has switched WARP to `warp+doh` for TMDB: holds the user's original mode. Deleted after restoring; if it survives a crash, the next start restores the mode (`WarpCliService.RestorePendingModeAsync`). |
 | `posters/` | Cached TMDB poster/still images (keyed by provider id) |
 | `Recipes/` | Torrent search recipe files (`*.rcp`, JSON) |
 | `GoogleDrive/` | Google Drive OAuth storage (see [Google Drive OAuth](#google-drive-oauth)) |
