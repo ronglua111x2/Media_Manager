@@ -20,6 +20,7 @@ public sealed class AppLogger : IAppLogger, IDisposable
     private string? _sessionLogTimestamp;
     private int _currentLogFileIndex;
     private int _currentLogFileLineCount;
+    private long _sequence;
 
     public AppLogger(ISettingsService settingsService)
     {
@@ -29,6 +30,7 @@ public sealed class AppLogger : IAppLogger, IDisposable
             AppConstants.MinLogLinesPerFile,
             AppConstants.MaxConfigurableLogLinesPerFile);
         UiLogs = [];
+        UiEntries = [];
         _queue = Channel.CreateUnbounded<AppLogEntry>(new UnboundedChannelOptions
         {
             SingleReader = true,
@@ -38,6 +40,8 @@ public sealed class AppLogger : IAppLogger, IDisposable
     }
 
     public ObservableCollection<string> UiLogs { get; }
+
+    public ObservableCollection<AppLogEntry> UiEntries { get; }
 
     public string? ActiveLogFilePath
     {
@@ -93,6 +97,7 @@ public sealed class AppLogger : IAppLogger, IDisposable
 
         var entry = new AppLogEntry
         {
+            Sequence = Interlocked.Increment(ref _sequence),
             Level = level,
             Message = message,
             Targets = targets,
@@ -119,7 +124,7 @@ public sealed class AppLogger : IAppLogger, IDisposable
 
                 if (entry.Targets.HasFlag(LogTarget.Ui))
                 {
-                    WriteUiLog(line);
+                    WriteUiLog(line, entry);
                 }
 
                 if (entry.Targets.HasFlag(LogTarget.Console))
@@ -133,7 +138,7 @@ public sealed class AppLogger : IAppLogger, IDisposable
         }
     }
 
-    private static string Format(AppLogEntry entry)
+    internal static string Format(AppLogEntry entry)
     {
         var line = $"[{entry.Timestamp.ToString(AppConstants.LogTimestampFormat)}] [{ToAbbreviation(entry.Level)}] [{entry.SourceFileName}] [{entry.MemberName}] {entry.Message}";
         return string.IsNullOrWhiteSpace(entry.ExceptionText) ? line : $"{line}{Environment.NewLine}{entry.ExceptionText}";
@@ -149,18 +154,18 @@ public sealed class AppLogger : IAppLogger, IDisposable
         }
     }
 
-    private void WriteUiLog(string line)
+    private void WriteUiLog(string line, AppLogEntry entry)
     {
         try
         {
             var dispatcher = System.Windows.Application.Current?.Dispatcher;
             if (dispatcher is null || dispatcher.CheckAccess())
             {
-                AddUiLogLine(line);
+                AddUiLogLine(line, entry);
                 return;
             }
 
-            dispatcher.BeginInvoke(AddUiLogLine, line);
+            dispatcher.BeginInvoke(() => AddUiLogLine(line, entry));
         }
         catch
         {
@@ -210,17 +215,23 @@ public sealed class AppLogger : IAppLogger, IDisposable
             $"{_sessionLogTimestamp}_{AppConstants.LogFileSuffix}{suffix}{AppConstants.LogFileExtension}");
     }
 
-    private void AddUiLogLine(string line)
+    private void AddUiLogLine(string line, AppLogEntry entry)
     {
         UiLogs.Add(line);
+        UiEntries.Add(entry);
 
         while (UiLogs.Count > AppConstants.MaxUiLogLines)
         {
             UiLogs.RemoveAt(0);
         }
+
+        while (UiEntries.Count > AppConstants.MaxUiLogLines)
+        {
+            UiEntries.RemoveAt(0);
+        }
     }
 
-    private static string ToAbbreviation(AppLogLevel level)
+    internal static string ToAbbreviation(AppLogLevel level)
     {
         return level switch
         {

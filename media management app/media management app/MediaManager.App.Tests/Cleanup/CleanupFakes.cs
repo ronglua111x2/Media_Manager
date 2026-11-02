@@ -9,6 +9,8 @@ internal sealed class FakeAppLogger : IAppLogger
 {
     public ObservableCollection<string> UiLogs { get; } = [];
 
+    public ObservableCollection<AppLogEntry> UiEntries { get; } = [];
+
     public string? ActiveLogFilePath => null;
 
     public void Trace(string message, LogTarget targets = LogTarget.All, string filePath = "", string memberName = "")

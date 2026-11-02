@@ -1,6 +1,9 @@
 <Window x:Class="media_management_app.Views.ConsoleLogWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
+        xmlns:converters="clr-namespace:media_management_app.Converters"
+        xmlns:views="clr-namespace:media_management_app.Views"
         Title="Console Log"
         Height="420"
         Width="860"
@@ -8,47 +11,598 @@
         MinWidth="520"
         WindowStartupLocation="CenterOwner"
         Icon="pack://application:,,,/Assets/window-icons/console-log.ico">
+    <!-- #region Pretty mode resources -->
+    <Window.Resources>
+        <converters:ConsoleLogEntryConverter x:Key="EntryText" />
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+
+        <!-- Classic | Pretty segmented toggle; readable on the classic dark header and on themed headers. -->
+        <Style x:Key="ConsoleModeToggleStyle" TargetType="RadioButton">
+            <Setter Property="GroupName" Value="ConsoleMode" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Foreground" Value="#b0b0b0" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="Bd"
+                                Background="Transparent"
+                                CornerRadius="4"
+                                Padding="10,3">
+                            <TextBlock Text="{Binding Content, RelativeSource={RelativeSource TemplatedParent}}"
+                                       Foreground="{TemplateBinding Foreground}"
+                                       FontSize="12"
+                                       TextWrapping="NoWrap"
+                                       VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource AppBrushAccent}" />
+                                <Setter Property="Foreground" Value="{DynamicResource AppBrushOnAccent}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <MultiDataTrigger>
+                    <MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding IsPrettyMode}" Value="True" />
+                        <Condition Binding="{Binding IsChecked, RelativeSource={RelativeSource Self}}" Value="False" />
+                    </MultiDataTrigger.Conditions>
+                    <Setter Property="Foreground" Value="{DynamicResource AppBrushMutedText}" />
+                </MultiDataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Level filter chip: Foreground = level color, Tag = soft background when on. -->
+        <Style x:Key="LevelChipStyle" TargetType="ToggleButton">
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Margin" Value="0,0,6,0" />
+            <Setter Property="FontFamily" Value="Consolas" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="Bd"
+                                Background="Transparent"
+                                BorderBrush="{DynamicResource AppBrushBorderStrong}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="7,2"
+                                Opacity="0.5">
+                            <ContentPresenter TextElement.Foreground="{TemplateBinding Foreground}"
+                                              VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}" />
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="Transparent" />
+                                <Setter TargetName="Bd" Property="Opacity" Value="1" />
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{Binding Foreground, RelativeSource={RelativeSource TemplatedParent}}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- The app's implicit TextBlock style sets Foreground and Wrap; console text opts out explicitly. -->
+        <Style x:Key="ChipTextStyle" TargetType="TextBlock">
+            <Setter Property="TextWrapping" Value="NoWrap" />
+            <Setter Property="Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}" />
+        </Style>
+
+        <Style x:Key="ConsoleCellTextStyle" TargetType="TextBlock">
+            <Setter Property="TextWrapping" Value="NoWrap" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        </Style>
+
+        <ControlTemplate x:Key="ToolIconButtonTemplate" TargetType="ButtonBase">
+            <Border x:Name="Bd"
+                    Background="Transparent"
+                    CornerRadius="4"
+                    Padding="6">
+                <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="Center" />
+            </Border>
+            <ControlTemplate.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter TargetName="Bd" Property="Background" Value="{DynamicResource AppBrushListHover}" />
+                </Trigger>
+                <Trigger Property="ToggleButton.IsChecked" Value="True">
+                    <Setter TargetName="Bd" Property="Background" Value="{DynamicResource AppBrushAccentSoft}" />
+                </Trigger>
+            </ControlTemplate.Triggers>
+        </ControlTemplate>
+
+        <Style x:Key="ToolIconStyle" TargetType="iconPacks:PackIconLucide">
+            <Setter Property="Width" Value="16" />
+            <Setter Property="Height" Value="16" />
+            <Setter Property="Foreground" Value="{DynamicResource AppBrushText}" />
+        </Style>
+
+        <!-- Row container: level tint, then hover, then selection (later triggers win). -->
+        <Style x:Key="PrettyLogItemStyle" TargetType="ListBoxItem">
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="Bd"
+                                Background="Transparent"
+                                BorderBrush="{DynamicResource AppBrushBorder}"
+                                BorderThickness="0,0,0,1">
+                            <ContentPresenter />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <DataTrigger Binding="{Binding Level}" Value="Warning">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource AppBrushLogWarningSoft}" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding Level}" Value="Error">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource AppBrushLogErrorSoft}" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding Level}" Value="Critical">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource AppBrushLogCriticalSoft}" />
+                            </DataTrigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource AppBrushConsoleRowHover}" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource AppBrushConsoleRowSelected}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="LogExceptionExpanderStyle" TargetType="Expander">
+            <Setter Property="Foreground" Value="{DynamicResource AppBrushMutedText}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Expander">
+                        <StackPanel>
+                            <ToggleButton Style="{x:Null}"
+                                          Cursor="Hand"
+                                          HorizontalAlignment="Left"
+                                          IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <StackPanel Orientation="Horizontal" Background="Transparent">
+                                            <iconPacks:PackIconLucide x:Name="Chevron"
+                                                                      Kind="ChevronRight"
+                                                                      Width="12"
+                                                                      Height="12"
+                                                                      Margin="0,0,4,0"
+                                                                      VerticalAlignment="Center"
+                                                                      Foreground="{DynamicResource AppBrushMutedText}" />
+                                            <TextBlock Text="{Binding Header, RelativeSource={RelativeSource AncestorType=Expander}}"
+                                                       Foreground="{DynamicResource AppBrushMutedText}"
+                                                       FontSize="11"
+                                                       TextWrapping="NoWrap"
+                                                       VerticalAlignment="Center" />
+                                        </StackPanel>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsChecked" Value="True">
+                                                <Setter TargetName="Chevron" Property="Kind" Value="ChevronDown" />
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+                            <ContentPresenter x:Name="Body" Visibility="Collapsed" Margin="16,2,0,2" />
+                        </StackPanel>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsExpanded" Value="True">
+                                <Setter TargetName="Body" Property="Visibility" Value="Visible" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <DataTemplate x:Key="PrettyLogEntryTemplate">
+            <Border x:Name="LevelBar"
+                    BorderBrush="{DynamicResource AppBrushLogInfo}"
+                    BorderThickness="3,0,0,0"
+                    Padding="8,3,10,3">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="92" />
+                        <ColumnDefinition Width="44" />
+                        <ColumnDefinition Width="200" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock Text="{Binding Converter={StaticResource EntryText}, ConverterParameter=Time}"
+                               Style="{StaticResource ConsoleCellTextStyle}"
+                               Foreground="{DynamicResource AppBrushLogTimestamp}" />
+
+                    <Border x:Name="Badge"
+                            Grid.Column="1"
+                            Background="{DynamicResource AppBrushLogInfoSoft}"
+                            CornerRadius="3"
+                            Padding="4,0"
+                            HorizontalAlignment="Left"
+                            VerticalAlignment="Top">
+                        <TextBlock x:Name="BadgeText"
+                                   Text="{Binding Converter={StaticResource EntryText}, ConverterParameter=Level}"
+                                   Foreground="{DynamicResource AppBrushLogInfo}"
+                                   TextWrapping="NoWrap"
+                                   FontSize="11"
+                                   FontWeight="SemiBold" />
+                    </Border>
+
+                    <TextBlock Grid.Column="2"
+                               Margin="0,0,10,0"
+                               Text="{Binding Converter={StaticResource EntryText}, ConverterParameter=Source}"
+                               ToolTip="{Binding Converter={StaticResource EntryText}, ConverterParameter=SourceFull}"
+                               Foreground="{DynamicResource AppBrushLogSource}"
+                               Style="{StaticResource ConsoleCellTextStyle}" />
+
+                    <StackPanel Grid.Column="3">
+                        <TextBlock x:Name="Message"
+                                   views:LogMessageHighlighter.Text="{Binding Message}"
+                                   Foreground="{DynamicResource AppBrushText}"
+                                   TextWrapping="NoWrap" />
+                        <Expander x:Name="ExceptionExpander"
+                                  Style="{StaticResource LogExceptionExpanderStyle}"
+                                  Margin="0,2,0,0"
+                                  Header="{Binding Converter={StaticResource EntryText}, ConverterParameter=ExceptionHeader}">
+                            <TextBlock Text="{Binding ExceptionText}"
+                                       Foreground="{DynamicResource AppBrushMutedText}"
+                                       FontSize="11"
+                                       TextWrapping="Wrap" />
+                        </Expander>
+                    </StackPanel>
+                </Grid>
+            </Border>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding ExceptionText}" Value="{x:Null}">
+                    <Setter TargetName="ExceptionExpander" Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding DataContext.IsWrapEnabled, RelativeSource={RelativeSource AncestorType=ListBox}}" Value="True">
+                    <Setter TargetName="Message" Property="TextWrapping" Value="Wrap" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Level}" Value="Trace">
+                    <Setter TargetName="LevelBar" Property="BorderBrush" Value="{DynamicResource AppBrushLogTrace}" />
+                    <Setter TargetName="Badge" Property="Background" Value="{DynamicResource AppBrushLogDebugSoft}" />
+                    <Setter TargetName="BadgeText" Property="Foreground" Value="{DynamicResource AppBrushLogTrace}" />
+                    <Setter TargetName="Message" Property="Foreground" Value="{DynamicResource AppBrushLogTrace}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Level}" Value="Debug">
+                    <Setter TargetName="LevelBar" Property="BorderBrush" Value="{DynamicResource AppBrushLogDebug}" />
+                    <Setter TargetName="Badge" Property="Background" Value="{DynamicResource AppBrushLogDebugSoft}" />
+                    <Setter TargetName="BadgeText" Property="Foreground" Value="{DynamicResource AppBrushLogDebug}" />
+                    <Setter TargetName="Message" Property="Foreground" Value="{DynamicResource AppBrushLogDebug}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Level}" Value="Warning">
+                    <Setter TargetName="LevelBar" Property="BorderBrush" Value="{DynamicResource AppBrushLogWarning}" />
+                    <Setter TargetName="Badge" Property="Background" Value="{DynamicResource AppBrushConsoleBackground}" />
+                    <Setter TargetName="BadgeText" Property="Foreground" Value="{DynamicResource AppBrushLogWarning}" />
+                    <Setter TargetName="Message" Property="Foreground" Value="{DynamicResource AppBrushLogWarning}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Level}" Value="Error">
+                    <Setter TargetName="LevelBar" Property="BorderBrush" Value="{DynamicResource AppBrushLogError}" />
+                    <Setter TargetName="Badge" Property="Background" Value="{DynamicResource AppBrushConsoleBackground}" />
+                    <Setter TargetName="BadgeText" Property="Foreground" Value="{DynamicResource AppBrushLogError}" />
+                    <Setter TargetName="Message" Property="Foreground" Value="{DynamicResource AppBrushLogError}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Level}" Value="Critical">
+                    <Setter TargetName="LevelBar" Property="BorderBrush" Value="{DynamicResource AppBrushLogCritical}" />
+                    <Setter TargetName="Badge" Property="Background" Value="{DynamicResource AppBrushLogCritical}" />
+                    <Setter TargetName="BadgeText" Property="Foreground" Value="{DynamicResource AppBrushOnAccent}" />
+                    <Setter TargetName="Message" Property="Foreground" Value="{DynamicResource AppBrushLogCritical}" />
+                </DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
+    </Window.Resources>
+    <!-- #endregion -->
+
     <!-- #region Console log layout -->
-    <DockPanel Background="#111111">
+    <DockPanel>
+        <DockPanel.Style>
+            <Style TargetType="DockPanel">
+                <Setter Property="Background" Value="#111111" />
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsPrettyMode}" Value="True">
+                        <Setter Property="Background" Value="{DynamicResource AppBrushConsoleBackground}" />
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
+        </DockPanel.Style>
+
         <!-- #region Header -->
         <Border DockPanel.Dock="Top"
-                BorderBrush="#303030"
                 BorderThickness="0,0,0,1"
                 Padding="12,8">
-            <TextBlock Text="Console Log"
-                       Foreground="#f8fafc"
-                       FontSize="15"
-                       FontWeight="SemiBold" />
+            <Border.Style>
+                <Style TargetType="Border">
+                    <Setter Property="BorderBrush" Value="#303030" />
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsPrettyMode}" Value="True">
+                            <Setter Property="BorderBrush" Value="{DynamicResource AppBrushBorder}" />
+                            <Setter Property="Background" Value="{DynamicResource AppBrushSurface}" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Border.Style>
+            <Grid>
+                <TextBlock Text="Console Log"
+                           FontSize="15"
+                           FontWeight="SemiBold"
+                           VerticalAlignment="Center">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="#f8fafc" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsPrettyMode}" Value="True">
+                                    <Setter Property="Foreground" Value="{DynamicResource AppBrushText}" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <RadioButton Content="Classic"
+                                 Style="{StaticResource ConsoleModeToggleStyle}"
+                                 IsChecked="{Binding IsClassicMode, Mode=TwoWay}" />
+                    <RadioButton Content="Pretty"
+                                 Style="{StaticResource ConsoleModeToggleStyle}"
+                                 IsChecked="{Binding IsPrettyMode, Mode=TwoWay}" />
+                </StackPanel>
+            </Grid>
         </Border>
         <!-- #endregion -->
 
-        <!-- #region Log list and copy menu -->
-        <ListBox x:Name="ConsoleLogList"
-                 ItemsSource="{Binding UiLogs}"
-                 Background="#111111"
-                 BorderThickness="0"
-                 Foreground="#d6d6d6"
-                 FontFamily="Consolas"
-                 FontSize="12"
-                 SelectionMode="Extended"
-                 KeyDown="ConsoleLogList_KeyDown"
-                 ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                 ScrollViewer.VerticalScrollBarVisibility="Auto">
-            <ListBox.ContextMenu>
-                <ContextMenu>
-                    <MenuItem Header="Copy selected"
-                              Click="CopySelectedMenuItem_Click" />
-                    <MenuItem Header="Copy all"
-                              Click="CopyAllMenuItem_Click" />
-                </ContextMenu>
-            </ListBox.ContextMenu>
-            <ListBox.ItemTemplate>
-                <DataTemplate>
-                    <TextBlock Text="{Binding}" Foreground="#d6d6d6" TextWrapping="NoWrap" />
-                </DataTemplate>
-            </ListBox.ItemTemplate>
-        </ListBox>
+        <!-- #region Pretty toolbar -->
+        <Border DockPanel.Dock="Top"
+                Background="{DynamicResource AppBrushSurface}"
+                BorderBrush="{DynamicResource AppBrushBorder}"
+                BorderThickness="0,0,0,1"
+                Padding="12,6"
+                Visibility="{Binding IsPrettyMode, Converter={StaticResource BoolToVisibility}}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <WrapPanel VerticalAlignment="Center">
+                    <ToggleButton Style="{StaticResource LevelChipStyle}"
+                                  Foreground="{DynamicResource AppBrushLogTrace}"
+                                  Tag="{DynamicResource AppBrushLogDebugSoft}"
+                                  IsChecked="{Binding ShowTrace}"
+                                  ToolTip="Show trace">
+                        <TextBlock Style="{StaticResource ChipTextStyle}">
+                            <Run Text="TRC" FontWeight="SemiBold" />
+                            <Run Text="{Binding TraceCount, Mode=OneWay}" />
+                        </TextBlock>
+                    </ToggleButton>
+                    <ToggleButton Style="{StaticResource LevelChipStyle}"
+                                  Foreground="{DynamicResource AppBrushLogDebug}"
+                                  Tag="{DynamicResource AppBrushLogDebugSoft}"
+                                  IsChecked="{Binding ShowDebug}"
+                                  ToolTip="Show debug">
+                        <TextBlock Style="{StaticResource ChipTextStyle}">
+                            <Run Text="DBG" FontWeight="SemiBold" />
+                            <Run Text="{Binding DebugCount, Mode=OneWay}" />
+                        </TextBlock>
+                    </ToggleButton>
+                    <ToggleButton Style="{StaticResource LevelChipStyle}"
+                                  Foreground="{DynamicResource AppBrushLogInfo}"
+                                  Tag="{DynamicResource AppBrushLogInfoSoft}"
+                                  IsChecked="{Binding ShowInfo}"
+                                  ToolTip="Show info">
+                        <TextBlock Style="{StaticResource ChipTextStyle}">
+                            <Run Text="INF" FontWeight="SemiBold" />
+                            <Run Text="{Binding InfoCount, Mode=OneWay}" />
+                        </TextBlock>
+                    </ToggleButton>
+                    <ToggleButton Style="{StaticResource LevelChipStyle}"
+                                  Foreground="{DynamicResource AppBrushLogWarning}"
+                                  Tag="{DynamicResource AppBrushLogWarningSoft}"
+                                  IsChecked="{Binding ShowWarning}"
+                                  ToolTip="Show warnings">
+                        <TextBlock Style="{StaticResource ChipTextStyle}">
+                            <Run Text="WRN" FontWeight="SemiBold" />
+                            <Run Text="{Binding WarningCount, Mode=OneWay}" />
+                        </TextBlock>
+                    </ToggleButton>
+                    <ToggleButton Style="{StaticResource LevelChipStyle}"
+                                  Foreground="{DynamicResource AppBrushLogError}"
+                                  Tag="{DynamicResource AppBrushLogErrorSoft}"
+                                  IsChecked="{Binding ShowError}"
+                                  ToolTip="Show errors and critical">
+                        <TextBlock Style="{StaticResource ChipTextStyle}">
+                            <Run Text="ERR" FontWeight="SemiBold" />
+                            <Run Text="{Binding ErrorCount, Mode=OneWay}" />
+                        </TextBlock>
+                    </ToggleButton>
+                </WrapPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Grid Width="220" Margin="0,0,8,0" VerticalAlignment="Center">
+                        <TextBox x:Name="SearchBox"
+                                 Margin="0"
+                                 Padding="26,4,8,4"
+                                 FontSize="12"
+                                 Background="{DynamicResource AppBrushConsoleBackground}"
+                                 BorderBrush="{DynamicResource AppBrushBorderStrong}"
+                                 Foreground="{DynamicResource AppBrushText}"
+                                 CaretBrush="{DynamicResource AppBrushText}"
+                                 Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                                 ToolTip="Search message, source and stack trace (Enter applies, Esc clears)"
+                                 KeyDown="SearchBox_KeyDown" />
+                        <iconPacks:PackIconLucide Kind="Search"
+                                                  Width="13"
+                                                  Height="13"
+                                                  Margin="9,0,0,0"
+                                                  HorizontalAlignment="Left"
+                                                  VerticalAlignment="Center"
+                                                  IsHitTestVisible="False"
+                                                  Foreground="{DynamicResource AppBrushMutedText}" />
+                        <TextBlock Text="Search logs"
+                                   Margin="27,0,0,0"
+                                   FontSize="12"
+                                   TextWrapping="NoWrap"
+                                   VerticalAlignment="Center"
+                                   IsHitTestVisible="False"
+                                   Foreground="{DynamicResource AppBrushMutedText}">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Text, ElementName=SearchBox}" Value="">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Grid>
+                    <ToggleButton Style="{x:Null}"
+                                  Template="{StaticResource ToolIconButtonTemplate}"
+                                  Cursor="Hand"
+                                  IsChecked="{Binding IsPaused}"
+                                  ToolTip="Pause (freeze the list)">
+                        <iconPacks:PackIconLucide>
+                            <iconPacks:PackIconLucide.Style>
+                                <Style TargetType="iconPacks:PackIconLucide" BasedOn="{StaticResource ToolIconStyle}">
+                                    <Setter Property="Kind" Value="Pause" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsPaused}" Value="True">
+                                            <Setter Property="Kind" Value="Play" />
+                                            <Setter Property="Foreground" Value="{DynamicResource AppBrushAccent}" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </iconPacks:PackIconLucide.Style>
+                        </iconPacks:PackIconLucide>
+                    </ToggleButton>
+                    <ToggleButton Style="{x:Null}"
+                                  Template="{StaticResource ToolIconButtonTemplate}"
+                                  Cursor="Hand"
+                                  IsChecked="{Binding IsWrapEnabled}"
+                                  ToolTip="Wrap long lines">
+                        <iconPacks:PackIconLucide Kind="TextWrap" Style="{StaticResource ToolIconStyle}" />
+                    </ToggleButton>
+                    <Button Style="{x:Null}"
+                                  Template="{StaticResource ToolIconButtonTemplate}"
+                            Cursor="Hand"
+                            Command="{Binding ClearViewCommand}"
+                            ToolTip="Clear view (log data is kept)">
+                        <iconPacks:PackIconLucide Kind="Eraser" Style="{StaticResource ToolIconStyle}" />
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
         <!-- #endregion -->
+
+        <!-- #region Pretty status bar -->
+        <Border DockPanel.Dock="Bottom"
+                Background="{DynamicResource AppBrushSurface}"
+                BorderBrush="{DynamicResource AppBrushBorder}"
+                BorderThickness="0,1,0,0"
+                Padding="12,4"
+                Visibility="{Binding IsPrettyMode, Converter={StaticResource BoolToVisibility}}">
+            <Grid>
+                <TextBlock Text="{Binding StatusText}"
+                           Foreground="{DynamicResource AppBrushMutedText}"
+                           FontSize="12"
+                           VerticalAlignment="Center" />
+                <Button HorizontalAlignment="Right"
+                        Style="{x:Null}"
+                                  Template="{StaticResource ToolIconButtonTemplate}"
+                        Cursor="Hand"
+                        Padding="0"
+                        Click="JumpToBottom_Click"
+                        Visibility="{Binding HasNewEntries, Converter={StaticResource BoolToVisibility}}"
+                        ToolTip="Jump to the newest entry">
+                    <StackPanel Orientation="Horizontal">
+                        <iconPacks:PackIconLucide Kind="ArrowDown"
+                                                  Width="13"
+                                                  Height="13"
+                                                  Margin="0,0,4,0"
+                                                  VerticalAlignment="Center"
+                                                  Foreground="{DynamicResource AppBrushAccent}" />
+                        <TextBlock Foreground="{DynamicResource AppBrushAccent}" FontSize="12" TextWrapping="NoWrap">
+                            <Run Text="{Binding NewEntryCount, Mode=OneWay}" />
+                            <Run Text="new" />
+                        </TextBlock>
+                    </StackPanel>
+                </Button>
+            </Grid>
+        </Border>
+        <!-- #endregion -->
+
+        <Grid>
+            <!-- #region Log list and copy menu (Classic, unchanged) -->
+            <ListBox x:Name="ConsoleLogList"
+                     ItemsSource="{Binding UiLogs}"
+                     Background="#111111"
+                     BorderThickness="0"
+                     Foreground="#d6d6d6"
+                     FontFamily="Consolas"
+                     FontSize="12"
+                     SelectionMode="Extended"
+                     KeyDown="ConsoleLogList_KeyDown"
+                     ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                     Visibility="{Binding IsClassicMode, Converter={StaticResource BoolToVisibility}}">
+                <ListBox.ContextMenu>
+                    <ContextMenu>
+                        <MenuItem Header="Copy selected"
+                                  Click="CopySelectedMenuItem_Click" />
+                        <MenuItem Header="Copy all"
+                                  Click="CopyAllMenuItem_Click" />
+                    </ContextMenu>
+                </ListBox.ContextMenu>
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <TextBlock Text="{Binding}" Foreground="#d6d6d6" TextWrapping="NoWrap" />
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+            <!-- #endregion -->
+
+            <!-- #region Pretty log list -->
+            <ListBox x:Name="PrettyLogList"
+                     ItemsSource="{Binding EntriesView}"
+                     ItemTemplate="{StaticResource PrettyLogEntryTemplate}"
+                     ItemContainerStyle="{StaticResource PrettyLogItemStyle}"
+                     Background="{DynamicResource AppBrushConsoleBackground}"
+                     BorderThickness="0"
+                     FontFamily="Consolas"
+                     FontSize="12"
+                     SelectionMode="Extended"
+                     KeyDown="PrettyLogList_KeyDown"
+                     VirtualizingPanel.IsVirtualizing="True"
+                     VirtualizingPanel.VirtualizationMode="Standard"
+                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                     Visibility="{Binding IsPrettyMode, Converter={StaticResource BoolToVisibility}}">
+                <ListBox.Style>
+                    <Style TargetType="ListBox">
+                        <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Auto" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsWrapEnabled}" Value="True">
+                                <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </ListBox.Style>
+                <ListBox.ContextMenu>
+                    <ContextMenu>
+                        <MenuItem Header="Copy selected"
+                                  Click="PrettyCopySelectedMenuItem_Click" />
+                        <MenuItem Header="Copy visible"
+                                  Click="PrettyCopyVisibleMenuItem_Click" />
+                    </ContextMenu>
+                </ListBox.ContextMenu>
+            </ListBox>
+            <!-- #endregion -->
+        </Grid>
     </DockPanel>
     <!-- #endregion -->
 </Window>
