@@ -13,7 +13,7 @@ public sealed class ConsoleWindowService : IConsoleWindowService
         IAppLogger logger,
         IAppLifecycleService lifecycleService,
         ISettingsService settingsService)
-        : this(() => new ConsoleLogWindow(logger), lifecycleService, settingsService)
+        : this(() => new ConsoleLogWindow(logger, settingsService), lifecycleService, settingsService)
     {
     }
 

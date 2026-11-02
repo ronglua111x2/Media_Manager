@@ -40,9 +40,11 @@ Exhaustive list of user-facing and background features. Each entry includes purp
 - **DB:** None
 
 ### 1.6 Console Log Window
-- **What:** Terminal-style rolling log viewer
-- **User interaction:** Bottom bar terminal button; copy selected/all logs
-- **Code:** `Views/ConsoleLogWindow.xaml`, `Services/ConsoleWindowService.cs`, `Services/AppLogger.cs`
+- **What:** Rolling log viewer with two modes, toggled in the window header (choice persisted in `Logs.ConsoleMode`):
+  - **Classic:** original terminal-style plain-text list (unchanged)
+  - **Pretty:** theme-aware (Light/Dark) rows with level color bar and badge, warning/error row tint, short `Source · Member`, highlighted message tokens ('quoted', key=value, numbers/dates, URLs), collapsible stack traces
+- **User interaction:** Bottom bar terminal button; copy selected/all logs. Pretty adds level filter chips with counts (`Logs.ConsoleHiddenLevels`), search (Enter applies, Esc clears), pause (freezes the list), wrap (`Logs.ConsoleWrap`), clear view (hides current entries only), and a "N new" jump-to-bottom button; auto-scroll only while at the bottom
+- **Code:** `Views/ConsoleLogWindow.xaml`, `ViewModels/ConsoleLogViewModel.cs`, `Views/LogMessageHighlighter.cs`, `Common/LogMessageTokenizer.cs`, `Converters/ConsoleLogEntryConverter.cs`, `Services/ConsoleWindowService.cs`, `Services/AppLogger.cs` (`UiLogs` for Classic, `UiEntries` for Pretty); colors `AppColorLog*` / `AppColorConsole*` in `Resources/AppThemeColors.*.xaml`
 - **DB:** None
 - **Background:** Auto-closes on background mode if configured
 

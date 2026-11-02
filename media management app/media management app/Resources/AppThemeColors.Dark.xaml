@@ -46,6 +46,27 @@
     <Color x:Key="AppColorPlaceholderInfo">#1e2838</Color>
     <Color x:Key="AppColorChipMuted">#252d3d</Color>
     <Color x:Key="AppColorDisabledBackground">#252d3d</Color>
+    <!-- Console log (Pretty mode) -->
+    <Color x:Key="AppColorConsoleBackground">#0f141b</Color>
+    <Color x:Key="AppColorConsoleRowHover">#1c2533</Color>
+    <Color x:Key="AppColorConsoleRowSelected">#1e3a32</Color>
+    <Color x:Key="AppColorLogTrace">#6b7686</Color>
+    <Color x:Key="AppColorLogDebug">#93a0b8</Color>
+    <Color x:Key="AppColorLogInfo">#5b9cf8</Color>
+    <Color x:Key="AppColorLogWarning">#e0a54a</Color>
+    <Color x:Key="AppColorLogError">#ef6464</Color>
+    <Color x:Key="AppColorLogCritical">#ff6b9a</Color>
+    <Color x:Key="AppColorLogDebugSoft">#222b3a</Color>
+    <Color x:Key="AppColorLogInfoSoft">#1a2a45</Color>
+    <Color x:Key="AppColorLogWarningSoft">#33281a</Color>
+    <Color x:Key="AppColorLogErrorSoft">#3d2020</Color>
+    <Color x:Key="AppColorLogCriticalSoft">#451a2c</Color>
+    <Color x:Key="AppColorLogKey">#7d8aa3</Color>
+    <Color x:Key="AppColorLogValue">#e8edf5</Color>
+    <Color x:Key="AppColorLogQuoted">#2ec4bf</Color>
+    <Color x:Key="AppColorLogNumber">#c79bf2</Color>
+    <Color x:Key="AppColorLogTimestamp">#6b7686</Color>
+    <Color x:Key="AppColorLogSource">#93a0b8</Color>
     <!-- MAL-inspired watch status colors -->
     <Color x:Key="AppColorWatchUnset">#93a0b8</Color>
     <Color x:Key="AppColorWatchWatching">#4f8ef7</Color>
@@ -106,4 +127,24 @@
     <SolidColorBrush x:Key="AppBrushWatchOnHold" Color="{StaticResource AppColorWatchOnHold}" />
     <SolidColorBrush x:Key="AppBrushWatchDropped" Color="{StaticResource AppColorWatchDropped}" />
     <SolidColorBrush x:Key="AppBrushWatchPlanToWatch" Color="{StaticResource AppColorWatchPlanToWatch}" />
+    <SolidColorBrush x:Key="AppBrushConsoleBackground" Color="{StaticResource AppColorConsoleBackground}" />
+    <SolidColorBrush x:Key="AppBrushConsoleRowHover" Color="{StaticResource AppColorConsoleRowHover}" />
+    <SolidColorBrush x:Key="AppBrushConsoleRowSelected" Color="{StaticResource AppColorConsoleRowSelected}" />
+    <SolidColorBrush x:Key="AppBrushLogTrace" Color="{StaticResource AppColorLogTrace}" />
+    <SolidColorBrush x:Key="AppBrushLogDebug" Color="{StaticResource AppColorLogDebug}" />
+    <SolidColorBrush x:Key="AppBrushLogInfo" Color="{StaticResource AppColorLogInfo}" />
+    <SolidColorBrush x:Key="AppBrushLogWarning" Color="{StaticResource AppColorLogWarning}" />
+    <SolidColorBrush x:Key="AppBrushLogError" Color="{StaticResource AppColorLogError}" />
+    <SolidColorBrush x:Key="AppBrushLogCritical" Color="{StaticResource AppColorLogCritical}" />
+    <SolidColorBrush x:Key="AppBrushLogDebugSoft" Color="{StaticResource AppColorLogDebugSoft}" />
+    <SolidColorBrush x:Key="AppBrushLogInfoSoft" Color="{StaticResource AppColorLogInfoSoft}" />
+    <SolidColorBrush x:Key="AppBrushLogWarningSoft" Color="{StaticResource AppColorLogWarningSoft}" />
+    <SolidColorBrush x:Key="AppBrushLogErrorSoft" Color="{StaticResource AppColorLogErrorSoft}" />
+    <SolidColorBrush x:Key="AppBrushLogCriticalSoft" Color="{StaticResource AppColorLogCriticalSoft}" />
+    <SolidColorBrush x:Key="AppBrushLogKey" Color="{StaticResource AppColorLogKey}" />
+    <SolidColorBrush x:Key="AppBrushLogValue" Color="{StaticResource AppColorLogValue}" />
+    <SolidColorBrush x:Key="AppBrushLogQuoted" Color="{StaticResource AppColorLogQuoted}" />
+    <SolidColorBrush x:Key="AppBrushLogNumber" Color="{StaticResource AppColorLogNumber}" />
+    <SolidColorBrush x:Key="AppBrushLogTimestamp" Color="{StaticResource AppColorLogTimestamp}" />
+    <SolidColorBrush x:Key="AppBrushLogSource" Color="{StaticResource AppColorLogSource}" />
 </ResourceDictionary>
