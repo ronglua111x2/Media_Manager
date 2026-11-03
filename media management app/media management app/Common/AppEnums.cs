@@ -22,6 +22,12 @@ public enum AppLogLevel
     Critical
 }
 
+public enum ConsoleViewMode
+{
+    Classic = 0,
+    Pretty = 1
+}
+
 #endregion
 
 #region Settings

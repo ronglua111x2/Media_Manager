@@ -4,6 +4,8 @@ namespace media_management_app.Models;
 
 public sealed class AppLogEntry
 {
+    public long Sequence { get; init; }
+
     public DateTime Timestamp { get; init; } = DateTime.Now;
 
     public AppLogLevel Level { get; init; }
