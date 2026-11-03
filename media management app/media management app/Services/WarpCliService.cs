@@ -22,6 +22,8 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
     private bool _lastKnownConnected;
     // True when this app connected the tunnel; a tunnel already up before the first lease is left connected on release.
     private bool _tunnelOwnedByApp;
+    // Guarded by _cliGate: the user's mode before the app switched to WarpModePolicy.AppTunnelMode; null when not switched.
+    private string? _modeSwitchedFrom;
     private bool _disposed;
 
     public WarpCliService(
@@ -121,6 +123,20 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
             SetInFlight(true, WarpConnectionChangeSource.Cli);
 
             var alreadyConnected = await QueryConnectedUnlockedAsync(ct);
+            var modeSwitched = await EnsureTunnelModeUnlockedAsync(reason, ct);
+            if (alreadyConnected && modeSwitched &&
+                !await WaitUntilConnectedUnlockedAsync(timeout, ct))
+            {
+                // The mode change reconnects an existing tunnel; it did not come back.
+                _logger.Warning(
+                    $"WARP did not reconnect within {timeout.TotalSeconds:0}s after the mode switch ({WarpLeaseReasonText.Label(reason)}).",
+                    LogTarget.All);
+                await RestoreModeIfUnneededUnlockedAsync(ct);
+                SetLastKnown(false);
+                RaiseChanged(WarpConnectionChangeSource.Cli);
+                return new WarpLeaseResult(false, false);
+            }
+
             if (alreadyConnected)
             {
                 lock (_stateLock)
@@ -150,6 +166,7 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
             if (!connected)
             {
                 _logger.Warning($"WARP connect timed out after {timeout.TotalSeconds:0}s.", LogTarget.All);
+                await RestoreModeIfUnneededUnlockedAsync(ct);
                 SetLastKnown(false);
                 RaiseChanged(WarpConnectionChangeSource.Cli);
                 return new WarpLeaseResult(false, false);
@@ -211,6 +228,7 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
                 _logger.Debug(
                     $"WARP lease released ({WarpLeaseReasonText.Label(reason)}); {remaining} lease(s) remain.",
                     LogTarget.File | LogTarget.Console);
+                await RestoreModeIfUnneededUnlockedAsync(ct);
                 RaiseChanged(WarpConnectionChangeSource.Cli);
                 return;
             }
@@ -220,11 +238,13 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
                 _logger.Debug(
                     $"WARP lease released ({WarpLeaseReasonText.Label(reason)}); tunnel was already up before acquire — leaving connected.",
                     LogTarget.File | LogTarget.Console);
+                await RestoreModeIfUnneededUnlockedAsync(ct);
                 RaiseChanged(WarpConnectionChangeSource.Cli);
                 return;
             }
 
             await DisconnectCliUnlockedAsync(ct, logAsForce: false);
+            await RestoreModeIfUnneededUnlockedAsync(ct);
         }
         catch (OperationCanceledException)
         {
@@ -262,6 +282,7 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
             }
 
             await DisconnectCliUnlockedAsync(ct, logAsForce: true);
+            await RestoreModeIfUnneededUnlockedAsync(ct);
         }
         catch (OperationCanceledException)
         {
@@ -369,6 +390,256 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
         finally
         {
             _cliGate.Release();
+        }
+    }
+
+    public async Task<string?> GetOperationModeAsync(CancellationToken ct = default)
+    {
+        if (!IsAvailable)
+        {
+            return null;
+        }
+
+        await _cliGate.WaitAsync(ct);
+        try
+        {
+            return await QueryModeUnlockedAsync(ct);
+        }
+        finally
+        {
+            _cliGate.Release();
+        }
+    }
+
+    public async Task RestorePendingModeAsync(CancellationToken ct = default)
+    {
+        if (!IsAvailable || !File.Exists(MarkerPath))
+        {
+            return;
+        }
+
+        await _cliGate.WaitAsync(ct);
+        try
+        {
+            lock (_stateLock)
+            {
+                if (_leases.Count > 0)
+                {
+                    return;
+                }
+            }
+
+            var marker = TryReadMarker();
+            if (marker is null)
+            {
+                _logger.Warning($"WARP mode restore marker unreadable; deleting {MarkerPath}.", LogTarget.All);
+                TryDeleteMarker();
+                return;
+            }
+
+            _logger.Info(
+                $"WARP mode was switched to {marker.AppliedMode} by a previous session (since {marker.AppliedUtc:u}); restoring {marker.OriginalMode}.",
+                LogTarget.All);
+            await RestoreFromMarkerUnlockedAsync(marker, "after unclean exit", ct);
+            _modeSwitchedFrom = null;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning($"WARP mode restore after unclean exit failed: {ex.Message}", LogTarget.All);
+        }
+        finally
+        {
+            _cliGate.Release();
+        }
+    }
+
+    private string MarkerPath => Path.Combine(_settingsService.Current.StateFolder, WarpModePolicy.MarkerFileName);
+
+    /// <summary>
+    /// Switches a DNS-only mode to <see cref="WarpModePolicy.AppTunnelMode"/> for leases that need TMDB.
+    /// Returns true when this call changed the mode.
+    /// </summary>
+    private async Task<bool> EnsureTunnelModeUnlockedAsync(WarpLeaseReason reason, CancellationToken ct)
+    {
+        if (!WarpLeaseReasonText.RequiresTunnel(reason) ||
+            !(_settingsService.Current.Warp?.SwitchModeForTmdb ?? true) ||
+            _modeSwitchedFrom is not null)
+        {
+            return false;
+        }
+
+        var mode = await QueryModeUnlockedAsync(ct);
+        if (mode is null)
+        {
+            _logger.Warning(
+                $"WARP mode could not be read; not switching it for {WarpLeaseReasonText.Label(reason)}.",
+                LogTarget.All);
+            return false;
+        }
+
+        if (WarpModePolicy.IsTunnelMode(mode))
+        {
+            return false;
+        }
+
+        if (!WarpModePolicy.IsValidModeName(mode))
+        {
+            _logger.Warning($"WARP mode '{mode}' is not recognised; not switching it.", LogTarget.All);
+            return false;
+        }
+
+        // Marker first: if the app dies before restoring, the next start puts the user's mode back.
+        TryWriteMarker(new WarpModeRestoreMarker(mode, WarpModePolicy.AppTunnelMode, DateTime.UtcNow));
+        var result = await RunCliUnlockedAsync($"mode {WarpModePolicy.AppTunnelMode}", ct);
+        if (result.ExitCode != 0)
+        {
+            LogCliOutputOnce("mode", result);
+            TryDeleteMarker();
+            _logger.Warning(
+                $"WARP mode switch {mode} → {WarpModePolicy.AppTunnelMode} failed; TMDB may stay blocked.",
+                LogTarget.All);
+            return false;
+        }
+
+        _modeSwitchedFrom = mode;
+        _logger.Info(
+            $"WARP mode {mode} → {WarpModePolicy.AppTunnelMode} for {WarpLeaseReasonText.Label(reason)} (TMDB is blocked by SNI in DNS-only modes); your mode is restored when done.",
+            LogTarget.All);
+        return true;
+    }
+
+    /// <summary>Restores the user's mode once no held lease needs the tunnel.</summary>
+    private async Task RestoreModeIfUnneededUnlockedAsync(CancellationToken ct)
+    {
+        var original = _modeSwitchedFrom;
+        if (original is null)
+        {
+            return;
+        }
+
+        lock (_stateLock)
+        {
+            if (_leases.Any(WarpLeaseReasonText.RequiresTunnel))
+            {
+                return;
+            }
+        }
+
+        await RestoreFromMarkerUnlockedAsync(
+            new WarpModeRestoreMarker(original, WarpModePolicy.AppTunnelMode, DateTime.UtcNow),
+            "TMDB work done",
+            ct);
+        _modeSwitchedFrom = null;
+    }
+
+    private async Task RestoreFromMarkerUnlockedAsync(WarpModeRestoreMarker marker, string context, CancellationToken ct)
+    {
+        try
+        {
+            var current = await QueryModeUnlockedAsync(ct);
+            if (current is null)
+            {
+                _logger.Warning(
+                    $"WARP mode could not be read; keeping the restore marker to retry on next start ({context}).",
+                    LogTarget.All);
+                return;
+            }
+
+            var target = WarpModePolicy.ShouldRestore(current, marker);
+            if (target is null)
+            {
+                _logger.Info(
+                    $"WARP mode is now {current} (changed outside the app); not restoring {marker.OriginalMode}.",
+                    LogTarget.All);
+                TryDeleteMarker();
+                return;
+            }
+
+            if (!WarpModePolicy.IsValidModeName(target))
+            {
+                _logger.Warning($"WARP restore mode '{target}' is not recognised; leaving {current}.", LogTarget.All);
+                TryDeleteMarker();
+                return;
+            }
+
+            var result = await RunCliUnlockedAsync($"mode {target}", ct);
+            if (result.ExitCode != 0)
+            {
+                LogCliOutputOnce("mode", result);
+                _logger.Warning(
+                    $"WARP mode restore {current} → {target} failed; keeping the marker to retry on next start.",
+                    LogTarget.All);
+                return;
+            }
+
+            TryDeleteMarker();
+            _logger.Info($"WARP mode {current} → {target} restored ({context}).", LogTarget.All);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning($"WARP mode restore failed ({context}): {ex.Message}", LogTarget.All);
+        }
+    }
+
+    private async Task<string?> QueryModeUnlockedAsync(CancellationToken ct)
+    {
+        try
+        {
+            var result = await RunCliUnlockedAsync("-j settings", ct);
+            return WarpModePolicy.ParseOperationMode(result.Output);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning($"WARP mode read failed: {ex.Message}", LogTarget.File);
+            return null;
+        }
+    }
+
+    private WarpModeRestoreMarker? TryReadMarker()
+    {
+        try
+        {
+            return WarpModePolicy.DeserializeMarker(File.ReadAllText(MarkerPath));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    private void TryWriteMarker(WarpModeRestoreMarker marker)
+    {
+        try
+        {
+            File.WriteAllText(MarkerPath, WarpModePolicy.SerializeMarker(marker));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.Warning($"WARP mode restore marker write failed: {ex.Message}", LogTarget.All);
+        }
+    }
+
+    private void TryDeleteMarker()
+    {
+        try
+        {
+            File.Delete(MarkerPath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.Warning($"WARP mode restore marker delete failed: {ex.Message}", LogTarget.File);
         }
     }
 

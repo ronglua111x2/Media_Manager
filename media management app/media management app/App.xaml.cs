@@ -96,6 +96,13 @@ public partial class App : System.Windows.Application
         PublishJunkCleanup.Run(AppContext.BaseDirectory, logger);
         BundleExtractionGuard.Run(logger);
 
+        if (settings.Current.Warp?.Enabled ?? true)
+        {
+            // A previous session may have exited while WARP was switched to warp+doh for TMDB.
+            var warpCliService = _serviceProvider.GetRequiredService<IWarpCliService>();
+            _ = Task.Run(() => warpCliService.RestorePendingModeAsync());
+        }
+
         var setupCompleted = settings.Current.Startup?.SetupCompleted == true;
         var gated = !setupCompleted;
         var startBackgroundJobs = !launchOptions.SafeTestMode && setupCompleted;
@@ -312,6 +319,7 @@ public partial class App : System.Windows.Application
         services.AddSingleton<IQbittorrentSearchPluginService, QbittorrentSearchPluginService>();
         services.AddSingleton<IQbittorrentProcessRestartService, QbittorrentProcessRestartService>();
         services.AddSingleton<IWarpCliService, WarpCliService>();
+        services.AddSingleton<ITmdbBlockAdvisor, TmdbBlockAdvisor>();
         services.AddSingleton<IRecipeService, RecipeService>();
         services.AddSingleton<ISearchTitleResolver, SearchTitleResolver>();
         services.AddSingleton<ISearchPlanBuilder, SearchPlanBuilder>();

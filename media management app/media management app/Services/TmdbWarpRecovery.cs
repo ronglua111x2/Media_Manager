@@ -17,6 +17,29 @@ public static class TmdbWarpRecovery
     public static readonly TimeSpan DnsReadyTimeout = TimeSpan.FromSeconds(15);
     public static readonly TimeSpan[] RetryDelays = [TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(5)];
 
+    private static readonly AsyncLocal<bool> RecoveryScope = new();
+
+    /// <summary>
+    /// True while a TMDB call runs under Auto-Track WARP recovery; <see cref="TmdbBlockAdvisor"/> stays quiet then,
+    /// because a failure is retried with WARP. The last retry runs outside the scope so a final failure is reported.
+    /// </summary>
+    public static bool IsInRecoveryScope => RecoveryScope.Value;
+
+    public static IDisposable EnterRecoveryScope(bool active = true) => new ScopeHandle(active);
+
+    private sealed class ScopeHandle : IDisposable
+    {
+        private readonly bool _previous;
+
+        public ScopeHandle(bool active)
+        {
+            _previous = RecoveryScope.Value;
+            RecoveryScope.Value = active;
+        }
+
+        public void Dispose() => RecoveryScope.Value = _previous;
+    }
+
     /// <summary>
     /// Connects WARP via <paramref name="acquireWarp"/> and retries <paramref name="action"/>.
     /// Throws <see cref="TmdbWarpConnectFailedException"/> when WARP does not connect, or the last
@@ -73,7 +96,11 @@ public static class TmdbWarpRecovery
                 LogTarget.All);
             try
             {
-                return await action(cancellationToken);
+                // Last attempt outside the scope: if it still fails, the "check WARP mode" hint is logged.
+                using (EnterRecoveryScope(active: retry <= RetryDelays.Length))
+                {
+                    return await action(cancellationToken);
+                }
             }
             catch (Exception retryEx) when (retry <= RetryDelays.Length &&
                                             TmdbNetworkBlockDetector.IsLikelyBlocked(retryEx, cancellationToken))

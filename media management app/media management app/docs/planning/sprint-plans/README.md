@@ -15,6 +15,7 @@ Per-sprint **Plan Mode** output before Agent Mode implementation.
 | `poster-flash-surgical-fix.md` | — | **Next code work** — Library poster flash (not Sprint 8 split) |
 | `auto-track-anchor-cycle-warp-fix.md` | — | One-PR bugfix — Auto-Track rolling anchor cycle + WARP recovery on TMDB connection errors |
 | `jellyfin-refresh-warp-backoff-fix.md` | — | One-PR bugfix — Jellyfin refresh TMDB pre-probe WARP recover + retry backoff |
+| `warp-tunnel-mode-switch.md` | — | One-PR bugfix — switch WARP to warp+doh for TMDB (SNI block) and restore the user mode; no-recovery console hint |
 | — | 0–4 | ✅ Complete. E4 sprints 5–10 frozen. |
 
 ## Template (copy for each sprint)

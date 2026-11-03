@@ -15,15 +15,21 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
     private readonly ISettingsService _settingsService;
     private readonly IAppLogger _logger;
     private readonly HttpClient _httpClient;
+    private readonly ITmdbBlockAdvisor _blockAdvisor;
     private readonly Dictionary<int, TmdbTvCandidate> _candidateDetailsCache = [];
     private readonly Dictionary<string, IReadOnlyList<int>> _tvSearchIdsCache = [];
     private readonly Dictionary<int, IReadOnlyList<TmdbSeasonSummary>> _seasonSummaryCache = [];
     private readonly Dictionary<(int SeriesId, int SeasonNumber), IReadOnlyList<TmdbEpisodeSummary>> _seasonEpisodeCache = [];
 
-    public TmdbMetadataProvider(ISettingsService settingsService, IAppLogger logger, HttpClient httpClient)
+    public TmdbMetadataProvider(
+        ISettingsService settingsService,
+        IAppLogger logger,
+        HttpClient httpClient,
+        ITmdbBlockAdvisor blockAdvisor)
     {
         _settingsService = settingsService;
         _logger = logger;
+        _blockAdvisor = blockAdvisor;
         _httpClient = httpClient;
         _httpClient.BaseAddress = new Uri("https://api.themoviedb.org/3/");
     }
@@ -1199,6 +1205,12 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
             catch (Exception ex) when (IsTransientNetworkError(ex) && attempt < maxAttempts)
             {
                 _logger.Warning($"TMDb network error; retrying attempt {attempt + 1}/{maxAttempts}. {ex.Message}", LogTarget.File | LogTarget.Console);
+            }
+            catch (Exception ex) when (TmdbNetworkBlockDetector.IsLikelyBlocked(ex, cancellationToken))
+            {
+                // Final failure: outside Auto-Track recovery, hint the user to check the WARP mode.
+                _blockAdvisor.Warn(ex, cancellationToken);
+                throw;
             }
 
             await Task.Delay(TimeSpan.FromMilliseconds(350 * attempt), cancellationToken);

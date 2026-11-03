@@ -67,6 +67,15 @@ public interface IWarpCliService
     Task DisconnectAsync(CancellationToken ct = default);
 
     Task<bool> IsConnectedAsync(CancellationToken ct = default);
+
+    /// <summary>Current WARP operating mode from <c>warp-cli -j settings</c> ("doh", "warp+doh", …), or null.</summary>
+    Task<string?> GetOperationModeAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Restores the user's WARP mode left switched by a previous session that exited uncleanly
+    /// (marker file in the state folder). No-op when there is no marker or a lease is held.
+    /// </summary>
+    Task RestorePendingModeAsync(CancellationToken ct = default);
 }
 
 public readonly record struct WarpConnectAttempt(bool Connected, bool Owned);
@@ -75,6 +84,13 @@ public static class WarpLeaseReasonText
 {
     public static bool IsAutoTrackPipeline(WarpLeaseReason reason) =>
         reason is WarpLeaseReason.TmdbSslRecover or WarpLeaseReason.Hunt or WarpLeaseReason.JellyfinHold;
+
+    /// <summary>
+    /// Leases that need TMDB through WARP. TMDB is blocked by SNI here, so a DNS-only mode is switched to
+    /// <see cref="WarpModePolicy.AppTunnelMode"/> while one of these is held. Hunt and user leases keep the user's mode.
+    /// </summary>
+    public static bool RequiresTunnel(WarpLeaseReason reason) =>
+        reason is WarpLeaseReason.TmdbSslRecover or WarpLeaseReason.JellyfinHold or WarpLeaseReason.FirstRun;
 
     public static string Label(WarpLeaseReason reason) => reason switch
     {
