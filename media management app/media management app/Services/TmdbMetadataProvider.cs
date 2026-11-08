@@ -1217,7 +1217,7 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
 
     private static bool IsTransientNetworkError(Exception exception)
     {
-        return exception is HttpRequestException or IOException;
+        return NetworkFailureClassifier.IsRetryableTransportFailure(NetworkFailureClassifier.Classify(exception));
     }
 
     private static (string Title, int? Year) SplitTrailingYear(string title)
