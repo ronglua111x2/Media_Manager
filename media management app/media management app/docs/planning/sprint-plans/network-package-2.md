@@ -2,7 +2,7 @@
 
 **Branch:** `fix/network-package-1` (stacked on package 1, not pushed)  
 **Date:** 2026-11-08  
-**Status:** Implemented — **live test outstanding, together with package 1's**  
+**Status:** Implemented; user OK on the installed build 2026-11-08 — log confirms the direct TMDB path only (see Definition of Done)  
 **Source:** whole-app network audit (branch `claude/zen-antonelli-410a4f`, `docs/network-audit/`): NET-006, NET-010 to NET-016, decision 1
 
 ## Scope IN / OUT
@@ -24,7 +24,8 @@
 - [x] Breaker; Jellyfin notify policy
 - [x] App.Tests 234 passed (+74 over package 1), Core.Tests 248
 - [x] Docs: FEATURES §10.10/§10.21, AI_CONTEXT, BUILD
-- [ ] Manual test on the live install (user)
+- [x] Live install 2026-11-08 22:28, Run Now: 4 shows `TMDB refresh ok` with no WARP connect and no error lines
+- [ ] Not seen in the log yet: Jellyfin notify with WARP hold, recovery through the legacy host, `net.fail` lines
 
 ## Test gate
 

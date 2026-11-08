@@ -2,7 +2,7 @@
 
 **Branch:** `fix/network-package-1` from `main` @ `ff2caa3`  
 **Date:** 2026-11-08  
-**Status:** Implemented; build installed 2026-11-08 — **live test deferred by the user, still outstanding**  
+**Status:** Implemented; user OK on the installed build 2026-11-08 — Hunt tunnel in DNS-only mode not seen in the log yet  
 **Not a sprint:** one-PR bugfix package. Source: whole-app network audit (branch `claude/zen-antonelli-410a4f`, `docs/network-audit/`, findings NET-001 to NET-004, NET-025)
 
 ## Problems
