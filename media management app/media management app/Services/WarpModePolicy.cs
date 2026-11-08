@@ -1,4 +1,5 @@
 using System.Text.Json;
+using media_management_app.Models;
 
 namespace media_management_app.Services;
 
@@ -33,6 +34,17 @@ public static class WarpModePolicy
 
     public static bool IsTunnelMode(string? mode) =>
         !string.IsNullOrWhiteSpace(mode) && TunnelModes.Contains(mode.Trim());
+
+    /// <summary>Whether this lease should run through a real tunnel, given the user's WARP settings.</summary>
+    public static bool LeaseNeedsTunnel(WarpLeaseReason reason, WarpSettings? settings)
+    {
+        if (reason == WarpLeaseReason.Hunt)
+        {
+            return settings?.ForceTunnelForHunt ?? true;
+        }
+
+        return WarpLeaseReasonText.RequiresTunnel(reason) && (settings?.SwitchModeForTmdb ?? true);
+    }
 
     /// <summary>Reads <c>settings.operation_mode</c> from <c>warp-cli -j settings</c>; null when missing or unparsable.</summary>
     public static string? ParseOperationMode(string settingsJson)

@@ -279,6 +279,9 @@ public partial class SettingsViewModel : ViewModelBase
     private bool warpAutoRecoverOnSsl = true;
 
     [ObservableProperty]
+    private bool warpForceTunnelForHunt = true;
+
+    [ObservableProperty]
     private bool warpConfirmDisconnectDuringAutoTrack = true;
 
     [ObservableProperty]
@@ -1274,6 +1277,7 @@ public partial class SettingsViewModel : ViewModelBase
             AutoTrackJellyfinLogPathTestStatus = string.Empty;
             WarpEnabled = _settingsService.Current.Warp.Enabled;
             WarpAutoRecoverOnSsl = _settingsService.Current.Warp.AutoRecoverOnSsl;
+            WarpForceTunnelForHunt = _settingsService.Current.Warp.ForceTunnelForHunt;
             WarpConfirmDisconnectDuringAutoTrack = _settingsService.Current.Warp.ConfirmDisconnectDuringAutoTrack;
             WarpExecutablePath = _settingsService.Current.Warp.ExecutablePath;
             WarpConnectTimeoutSeconds = _settingsService.Current.Warp.ConnectTimeoutSeconds;
@@ -1322,6 +1326,7 @@ public partial class SettingsViewModel : ViewModelBase
         _settingsService.Current.Warp ??= new WarpSettings();
         _settingsService.Current.Warp.Enabled = WarpEnabled;
         _settingsService.Current.Warp.AutoRecoverOnSsl = WarpAutoRecoverOnSsl;
+        _settingsService.Current.Warp.ForceTunnelForHunt = WarpForceTunnelForHunt;
         _settingsService.Current.Warp.ConfirmDisconnectDuringAutoTrack = WarpConfirmDisconnectDuringAutoTrack;
         _settingsService.Current.Warp.ExecutablePath = string.IsNullOrWhiteSpace(WarpExecutablePath)
             ? null

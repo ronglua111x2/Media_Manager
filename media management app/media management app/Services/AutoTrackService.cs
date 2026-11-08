@@ -1578,6 +1578,13 @@ public sealed class AutoTrackService : IAutoTrackService
             }
 
             huntLeaseHeld = true;
+            if ((_settingsService.Current.Warp?.ForceTunnelForHunt ?? true) && !attempt.TunnelActive)
+            {
+                // Searching without the tunnel would quietly return far fewer results; retry next cycle.
+                await TryReleaseHuntWarpAsync();
+                return (false, "Hunt aborted: WARP tunnel not available (see the WARP mode warnings above).", false);
+            }
+
             if (attempt.StartedByThisAcquire)
             {
                 _logger.Info("WARP connected for hunt preflight.", LogTarget.File | LogTarget.Console);
