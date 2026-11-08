@@ -27,6 +27,20 @@ public static class TmdbWarpRecovery
 
     public static IDisposable EnterRecoveryScope(bool active = true) => new ScopeHandle(active);
 
+    private static readonly AsyncLocal<bool> TunnelRoute = new();
+
+    /// <summary>True during a WARP retry: the TMDB call uses the original API host, through the tunnel.</summary>
+    public static bool IsOnTunnelRoute => TunnelRoute.Value;
+
+    private sealed class TunnelRouteHandle : IDisposable
+    {
+        private readonly bool _previous = TunnelRoute.Value;
+
+        public TunnelRouteHandle() => TunnelRoute.Value = true;
+
+        public void Dispose() => TunnelRoute.Value = _previous;
+    }
+
     private sealed class ScopeHandle : IDisposable
     {
         private readonly bool _previous;
@@ -98,6 +112,7 @@ public static class TmdbWarpRecovery
             {
                 // Last attempt outside the scope: if it still fails, the "check WARP mode" hint is logged.
                 using (EnterRecoveryScope(active: retry <= RetryDelays.Length))
+                using (new TunnelRouteHandle())
                 {
                     return await action(cancellationToken);
                 }

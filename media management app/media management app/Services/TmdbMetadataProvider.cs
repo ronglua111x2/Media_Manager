@@ -12,7 +12,7 @@ namespace media_management_app.Services;
 public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogService, ITmdbMovieCatalogService
 {
     private const double HighConfidenceThreshold = 75;
-    private static readonly Uri ApiBaseUri = new("https://api.themoviedb.org/3/");
+    private int _invalidHostWarned;
 
     private readonly ISettingsService _settingsService;
     private readonly IAppLogger _logger;
@@ -1169,10 +1169,50 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
     // The HttpClient is shared with other services: credentials go on each request, never on client defaults.
     private HttpRequestMessage CreateGetRequest(string requestUri)
     {
-        var request = new HttpRequestMessage(HttpMethod.Get, new Uri(ApiBaseUri, requestUri));
+        var request = new HttpRequestMessage(HttpMethod.Get, new Uri(NetworkEndpoints.TmdbApiBase(CurrentApiHost()), requestUri));
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _settingsService.Current.TmdbReadAccessToken);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         return request;
+    }
+
+    private string CurrentApiHost()
+    {
+        // WARP recovery goes through the tunnel, where the original host is known to work.
+        if (TmdbWarpRecovery.IsOnTunnelRoute)
+        {
+            return NetworkEndpoints.TmdbLegacyApiHost;
+        }
+
+        var configured = _settingsService.Current.TmdbApiHost;
+        if (!string.IsNullOrWhiteSpace(configured) &&
+            !NetworkEndpoints.IsValidHost(configured) &&
+            Interlocked.Exchange(ref _invalidHostWarned, 1) == 0)
+        {
+            _logger.Warning(
+                $"TmdbApiHost '{configured}' is not a valid host name; using {NetworkEndpoints.TmdbApiHostDefault}.",
+                LogTarget.All);
+        }
+
+        return NetworkEndpoints.ResolveTmdbApiHost(configured);
+    }
+
+    /// <summary>A redirect or an HTML page is not a TMDB API reply: fail so it can be classified and retried via WARP.</summary>
+    private static void EnsureApiResponse(HttpResponseMessage response)
+    {
+        var status = response.StatusCode;
+        if ((int)status is >= 300 and < 400)
+        {
+            var location = response.Headers.Location?.Host ?? "unknown host";
+            response.Dispose();
+            throw new HttpRequestException($"TMDB API host redirected to {location}.", null, status);
+        }
+
+        if (response.IsSuccessStatusCode &&
+            string.Equals(response.Content.Headers.ContentType?.MediaType, "text/html", StringComparison.OrdinalIgnoreCase))
+        {
+            response.Dispose();
+            throw new HttpRequestException(HttpRequestError.InvalidResponse, "TMDB API host returned HTML instead of JSON.");
+        }
     }
 
     private async Task<HttpResponseMessage> GetAsyncWithRetryAsync(string requestUri, CancellationToken cancellationToken)
@@ -1184,6 +1224,7 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
             {
                 using var request = CreateGetRequest(requestUri);
                 var response = await _httpClient.SendAsync(request, cancellationToken);
+                EnsureApiResponse(response);
                 if (!ShouldRetry(response.StatusCode) || attempt == maxAttempts)
                 {
                     return response;

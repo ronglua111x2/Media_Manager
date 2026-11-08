@@ -57,7 +57,7 @@ public partial class LibraryMediaCardViewModel : ObservableObject, IMediaCardSor
 
     public string PosterUrl => string.IsNullOrWhiteSpace(PosterPath)
         ? string.Empty
-        : $"https://image.tmdb.org/t/p/w342{PosterPath}";
+        : $"{NetworkEndpoints.TmdbImageBaseUrl}/w342{PosterPath}";
 
     public bool IsShow => MediaKind == MediaKind.TvEpisode;
 

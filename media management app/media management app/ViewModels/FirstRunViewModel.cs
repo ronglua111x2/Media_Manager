@@ -1296,7 +1296,7 @@ public sealed partial class FirstRunViewModel : ObservableObject
 
     private async Task<HttpResponseMessage> SendTmdbAuthAsync(string token)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, "https://api.themoviedb.org/3/authentication");
+        using var request = new HttpRequestMessage(HttpMethod.Get, NetworkEndpoints.TmdbAuthenticationUri(_settingsService.Current.TmdbApiHost));
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         return await _httpClient.SendAsync(request);

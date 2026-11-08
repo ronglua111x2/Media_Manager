@@ -55,7 +55,7 @@ public sealed partial class LibraryMovieDetailViewModel : ObservableObject
 
     public string PreferencesSummary { get; }
 
-    public string TmdbPageUrl => $"https://www.themoviedb.org/movie/{TmdbId}";
+    public string TmdbPageUrl => $"{NetworkEndpoints.TmdbWebBaseUrl}/movie/{TmdbId}";
 
     public bool IsAvailable => Availability == EpisodeAvailability.Available;
 
@@ -119,7 +119,7 @@ public sealed partial class LibraryMovieDetailViewModel : ObservableObject
 
     public string PosterUrl => string.IsNullOrWhiteSpace(PosterPath)
         ? string.Empty
-        : $"https://image.tmdb.org/t/p/w342{PosterPath}";
+        : $"{NetworkEndpoints.TmdbImageBaseUrl}/w342{PosterPath}";
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanOpenInJellyfin))]

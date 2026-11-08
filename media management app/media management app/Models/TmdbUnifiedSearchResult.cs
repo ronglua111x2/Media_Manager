@@ -68,7 +68,7 @@ public sealed partial class TmdbUnifiedSearchResult : ObservableObject
 
     public string PosterUrl => string.IsNullOrWhiteSpace(PosterPath)
         ? string.Empty
-        : $"https://image.tmdb.org/t/p/w342{PosterPath}";
+        : $"{NetworkEndpoints.TmdbImageBaseUrl}/w342{PosterPath}";
 
     public string StatLabel => MediaKind == MediaKind.Movie
         ? RuntimeMinutes is > 0 ? FormatRuntime(RuntimeMinutes.Value) : string.Empty

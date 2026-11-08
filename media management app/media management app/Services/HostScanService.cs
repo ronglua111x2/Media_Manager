@@ -333,7 +333,7 @@ public sealed class HostScanService : IHostScanService
 
         try
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get, "https://api.themoviedb.org/3/authentication");
+            using var request = new HttpRequestMessage(HttpMethod.Get, NetworkEndpoints.TmdbAuthenticationUri(_settingsService.Current.TmdbApiHost));
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
             request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
             using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);

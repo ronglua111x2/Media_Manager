@@ -34,6 +34,9 @@ public sealed class AppSettings
 
     public string? TmdbReadAccessToken { get; set; }
 
+    /// <summary>TMDB API host; empty uses <see cref="Common.NetworkEndpoints.TmdbApiHostDefault"/>. JSON only.</summary>
+    public string? TmdbApiHost { get; set; }
+
     public GeminiSettings Gemini { get; set; } = new();
 
     public BackupSettings Backup { get; set; } = new();

@@ -491,7 +491,7 @@ public sealed class PosterImageService : IPosterImageService
 
     private static string BuildRemoteUrl(string posterPath, int width)
     {
-        return $"https://image.tmdb.org/t/p/w{width}{posterPath}";
+        return $"{NetworkEndpoints.TmdbImageBaseUrl}/w{width}{posterPath}";
     }
 
     private static string BuildMemoryCacheKey(MediaKind mediaKind, int tmdbId)

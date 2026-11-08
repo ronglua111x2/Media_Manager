@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http;
 using System.Text;
+using media_management_app.Common;
 using media_management_app.Services;
 using MediaManager.App.Tests.Cleanup;
 
@@ -11,12 +12,13 @@ public class TmdbMetadataProviderRequestTests
 {
     private const string Token = "test-tmdb-token";
 
-    private static (TmdbMetadataProvider Provider, HttpClient Client, RecordingHandler Handler) Create()
+    private static (TmdbMetadataProvider Provider, HttpClient Client, RecordingHandler Handler) Create(string? apiHost = null)
     {
         var handler = new RecordingHandler();
         var client = new HttpClient(handler);
         var settings = new FakeSettingsService();
         settings.Current.TmdbReadAccessToken = Token;
+        settings.Current.TmdbApiHost = apiHost;
         return (new TmdbMetadataProvider(settings, new FakeAppLogger(), client, new NoOpBlockAdvisor()), client, handler);
     }
 
@@ -28,7 +30,7 @@ public class TmdbMetadataProviderRequestTests
         await provider.SearchTvShowsLightweightAsync("Dark Item");
 
         var sent = Assert.Single(handler.Sent);
-        Assert.StartsWith("https://api.themoviedb.org/3/search/tv?query=Dark%20Item", sent.Uri.AbsoluteUri);
+        Assert.StartsWith("https://api.tmdb.org/3/search/tv?query=Dark%20Item", sent.Uri.AbsoluteUri);
         Assert.Equal("Bearer " + Token, sent.Authorization);
         Assert.Equal("application/json", sent.Accept);
         Assert.Null(client.DefaultRequestHeaders.Authorization);
@@ -60,11 +62,78 @@ public class TmdbMetadataProviderRequestTests
         Assert.All(handler.Sent, item => Assert.Equal("Bearer " + Token, item.Authorization));
     }
 
+    [Theory]
+    [InlineData("api.example.org", "api.example.org")]
+    [InlineData("not a host", "api.tmdb.org")]
+    [InlineData("https://api.example.org/3", "api.tmdb.org")]
+    public async Task ConfiguredHost_IsUsed_InvalidFallsBackToDefault(string configured, string expectedHost)
+    {
+        var (provider, _, handler) = Create(configured);
+
+        await provider.SearchTvShowsLightweightAsync("Dark Item");
+
+        Assert.Equal(expectedHost, Assert.Single(handler.Sent).Uri.Host);
+    }
+
+    [Fact]
+    public async Task WarpRetry_UsesTheOriginalHost_ThroughTheTunnel()
+    {
+        var (provider, _, handler) = Create();
+        var refused = new HttpRequestException(HttpRequestError.ConnectionError, "refused");
+
+        await TmdbWarpRecovery.RetryWithWarpAsync(
+            "test",
+            refused,
+            ct => provider.SearchTvShowsLightweightAsync("Dark Item", ct),
+            _ => Task.FromResult(new WarpLeaseResult(true, true, true)),
+            new FakeAppLogger(),
+            CancellationToken.None,
+            _ => Task.FromResult<(bool, IReadOnlyCollection<System.Net.IPAddress>)>((true, [])),
+            (_, _) => Task.CompletedTask);
+
+        Assert.Equal(NetworkEndpoints.TmdbLegacyApiHost, Assert.Single(handler.Sent).Uri.Host);
+    }
+
+    [Fact]
+    public async Task Redirect_IsClassifiedAsHostMoved()
+    {
+        var (provider, _, handler) = Create();
+        handler.Respond = () =>
+        {
+            var response = new HttpResponseMessage(HttpStatusCode.MovedPermanently);
+            response.Headers.Location = new Uri("https://www.themoviedb.org/documentation/api");
+            return response;
+        };
+
+        var ex = await Assert.ThrowsAsync<HttpRequestException>(() => provider.SearchTvShowsLightweightAsync("Dark Item"));
+
+        Assert.Equal(NetFailure.HostMoved, NetworkFailureClassifier.Classify(ex));
+    }
+
+    [Fact]
+    public async Task HtmlPage_IsClassifiedAsBadResponse()
+    {
+        var (provider, _, handler) = Create();
+        handler.Respond = () => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("<html>blocked</html>", Encoding.UTF8, "text/html")
+        };
+
+        var ex = await Assert.ThrowsAsync<HttpRequestException>(() => provider.SearchTvShowsLightweightAsync("Dark Item"));
+
+        Assert.Equal(NetFailure.BadResponse, NetworkFailureClassifier.Classify(ex));
+    }
+
     private sealed record SentRequest(Uri Uri, string? Authorization, string? Accept);
 
     private sealed class RecordingHandler : HttpMessageHandler
     {
         public ConcurrentBag<SentRequest> Sent { get; } = [];
+
+        public Func<HttpResponseMessage> Respond { get; set; } = () => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""{"results":[]}""", Encoding.UTF8, "application/json")
+        };
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
@@ -72,10 +141,7 @@ public class TmdbMetadataProviderRequestTests
                 request.RequestUri!,
                 request.Headers.Authorization?.ToString(),
                 request.Headers.Accept.FirstOrDefault()?.ToString()));
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new StringContent("""{"results":[]}""", Encoding.UTF8, "application/json")
-            });
+            return Task.FromResult(Respond());
         }
     }
 

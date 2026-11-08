@@ -744,7 +744,7 @@ public partial class SettingsViewModel : ViewModelBase
         try
         {
             StatusMessage = "Testing TMDB token...";
-            using var request = new HttpRequestMessage(HttpMethod.Get, "https://api.themoviedb.org/3/authentication");
+            using var request = new HttpRequestMessage(HttpMethod.Get, NetworkEndpoints.TmdbAuthenticationUri(_settingsService.Current.TmdbApiHost));
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
             request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 

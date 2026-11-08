@@ -727,7 +727,7 @@ public sealed class JellyfinLibraryRefreshService : IJellyfinLibraryRefreshServi
             throw new InvalidOperationException("TMDB read access token is not configured.");
         }
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, "https://api.themoviedb.org/3/configuration");
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"https://{NetworkEndpoints.TmdbLegacyApiHost}/3/configuration");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.Trim());
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 

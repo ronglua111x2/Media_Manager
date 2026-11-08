@@ -10,7 +10,7 @@ namespace media_management_app.Common;
 /// </summary>
 public static class TmdbDnsProbe
 {
-    public const string ApiHost = "api.themoviedb.org";
+    public const string ApiHost = NetworkEndpoints.TmdbLegacyApiHost;
 
     public static bool IsUsable(IReadOnlyCollection<IPAddress> addresses) =>
         addresses.Count > 0 &&

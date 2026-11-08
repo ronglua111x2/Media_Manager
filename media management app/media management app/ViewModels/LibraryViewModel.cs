@@ -1202,7 +1202,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
         }
 
         var path = SelectedMediaCard.MediaKind == MediaKind.Movie ? "movie" : "tv";
-        var url = $"https://www.themoviedb.org/{path}/{SelectedMediaCard.TmdbId}";
+        var url = $"{NetworkEndpoints.TmdbWebBaseUrl}/{path}/{SelectedMediaCard.TmdbId}";
         Process.Start(new ProcessStartInfo(url)
         {
             UseShellExecute = true
