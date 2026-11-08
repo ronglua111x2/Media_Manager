@@ -12,6 +12,8 @@ namespace media_management_app.Services;
 public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogService, ITmdbMovieCatalogService
 {
     private const double HighConfidenceThreshold = 75;
+    private static readonly Uri ApiBaseUri = new("https://api.themoviedb.org/3/");
+
     private readonly ISettingsService _settingsService;
     private readonly IAppLogger _logger;
     private readonly HttpClient _httpClient;
@@ -31,7 +33,6 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
         _logger = logger;
         _blockAdvisor = blockAdvisor;
         _httpClient = httpClient;
-        _httpClient.BaseAddress = new Uri("https://api.themoviedb.org/3/");
     }
 
     public async Task<MetadataMatchResult> MatchTvSeriesAsync(SourceItem item, CancellationToken cancellationToken = default)
@@ -55,8 +56,6 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
         {
             return new MetadataMatchResult { IsAvailable = false, ErrorMessage = "TMDb read access token is not configured." };
         }
-
-        ConfigureHeaders();
 
         try
         {
@@ -124,8 +123,6 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
                 ErrorMessage = "TMDb read access token is not configured."
             };
         }
-
-        ConfigureHeaders();
 
         try
         {
@@ -224,7 +221,6 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
             throw new InvalidOperationException("TMDb read access token is not configured.");
         }
 
-        ConfigureHeaders();
         var searchPath = $"search/tv?query={Uri.EscapeDataString(query.Trim())}&include_adult=false&language=en-US&page=1";
         using var response = await GetAsyncWithRetryAsync(searchPath, cancellationToken);
         response.EnsureSuccessStatusCode();
@@ -263,7 +259,6 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
             throw new InvalidOperationException("TMDb read access token is not configured.");
         }
 
-        ConfigureHeaders();
         using var detailsResponse = await GetAsyncWithRetryAsync($"tv/{tmdbId}?language=en-US", cancellationToken);
         detailsResponse.EnsureSuccessStatusCode();
 
@@ -298,7 +293,6 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
             throw new InvalidOperationException("TMDb read access token is not configured.");
         }
 
-        ConfigureHeaders();
         using var detailsResponse = await GetAsyncWithRetryAsync($"tv/{tmdbId}?language=en-US", cancellationToken);
         detailsResponse.EnsureSuccessStatusCode();
 
@@ -370,7 +364,6 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
             throw new InvalidOperationException("TMDb read access token is not configured.");
         }
 
-        ConfigureHeaders();
         using var response = await GetAsyncWithRetryAsync($"tv/{tmdbId}/episode_groups", cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
@@ -414,8 +407,6 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
         {
             throw new InvalidOperationException("TMDb read access token is not configured.");
         }
-
-        ConfigureHeaders();
 
         // Show-level metadata still comes from the standard TV details endpoint.
         using var detailsResponse = await GetAsyncWithRetryAsync($"tv/{tmdbId}?language=en-US", cancellationToken);
@@ -508,7 +499,6 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
             throw new InvalidOperationException("TMDb read access token is not configured.");
         }
 
-        ConfigureHeaders();
         var searchPath = $"search/movie?query={Uri.EscapeDataString(query.Trim())}&include_adult=false&language=en-US&page=1";
         using var response = await GetAsyncWithRetryAsync(searchPath, cancellationToken);
         response.EnsureSuccessStatusCode();
@@ -545,7 +535,6 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
             throw new InvalidOperationException("TMDb read access token is not configured.");
         }
 
-        ConfigureHeaders();
         using var response = await GetAsyncWithRetryAsync($"movie/{tmdbId}?language=en-US", cancellationToken);
         response.EnsureSuccessStatusCode();
 
@@ -709,8 +698,6 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
                 ErrorMessage = "TMDb read access token is not configured."
             };
         }
-
-        ConfigureHeaders();
 
         try
         {
@@ -1179,11 +1166,13 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
         return (penalty, $"TMDb season {seasonNumber:00} does not contain episode {episodeNumber:00}; max episode is {maxEpisode:00}");
     }
 
-    private void ConfigureHeaders()
+    // The HttpClient is shared with other services: credentials go on each request, never on client defaults.
+    private HttpRequestMessage CreateGetRequest(string requestUri)
     {
-        _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _settingsService.Current.TmdbReadAccessToken);
-        _httpClient.DefaultRequestHeaders.Accept.Clear();
-        _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        var request = new HttpRequestMessage(HttpMethod.Get, new Uri(ApiBaseUri, requestUri));
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _settingsService.Current.TmdbReadAccessToken);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        return request;
     }
 
     private async Task<HttpResponseMessage> GetAsyncWithRetryAsync(string requestUri, CancellationToken cancellationToken)
@@ -1193,7 +1182,8 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
         {
             try
             {
-                var response = await _httpClient.GetAsync(requestUri, cancellationToken);
+                using var request = CreateGetRequest(requestUri);
+                var response = await _httpClient.SendAsync(request, cancellationToken);
                 if (!ShouldRetry(response.StatusCode) || attempt == maxAttempts)
                 {
                     return response;
