@@ -30,6 +30,7 @@ public sealed class AutoTrackService : IAutoTrackService
     private volatile bool _interruptedRecoveryDone;
     // Guarded by _discoveryLock; reset at the start of each TMDB discovery cycle.
     private bool _warpRecoverFailedThisCycle;
+    private int _warpRecoveryExhaustedThisCycle;
 
     public AutoTrackService(
         ISettingsService settingsService,
@@ -187,6 +188,7 @@ public sealed class AutoTrackService : IAutoTrackService
                                         (warpSettings?.AutoRecoverOnSsl ?? true) &&
                                         _warpCliService.IsAvailable;
         _warpRecoverFailedThisCycle = false;
+        _warpRecoveryExhaustedThisCycle = 0;
 
         try
         {
@@ -438,6 +440,19 @@ public sealed class AutoTrackService : IAutoTrackService
                 // Skip further connect attempts this cycle (e.g. machine fully offline).
                 _warpRecoverFailedThisCycle = true;
                 _logger.Warning("No more WARP attempts this Auto-Track TMDB cycle.", LogTarget.All);
+                throw;
+            }
+            catch (Exception retryEx) when (TmdbNetworkBlockDetector.IsLikelyBlocked(retryEx, cancellationToken))
+            {
+                _warpRecoveryExhaustedThisCycle++;
+                if (TmdbWarpRecovery.ShouldStopRecovering(_warpRecoveryExhaustedThisCycle))
+                {
+                    _warpRecoverFailedThisCycle = true;
+                    _logger.Warning(
+                        $"TMDB still unreachable through WARP for {_warpRecoveryExhaustedThisCycle} shows; skipping recovery for the rest of this cycle.",
+                        LogTarget.All);
+                }
+
                 throw;
             }
         }

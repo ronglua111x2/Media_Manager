@@ -124,6 +124,17 @@ public class TmdbMetadataProviderRequestTests
         Assert.Equal(NetFailure.BadResponse, NetworkFailureClassifier.Classify(ex));
     }
 
+    [Fact]
+    public async Task HttpClientTimeout_SurfacesAsTimeout_NotAsCancellation()
+    {
+        var (provider, _, handler) = Create();
+        handler.Respond = () => throw new TaskCanceledException("timeout", new TimeoutException());
+
+        var ex = await Assert.ThrowsAsync<TimeoutException>(() => provider.SearchTvShowsLightweightAsync("Dark Item"));
+
+        Assert.Equal(NetFailure.Timeout, NetworkFailureClassifier.Classify(ex));
+    }
+
     private sealed record SentRequest(Uri Uri, string? Authorization, string? Accept);
 
     private sealed class RecordingHandler : HttpMessageHandler

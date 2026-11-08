@@ -17,6 +17,12 @@ public static class TmdbWarpRecovery
     public static readonly TimeSpan DnsReadyTimeout = TimeSpan.FromSeconds(15);
     public static readonly TimeSpan[] RetryDelays = [TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(5)];
 
+    /// <summary>Shows in one discovery cycle allowed to exhaust recovery before the rest of the cycle skips it.</summary>
+    public const int MaxExhaustedShowsPerCycle = 2;
+
+    public static bool ShouldStopRecovering(int exhaustedShowsThisCycle) =>
+        exhaustedShowsThisCycle >= MaxExhaustedShowsPerCycle;
+
     private static readonly AsyncLocal<bool> RecoveryScope = new();
 
     /// <summary>

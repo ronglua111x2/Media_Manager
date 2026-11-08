@@ -1252,6 +1252,12 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
 
                 // Final failure: outside Auto-Track recovery, hint the user to check the WARP mode.
                 _blockAdvisor.Warn(ex, cancellationToken);
+                if (ex is OperationCanceledException)
+                {
+                    // HttpClient reports its timeout as a cancellation; callers must not mistake it for the user's.
+                    throw new TimeoutException($"TMDB request timed out on {CurrentApiHost()}.", ex);
+                }
+
                 throw;
             }
 

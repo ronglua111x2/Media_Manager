@@ -1,4 +1,20 @@
+using media_management_app.Common;
+
 namespace media_management_app.Services;
+
+/// <summary>What a failed TMDB pre-probe or Jellyfin notify means for the queued paths.</summary>
+public static class JellyfinNotifyPolicy
+{
+    /// <summary>
+    /// Library changes do not depend on TMDB, so only a block WARP can get past delays the notify:
+    /// auth errors, outages and a disabled recovery all notify straight away.
+    /// </summary>
+    public static bool NotifyWithoutTunnel(NetFailure probeFailure, bool recoveryAllowed) =>
+        !(recoveryAllowed && NetworkFailureClassifier.IsWarpFallbackCandidate(probeFailure));
+
+    /// <summary>Jellyfin refused the API key: retrying cannot help.</summary>
+    public static bool DropPaths(NetFailure notifyFailure) => notifyFailure == NetFailure.AuthRejected;
+}
 
 /// <summary>
 /// Delay before re-flushing Jellyfin paths after a failed flush. Grows 3 s → 30 s → 2 min → 5 min so a

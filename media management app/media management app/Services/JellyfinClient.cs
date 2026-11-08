@@ -84,8 +84,8 @@ public sealed class JellyfinClient : IJellyfinClient, IDisposable
         if (!response.IsSuccessStatusCode)
         {
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
-            throw new InvalidOperationException(
-                $"Jellyfin Library/Media/Updated failed: {(int)response.StatusCode} {response.ReasonPhrase}. {TrimBody(body)}");
+            throw new HttpRequestException(
+                $"Jellyfin Library/Media/Updated failed: {(int)response.StatusCode} {response.ReasonPhrase}. {TrimBody(body)}", null, response.StatusCode);
         }
 
         _logger.Info(
