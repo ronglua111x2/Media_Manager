@@ -47,7 +47,7 @@ public sealed class PosterImageService : IPosterImageService
     private const int DefaultPosterWidth = 342;
     private const int DefaultStillWidth = 300;
 
-    private static readonly HttpClient PosterHttpClient = new();
+    private static readonly HttpClient PosterHttpClient = Net.NetworkClients.CreateImages();
     private readonly ISettingsService _settingsService;
     private readonly IAppLogger _logger;
     private readonly Dictionary<string, ImageSource> _memoryCache = [];

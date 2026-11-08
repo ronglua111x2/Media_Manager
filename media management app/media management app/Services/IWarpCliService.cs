@@ -42,6 +42,9 @@ public interface IWarpCliService
 
     bool LastKnownConnected { get; }
 
+    /// <summary>Last WARP mode read from the CLI ("doh", "warp+doh", …); null before the first read. Never spawns a process.</summary>
+    string? LastKnownMode { get; }
+
     IReadOnlySet<WarpLeaseReason> ActiveLeases { get; }
 
     bool HasAutoTrackPipelineLease { get; }

@@ -25,6 +25,7 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
     private bool _tunnelOwnedByApp;
     // Guarded by _cliGate: the user's mode before the app switched to WarpModePolicy.AppTunnelMode; null when not switched.
     private string? _modeSwitchedFrom;
+    private string? _lastKnownMode;
     private bool _disposed;
 
     public WarpCliService(
@@ -76,6 +77,8 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
             }
         }
     }
+
+    public string? LastKnownMode => Volatile.Read(ref _lastKnownMode);
 
     public IReadOnlySet<WarpLeaseReason> ActiveLeases
     {
@@ -601,7 +604,13 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
         try
         {
             var result = await RunCliUnlockedAsync("-j settings", ct);
-            return WarpModePolicy.ParseOperationMode(result.Output);
+            var mode = WarpModePolicy.ParseOperationMode(result.Output);
+            if (mode is not null)
+            {
+                Volatile.Write(ref _lastKnownMode, mode);
+            }
+
+            return mode;
         }
         catch (OperationCanceledException)
         {

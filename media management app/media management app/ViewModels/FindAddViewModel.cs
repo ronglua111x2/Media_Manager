@@ -18,7 +18,7 @@ public sealed partial class FindAddViewModel : ViewModelBase
 {
     private const int MaxConcurrentDetailLoads = 4;
 
-    private static readonly HttpClient PosterHttpClient = new();
+    private static readonly HttpClient PosterHttpClient = Services.Net.NetworkClients.CreateImages();
 
     private readonly ITrackedShowService _trackedShowService;
     private readonly ITrackedMovieService _trackedMovieService;

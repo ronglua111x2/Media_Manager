@@ -19,7 +19,7 @@ public sealed class JellyfinClient : IJellyfinClient, IDisposable
     {
         _settingsService = settingsService;
         _logger = logger;
-        _httpClient = new HttpClient();
+        _httpClient = Net.NetworkClients.CreateJellyfin();
     }
 
     public async Task<string> TestConnectionAsync(CancellationToken cancellationToken = default)

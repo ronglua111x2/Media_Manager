@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Net;
 using System.Net.Http;
@@ -6,6 +7,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using media_management_app.Common;
 using media_management_app.Models;
+using media_management_app.Services.Net;
 
 namespace media_management_app.Services;
 
@@ -18,6 +20,8 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
     private readonly IAppLogger _logger;
     private readonly HttpClient _httpClient;
     private readonly ITmdbBlockAdvisor _blockAdvisor;
+    private readonly ConnectionTracker _connectionTracker;
+    private readonly IWarpCliService? _warpCliService;
     private readonly Dictionary<int, TmdbTvCandidate> _candidateDetailsCache = [];
     private readonly Dictionary<string, IReadOnlyList<int>> _tvSearchIdsCache = [];
     private readonly Dictionary<int, IReadOnlyList<TmdbSeasonSummary>> _seasonSummaryCache = [];
@@ -27,11 +31,15 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
         ISettingsService settingsService,
         IAppLogger logger,
         HttpClient httpClient,
-        ITmdbBlockAdvisor blockAdvisor)
+        ITmdbBlockAdvisor blockAdvisor,
+        ConnectionTracker? connectionTracker = null,
+        IWarpCliService? warpCliService = null)
     {
         _settingsService = settingsService;
         _logger = logger;
         _blockAdvisor = blockAdvisor;
+        _connectionTracker = connectionTracker ?? new ConnectionTracker();
+        _warpCliService = warpCliService;
         _httpClient = httpClient;
     }
 
@@ -1220,6 +1228,7 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
         const int maxAttempts = 3;
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
+            var started = Stopwatch.GetTimestamp();
             try
             {
                 using var request = CreateGetRequest(requestUri);
@@ -1235,10 +1244,12 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
             }
             catch (Exception ex) when (IsTransientNetworkError(ex) && attempt < maxAttempts)
             {
-                _logger.Warning($"TMDb network error; retrying attempt {attempt + 1}/{maxAttempts}. {ex.Message}", LogTarget.File | LogTarget.Console);
+                LogNetworkFailure(ex, attempt, maxAttempts, started, $"retrying attempt {attempt + 1}/{maxAttempts}", cancellationToken);
             }
             catch (Exception ex) when (TmdbNetworkBlockDetector.IsLikelyBlocked(ex, cancellationToken))
             {
+                LogNetworkFailure(ex, attempt, maxAttempts, started, "giving up", cancellationToken);
+
                 // Final failure: outside Auto-Track recovery, hint the user to check the WARP mode.
                 _blockAdvisor.Warn(ex, cancellationToken);
                 throw;
@@ -1248,6 +1259,29 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
         }
 
         throw new HttpRequestException("TMDb request failed after retry attempts.");
+    }
+
+    private void LogNetworkFailure(
+        Exception exception,
+        int attempt,
+        int maxAttempts,
+        long startedTimestamp,
+        string outcome,
+        CancellationToken cancellationToken)
+    {
+        var warpState = _warpCliService is null
+            ? "unknown"
+            : $"{(_warpCliService.LastKnownConnected ? "connected" : "disconnected")}/{_warpCliService.LastKnownMode ?? "?"}";
+        var line = NetFailureLog.Format(
+            "tmdb",
+            CurrentApiHost(),
+            _connectionTracker.LastAddress,
+            attempt,
+            maxAttempts,
+            NetworkFailureClassifier.Classify(exception, cancellationToken),
+            Stopwatch.GetElapsedTime(startedTimestamp),
+            warpState);
+        _logger.Warning($"{line} — {outcome}. {exception.Message}", LogTarget.File | LogTarget.Console);
     }
 
     private static bool ShouldRetry(HttpStatusCode statusCode)
