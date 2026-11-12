@@ -173,9 +173,9 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             ? new AutoTorrentLinkResult { SkippedCount = 1, Messages = { "Tracked show was not found." } }
             : RemoveLinks(item =>
             {
-                var key = GetOutputEpisodeKey(item);
+                // A multi-episode file (S01E01-E02) is the link of each episode in its range (audit L3-08).
                 return item.MediaKind == MediaKind.TvEpisode &&
-                       key == (seasonNumber, episodeNumber) &&
+                       CoversEpisode(item, seasonNumber, episodeNumber) &&
                        string.Equals(item.Provider, "tmdb", StringComparison.OrdinalIgnoreCase) &&
                        string.Equals(item.ProviderId, providerId, StringComparison.OrdinalIgnoreCase);
             });
@@ -332,7 +332,7 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
         {
             DeleteAcceptedTvSourceItems(
                 providerId,
-                item => GetOutputEpisodeKey(item) == (seasonNumber, episodeNumber),
+                item => CoversEpisode(item, seasonNumber, episodeNumber),
                 result);
         }
 
@@ -526,7 +526,7 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             return;
         }
 
-        if (NamesAnotherEpisode(selectedFile, episode, out var namedEpisode))
+        if (NamesAnotherEpisode(selectedFile, episode, out var namedEpisode, out var fileRange))
         {
             // A single-file torrent is taken as-is; refuse it when its name says it is another
             // episode (for example a torrent adopted under the wrong episode) (PARSE-25).
@@ -536,15 +536,31 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             return;
         }
 
-        LinkSourceItem(
-            CreateEpisodeSourceItem(
-                show,
-                episode,
-                torrent,
-                BuildSourcePath(torrent, selectedFile),
-                AutoTorrentLinkKind.Episode,
-                packOwnerSeasonNumber: null),
-            result);
+        var episodeItem = CreateEpisodeSourceItem(
+            show,
+            episode,
+            torrent,
+            BuildSourcePath(torrent, selectedFile),
+            AutoTorrentLinkKind.Episode,
+            packOwnerSeasonNumber: null);
+        if (fileRange is { } range && RangeIsInTmdb(show.Id, episode.SeasonNumber, range.First, range.Last))
+        {
+            // One file holding several episodes is linked once as "S01E01-E02", whichever of its
+            // episodes the torrent was assigned to (audit L1-M2).
+            episodeItem.EpisodeNumber = range.First;
+            episodeItem.LastEpisodeNumber = range.Last;
+        }
+
+        LinkSourceItem(episodeItem, result);
+    }
+
+    private bool RangeIsInTmdb(long showId, int seasonNumber, int firstEpisode, int lastEpisode)
+    {
+        var episodes = _databaseService.GetTrackedEpisodes(showId)
+            .Where(item => item.SeasonNumber == seasonNumber)
+            .Select(item => item.EpisodeNumber)
+            .ToHashSet();
+        return Enumerable.Range(firstEpisode, lastEpisode - firstEpisode + 1).All(episodes.Contains);
     }
 
     private async Task<SeasonPackLinkPreview> PrepareSeasonPackLinkCoreAsync(
@@ -946,7 +962,7 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             releasedChangedLink = true;
         }
 
-        if (TryGetOtherLinkedItemForEpisode(sourceItem, index, out var otherItem) && otherItem is not null)
+        if (TryGetOtherLinkedItemForEpisode(sourceItem, index, out var otherItem, out var partialOverlap) && otherItem is not null)
         {
             // Another file already provides this episode; a second link (often with another
             // extension) would duplicate it in Jellyfin (PARSE-32).
@@ -957,6 +973,12 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
 
             AddSkip(result, $"{sourceItem.DisplayTitle}: already linked from {otherItem.FileName}; skipped {sourceItem.FileName}.");
             return;
+        }
+
+        if (partialOverlap is not null)
+        {
+            result.Messages.Add(
+                $"{sourceItem.FileName}: some of its episodes are already linked from {partialOverlap.FileName}; linked for the rest.");
         }
 
         if (_hardlinkService.CreateHardLink(sourceItem, out var linkedPath, out var errorMessage))
@@ -990,8 +1012,11 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
     {
         if (existing.MediaKind != candidate.MediaKind ||
             existing.IsOrphanPackSpecial != candidate.IsOrphanPackSpecial ||
-            GetOutputEpisodeKey(existing) != GetOutputEpisodeKey(candidate))
+            GetOutputEpisodeKey(existing) != GetOutputEpisodeKey(candidate) ||
+            !GetOutputEpisodeKeys(existing).SequenceEqual(GetOutputEpisodeKeys(candidate)))
         {
+            // A file linked as S01E01 before multi-episode support now resolves to S01E01-E02: re-link it
+            // under the range name (audit L1-M2, L3-08).
             return false;
         }
 
@@ -1034,31 +1059,75 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
         index?.Replace(sourceItem);
     }
 
+    /// <summary>
+    /// True when other linked files already provide every episode of <paramref name="sourceItem"/> (its whole
+    /// range for a multi-episode file), so a new link would only duplicate them in Jellyfin (PARSE-32).
+    /// <paramref name="partialOverlap"/> names a file that provides only some of them: the new file is still
+    /// linked, because it is the only source of the rest (audit L3-08).
+    /// </summary>
     private bool TryGetOtherLinkedItemForEpisode(
         SourceItem sourceItem,
         SourceItemPathIndex? index,
-        out SourceItem? otherItem)
+        out SourceItem? otherItem,
+        out SourceItem? partialOverlap)
     {
         otherItem = null;
-        var key = GetOutputEpisodeKey(sourceItem);
+        partialOverlap = null;
+        var keys = GetOutputEpisodeKeys(sourceItem).ToHashSet();
         if (sourceItem.MediaKind != MediaKind.TvEpisode ||
             sourceItem.IsOrphanPackSpecial ||
-            key is null ||
+            keys.Count == 0 ||
             string.IsNullOrWhiteSpace(sourceItem.ProviderId))
         {
             return false;
         }
 
         IEnumerable<SourceItem> candidates = index is not null ? index.All() : _databaseService.GetSourceItems();
-        otherItem = candidates.FirstOrDefault(item =>
-            item.MediaKind == MediaKind.TvEpisode &&
-            !item.IsOrphanPackSpecial &&
-            !string.Equals(item.FilePath, sourceItem.FilePath, StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(item.ProviderId, sourceItem.ProviderId, StringComparison.OrdinalIgnoreCase) &&
-            GetOutputEpisodeKey(item) == key &&
-            !string.IsNullOrWhiteSpace(item.LinkedPath) &&
-            File.Exists(item.LinkedPath));
-        return otherItem is not null;
+        var overlapping = candidates
+            .Where(item =>
+                item.MediaKind == MediaKind.TvEpisode &&
+                !item.IsOrphanPackSpecial &&
+                !string.Equals(item.FilePath, sourceItem.FilePath, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(item.ProviderId, sourceItem.ProviderId, StringComparison.OrdinalIgnoreCase) &&
+                GetOutputEpisodeKeys(item).Any(keys.Contains) &&
+                !string.IsNullOrWhiteSpace(item.LinkedPath) &&
+                File.Exists(item.LinkedPath))
+            .ToList();
+        if (overlapping.Count == 0)
+        {
+            return false;
+        }
+
+        var covered = overlapping.SelectMany(GetOutputEpisodeKeys).ToHashSet();
+        if (keys.All(covered.Contains))
+        {
+            otherItem = overlapping[0];
+            return true;
+        }
+
+        partialOverlap = overlapping[0];
+        return false;
+    }
+
+    private static bool CoversEpisode(SourceItem item, int seasonNumber, int episodeNumber) =>
+        GetOutputEpisodeKeys(item).Contains((seasonNumber, episodeNumber));
+
+    // The episodes a link provides: one key, or the whole range of a multi-episode file (PARSE-06).
+    private static IEnumerable<(int SeasonNumber, int EpisodeNumber)> GetOutputEpisodeKeys(SourceItem item)
+    {
+        if (GetOutputEpisodeKey(item) is not { } key)
+        {
+            yield break;
+        }
+
+        yield return key;
+        if (item.MappedEpisodeNumber is null && item.LastEpisodeNumber is { } last)
+        {
+            for (var episode = key.EpisodeNumber + 1; episode <= last; episode++)
+            {
+                yield return (key.SeasonNumber, episode);
+            }
+        }
     }
 
     private static string DescribeLinkTarget(SourceItem item)
@@ -1359,15 +1428,34 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
         return TorrentFileRules.SelectEpisodeFile(files, episode.SeasonNumber, episode.EpisodeNumber);
     }
 
-    private static bool NamesAnotherEpisode(TorrentContentFile file, TrackedEpisode episode, out string namedEpisode)
+    private static bool NamesAnotherEpisode(
+        TorrentContentFile file,
+        TrackedEpisode episode,
+        out string namedEpisode,
+        out (int First, int Last)? fileRange)
     {
         var parsed = TorrentCandidateParser.Parse(Path.GetFileName(file.Name));
+        fileRange = null;
         namedEpisode = parsed.SeasonNumber is not null && parsed.EpisodeNumber is not null
-            ? $"S{parsed.SeasonNumber:00}E{parsed.EpisodeNumber:00}"
+            ? parsed.LastEpisodeNumber is { } last
+                ? $"S{parsed.SeasonNumber:00}E{parsed.EpisodeNumber:00}-E{last:00}"
+                : $"S{parsed.SeasonNumber:00}E{parsed.EpisodeNumber:00}"
             : string.Empty;
-        return parsed.SeasonNumber is not null &&
-               parsed.EpisodeNumber is not null &&
-               (parsed.SeasonNumber != episode.SeasonNumber || parsed.EpisodeNumber != episode.EpisodeNumber);
+        if (parsed.SeasonNumber is null || parsed.EpisodeNumber is null)
+        {
+            return false;
+        }
+
+        // A multi-episode file names each episode of its range (audit L1-M2).
+        var first = parsed.EpisodeNumber.Value;
+        var lastEpisode = parsed.LastEpisodeNumber ?? first;
+        if (parsed.SeasonNumber != episode.SeasonNumber || episode.EpisodeNumber < first || episode.EpisodeNumber > lastEpisode)
+        {
+            return true;
+        }
+
+        fileRange = lastEpisode > first ? (first, lastEpisode) : null;
+        return false;
     }
 
     private static SourceItem CreateEpisodeSourceItem(
