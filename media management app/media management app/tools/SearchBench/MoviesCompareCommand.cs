@@ -25,6 +25,12 @@ public static class MoviesCompareCommand
         var only = (args.GetValueOrDefault("only") ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var plugins = args.GetValueOrDefault("plugins") ?? "limetorrents|thepiratebay|torrentdownloads|yts|nyaasi|nekobt|sktorrent|kickasstorrents";
         var maxSeconds = int.TryParse(args.GetValueOrDefault("max-seconds"), out var ms) ? ms : 45;
+        // --native-only 1: skip qBittorrent (fast check of matching changes). --dump <file>: one TSV line per
+        // unique row with the verdict (accepted + tier, or reject reason + detail).
+        var nativeOnly = args.GetValueOrDefault("native-only") is "1" or "true";
+        var dumpPath = args.GetValueOrDefault("dump");
+        using var dump = dumpPath is null ? null : new StreamWriter(dumpPath, append: false);
+        dump?.WriteLine("movie\tbackend\tverdict\tdetail\tseeds\tengine\tname");
 
         var recipes = Directory.EnumerateFiles(Path.Combine(state, "Recipes"), "*.rcp")
             .Select(path => JsonSerializer.Deserialize<SearchRecipe>(File.ReadAllText(path), new JsonSerializerOptions
@@ -48,7 +54,10 @@ public static class MoviesCompareCommand
             new GovernedIndexerHttp(http, governor, cache, id, lane, budget.MaxGovernorWait, TimeSpan.FromMinutes(30), "MediaManager/1.0 (+native-search; SearchBench)", budget.PerIndexer));
         var indexers = NativeIndexerCatalog.Create();
         using var qbit = new QbittorrentSearchBackend();
-        await qbit.InitAsync(CancellationToken.None);
+        if (!nativeOnly)
+        {
+            await qbit.InitAsync(CancellationToken.None);
+        }
 
         Console.WriteLine("| Movie | Recipe | qBit acc/good/exc | Native acc/good/exc | Same #1 | #1 score qBit → native | Good only in qBit | Good only in native | qBit s | Native s |");
         Console.WriteLine("|---|---|---|---|---|---|---|---|---|---|");
@@ -62,7 +71,7 @@ public static class MoviesCompareCommand
 
             var qbitWatch = Stopwatch.StartNew();
             var qbitRows = new List<TorrentSearchResult>();
-            foreach (var query in queries)
+            foreach (var query in nativeOnly ? [] : queries)
             {
                 qbitRows.AddRange((await qbit.SearchAsync(query, plugins, maxSeconds, CancellationToken.None)).Rows);
             }
@@ -90,6 +99,18 @@ public static class MoviesCompareCommand
 
             var aliases = SearchIdentity.BuildAliases(nativeRows);
             string Key(TorrentSearchResult row) => SearchIdentity.Key(row, aliases);
+            if (dump is not null)
+            {
+                foreach (var (backend, rows) in new[] { ("native", nativeRows), ("qbittorrent", qbitRows) })
+                {
+                    foreach (var row in rows.Where(row => !string.IsNullOrWhiteSpace(row.FileUrl)).GroupBy(Key).Select(group => group.OrderByDescending(row => row.Seeders).First()))
+                    {
+                        var e = evaluator.EvaluateMovie(recipe, movie, row);
+                        var verdict = e.IsAccepted ? $"accepted:{CandidateTiers.Classify(recipe, e)}" : $"rejected:{e.RejectReason}";
+                        dump.WriteLine($"{movie.Title}\t{backend}\t{verdict}\t{(e.IsAccepted ? "" : e.RejectDetail)}\t{row.Seeders}\t{row.EngineName}\t{row.FileName.Replace('\t', ' ')}");
+                    }
+                }
+            }
             var q = Tiers(recipe, movie, qbitRows, evaluator, autoTorrent, Key);
             var n = Tiers(recipe, movie, nativeRows, evaluator, autoTorrent, Key);
             var qTop = q.Accepted.OrderByDescending(r => r.TotalScore).FirstOrDefault();

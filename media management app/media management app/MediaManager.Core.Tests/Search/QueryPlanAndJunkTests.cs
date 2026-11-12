@@ -92,6 +92,11 @@ public class QueryPlanAndJunkTests
     [InlineData("Movie.2014.4K.Remastered.1080p.BluRay-GROUP", "1080p")]
     [InlineData("Movie.2014.AAC.384kbps.720p-GROUP", "720p")]
     [InlineData("Movie.2014.DVDRip.x264-GROUP", null)]
+    [InlineData("Movie (2024) [3840x2160] [HEVC]", "2160p")]
+    [InlineData("Movie (2024) [1920x1080] [x264]", "1080p")]
+    [InlineData("Movie.2024.FHD.x264-GROUP", "1080p")]
+    [InlineData("Movie 2024 1080 WEB", "1080p")]
+    [InlineData("Movie.2024.2160p.4K.1080p.720p.WEB", "2160p")]
     public void Junk_ResolutionFromTokens(string name, string? expected)
     {
         JunkFilter.ResolutionFromTokens(name).Should().Be(expected);

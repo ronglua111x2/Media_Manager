@@ -169,4 +169,19 @@ public class IndexerRequestGovernorTests
         policy.RestrictTo(requestsPerMinute: 1000, dailyBudget: 100000).Should().Be(policy);
         policy.RestrictTo(requestsPerMinute: 3, dailyBudget: 50).Should().Be(policy with { RequestsPerMinute = 3, DailyBudget = 50 });
     }
+    // Audit 07c NS-23: a request already in flight when another one was blocked must not reopen the site.
+    [Fact]
+    public async Task LateSuccess_DoesNotCloseABreakerThatJustOpened()
+    {
+        var (governor, _) = Create(Tight with { RequestsPerMinute = 100, MaxConcurrent = 2 });
+        using (await governor.AcquireAsync("site", SearchLane.Interactive, TimeSpan.Zero, CancellationToken.None))
+        {
+        }
+
+        governor.Report("site", IndexerFailureKind.Blocked, detail: "HTTP 403");
+        governor.Report("site", IndexerFailureKind.None);
+
+        governor.Snapshot().Single(state => state.IndexerId == "site").Breaker.Should().Be(IndexerBreakerState.Open);
+        governor.GetAvailability("site").CanRun.Should().BeFalse();
+    }
 }

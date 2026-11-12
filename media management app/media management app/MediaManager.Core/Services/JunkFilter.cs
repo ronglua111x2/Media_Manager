@@ -39,9 +39,10 @@ public static partial class JunkFilter
     }
 
     /// <summary>
-    /// The resolution a release claims, read from standalone tokens. An explicit pixel resolution wins over
-    /// "4K"/"UHD" marketing words ("4K Remastered 1080p" is 1080p); with several pixel resolutions the lowest is
-    /// used (conservative for a size check). Null when the name has none.
+    /// The resolution a release claims, read from standalone tokens: "1080p", "1920x1080", then (only without
+    /// those) "FHD"/bare "1080", then "4K"/"UHD" marketing words. So "4K Remastered 1080p" is 1080p and "384kbps" is
+    /// nothing. With several resolutions the highest claim counts (a fake listing "2160p 1080p 720p" is judged as
+    /// 2160p). Null when the name has none.
     /// </summary>
     public static string? ResolutionFromTokens(string? name)
     {
@@ -60,18 +61,38 @@ public static partial class JunkFilter
                 "1440p" => 1440,
                 "1080p" or "1080i" => 1080,
                 "720p" => 720,
-                _ => null
+                _ => FrameSize().Match(token) is { Success: true } frame ? int.Parse(frame.Groups["h"].Value) : null
             };
-            if (value is not null && (pixels is null || value < pixels))
+            if (value is not null && (pixels is null || value > pixels))
             {
                 pixels = value;
             }
         }
 
+        pixels ??= tokens
+            .Select(token => token switch
+            {
+                "fhd" or "1080" => 1080,
+                "2160" => 2160,
+                "1440" => 1440,
+                "720" => 720,
+                _ => (int?)null
+            })
+            .Max();
+
         if (pixels is null && tokens.Any(token => token is "4k" or "uhd"))
         {
             pixels = 2160;
         }
+
+        pixels = pixels switch
+        {
+            >= 2160 => 2160,
+            >= 1440 => 1440,
+            >= 1080 => 1080,
+            >= 720 => 720,
+            _ => null
+        };
 
         return pixels switch
         {
@@ -104,6 +125,9 @@ public static partial class JunkFilter
             _ => rank switch { 3 => 60 * Mb, 2 => 25 * Mb, _ => 12 * Mb }
         };
     }
+
+    [GeneratedRegex(@"^\d{3,4}x(?<h>\d{3,4})$")]
+    private static partial Regex FrameSize();
 
     // exe/msi/lnk/vbs/apk never occur as words in titles; scr/bat/cmd do (".SCR." screener tag, "The.Bat.1959"),
     // so those only count as the final extension of the name.

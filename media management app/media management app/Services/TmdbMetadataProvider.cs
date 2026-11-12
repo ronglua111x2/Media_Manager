@@ -266,9 +266,15 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
 
         ConfigureHeaders();
         using var response = await GetAsyncWithRetryAsync($"{(isMovie ? "movie" : "tv")}/{tmdbId}/external_ids", cancellationToken);
-        if (!response.IsSuccessStatusCode)
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
         {
             return null;
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            // 401/429/5xx: a TMDB problem, not "no IMDb id" (the caller retries it sooner).
+            throw new HttpRequestException($"TMDb external_ids returned {(int)response.StatusCode}.", null, response.StatusCode);
         }
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);

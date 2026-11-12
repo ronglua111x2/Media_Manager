@@ -265,7 +265,7 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
             _http, _governor, _cache, id, searchLane, searchBudget.MaxGovernorWait, TimeSpan.FromMinutes(45), UserAgent, searchBudget.PerIndexer));
         var isAnime = IsAnimeRecipe(recipe);
         // TV: EZTV searches by IMDb id. Movies: YTS accepts the IMDb id for an exact lookup (plan 08 §Q2).
-        var imdbId = subject is not null ? await ResolveImdbIdAsync(subject, cancellationToken) : null;
+        var (imdbId, imdbFailed) = subject is not null ? await ResolveImdbIdAsync(subject, cancellationToken) : (null, false);
         var outcome = await orchestrator.SearchAsync(
             // Paged HTML indexers also get quality-bearing forms (plan 08: they reach deeper encodes).
             [
@@ -277,7 +277,8 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
             budget,
             cancellationToken);
         _logger.Info($"[Search] native query='{query}' kind={kind}{(isAnime ? " anime" : "")} lane={lane}: {outcome.Summary}", LogTarget.File | LogTarget.Console);
-        return new NativeOutcome(outcome.Results, IsComplete(outcome.Indexers));
+        // Without the IMDb id EZTV (IMDb-only) ran no query but still says "ok": do not memoize that answer.
+        return new NativeOutcome(outcome.Results, IsComplete(outcome.Indexers) && !imdbFailed);
     }
 
     private static async Task<IReadOnlyList<TorrentSearchResult>> TimedAsync(
@@ -389,20 +390,25 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
             .Any(plugin => plugin is "nyaasi" or "subsplease" or "nekobt" or "tsukihime" or "animetosho");
     }
 
-    private async Task<string?> ResolveImdbIdAsync(SearchSubject subject, CancellationToken cancellationToken)
+    private async Task<(string? Id, bool Failed)> ResolveImdbIdAsync(SearchSubject subject, CancellationToken cancellationToken)
     {
         var key = $"{(subject.IsMovie ? "movie" : "tv")}:{subject.TmdbId}";
-        await _imdbGate.WaitAsync(cancellationToken);
+        // Lookups run one at a time; a queue of slow ones must not eat the search budget before it starts.
+        if (!await _imdbGate.WaitAsync(ImdbLookupTimeout * 2, cancellationToken))
+        {
+            return (null, true);
+        }
+
         try
         {
             if (_imdbIds.TryGetValue(key, out var cached))
             {
-                return cached;
+                return (cached, false);
             }
 
             if (_imdbMisses.TryGetValue(key, out var retryAt) && retryAt > DateTimeOffset.UtcNow)
             {
-                return null;
+                return (null, false);
             }
 
             string? imdbId = null;
@@ -429,14 +435,14 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
             if (string.IsNullOrWhiteSpace(imdbId))
             {
                 _imdbMisses[key] = DateTimeOffset.UtcNow + (failed ? ImdbFailureRetry : ImdbMissRetry);
-                return null;
+                return (null, failed);
             }
 
             _imdbMisses.Remove(key);
 
             _imdbIds[key] = imdbId;
             SaveImdbCache();
-            return imdbId;
+            return (imdbId, false);
         }
         finally
         {

@@ -97,12 +97,12 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
         // When the year does not confirm the film (one off, or none), the release title must match one title
         // variant completely and carry no sequel marker the variant lacks: otherwise "Kill Bill Vol 1" (2003) is
         // taken for Vol. 2 (2004) and "Dune Part Two" for "Dune" (audit 07c NS-01/02).
-        if (yearMatch.Kind == YearMatchKind.OffByOne && !MovieReleaseTitle.MatchesTitle(result.FileName, titleVariants, strict: false))
+        if (yearMatch.Kind == YearMatchKind.OffByOne && !MovieReleaseTitle.MatchesTitle(result.FileName, titleVariants))
         {
             return Rejected(result, CandidateRejectReason.YearMismatch, $"{yearMatch.Detail} and the title is not an exact match");
         }
 
-        if (yearMatch.Kind == YearMatchKind.Missing && !MovieReleaseTitle.MatchesTitle(result.FileName, titleVariants, strict: true))
+        if (yearMatch.Kind == YearMatchKind.Missing && !MovieReleaseTitle.MatchesTitle(result.FileName, titleVariants))
         {
             return Rejected(result, CandidateRejectReason.YearMismatch, $"no release year and title is not an exact match (expected {movie.ReleaseYear})");
         }

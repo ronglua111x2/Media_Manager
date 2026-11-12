@@ -98,6 +98,12 @@ public sealed class IndexerResponseCache(TimeProvider? time = null)
                 // We stopped waiting; the shared request carries on for the others.
                 throw;
             }
+            catch (IndexerUnavailableException) when (!owned)
+            {
+                // The governor refused the starter (its lane or deadline, e.g. "would wait past the search budget"):
+                // that verdict is not ours, so ask for ourselves.
+                _entries.TryRemove(new KeyValuePair<string, Entry>(key, entry));
+            }
             catch
             {
                 // Never cache failures.
@@ -108,7 +114,14 @@ public sealed class IndexerResponseCache(TimeProvider? time = null)
     }
 
     /// <summary>Forgets one response (the indexer could not parse it: never serve it again).</summary>
-    public void Remove(string key) => _entries.TryRemove(key, out _);
+    public void Remove(string key)
+    {
+        // Only a finished response: an entry still in flight belongs to a newer request (keep single-flight).
+        if (_entries.TryGetValue(key, out var entry) && entry.Value.IsValueCreated && entry.Value.Value.IsCompleted)
+        {
+            _entries.TryRemove(new KeyValuePair<string, Entry>(key, entry));
+        }
+    }
 
     public void Clear() => _entries.Clear();
 

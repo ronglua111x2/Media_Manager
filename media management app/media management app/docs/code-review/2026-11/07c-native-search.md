@@ -48,10 +48,10 @@
 | NS-17 | TB | A | Both: snapshot và dry-run hỏng hẳn khi qBittorrent tắt, dù native vẫn chạy được | K | Chưa |
 | NS-18 | TB | M | Rút gọn query bỏ mất năm nằm trong tên phim (Blade Runner 2049 → "Blade Runner") | K, T | Chưa |
 | NS-19 | TB | M | Tên thay thế toàn token ngắn ("IS", "Us") khớp với mọi bản | T | Chưa |
-| NS-20 | TB | A | Lần tra IMDb id thất bại được nhớ tới khi tắt app, nên EZTV im lặng không search show đó | K | Sửa một phần |
+| NS-20 | TB | A | Lần tra IMDb id thất bại được nhớ tới khi tắt app, nên EZTV im lặng không search show đó | K | Đã sửa |
 | NS-21 | TB | P | BT4G, TsukiHime và SubsPlease luôn báo seed = 0 (nghĩa là không biết), nên bị `MinimumSeeders` loại | R | Chưa |
 | NS-22 | Thấp | A | Checkbox "Pause all" hiển thị lệch với trạng thái thật sau khi rời Settings mà không lưu | R | Chưa |
-| NS-23 | Thấp | G | Một request thành công đang chạy dở đóng lại breaker vừa mở vì 403 (apibay chạy 2 request song song) | R | Chưa |
+| NS-23 | Thấp | G | Một request thành công đang chạy dở đóng lại breaker vừa mở vì 403 (apibay chạy 2 request song song) | R | Đã sửa |
 | NS-24 | Thấp | G | Trạng thái governor chỉ lưu khi có 2 s không có hoạt động, nên crash giữa lượt hunt làm mất breaker | R | Chưa |
 | NS-25 | Thấp | A, G | Timeout từng indexer đặt trên 20 s không có tác dụng (`HttpClient.Timeout` = 20 s) | R | Chưa |
 | NS-26 | Thấp | G, P | Policy LimeTorrents được nới hai lần mà không có số đo; `FullPageRows = 20` trong khi một trang thật có 40 dòng | R | Chưa |
@@ -326,6 +326,48 @@ Trên indexer HTML có phân trang, các phim cùng tên khác sẽ chiếm hế
 | NS-20 (một phần) | Lần tra thất bại được nhớ 10 phút; TMDB trả về không có IMDb id thì nhớ 1 giờ, thay vì tới khi tắt app. | như trên |
 
 Kết quả: 475 test Core và 140 test App đều pass. SearchBench build được.
+
+### 6.1 Audit lại đợt 1 (ngày 2026-11-13)
+
+Hai reviewer mới, không biết kết luận của người sửa, đọc lại commit `4c7bf29`:
+- reviewer luật khớp chạy 105 tên bản phát hành và 27 ca junk qua code thật;
+- người viết lấy thêm tên thật từ bench native (lệnh `--dump`), 182 dòng bị luật mới loại.
+
+**Luật khớp movie (NS-01/02): bản sửa đầu gây loại nhầm, đã viết lại.**
+
+- **Lỗi của bản sửa đầu:** với bản không có năm, luật "không được có từ thừa ngoài từ phiên bản" quá chặt. Có 36 ca loại nhầm trong probe. Bench thật cũng có nhiều ca, ví dụ:
+  - tên Nyaa "Romaji - English";
+  - tag ngôn ngữ (FRENCH, VOSTFR);
+  - "Criterion Collection";
+  - "Movie 01 - …" (đánh số phim anime);
+  - nhóm Trung Quốc `【…】彗星来的那一夜[中文字幕].Coherence.2013…`;
+  - `[Judas] Jujutsu Kaisen - Movie 01 - Jujutsu Kaisen 0`;
+  - "Charlotte's Web" (chữ "web" bị coi là tag nguồn);
+  - "(500) Days of Summer".
+
+  Ngược lại, phim lệch 1 năm mà thêm phụ đề vẫn lọt: "The Hunger Games Catching Fire" được nhận cho "The Hunger Games".
+- **Bản viết lại** (`MovieReleaseTitle`) dựa trên vị trí:
+  - Một tên phim phải xuất hiện đủ và đúng thứ tự. Chấp nhận cách viết gộp/tách ("Spiderman", "C era"), và coi "Vol" bằng "Volume".
+  - Chữ đứng **trước** tên chỉ được là: tên nhóm trong ngoặc, chữ không phải Latin, tag, tên của studio, hoặc sở hữu cách ("Satoshi Kon's").
+  - Chữ đứng **sau** tên (tới hết đoạn tên) chỉ được là: tag ngôn ngữ, phiên bản hoặc nguồn; nội dung trong ngoặc; chữ không phải Latin; một tên khác của phim; "Movie 01"; hoặc `v2`/`25th`.
+  - Các dấu " - ", "/", "|" và "aka" tách các tên khác nhau.
+  - Từ của chính tên phim không kết thúc phần tên, nên "Charlotte's Web" không bị cắt ở chữ "web".
+- **Test:** `MovieReleaseTitleTests` có 60 ca: 51 tên phải nhận và 20 tên phải loại (Call Me by Your Name, The Real Oppenheimer, Extra Scenes, tập lẻ JJK, Dune Part Two, Frozen II/Fever, Catching Fire, Twilight New Moon…). Phần lớn là tên thật lấy từ bench.
+- **Vẫn còn:** phần tiếp theo **cùng năm** ("Matrix Revolutions" 2003 cho "Matrix Reloaded" 2003) vẫn đi qua luật khớp lỏng cũ, vì bước kiểm tra này chỉ chạy khi năm lệch hoặc không có năm. Tên có nhóm không ngoặc ở đầu ("AnimeKaizoku Your Name") bị loại.
+
+**Junk filter (NS-10):** giờ đọc được `1920x1080`/`3840x2160`, `FHD` và "1080" đứng riêng. Khi tên ghi nhiều độ phân giải thì lấy độ phân giải **cao nhất**, nên bản giả `2160p 4K 1080p 720p` dung lượng 300 MB vẫn bị loại.
+
+**Governor, cache và memo:** reviewer xác nhận NS-03/04/08/15 đã sửa đúng, không có lỗi mức Cao. Các lỗi nhẹ đã sửa thêm:
+- Một lần báo thành công đến muộn không còn đóng breaker đang mở. Lỗi này cũng chính là NS-23.
+- Người gọi sau bị governor từ chối vì lane hoặc hạn chờ của người khởi tạo thì tự hỏi lại với lane của mình (NS-06 xong).
+- `Remove` của cache chỉ xóa response đã xong, không xóa request mới đang chạy.
+- Nếu không tra được IMDb id thì câu trả lời TV không được lưu memo, vì EZTV báo "ok" mà không search.
+- TMDB trả 401/429/5xx được coi là lỗi, thử lại sau 10 phút; chỉ 404 mới được nhớ 1 giờ là "không có IMDb id" (NS-20 xong).
+- Chờ khóa tra IMDb tối đa 20 s.
+
+Kết quả: 552 test Core và 140 test App đều pass.
+
+**Còn lại, chấp nhận được:** nếu một lượt chạy kết thúc giữa chừng (timeout, lỗi HTTP ở trang sau) thì các trang đã thành công không được báo. Lúc đó breaker đang ở HalfOpen sẽ mở lại sớm hơn. Hướng này an toàn với site, và site không bao giờ bị chặn vĩnh viễn.
 
 ## 7. Thứ tự sửa đề xuất
 

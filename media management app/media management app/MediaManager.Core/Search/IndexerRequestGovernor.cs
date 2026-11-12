@@ -228,11 +228,19 @@ public sealed class IndexerRequestGovernor
             switch (outcome)
             {
                 case IndexerFailureKind.None:
+                    state.LastSuccessUtc = now;
+                    // A success reported while the breaker is Open comes from a request that was already in flight
+                    // when another one was blocked (sites with MaxConcurrent > 1, or a late parse report): it must
+                    // not cancel the block (audit 07c NS-23). Probes run in HalfOpen and do close it.
+                    if (state.Breaker == IndexerBreakerState.Open)
+                    {
+                        break;
+                    }
+
                     state.ConsecutiveFailures = 0;
                     state.RateLimitLevel = 0;
                     state.Breaker = IndexerBreakerState.Closed;
                     state.OpenUntilUtc = null;
-                    state.LastSuccessUtc = now;
                     break;
 
                 case IndexerFailureKind.RateLimited:
