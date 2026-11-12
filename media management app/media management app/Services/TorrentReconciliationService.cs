@@ -90,7 +90,7 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
         // Clear broken LinkedPath values and purge SourceItems where both files are gone.
         // This allows episodes to transition from Available to Missing when files were deleted externally.
         RefreshLinkStatusForScope(scope);
-        PurgeOrphanedSourceItemsForScope(scope);
+        PurgeOrphanedSourceItemsForScope(scope, torrentsByHash);
 
         sourceItems = _databaseService.GetSourceItems();
         RefreshAvailabilityForScope(scope, sourceItems);
@@ -117,7 +117,9 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
         _autoTorrentLinkService.RefreshLinkStatus();
     }
 
-    private void PurgeOrphanedSourceItemsForScope(TorrentReconciliationScope scope)
+    private void PurgeOrphanedSourceItemsForScope(
+        TorrentReconciliationScope scope,
+        IReadOnlyDictionary<string, AddedTorrentResult> torrentsByHash)
     {
         var candidates = _databaseService.GetSourceItems().AsEnumerable();
 
@@ -151,21 +153,80 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
         }
 
         var purgedCount = 0;
+        var keptCount = 0;
+        var storage = new LinkStorageProbe();
         foreach (var item in candidates.ToList())
         {
-            if (!File.Exists(item.FilePath) &&
-                (string.IsNullOrWhiteSpace(item.LinkedPath) || !File.Exists(item.LinkedPath)))
+            if (File.Exists(item.FilePath) ||
+                (!string.IsNullOrWhiteSpace(item.LinkedPath) && File.Exists(item.LinkedPath)))
             {
-                _databaseService.DeleteSourceItem(item.Id);
-                purgedCount++;
+                continue;
             }
+
+            // Missing files only mean "deleted" when their storage is reachable and qBittorrent
+            // does not report the torrent's files as temporarily missing (PARSE-27).
+            if (!storage.IsSourceStorageReachable(item) ||
+                !storage.IsLinkStorageReachable(item) ||
+                IsTorrentMissingFiles(item, torrentsByHash))
+            {
+                keptCount++;
+                continue;
+            }
+
+            _databaseService.DeleteSourceItem(item.Id);
+            purgedCount++;
         }
 
         if (purgedCount > 0)
         {
             _logger.Info($"Purged {purgedCount} orphaned source item(s) with missing files.", LogTarget.All);
         }
+
+        if (keptCount > 0)
+        {
+            _logger.Warning(
+                $"Kept {keptCount} source item(s) with missing files because their storage is not reachable " +
+                $"({string.Join(", ", storage.UnreachableFolders)}) or qBittorrent reports missing files.",
+                LogTarget.File | LogTarget.Console);
+        }
     }
+
+    /// <summary>
+    /// True when the item's file belongs to a torrent that qBittorrent reports as "missingFiles".
+    /// Matched by hash when the record still has one, otherwise by the torrent's content path
+    /// (save path + torrent name), because a lost link clears the record's provenance.
+    /// </summary>
+    private static bool IsTorrentMissingFiles(
+        SourceItem item,
+        IReadOnlyDictionary<string, AddedTorrentResult> torrentsByHash)
+    {
+        if (!string.IsNullOrWhiteSpace(item.AutoTorrentTorrentHash) &&
+            torrentsByHash.TryGetValue(item.AutoTorrentTorrentHash, out var byHash) &&
+            IsMissingFilesState(byHash))
+        {
+            return true;
+        }
+
+        foreach (var torrent in torrentsByHash.Values.Where(IsMissingFilesState))
+        {
+            if (string.IsNullOrWhiteSpace(torrent.SavePath) || string.IsNullOrWhiteSpace(torrent.Name))
+            {
+                continue;
+            }
+
+            var contentPath = Path.Combine(torrent.SavePath, torrent.Name);
+            if (string.Equals(item.FilePath, contentPath, StringComparison.OrdinalIgnoreCase) ||
+                item.FilePath.StartsWith(contentPath + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsMissingFilesState(AddedTorrentResult torrent) =>
+        string.Equals(torrent.State, "missingFiles", StringComparison.OrdinalIgnoreCase);
 
     private void RefreshAvailabilityForScope(TorrentReconciliationScope scope, IReadOnlyList<SourceItem> sourceItems)
     {

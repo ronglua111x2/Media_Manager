@@ -137,8 +137,45 @@ public sealed class LinkStateScenarioTests : IDisposable
         Assert.Equal("HR", _host.Db.GetTrackedEpisodes(showId).Single().TorrentHash);
     }
 
+    // PARSE-27: deleting both the download and the library file still purges the record.
+    [Fact]
+    public async Task Reconcile_WhenSourceAndLinkAreDeleted_PurgesRecord()
+    {
+        _host.AddTorrent("HP", "Demo.S01E01.mkv");
+        var showId = _host.AddShow(5010, "Demo Show", (1, 1, "One"));
+        _host.AssignEpisodeTorrent(showId, 1, 1, "HP");
+        await _host.Link.LinkEpisodeAsync(showId, 1, 1);
+        var item = _host.Items().Single();
+        File.Delete(item.FilePath);
+        File.Delete(item.LinkedPath!);
+
+        await _host.Reconciliation.ReconcileAsync(TorrentReconciliationScope.All);
+
+        Assert.Empty(_host.Items());
+        Assert.Equal(EpisodeAvailability.Missing, _host.Availability(showId, 1, 1));
+    }
+
+    // PARSE-27: qBittorrent's "missingFiles" state means the files may come back; keep the record.
+    [Fact]
+    public async Task Reconcile_WhenQbittorrentReportsMissingFiles_KeepsRecord()
+    {
+        // A single-file torrent is named after its file, as qBittorrent does.
+        _host.AddNamedTorrent("HM", "Demo.S01E01.mkv", "Demo.S01E01.mkv");
+        var showId = _host.AddShow(5011, "Demo Show", (1, 1, "One"));
+        _host.AssignEpisodeTorrent(showId, 1, 1, "HM");
+        await _host.Link.LinkEpisodeAsync(showId, 1, 1);
+        var item = _host.Items().Single();
+        File.Delete(item.FilePath);
+        File.Delete(item.LinkedPath!);
+        _host.SetTorrentState("HM", "missingFiles");
+
+        await _host.Reconciliation.ReconcileAsync(TorrentReconciliationScope.All);
+
+        Assert.Single(_host.Items());
+    }
+
     // PARSE-27 (LINK-04, harness D): an unreachable download/library folder must not wipe link records.
-    [Fact(Skip = "PARSE-27")]
+    [Fact]
     public async Task Reconcile_WhenFoldersAreUnreachable_KeepsLinkRecords()
     {
         _host.AddTorrent("HD1", "Demo.S01E01.mkv");

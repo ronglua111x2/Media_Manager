@@ -289,8 +289,17 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             items = items.Where(item => item.MediaKind == MediaKind.Movie && item.ProviderId == movieProviderId);
         }
 
+        var storage = new LinkStorageProbe();
         foreach (var item in items.ToList())
         {
+            if (!storage.IsLinkStorageReachable(item))
+            {
+                // The library drive or folder is offline: keep the record as it is instead of
+                // treating every link on it as deleted (PARSE-27).
+                result.SkippedCount++;
+                continue;
+            }
+
             item.State = File.Exists(item.LinkedPath) ? ItemState.Linked : ItemState.Parsed;
             if (!File.Exists(item.LinkedPath))
             {
@@ -308,6 +317,14 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             }
 
             _databaseService.UpdateSourceItem(item);
+        }
+
+        foreach (var folder in storage.UnreachableFolders)
+        {
+            _logger.Warning(
+                $"Library folder is not reachable, link status left unchanged: {folder}",
+                LogTarget.File | LogTarget.Console);
+            result.Messages.Add($"Library folder is not reachable, link status left unchanged: {folder}");
         }
 
         result.Messages.Add("Refreshed link status.");

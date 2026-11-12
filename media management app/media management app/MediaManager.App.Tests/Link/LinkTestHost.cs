@@ -229,6 +229,36 @@ public sealed class LinkTestHost : IDisposable
         return torrent;
     }
 
+    /// <summary>Replaces a torrent's raw qBittorrent state (for example "missingFiles").</summary>
+    public void SetTorrentState(string hash, string state)
+    {
+        var index = Torrents.FindIndex(item => string.Equals(item.Hash, hash, StringComparison.OrdinalIgnoreCase));
+        var current = Torrents[index];
+        Torrents[index] = new AddedTorrentResult
+        {
+            Hash = current.Hash,
+            Name = current.Name,
+            Progress = current.Progress,
+            SavePath = current.SavePath,
+            State = state
+        };
+    }
+
+    /// <summary>
+    /// Mirrors SymlinkCoordinatorService synchronously: removed hardlinks remove their Jellyfin symlinks.
+    /// </summary>
+    public void FollowHardlinkRemovals()
+    {
+        Hub.HardlinkRemoved += (_, args) => Symlinks.RemoveItem(args.Item, args.LinkedPath);
+        Hub.HardlinksRemoved += (_, batch) =>
+        {
+            foreach (var args in batch.Items)
+            {
+                Symlinks.RemoveItem(args.Item, args.LinkedPath);
+            }
+        };
+    }
+
     public long AddShow(int tmdbId, string title, params (int Season, int Episode, string Title)[] episodes)
     {
         var showId = Db.UpsertTrackedShow(new TrackedShow
