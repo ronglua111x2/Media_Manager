@@ -107,6 +107,36 @@ public class TorrentFileRulesTests
         TorrentFileRules.SelectEpisodeFile(files, 1, 2)!.Name.Should().Be("Show.S01E01-E02.1080p/Show.S01E02.1080p.mkv");
     }
 
+    // Audit L1-M1: the folder's S01E01-E03 is a range for the folder, not for each file in it. The largest
+    // file used to win, so "- 02" could be linked as E01.
+    [Theory]
+    [InlineData(1, "[Group] Show S01E01-E03 [1080p]/[Group] Show - 01 [1080p].mkv")]
+    [InlineData(2, "[Group] Show S01E01-E03 [1080p]/[Group] Show - 02 [1080p].mkv")]
+    [InlineData(3, "[Group] Show S01E01-E03 [1080p]/[Group] Show - 03 [1080p].mkv")]
+    public void SelectEpisodeFile_RangeOnlyInFolderName_PicksByTheFilesOwnNumber(int episode, string expected)
+    {
+        var files = new[]
+        {
+            File("[Group] Show S01E01-E03 [1080p]/[Group] Show - 01 [1080p].mkv", 900_000_000),
+            File("[Group] Show S01E01-E03 [1080p]/[Group] Show - 02 [1080p].mkv", 1_200_000_000),
+            File("[Group] Show S01E01-E03 [1080p]/[Group] Show - 03 [1080p].mkv", 1_000_000_000),
+        };
+
+        TorrentFileRules.SelectEpisodeFile(files, 1, episode)!.Name.Should().Be(expected);
+    }
+
+    [Fact]
+    public void SelectEpisodeFile_RangeOnlyInFolderName_NoFileNumber_ReturnsNull()
+    {
+        var files = new[]
+        {
+            File("Show.S01E01-E02.1080p/abc.mkv", 900_000_000),
+            File("Show.S01E01-E02.1080p/def.mkv", 1_200_000_000),
+        };
+
+        TorrentFileRules.SelectEpisodeFile(files, 1, 1).Should().BeNull();
+    }
+
     [Fact]
     public void SelectEpisodeFile_EpisodeOnlyInFolderName_StillMatches()
     {

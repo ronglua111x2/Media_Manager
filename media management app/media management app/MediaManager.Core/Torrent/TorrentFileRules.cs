@@ -101,28 +101,50 @@ public static class TorrentFileRules
         int seasonNumber,
         int episodeNumber)
     {
-        var matches = files
-            .Where(file => !IsSampleOrProof(file.Name))
-            .Where(file => IsEpisode(file.Name, seasonNumber, episodeNumber))
+        var candidates = files.Where(file => !IsSampleOrProof(file.Name)).ToList();
+        var byName = candidates
+            .Where(file => IsEpisode(ParseName(file.Name), seasonNumber, episodeNumber))
             .ToList();
-
-        return matches.Count == 0
-            ? null
-            : OrderByPreference(matches, file => file.Name, file => file.Size).First();
-    }
-
-    private static bool IsEpisode(string relativePath, int seasonNumber, int episodeNumber)
-    {
-        var fileName = Path.GetFileName(relativePath.Replace('\\', '/'));
-        var parsed = TorrentCandidateParser.Parse(fileName, relativePath);
-        if (parsed.SeasonNumber is null || parsed.EpisodeNumber is null)
+        if (byName.Count > 0)
         {
-            parsed = TorrentCandidateParser.Parse(relativePath);
+            return OrderByPreference(byName, file => file.Name, file => file.Size).First();
         }
 
-        return parsed.SeasonNumber == seasonNumber &&
-               parsed.EpisodeNumber is { } first &&
-               episodeNumber >= first &&
-               episodeNumber <= (parsed.LastEpisodeNumber ?? first);
+        // Only the folder names the episode. A folder named for several episodes (S01E01-E03) is a range for the
+        // folder, not for each file in it: pick the file by its own number, or none (audit L1-M1).
+        var byPath = candidates
+            .Where(file => !HasSeasonEpisode(ParseName(file.Name)))
+            .Select(file => (File: file, Parsed: TorrentCandidateParser.Parse(file.Name)))
+            .Where(item => IsEpisode(item.Parsed, seasonNumber, episodeNumber))
+            .ToList();
+        if (byPath.Count == 0)
+        {
+            return null;
+        }
+
+        if (byPath.Any(item => item.Parsed.LastEpisodeNumber is not null))
+        {
+            var byOwnNumber = byPath
+                .Select(item => item.File)
+                .Where(file => TorrentCandidateParser.TryParseBareEpisodeIndex(Path.GetFileName(file.Name.Replace('\\', '/'))) == episodeNumber)
+                .ToList();
+            return byOwnNumber.Count == 0
+                ? null
+                : OrderByPreference(byOwnNumber, file => file.Name, file => file.Size).First();
+        }
+
+        return OrderByPreference(byPath.Select(item => item.File).ToList(), file => file.Name, file => file.Size).First();
     }
+
+    private static TorrentCandidateParseResult ParseName(string relativePath) =>
+        TorrentCandidateParser.Parse(Path.GetFileName(relativePath.Replace('\\', '/')), relativePath);
+
+    private static bool HasSeasonEpisode(TorrentCandidateParseResult parsed) =>
+        parsed.SeasonNumber is not null && parsed.EpisodeNumber is not null;
+
+    private static bool IsEpisode(TorrentCandidateParseResult parsed, int seasonNumber, int episodeNumber) =>
+        parsed.SeasonNumber == seasonNumber &&
+        parsed.EpisodeNumber is { } first &&
+        episodeNumber >= first &&
+        episodeNumber <= (parsed.LastEpisodeNumber ?? first);
 }
