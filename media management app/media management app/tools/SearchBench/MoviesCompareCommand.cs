@@ -73,19 +73,23 @@ public static class MoviesCompareCommand
             var nativeRows = new List<TorrentSearchResult>();
             foreach (var reduced in queries.Select(query => NativeQueryText.Reduce(query, MediaKind.Movie)).Distinct(StringComparer.OrdinalIgnoreCase))
             {
-                nativeRows.AddRange((await orchestrator.SearchAsync([new IndexerQuery(reduced, MediaKind.Movie, anime)], indexers, SearchLane.Interactive, SearchBudget.Interactive, CancellationToken.None)).Results);
+                var outcome = await orchestrator.SearchAsync([new IndexerQuery(reduced, MediaKind.Movie, anime)], indexers, SearchLane.Interactive, SearchBudget.Interactive, CancellationToken.None);
+                nativeRows.AddRange(outcome.Results);
+                Console.Error.WriteLine($"  native '{reduced}': {outcome.Summary}");
             }
 
             nativeWatch.Stop();
 
-            var q = Tiers(recipe, movie, qbitRows, evaluator, autoTorrent);
-            var n = Tiers(recipe, movie, nativeRows, evaluator, autoTorrent);
+            var aliases = SearchIdentity.BuildAliases(nativeRows);
+            string Key(TorrentSearchResult row) => SearchIdentity.Key(row, aliases);
+            var q = Tiers(recipe, movie, qbitRows, evaluator, autoTorrent, Key);
+            var n = Tiers(recipe, movie, nativeRows, evaluator, autoTorrent, Key);
             var qTop = q.Accepted.OrderByDescending(r => r.TotalScore).FirstOrDefault();
             var nTop = n.Accepted.OrderByDescending(r => r.TotalScore).FirstOrDefault();
             var sameTop = qTop is not null && nTop is not null &&
-                          CandidateDeduplicator.IdentityKey(qTop.SearchResult.FileUrl) == CandidateDeduplicator.IdentityKey(nTop.SearchResult.FileUrl);
-            var qGood = q.Good.ToDictionary(r => CandidateDeduplicator.IdentityKey(r.SearchResult.FileUrl), r => r);
-            var nGood = n.Good.ToDictionary(r => CandidateDeduplicator.IdentityKey(r.SearchResult.FileUrl), r => r);
+                          Key(qTop.SearchResult) == Key(nTop.SearchResult);
+            var qGood = q.Good.GroupBy(r => Key(r.SearchResult)).ToDictionary(g => g.Key, g => g.First());
+            var nGood = n.Good.GroupBy(r => Key(r.SearchResult)).ToDictionary(g => g.Key, g => g.First());
             var onlyQ = qGood.Keys.Except(nGood.Keys).ToList();
             var onlyN = nGood.Keys.Except(qGood.Keys).ToList();
             Console.WriteLine(
@@ -94,7 +98,20 @@ public static class MoviesCompareCommand
                 $"{onlyQ.Count} | {onlyN.Count} | {qbitWatch.Elapsed.TotalSeconds:0} | {nativeWatch.Elapsed.TotalSeconds:0} |");
             foreach (var key in onlyQ.Take(3))
             {
-                examples.Add($"- {movie.Title}: only qBittorrent: {qGood[key].SearchResult.FileName} ({qGood[key].SearchResult.EngineName}, {qGood[key].SearchResult.Seeders} seeds)");
+                var nativeRow = nativeRows.FirstOrDefault(row => Key(row) == key);
+                string why;
+                if (nativeRow is null)
+                {
+                    why = "native: no such torrent";
+                }
+                else
+                {
+                    var e = evaluator.EvaluateMovie(recipe, movie, nativeRow);
+                    why = e.IsAccepted
+                        ? $"native has it: accepted, tier {CandidateTiers.Classify(recipe, e)}, seeds {nativeRow.Seeders}, engine {nativeRow.EngineName}, name '{nativeRow.FileName}'"
+                        : $"native has it: rejected {e.RejectReason} {e.RejectDetail}";
+                }
+                examples.Add($"- {movie.Title}: only qBittorrent: {qGood[key].SearchResult.FileName} ({qGood[key].SearchResult.EngineName}, {qGood[key].SearchResult.Seeders} seeds) | {why}");
             }
         }
 
@@ -113,11 +130,12 @@ public static class MoviesCompareCommand
         TrackedMovie movie,
         IEnumerable<TorrentSearchResult> rows,
         CandidateEvaluationService evaluator,
-        AutoTorrentSettings autoTorrent)
+        AutoTorrentSettings autoTorrent,
+        Func<TorrentSearchResult, string> key)
     {
         var unique = rows
             .Where(row => !string.IsNullOrWhiteSpace(row.FileUrl))
-            .GroupBy(row => CandidateDeduplicator.IdentityKey(row.FileUrl))
+            .GroupBy(key)
             .Select(group => group.OrderByDescending(row => row.Seeders).First());
         var accepted = unique.Select(row => evaluator.EvaluateMovie(recipe, movie, row)).Where(r => r.IsAccepted).ToList();
         if (RecipeRuntimeSettings.GetDeduplicateCandidates(recipe, autoTorrent))

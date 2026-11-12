@@ -122,3 +122,27 @@ public class CandidateDeduplicatorTests
         Dedupe(rows, fuzzy: false).Select(r => r.Name).Should().Equal("B", "A");
     }
 }
+
+public class SearchIdentityTests
+{
+    [Fact]
+    public void TpbDescriptionPage_MapsToTheApibayInfoHash()
+    {
+        var native = new media_management_app.Models.TorrentSearchResult
+        {
+            FileName = "Project.Hail.Mary.2026.2160p.iT.WEB-DL-BTM",
+            FileUrl = "magnet:?xt=urn:btih:6d586b4534782952644758b6641aea0bdbc373f2",
+            DescriptionUrl = "https://thepiratebay.org/description.php?id=83093224"
+        };
+        var qbittorrent = new media_management_app.Models.TorrentSearchResult
+        {
+            FileName = "Project.Hail.Mary.2026.2160p.iT.WEB-DL-BTM",
+            FileUrl = "https%3A//thepiratebay.org/description.php%3Fid%3D83093224"
+        };
+
+        var aliases = media_management_app.Search.SearchIdentity.BuildAliases([native]);
+
+        media_management_app.Search.SearchIdentity.Key(qbittorrent, aliases)
+            .Should().Be(media_management_app.Search.SearchIdentity.Key(native, aliases));
+    }
+}

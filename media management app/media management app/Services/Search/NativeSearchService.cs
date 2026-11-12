@@ -260,8 +260,10 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
     {
         try
         {
-            var native = Summarize(recipe, subject, nativeRows);
-            var qbit = Summarize(recipe, subject, qbitRows);
+            // TPB description pages (qBittorrent plugin) and apibay hashes (native) are the same torrents.
+            var aliases = SearchIdentity.BuildAliases(nativeRows);
+            var native = Summarize(recipe, subject, nativeRows, aliases);
+            var qbit = Summarize(recipe, subject, qbitRows, aliases);
             var record = new
             {
                 utc = DateTimeOffset.UtcNow,
@@ -301,9 +303,10 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
     private static (HashSet<string> Keys, HashSet<string> Good, int Excellent, string? TopName, int? TopScore) Summarize(
         SearchRecipe recipe,
         SearchSubject? subject,
-        IReadOnlyList<TorrentSearchResult> rows)
+        IReadOnlyList<TorrentSearchResult> rows,
+        IReadOnlyDictionary<string, string> aliases)
     {
-        var keys = rows.Select(row => CandidateDeduplicator.IdentityKey(row.FileUrl)).ToHashSet(StringComparer.Ordinal);
+        var keys = rows.Select(row => SearchIdentity.Key(row, aliases)).ToHashSet(StringComparer.Ordinal);
         if (subject?.Evaluate is null)
         {
             return (keys, new HashSet<string>(StringComparer.Ordinal), 0, null, null);
@@ -312,10 +315,10 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
         var evaluated = rows.Select(row => subject.Evaluate(row)).Where(result => result.IsAccepted).ToList();
         var tiers = evaluated.Select(result => (Result: result, Tier: CandidateTiers.Classify(recipe, result))).ToList();
         var good = tiers.Where(item => item.Tier >= CandidateTier.Good)
-            .Select(item => CandidateDeduplicator.IdentityKey(item.Result.SearchResult.FileUrl))
+            .Select(item => SearchIdentity.Key(item.Result.SearchResult, aliases))
             .ToHashSet(StringComparer.Ordinal);
         var excellent = tiers.Where(item => item.Tier == CandidateTier.Excellent)
-            .Select(item => CandidateDeduplicator.IdentityKey(item.Result.SearchResult.FileUrl))
+            .Select(item => SearchIdentity.Key(item.Result.SearchResult, aliases))
             .Distinct()
             .Count();
         var top = evaluated.OrderByDescending(result => result.TotalScore).FirstOrDefault();
