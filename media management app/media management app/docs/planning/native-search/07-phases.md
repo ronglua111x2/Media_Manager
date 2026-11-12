@@ -118,8 +118,5 @@ P1 và P2-1/P2-2 có thể làm song song ở hai phiên khác nhau, vì chúng 
 |---|---|---|---|---|---|
 | Baseline (qBittorrent) | 12/11/2026 | xem [07b §5c](../../code-review/2026-11/07b-hunt-search.md) | 45–180s (bị engine treo giữ) | *Coherence*: 0 bản đạt (năm 2014 so với 2013) | 10/23 engine hoạt động |
 | P1 | 12/11/2026 | (P1 không đổi nguồn search) | như baseline | 15/15 movie có ứng viên đạt (*Coherence* 2 → **27**, *Your Name.* 206 → **531**, *Jujutsu Kaisen 0* 12 → **168**, *Euphonium – Our Promise* 9 → **48**, *Liz and the Blue Bird* 44 → **67**) | `tools/SearchBench movies`: không bản nào luật cũ nhận mà luật mới loại. Các movie giảm (*Project Hail Mary* 131 → 85) là do dedupe theo infohash; số thô trước dedupe vẫn tăng (131 → 134) |
-| P2 | | | | | |
-| P3 | | | | | |
-| P4 | | | | | |
-| P5 | | | | | |
+| P2–P5 (native) | 12/11/2026 | `compare` (10 tiêu đề, trước khi có phân trang): native nhiều hơn với anime/romaji (`Kanata Kara 06` 58 so với 25, `Liz to Aoi Tori` 119 so với 96), ngang với season pack (162 so với 166), ít hơn 2–3 lần với movie phương Tây | Native **~1 s/query** khi chưa phải chờ lượt; khi xếp hàng chờ governor (15 movie liên tiếp) trung bình ~12 s/query. qBittorrent 96–181 s/query | **15/15 movie có ứng viên đạt** qua native (`movies --backend native`), bản đứng đầu giống đường qBittorrent ở *Oppenheimer*, *Spider-Verse*, *Predestination*, *Project Hail Mary*. Số ứng viên ít hơn đường qBittorrent khoảng 30–70% (ví dụ *Your Name.* 148 so với 531) | Không site nào chặn, không breaker nào mở. **Cổng P6 chưa đạt** tiêu chí "số infohash ≥ qBittorrent trên ≥ 90% case" với movie phương Tây; cần thêm nguồn hoặc thêm trang (kickass, sktorrent chưa có bản native) |
 | P6 | | | | | |
