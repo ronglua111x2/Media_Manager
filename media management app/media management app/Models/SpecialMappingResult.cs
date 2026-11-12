@@ -17,6 +17,12 @@ public sealed class SpecialMappingItem
 
     /// <summary>A rule guess for an unmapped file (k-th → k-th of an inexact season window). Shown in review, never linked.</summary>
     public TrackedEpisode? SuggestedEpisode { get; init; }
+
+    /// <summary>
+    /// For a Gemini pair on a file that also had a rule suggestion: true when both give the same episode, false when
+    /// they differ (the review window highlights the row), null when there was no suggestion.
+    /// </summary>
+    public bool? MatchesSuggestion { get; init; }
 }
 
 public sealed class SpecialMappingResult

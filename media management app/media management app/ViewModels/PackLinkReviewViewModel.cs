@@ -151,6 +151,7 @@ public sealed partial class PackLinkReviewViewModel : ObservableObject
             IsMatched = isMatched,
             NeedsAttention = !isMatched ||
                              item is null ||
+                             item.MatchesSuggestion == false ||
                              !SpecialMappingReviewPolicy.IsTrustedWithoutReview(item) && proposalReason != SpecialMappingProposalReason.Window
         };
     }

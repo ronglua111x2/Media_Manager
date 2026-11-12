@@ -27,7 +27,7 @@ public sealed class GeminiLinkConfirmationService : IGeminiLinkConfirmationServi
         }
 
         var result = AppMessageBox.Show(
-            "Gemini AI is enabled. Linking will send special/OVA file names and TMDB episode data to Google for mapping. Continue?",
+            "Gemini AI is enabled. For special/OVA files the rules cannot place, linking sends their file names (with the name of their folder only) and the TMDB Season 0 titles and dates to Google. On the free tier Google may use this data to improve its products. Continue?",
             "AI-assisted pack linking",
             System.Windows.MessageBoxButton.YesNo,
             System.Windows.MessageBoxImage.Question,

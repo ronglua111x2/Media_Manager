@@ -46,11 +46,11 @@ public class SpecialMappingFailureTests
 
         var result = await host.ResolveAsync(Pack);
 
-        var first = result.Items.Where(item => item.RelativePath.EndsWith("S1S01.mkv", StringComparison.Ordinal)).ToList();
+        var first = result.Items.Where(item => item.RelativePath.EndsWith("S2S01.mkv", StringComparison.Ordinal)).ToList();
         Assert.Single(first);
         Assert.Null(first[0].Episode);
-        Assert.Equal(2, result.ByPath[Pack.Files.Single(file => file.FileName.EndsWith("S1S02.mkv")).RelativePath].Episode?.EpisodeNumber);
-        Assert.Contains(result.Warnings, warning => warning.Contains("S1S01", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(10, result.ByPath[Pack.Files.Single(file => file.FileName.EndsWith("S2S02.mkv")).RelativePath].Episode?.EpisodeNumber);
+        Assert.Contains(result.Warnings, warning => warning.Contains("S2S01", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -60,9 +60,9 @@ public class SpecialMappingFailureTests
 
         var result = await host.ResolveAsync(Pack);
 
-        Assert.DoesNotContain(result.Items, item => item.Episode?.EpisodeNumber == 1);
-        Assert.Contains(result.Warnings, warning => warning.Contains("S00E01", StringComparison.OrdinalIgnoreCase));
-        Assert.Equal(3, result.Items.Single(item => item.RelativePath.EndsWith("S1S03.mkv", StringComparison.Ordinal)).Episode?.EpisodeNumber);
+        Assert.DoesNotContain(result.Items, item => item.Episode?.EpisodeNumber == 9);
+        Assert.Contains(result.Warnings, warning => warning.Contains("S00E09", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(11, result.Items.Single(item => item.RelativePath.EndsWith("S2S03.mkv", StringComparison.Ordinal)).Episode?.EpisodeNumber);
     }
 
     [Fact]
@@ -183,15 +183,31 @@ public class SpecialMappingFailureTests
     }
 
     /// <summary>
-    /// The recorded wrong answer keeps the pairs one-to-one, so only a block-order check can catch it (PR-14, not in this change).
+    /// PARSE-16: the recorded wrong answer (S1S07 to S00E01) cannot happen any more, because Gemini no longer sees
+    /// season 1 (the rules place it); the same kind of answer on season 2 is caught by the season order check.
     /// </summary>
-    [Fact(Skip = "PARSE-16")]
-    public async Task Resolve_GeminiBreaksBlockOrder_PairIsDroppedForReview()
+    [Fact]
+    public async Task Resolve_RecordedWrongAnswer_SeasonOneStaysWithTheRules()
     {
         using var host = new SpecialOrchestratorHost(FakeGeminiResponses.RecordedSevenOfFifteenWrong);
 
         var result = await host.ResolveAsync(Pack);
 
-        Assert.Null(result.Items.Single(item => item.RelativePath.EndsWith("S1S07.mkv", StringComparison.Ordinal)).Episode);
+        var s1s07 = result.Items.Single(item => item.RelativePath.EndsWith("S1S07.mkv", StringComparison.Ordinal));
+        Assert.Equal(7, s1s07.Episode?.EpisodeNumber);
+        Assert.Equal(SpecialMappingSource.Rule, s1s07.Source);
+    }
+
+    [Fact]
+    public async Task Resolve_GeminiBreaksSeasonOrder_PairIsDroppedForReview()
+    {
+        using var host = new SpecialOrchestratorHost(FakeGeminiResponses.SeasonTwoBreaksOrder);
+
+        var result = await host.ResolveAsync(Pack);
+
+        Assert.Null(result.Items.Single(item => item.RelativePath.EndsWith("S2S07.mkv", StringComparison.Ordinal)).Episode);
+        Assert.Equal(15, result.Items.Single(item => item.RelativePath.EndsWith("S2S06.mkv", StringComparison.Ordinal)).Episode?.EpisodeNumber);
+        Assert.True(result.RequiresReview);
+        Assert.Contains(result.Warnings, warning => warning.Contains("order", StringComparison.Ordinal));
     }
 }

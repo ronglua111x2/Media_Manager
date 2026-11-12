@@ -88,6 +88,18 @@ public sealed class SpecialMappingOrchestrator : ISpecialMappingOrchestrator
             return ApplyRules(request, specialsEpisodes, fallbackReason: null);
         }
 
+        if (request.GeminiCandidateIndices.Count == 0)
+        {
+            // The rules placed every special: a pack like this costs no Gemini request (PR-14).
+            _logger.Info("Special mapping: the rules placed every special/OVA file; Gemini not called.", LogTarget.All);
+            PackLinkProgressReporter.Report(
+                progress,
+                PackLinkProgressStep.WaitingForGemini,
+                PackLinkProgressStatus.Done,
+                "Skipped Gemini (rules placed every special).");
+            return ApplyRules(request, specialsEpisodes, fallbackReason: null);
+        }
+
         if (bypassCache)
         {
             _logger.Info(
@@ -110,7 +122,7 @@ public sealed class SpecialMappingOrchestrator : ISpecialMappingOrchestrator
                 PackLinkProgressStep.ParsingResponse,
                 PackLinkProgressStatus.Done,
                 $"Using cached mapping ({cached.Items.Count(item => item.Episode is not null)} mapped specials).");
-            return SpecialMappingValidator.RemoveViolations(cached, specialsEpisodes);
+            return SpecialMappingValidator.RemoveViolations(cached, specialsEpisodes, request);
         }
 
         SpecialMappingResult aiResult;
@@ -140,7 +152,7 @@ public sealed class SpecialMappingOrchestrator : ISpecialMappingOrchestrator
             return ApplyRules(request, specialsEpisodes, $"Gemini special mapping failed: {ex.Message}");
         }
 
-        var checkedResult = SpecialMappingValidator.RemoveViolations(aiResult, specialsEpisodes);
+        var checkedResult = SpecialMappingValidator.RemoveViolations(aiResult, specialsEpisodes, request);
         if (checkedResult.RequiresReview)
         {
             _logger.Warning(
