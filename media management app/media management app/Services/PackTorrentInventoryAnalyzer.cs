@@ -62,6 +62,7 @@ public static class PackTorrentInventoryAnalyzer
             fileSizes,
             absoluteMapper,
             episodesByAirDate,
+            tree,
             inventory.Warnings);
         FlagSpecialLikeEpisodes(resolutionsByPath, files, fileSizes, episodes, inventory.Warnings);
         var specialMappings = BuildSpecialMappings(files, tree, specialsEpisodes, resolvedSpecialMappings);
@@ -354,6 +355,7 @@ public static class PackTorrentInventoryAnalyzer
         IReadOnlyDictionary<string, long>? fileSizes,
         AbsoluteEpisodeMapper absoluteMapper,
         IReadOnlyDictionary<DateOnly, IReadOnlyList<(int Season, int Episode)>> episodesByAirDate,
+        PackFolderTreeAnalysis tree,
         List<string> warnings)
     {
         var resolutions = new Dictionary<string, PackEpisodeResolution>(StringComparer.OrdinalIgnoreCase);
@@ -375,6 +377,14 @@ public static class PackTorrentInventoryAnalyzer
                 .Where(file => TorrentCandidateParser.TryGetSeasonPartFromPath(file.RelativePath) is null)
                 .ToList();
 
+            // Files whose folder names this season: absolute numbers there must not be moved to
+            // another season by TMDB episode counts (audit L1-H2).
+            var seasonFolderPaths = mainFiles
+                .Where(file => (tree.PathSeasonHints.TryGetValue(file.RelativePath, out var hint)
+                                   ? hint
+                                   : TorrentCandidateParser.TryGetSeasonHintFromPath(file.RelativePath)) == group.SeasonNumber)
+                .Select(file => file.RelativePath)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
             var seasonResolutions = PackEpisodeResolver.ResolveSeason(
                 mainFiles,
                 group.SeasonNumber,
@@ -382,7 +392,8 @@ public static class PackTorrentInventoryAnalyzer
                 pattern,
                 fileSizes,
                 absoluteMapper,
-                episodesByAirDate);
+                episodesByAirDate,
+                seasonFolderPaths);
             foreach (var (path, resolution) in seasonResolutions)
             {
                 resolutions[path] = resolution;

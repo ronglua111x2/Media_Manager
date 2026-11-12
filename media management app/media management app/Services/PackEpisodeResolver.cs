@@ -13,10 +13,13 @@ public static class PackEpisodeResolver
         InferredEpisodePattern? fallbackPattern = null,
         IReadOnlyDictionary<string, long>? fileSizes = null,
         AbsoluteEpisodeMapper? absoluteMapper = null,
-        IReadOnlyDictionary<DateOnly, IReadOnlyList<(int Season, int Episode)>>? episodesByAirDate = null)
+        IReadOnlyDictionary<DateOnly, IReadOnlyList<(int Season, int Episode)>>? episodesByAirDate = null,
+        IReadOnlySet<string>? seasonFolderPaths = null)
     {
         var candidates = new List<PackEpisodeCandidate>();
         var unresolved = new List<(string RelativePath, string Reason)>();
+        var shiftedInFolder = new List<PackEpisodeCandidate>();
+        var folderNumberingMismatch = false;
 
         foreach (var (relativePath, fileName) in files)
         {
@@ -28,13 +31,41 @@ public static class PackEpisodeResolver
             var stem = Path.GetFileNameWithoutExtension(fileName);
             var parsed = ParsePackFile(relativePath, fileName);
             var resolved = TryResolve(parsed, seasonNumber, validEpisodeNumbers, stem, fallbackPattern, absoluteMapper, episodesByAirDate, out var failure);
+            var absoluteInSeasonFolder = absoluteMapper is not null &&
+                                         IsAbsoluteOnly(parsed) &&
+                                         seasonFolderPaths?.Contains(relativePath) == true;
             if (resolved is { } target)
             {
-                candidates.Add(new PackEpisodeCandidate(relativePath, fileName, target.Season, target.Episode, target.LastEpisode));
+                var candidate = new PackEpisodeCandidate(relativePath, fileName, target.Season, target.Episode, target.LastEpisode);
+                if (absoluteInSeasonFolder && !(target.Season == seasonNumber && target.Episode == parsed!.AbsoluteEpisodeNumbers[0]))
+                {
+                    // Placed by TMDB episode counts, not by its own number: only safe if the whole folder agrees.
+                    shiftedInFolder.Add(candidate);
+                    folderNumberingMismatch |= target.Season != seasonNumber;
+                    continue;
+                }
+
+                candidates.Add(candidate);
                 continue;
             }
 
+            folderNumberingMismatch |= absoluteInSeasonFolder;
             unresolved.Add((relativePath, failure ?? GetSkipReason(parsed, seasonNumber, validEpisodeNumbers) ?? "No episode pattern matched TMDB season set."));
+        }
+
+        // A "Season N" folder whose absolute numbers land partly outside season N (or past the show's
+        // last TMDB episode) counts its episodes differently from TMDB, for example a recap TMDB counts
+        // and the release does not. Every count-based placement in it is then one episode off, so none
+        // is linked (audit L1-H2).
+        if (folderNumberingMismatch)
+        {
+            unresolved.AddRange(shiftedInFolder.Select(candidate => (
+                candidate.RelativePath,
+                $"Absolute episode numbers in the 'Season {seasonNumber}' folder do not line up with TMDB's episode counts; not linked, review which episodes they are.")));
+        }
+        else
+        {
+            candidates.AddRange(shiftedInFolder);
         }
 
         var resolutions = new Dictionary<string, PackEpisodeResolution>(StringComparer.OrdinalIgnoreCase);

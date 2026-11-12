@@ -195,6 +195,35 @@ public class PackScenarioTests
         PackScenario.AssertRegular(inventory, "[Grp] Show (01-24)/[Grp] Show - 24 [1080p].mkv", 2, 12);
     }
 
+    // Audit L1-H2: TMDB counts a recap as S01E13, the release starts season 2 at "- 13". Count-based
+    // placement would link "- 13" as S01E13 and "- 14".."- 24" as S02E01..E11 (one off). None is linked.
+    [Fact]
+    public void AbsoluteSeasonFolder_TmdbCountsOneMore_NothingLinkedOneOff()
+    {
+        var inventory = PackScenario.Run(Scenarios["absolute-folder-tmdb-longer"]);
+
+        for (var absolute = 13; absolute <= 24; absolute++)
+        {
+            var entry = PackScenario.Entry(inventory, $"Show/Season 2/[Group] Show - {absolute:00} [1080p].mkv");
+            Assert.Equal(PackFileClassification.Skipped, entry.Classification);
+        }
+
+        Assert.Contains("do not line up", PackScenario.Entry(inventory, "Show/Season 2/[Group] Show - 14 [1080p].mkv").MatchReason);
+    }
+
+    // Reverse: TMDB season 1 has 12, the release's season 1 has a 13th file and season 2 starts at "- 14".
+    [Fact]
+    public void AbsoluteSeasonFolder_ReleaseCountsOneMore_NothingLinkedOneOff()
+    {
+        var inventory = PackScenario.Run(Scenarios["absolute-folder-release-longer"]);
+
+        for (var absolute = 14; absolute <= 25; absolute++)
+        {
+            var entry = PackScenario.Entry(inventory, $"Show/Season 2/[Group] Show - {absolute:00} [1080p].mkv");
+            Assert.Equal(PackFileClassification.Skipped, entry.Classification);
+        }
+    }
+
     [Fact]
     public void AbsoluteNumberBeyondShow_IsSkippedWithReason()
     {
@@ -486,6 +515,12 @@ public class PackScenarioTests
             ["absolute-two-seasons"] = new(
                 Owner: 1, Covered: [1, 2], EpisodesPerSeason: new() { [1] = 12, [2] = 12 },
                 Files: Enumerable.Range(1, 24).Select(e => $"[Grp] Show (01-24)/[Grp] Show - {e:00} [1080p].mkv").ToArray()),
+            ["absolute-folder-tmdb-longer"] = new(
+                Owner: 2, Covered: [2], EpisodesPerSeason: new() { [1] = 13, [2] = 12 },
+                Files: Enumerable.Range(13, 12).Select(e => $"Show/Season 2/[Group] Show - {e:00} [1080p].mkv").ToArray()),
+            ["absolute-folder-release-longer"] = new(
+                Owner: 2, Covered: [2], EpisodesPerSeason: new() { [1] = 12, [2] = 12 },
+                Files: Enumerable.Range(14, 12).Select(e => $"Show/Season 2/[Group] Show - {e:00} [1080p].mkv").ToArray()),
             ["absolute-beyond"] = new(
                 Owner: 1, Covered: [1], EpisodesPerSeason: new() { [1] = 12 },
                 Files: Enumerable.Range(1, 12).Select(e => $"[Grp] Show/[Grp] Show - {e:00} [1080p].mkv")
