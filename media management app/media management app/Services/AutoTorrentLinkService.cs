@@ -1261,20 +1261,36 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
         // A legacy record and an import of the generated library file can share one LinkedPath.
         // Unlinking only one of them left the other "Linked", so the symlink came back on the next
         // sync. Records that share a LinkedPath with a matched record are handled with it.
+        // Only records of the same media count: an old import matched to another show or a movie must not take
+        // this show's library file down with it (audit L3-07).
         var matchedIds = matched.Select(item => item.Id).ToHashSet();
-        var matchedLinkedPaths = matched
+        var matchedByLinkedPath = matched
             .Where(item => !string.IsNullOrWhiteSpace(item.LinkedPath))
-            .Select(item => Path.GetFullPath(item.LinkedPath!))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            .GroupBy(item => Path.GetFullPath(item.LinkedPath!), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.ToList(), StringComparer.OrdinalIgnoreCase);
         var coOwners = source
             .Where(item => !matchedIds.Contains(item.Id) &&
                            !string.IsNullOrWhiteSpace(item.LinkedPath) &&
-                           matchedLinkedPaths.Contains(Path.GetFullPath(item.LinkedPath)))
+                           matchedByLinkedPath.TryGetValue(Path.GetFullPath(item.LinkedPath), out var owners) &&
+                           owners.Any(owner => IsSameMedia(owner, item)))
             .ToList();
         foreach (var item in coOwners.Concat(matched))
         {
             if (string.IsNullOrWhiteSpace(item.LinkedPath))
             {
+                continue;
+            }
+
+            if (preservePackProvenance &&
+                item.IsExternalImport &&
+                string.Equals(Path.GetFullPath(item.LinkedPath), Path.GetFullPath(item.FilePath), StringComparison.OrdinalIgnoreCase))
+            {
+                // An import of the generated library file (PARSE-30 duplicate): the file goes with the pack's
+                // own record, so only this record is dropped. RemoveHardLink would refuse it as "source path"
+                // and abort the pack reset (audit L3-07).
+                _databaseService.DeleteSourceItem(item.Id);
+                result.RemovedCount++;
+                result.Messages.Add($"Removed duplicate import record for {item.FileName}.");
                 continue;
             }
 
@@ -1339,6 +1355,12 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
 
         return result;
     }
+
+    private static bool IsSameMedia(SourceItem first, SourceItem second) =>
+        first.MediaKind == second.MediaKind &&
+        (string.IsNullOrWhiteSpace(first.ProviderId) ||
+         string.IsNullOrWhiteSpace(second.ProviderId) ||
+         string.Equals(first.ProviderId, second.ProviderId, StringComparison.OrdinalIgnoreCase));
 
     private AutoTorrentLinkResult RemoveOrphanItem(SourceItem item)
     {

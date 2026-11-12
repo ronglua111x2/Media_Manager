@@ -475,6 +475,52 @@ public sealed class LinkStateScenarioTests : IDisposable
         Assert.Empty(_host.JellyfinFiles());
     }
 
+    // Audit L3-07: an old import of show A's library file that was matched to show B. Removing show B's links
+    // must not delete show A's library file.
+    [Fact]
+    public void RemoveShowLinks_ImportMatchedToAnotherShow_KeepsTheFirstShowsFile()
+    {
+        _host.AddTorrent("HXA", "Demo.S01E01.mkv");
+        var showA = _host.AddShow(5040, "Demo Show", (1, 1, "One"));
+        _host.AssignEpisodeTorrent(showA, 1, 1, "HXA");
+        Assert.Equal(1, _host.Link.LinkEpisodeAsync(showA, 1, 1).GetAwaiter().GetResult().LinkedCount);
+        var libraryFile = _host.Items().Single().LinkedPath!;
+        var showB = _host.AddShow(5041, "Other Show", (1, 1, "One"));
+        _host.Db.UpdateSourceItem(ImportRow(libraryFile, "5041"));
+
+        _host.Link.RemoveShowLinks(showB);
+
+        Assert.True(File.Exists(libraryFile));
+        var torrentRow = Assert.Single(_host.Items(), item => !item.IsExternalImport);
+        Assert.Equal(ItemState.Linked, torrentRow.State);
+        Assert.Equal(EpisodeAvailability.Available, _host.Availability(showA, 1, 1));
+    }
+
+    // Audit L3-07: a pack reset whose library file was also imported must not abort on the import record.
+    [Fact]
+    public async Task PackUnlink_LibraryFileAlsoImported_RemovesBothWithoutError()
+    {
+        var showId = PackShow("HXP", 5042, "Pack/Demo.S01E01.mkv");
+        await _host.ApplyPackAsync(showId, 1, ("Pack/Demo.S01E01.mkv", PackFileClassification.RegularEpisode, 1, 1));
+        var libraryFile = _host.Items().Single().LinkedPath!;
+        _host.Db.UpdateSourceItem(ImportRow(libraryFile, "5042"));
+
+        var result = _host.Link.RemoveSeasonPackLinks(showId, 1);
+
+        Assert.Equal(0, result.ErrorCount);
+        Assert.False(File.Exists(libraryFile));
+        Assert.DoesNotContain(_host.Items(), item => item.IsExternalImport);
+    }
+
+    private static SourceItem ImportRow(string libraryFile, string providerId) => new()
+    {
+        SourceRootFolder = Path.GetDirectoryName(libraryFile)!, ParentFolder = Path.GetDirectoryName(libraryFile)!,
+        FilePath = libraryFile, FileName = Path.GetFileName(libraryFile), ScanText = "x", MediaKind = MediaKind.TvEpisode,
+        ParserPattern = ParserPattern.StandardTv, ShowTitle = "Demo Show", SeasonNumber = 1, EpisodeNumber = 1,
+        MatchedTitle = "Demo Show", Provider = "tmdb", ProviderId = providerId, MatchAccepted = true,
+        IsExternalImport = true, State = ItemState.Linked, LinkedPath = libraryFile, LastSeenUtc = DateTime.UtcNow
+    };
+
     // PARSE-14: orphan extras go to Jellyfin extras folders, per season when the pack had a season
     // folder, so same-named extras of different seasons no longer collide.
     [Fact]
