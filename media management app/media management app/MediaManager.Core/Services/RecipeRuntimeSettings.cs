@@ -49,6 +49,8 @@ public static class RecipeRuntimeSettings
     public const string EnginePriorityModeKey = "enginePriorityMode";
     public const string EnginePriorityKey = "enginePriority";
     public const string PluginsLastCustomKey = "pluginsLastCustom";
+    public const string SearchBackendKey = "searchBackend";
+    public const string DefaultSearchBackend = "Default";
     public const string EngineWeightKey = "engineWeight";
     public const int DefaultEngineWeight = 0;
     public const int MinEngineWeight = 0;
@@ -198,6 +200,18 @@ public static class RecipeRuntimeSettings
 
     public static bool GetEnableCandidateMetadataProbe(SearchRecipe recipe, AutoTorrentSettings fallback) =>
         GetBool(GetParserModule(recipe), EnableCandidateMetadataProbeKey, fallback.EnableCandidateMetadataProbe);
+
+    /// <summary>
+    /// Search backend chosen by the recipe (native-search plan 08 §Q4): "Qbittorrent", "Native" or "Both", or
+    /// null when the recipe uses the Settings default ("Default" or missing).
+    /// </summary>
+    public static string? GetSearchBackend(SearchRecipe recipe)
+    {
+        var value = GetSearchModule(recipe)?.ExtensionData.TryGetValue(SearchBackendKey, out var raw) == true ? raw?.Trim() : null;
+        return string.IsNullOrWhiteSpace(value) || string.Equals(value, DefaultSearchBackend, StringComparison.OrdinalIgnoreCase)
+            ? null
+            : value;
+    }
 
     public static bool GetEnableCandidateDebugLog(SearchRecipe recipe) =>
         GetBool(GetSearchModule(recipe), EnableCandidateDebugLogKey, false);

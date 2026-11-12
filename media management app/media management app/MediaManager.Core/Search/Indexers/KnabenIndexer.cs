@@ -11,7 +11,9 @@ namespace media_management_app.Search.Indexers;
 public sealed class KnabenIndexer(string baseUrl = "https://api.knaben.org") : ITorrentIndexer
 {
     private const int PageSize = 100;
+    // Movies get one more page (popular titles have hundreds of encodes across TPB, 1337x, YTS; plan 08 §Q2).
     private const int MaxPages = 2;
+    private const int MaxMoviePages = 3;
 
     public string Id => "knaben";
 
@@ -23,7 +25,8 @@ public sealed class KnabenIndexer(string baseUrl = "https://api.knaben.org") : I
     {
         // A full page means there is more: fetch one more (governed) page, never an unbounded crawl.
         var results = new List<IndexerResult>();
-        for (var page = 0; page < MaxPages; page++)
+        var maxPages = query.Kind == media_management_app.Common.MediaKind.Movie ? MaxMoviePages : MaxPages;
+        for (var page = 0; page < maxPages; page++)
         {
             var body = new JsonObject
             {

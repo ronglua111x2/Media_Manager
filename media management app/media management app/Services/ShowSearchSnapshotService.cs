@@ -80,7 +80,7 @@ public sealed class ShowSearchSnapshotService
         var searchSource = recipe.Modules.FirstOrDefault(module => module.BlockType == RecipeBlockType.SearchSource && module.IsEnabled);
         var savedPlugins = string.IsNullOrWhiteSpace(searchSource?.Plugins) ? "enabled" : searchSource!.Plugins;
         // Native-only search needs nothing from qBittorrent's plugin list (it may even be offline).
-        var nativeOnly = _nativeSearch.UsesNative(recipeKind) && !_nativeSearch.ComparesWithQbittorrent(recipeKind);
+        var nativeOnly = _nativeSearch.UsesNative(recipeKind, recipe) && !_nativeSearch.ComparesWithQbittorrent(recipeKind, recipe);
         var resolved = nativeOnly
             ? new SearchPluginResolveResult { PluginsForApi = "enabled", RequestedNames = [] }
             : _searchPluginService.ResolveForSearch(savedPlugins, await _searchPluginService.GetPluginsAsync(cancellationToken), _logger);

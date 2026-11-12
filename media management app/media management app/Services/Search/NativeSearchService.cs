@@ -10,10 +10,10 @@ namespace media_management_app.Services;
 public interface INativeSearchService
 {
     /// <summary>True when searches for this media kind go to the native indexers (Search.Backend = Native or Both).</summary>
-    bool UsesNative(MediaKind kind);
+    bool UsesNative(MediaKind kind, SearchRecipe? recipe = null);
 
     /// <summary>True when the qBittorrent search should also run for comparison (Search.Backend = Both).</summary>
-    bool ComparesWithQbittorrent(MediaKind kind);
+    bool ComparesWithQbittorrent(MediaKind kind, SearchRecipe? recipe = null);
 
     /// <summary>Runs one query on the native indexers (governed, cached) and returns rows in the app's result shape.</summary>
     Task<IReadOnlyList<TorrentSearchResult>> SearchAsync(SearchRecipe recipe, string query, MediaKind kind, CancellationToken cancellationToken, SearchSubject? subject = null);
@@ -36,7 +36,12 @@ public interface INativeSearchService
 }
 
 /// <summary>What is being searched, so id-based indexers (EZTV by IMDb id) can be used and filtered.</summary>
-public sealed record SearchSubject(bool IsMovie, int TmdbId, int? Season = null, int? Episode = null);
+public sealed record SearchSubject(
+    bool IsMovie,
+    int TmdbId,
+    int? Season = null,
+    int? Episode = null,
+    Func<TorrentSearchResult, RecipeCandidateResult>? Evaluate = null);
 
 /// <summary>
 /// App side of native search (native-search P2): builds the indexer set from settings, owns the request
@@ -48,6 +53,8 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
 {
     private const string StateFileName = "indexer-state.json";
     private const string ImdbCacheFileName = "imdb-ids.json";
+    private const string CompareLogFileName = "search-compare.jsonl";
+    private static readonly object CompareLogGate = new();
     private const string UserAgent = "MediaManager/1.0 (+native-search)";
     private static readonly JsonSerializerOptions StateJson = new() { WriteIndented = true };
     private static readonly AsyncLocal<SearchLane?> LaneScope = new();
@@ -111,9 +118,9 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
 
     private NativeSearchSettings Settings => _settingsService.Current.Search ??= new NativeSearchSettings();
 
-    public bool UsesNative(MediaKind kind) => BackendFor(kind) is SearchBackends.Native or SearchBackends.Both;
+    public bool UsesNative(MediaKind kind, SearchRecipe? recipe = null) => BackendFor(kind, recipe) is SearchBackends.Native or SearchBackends.Both;
 
-    public bool ComparesWithQbittorrent(MediaKind kind) => BackendFor(kind) == SearchBackends.Both;
+    public bool ComparesWithQbittorrent(MediaKind kind, SearchRecipe? recipe = null) => BackendFor(kind, recipe) == SearchBackends.Both;
 
     public IReadOnlyList<IndexerStateSnapshot> HealthSnapshot() => _governor.Snapshot();
 
@@ -125,22 +132,23 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
         CancellationToken cancellationToken,
         SearchSubject? subject = null)
     {
-        if (!UsesNative(kind))
+        if (!UsesNative(kind, recipe))
         {
             return await qbittorrentSearch();
         }
 
-        if (!ComparesWithQbittorrent(kind))
+        if (!ComparesWithQbittorrent(kind, recipe))
         {
             return await SearchAsync(recipe, query, kind, cancellationToken, subject);
         }
 
-        var nativeTask = SearchAsync(recipe, query, kind, cancellationToken, subject);
-        var qbitTask = qbittorrentSearch();
+        var nativeWatch = System.Diagnostics.Stopwatch.StartNew();
+        var nativeTask = TimedAsync(() => SearchAsync(recipe, query, kind, cancellationToken, subject), nativeWatch);
+        var qbitWatch = System.Diagnostics.Stopwatch.StartNew();
         IReadOnlyList<TorrentSearchResult> qbitRows;
         try
         {
-            qbitRows = await qbitTask;
+            qbitRows = await qbittorrentSearch();
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -148,13 +156,9 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
             _logger.Warning($"[Search] compare: qBittorrent search failed for '{query}': {ex.Message}", LogTarget.File);
         }
 
+        qbitWatch.Stop();
         var nativeRows = await nativeTask;
-        var nativeKeys = nativeRows.Select(row => CandidateDeduplicator.IdentityKey(row.FileUrl)).ToHashSet(StringComparer.Ordinal);
-        var qbitKeys = qbitRows.Select(row => CandidateDeduplicator.IdentityKey(row.FileUrl)).ToHashSet(StringComparer.Ordinal);
-        _logger.Info(
-            $"[Search] compare query='{query}' kind={kind}: native={nativeKeys.Count} qbittorrent={qbitKeys.Count} " +
-            $"both={nativeKeys.Intersect(qbitKeys).Count()} nativeOnly={nativeKeys.Except(qbitKeys).Count()} qbittorrentOnly={qbitKeys.Except(nativeKeys).Count()}.",
-            LogTarget.File | LogTarget.Console);
+        WriteCompareRecord(recipe, query, kind, subject, nativeRows, nativeWatch.ElapsedMilliseconds, qbitRows, qbitWatch.ElapsedMilliseconds);
         return nativeRows;
     }
 
@@ -213,7 +217,8 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
         var orchestrator = new SearchOrchestrator(_governor, (id, searchLane, searchBudget) => new GovernedIndexerHttp(
             _http, _governor, _cache, id, searchLane, searchBudget.MaxGovernorWait, TimeSpan.FromMinutes(45), UserAgent, searchBudget.PerIndexer));
         var isAnime = IsAnimeRecipe(recipe);
-        var imdbId = subject is not null && kind != MediaKind.Movie ? await ResolveImdbIdAsync(subject, cancellationToken) : null;
+        // TV: EZTV searches by IMDb id. Movies: YTS accepts the IMDb id for an exact lookup (plan 08 §Q2).
+        var imdbId = subject is not null ? await ResolveImdbIdAsync(subject, cancellationToken) : null;
         var outcome = await orchestrator.SearchAsync(
             [new IndexerQuery(query, kind, isAnime, imdbId, subject?.Season, subject?.Episode)],
             NativeIndexerCatalog.Create(settings),
@@ -222,6 +227,99 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
             cancellationToken);
         _logger.Info($"[Search] native query='{query}' kind={kind}{(isAnime ? " anime" : "")} lane={lane}: {outcome.Summary}", LogTarget.File | LogTarget.Console);
         return outcome.Results;
+    }
+
+    private static async Task<IReadOnlyList<TorrentSearchResult>> TimedAsync(
+        Func<Task<IReadOnlyList<TorrentSearchResult>>> search,
+        System.Diagnostics.Stopwatch watch)
+    {
+        try
+        {
+            return await search();
+        }
+        finally
+        {
+            watch.Stop();
+        }
+    }
+
+    /// <summary>
+    /// One JSON line per "Both" search in &lt;StateFolder&gt;/logs/search-compare.jsonl (native-search plan 08 §Q5):
+    /// unique rows and Good/Excellent candidates of each backend, overlap, top candidate and time. SearchBench
+    /// `gate` turns these real searches into the P6 cutover numbers.
+    /// </summary>
+    private void WriteCompareRecord(
+        SearchRecipe recipe,
+        string query,
+        MediaKind kind,
+        SearchSubject? subject,
+        IReadOnlyList<TorrentSearchResult> nativeRows,
+        long nativeMs,
+        IReadOnlyList<TorrentSearchResult> qbitRows,
+        long qbitMs)
+    {
+        try
+        {
+            var native = Summarize(recipe, subject, nativeRows);
+            var qbit = Summarize(recipe, subject, qbitRows);
+            var record = new
+            {
+                utc = DateTimeOffset.UtcNow,
+                kind = kind.ToString(),
+                recipe = recipe.Name,
+                query,
+                tmdbId = subject?.TmdbId,
+                season = subject?.Season,
+                episode = subject?.Episode,
+                evaluated = subject?.Evaluate is not null,
+                native = new { rows = native.Keys.Count, good = native.Good.Count, excellent = native.Excellent, top = native.TopName, topScore = native.TopScore, ms = nativeMs },
+                qbittorrent = new { rows = qbit.Keys.Count, good = qbit.Good.Count, excellent = qbit.Excellent, top = qbit.TopName, topScore = qbit.TopScore, ms = qbitMs },
+                both = native.Keys.Intersect(qbit.Keys).Count(),
+                goodBoth = native.Good.Intersect(qbit.Good).Count(),
+                goodNativeOnly = native.Good.Except(qbit.Good).Count(),
+                goodQbittorrentOnly = qbit.Good.Except(native.Good).Count()
+            };
+            var line = JsonSerializer.Serialize(record);
+            var folder = Path.Combine(_settingsService.Current.StateFolder, AppConstants.LogFolderName);
+            Directory.CreateDirectory(folder);
+            lock (CompareLogGate)
+            {
+                File.AppendAllText(Path.Combine(folder, CompareLogFileName), line + Environment.NewLine);
+            }
+
+            _logger.Info(
+                $"[Search] compare query='{query}' kind={kind}: native rows={native.Keys.Count} good={native.Good.Count} ({nativeMs} ms), " +
+                $"qbittorrent rows={qbit.Keys.Count} good={qbit.Good.Count} ({qbitMs} ms), good in both={record.goodBoth}.",
+                LogTarget.File | LogTarget.Console);
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning($"[Search] could not write {CompareLogFileName}: {ex.Message}", LogTarget.File);
+        }
+    }
+
+    private static (HashSet<string> Keys, HashSet<string> Good, int Excellent, string? TopName, int? TopScore) Summarize(
+        SearchRecipe recipe,
+        SearchSubject? subject,
+        IReadOnlyList<TorrentSearchResult> rows)
+    {
+        var keys = rows.Select(row => CandidateDeduplicator.IdentityKey(row.FileUrl)).ToHashSet(StringComparer.Ordinal);
+        if (subject?.Evaluate is null)
+        {
+            return (keys, new HashSet<string>(StringComparer.Ordinal), 0, null, null);
+        }
+
+        var evaluated = rows.Select(row => subject.Evaluate(row)).Where(result => result.IsAccepted).ToList();
+        var tiers = evaluated.Select(result => (Result: result, Tier: CandidateTiers.Classify(recipe, result))).ToList();
+        var good = tiers.Where(item => item.Tier >= CandidateTier.Good)
+            .Select(item => CandidateDeduplicator.IdentityKey(item.Result.SearchResult.FileUrl))
+            .ToHashSet(StringComparer.Ordinal);
+        var excellent = tiers.Where(item => item.Tier == CandidateTier.Excellent)
+            .Select(item => CandidateDeduplicator.IdentityKey(item.Result.SearchResult.FileUrl))
+            .Distinct()
+            .Count();
+        var top = evaluated.OrderByDescending(result => result.TotalScore).FirstOrDefault();
+        return (keys, good, excellent, top?.SearchResult.FileName, top?.TotalScore);
     }
 
     /// <summary>Anime recipes also query anime-only indexers (nyaa). Detected from numbering mode or anime plugins.</summary>
@@ -307,8 +405,14 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
         }
     }
 
-    private string BackendFor(MediaKind kind)
+    /// <summary>Recipe choice first, then the per-kind override, then the Settings default.</summary>
+    private string BackendFor(MediaKind kind, SearchRecipe? recipe = null)
     {
+        if (recipe is not null && RecipeRuntimeSettings.GetSearchBackend(recipe) is { } fromRecipe)
+        {
+            return Normalize(fromRecipe);
+        }
+
         var settings = Settings;
         if (settings.BackendByKind.TryGetValue(kind.ToString(), out var perKind) && !string.IsNullOrWhiteSpace(perKind))
         {

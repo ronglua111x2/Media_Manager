@@ -47,13 +47,15 @@ public static class NativeIndexerCatalog
     public static IReadOnlyList<string> AllIds { get; } =
     [
         "knaben", "apibay", "limetorrents", "eztv", "yts", "torrents-csv", "bitsearch", "bt4g", "torrentdownloads",
-        "nyaa", "tsukihime", "subsplease", "nekobt", "animetosho"
+        "sktorrent", "kickass", "nyaa", "tsukihime", "subsplease", "nekobt", "animetosho"
     ];
 
     /// <summary>
-    /// Off unless the user enables them: AnimeTosho stopped updating (archive, newest entry May 2026).
+    /// Off unless the user enables them: AnimeTosho stopped updating (archive, newest entry May 2026);
+    /// Kickass search pages carry no info-hash or magnet (only detail pages do), so its rows cannot be added
+    /// until a lazy "resolve magnet of the chosen candidate" step exists.
     /// </summary>
-    public static IReadOnlySet<string> DisabledByDefault { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "animetosho" };
+    public static IReadOnlySet<string> DisabledByDefault { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "animetosho", "kickass" };
 
     public static bool IsEnabled(NativeSearchSettings? settings, string id) =>
         settings?.Indexers.TryGetValue(id, out var config) == true ? config.Enabled : !DisabledByDefault.Contains(id);
@@ -86,6 +88,8 @@ public static class NativeIndexerCatalog
                 "subsplease" => new SubsPleaseIndexer(config.BaseUrl ?? "https://subsplease.org"),
                 "nekobt" => new NekoBtIndexer(config.BaseUrl ?? "https://nekobt.to"),
                 "animetosho" => new AnimeToshoIndexer(config.BaseUrl ?? "https://animetosho.org"),
+                "sktorrent" => new SkTorrentIndexer(config.BaseUrl ?? "https://sktorrent.eu"),
+                "kickass" => new KickassIndexer(config.BaseUrl ?? "https://katcr.to"),
                 _ => throw new InvalidOperationException($"Unknown indexer '{id}'.")
             });
         }

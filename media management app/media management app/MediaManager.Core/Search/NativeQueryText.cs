@@ -25,11 +25,24 @@ public static partial class NativeQueryText
         if (kind == MediaKind.Movie)
         {
             // Keep a leading number ("2001 A Space Odyssey", "1917"): only drop years after the title.
-            reduced = TrailingYears().Replace(reduced, " ");
+            var withoutYear = QueryTemplateRenderer.CollapseSpaces(TrailingYears().Replace(reduced, " "));
+            // Short or common titles ("Dune", "Heat", "Alien") drown in unrelated results without the year, so
+            // their year-bearing form stays its own query (plan 08 §Q3); the plain title is searched as well.
+            if (!IsShortTitle(withoutYear))
+            {
+                reduced = withoutYear;
+            }
         }
 
         reduced = QueryTemplateRenderer.CollapseSpaces(reduced);
         return reduced.Length == 0 ? QueryTemplateRenderer.CollapseSpaces(query) : reduced;
+    }
+
+    /// <summary>One word of at most 6 letters ("Dune", "Heat", "Alien", "Us"): a bare title search is too broad.</summary>
+    public static bool IsShortTitle(string title)
+    {
+        var tokens = title.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return tokens.Length == 1 && tokens[0].Length <= 6 && !tokens[0].All(char.IsDigit);
     }
 
     [GeneratedRegex(@"\b(2160p|1440p|1080p|720p|576p|480p|4k|uhd|hdr|x264|x265|hevc)\b", RegexOptions.IgnoreCase)]

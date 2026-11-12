@@ -106,7 +106,12 @@ public sealed class AutomationFlowService : IAutomationFlowService
                 recipe,
                 queries,
                 cancellationToken,
-                new SearchSubject(IsMovie: false, show.TmdbId, episode.SeasonNumber, episode.EpisodeNumber));
+                new SearchSubject(
+                    IsMovie: false,
+                    show.TmdbId,
+                    episode.SeasonNumber,
+                    episode.EpisodeNumber,
+                    row => _candidateEvaluationService.EvaluateEpisode(recipe, show, episode, row)));
             _progressService.Report(0, "Filtering results...");
             var evaluated = results
                 .Select(result => _candidateEvaluationService.EvaluateEpisode(recipe, show, episode, result))
@@ -139,7 +144,11 @@ public sealed class AutomationFlowService : IAutomationFlowService
                 _logger);
             var recipe = termGuard.Recipe;
             var queries = _searchPlanBuilder.BuildMovieQueries(recipe, movie);
-            var results = await SearchAsync(recipe, queries, cancellationToken, new SearchSubject(IsMovie: true, movie.TmdbId));
+            var results = await SearchAsync(
+                recipe,
+                queries,
+                cancellationToken,
+                new SearchSubject(IsMovie: true, movie.TmdbId, Evaluate: row => _candidateEvaluationService.EvaluateMovie(recipe, movie, row)));
             _progressService.Report(0, "Filtering results...");
             var evaluated = results
                 .Select(result => _candidateEvaluationService.EvaluateMovie(recipe, movie, result))
@@ -170,7 +179,7 @@ public sealed class AutomationFlowService : IAutomationFlowService
         var savedPlugins = string.IsNullOrWhiteSpace(searchSource?.Plugins) ? "enabled" : searchSource!.Plugins;
         var category = string.IsNullOrWhiteSpace(searchSource?.Category) ? "all" : searchSource!.Category;
         // Native-only search needs nothing from qBittorrent's plugin list (it may even be offline).
-        var nativeOnly = _nativeSearch.UsesNative(recipe.TargetKind) && !_nativeSearch.ComparesWithQbittorrent(recipe.TargetKind);
+        var nativeOnly = _nativeSearch.UsesNative(recipe.TargetKind, recipe) && !_nativeSearch.ComparesWithQbittorrent(recipe.TargetKind, recipe);
         var resolved = nativeOnly
             ? new SearchPluginResolveResult { PluginsForApi = "enabled", RequestedNames = [] }
             : _searchPluginService.ResolveForSearch(savedPlugins, await _searchPluginService.GetPluginsAsync(cancellationToken), _logger);

@@ -37,9 +37,19 @@ if (command == "compare")
     return await CompareCommand.RunAsync(argsMap);
 }
 
+if (command == "movies-compare")
+{
+    return await MoviesCompareCommand.RunAsync(argsMap);
+}
+
+if (command == "gate")
+{
+    return GateCommand.Run(argsMap);
+}
+
 if (command != "movies")
 {
-    Console.Error.WriteLine("Commands: movies, compare.");
+    Console.Error.WriteLine("Commands: movies, movies-compare, compare, gate.");
     return 2;
 }
 

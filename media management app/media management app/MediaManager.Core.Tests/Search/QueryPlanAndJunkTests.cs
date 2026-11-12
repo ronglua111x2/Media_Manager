@@ -113,6 +113,8 @@ public class NativeQueryTextTests
     [InlineData("Rick and Morty S03E05 1080p", media_management_app.Common.MediaKind.TvEpisode, "Rick and Morty S03E05")]
     [InlineData("Rick and Morty 2013 season 3 1080p", media_management_app.Common.MediaKind.TvSeasonPack, "Rick and Morty 2013 season 3")]
     [InlineData("Kanata Kara 06 1080p", media_management_app.Common.MediaKind.TvEpisode, "Kanata Kara 06")]
+    [InlineData("Dune 2021 1080p", media_management_app.Common.MediaKind.Movie, "Dune 2021")]
+    [InlineData("Dune 1080p", media_management_app.Common.MediaKind.Movie, "Dune")]
     public void Reduce_DropsQualityAndMovieYears(string query, media_management_app.Common.MediaKind kind, string expected)
     {
         media_management_app.Search.NativeQueryText.Reduce(query, kind).Should().Be(expected);

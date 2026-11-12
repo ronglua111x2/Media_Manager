@@ -720,7 +720,12 @@ public sealed class FetchJobService : IFetchJobService
                 recipe,
                 query,
                 cancellationToken,
-                new SearchSubject(IsMovie: false, show.TmdbId, episode.SeasonNumber, episode.EpisodeNumber));
+                new SearchSubject(
+                    IsMovie: false,
+                    show.TmdbId,
+                    episode.SeasonNumber,
+                    episode.EpisodeNumber,
+                    row => _candidateEvaluationService.EvaluateEpisode(recipe, show, episode, row)));
             completedQueries++;
             _progressService.Report(completedQueries, $"Search: Query {completedQueries}/{totalQueries}");
             _logger.Info(
