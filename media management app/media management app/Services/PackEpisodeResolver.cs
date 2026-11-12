@@ -29,7 +29,7 @@ public static class PackEpisodeResolver
             var resolved = TryResolve(parsed, seasonNumber, validEpisodeNumbers, stem, fallbackPattern, absoluteMapper, out var failure);
             if (resolved is { } target)
             {
-                candidates.Add(new PackEpisodeCandidate(relativePath, fileName, target.Season, target.Episode));
+                candidates.Add(new PackEpisodeCandidate(relativePath, fileName, target.Season, target.Episode, target.LastEpisode));
                 continue;
             }
 
@@ -83,7 +83,7 @@ public static class PackEpisodeResolver
                 continue;
             }
 
-            resolutions[winner.RelativePath] = PackEpisodeResolution.Linked(season, episode);
+            resolutions[winner.RelativePath] = PackEpisodeResolution.Linked(season, episode, winner.LastEpisode);
             foreach (var loser in ordered.Skip(1))
             {
                 resolutions[loser.RelativePath] = PackEpisodeResolution.Skipped(
@@ -141,7 +141,7 @@ public static class PackEpisodeResolver
         !parsed.FullSeason &&
         !parsed.IsMultiSeason;
 
-    private static (int Season, int Episode)? TryResolve(
+    private static (int Season, int Episode, int? LastEpisode)? TryResolve(
         ParsedEpisodeInfo? parsed,
         int seasonNumber,
         IReadOnlySet<int> validEpisodeNumbers,
@@ -160,7 +160,7 @@ public static class PackEpisodeResolver
 
         if (TryExtractFromParsed(parsed, seasonNumber, validEpisodeNumbers, out var episode))
         {
-            return (seasonNumber, episode);
+            return (seasonNumber, episode, GetLastEpisode(parsed!, episode, validEpisodeNumbers));
         }
 
         // Sonarr read an explicit season/episode that does not fit this group: the pattern inferrer
@@ -180,12 +180,33 @@ public static class PackEpisodeResolver
         {
             var absolute = parsed!.AbsoluteEpisodeNumbers[0];
             return absoluteMapper.TryMap(absolute, seasonNumber, validEpisodeNumbers, out var mappedSeason, out var mappedEpisode, out failure)
-                ? (mappedSeason, mappedEpisode)
+                ? (mappedSeason, mappedEpisode, null)
                 : null;
         }
 
         var inferred = PackEpisodePatternInferrer.TryInferEpisode(stem, seasonNumber, validEpisodeNumbers, fallbackPattern);
-        return inferred is null ? null : (seasonNumber, inferred.Value);
+        return inferred is null ? null : (seasonNumber, inferred.Value, null);
+    }
+
+    /// <summary>
+    /// Multi-episode file (Sonarr EpisodeNumbers [1, 2]): the last episode of the run that starts at
+    /// the first number, stops at a gap and stays inside TMDB (PARSE-06).
+    /// </summary>
+    private static int? GetLastEpisode(ParsedEpisodeInfo parsed, int firstEpisode, IReadOnlySet<int> validEpisodeNumbers)
+    {
+        var numbers = parsed.EpisodeNumbers.Distinct().Order().ToList();
+        var last = firstEpisode;
+        foreach (var number in numbers.Where(number => number > firstEpisode))
+        {
+            if (number != last + 1 || !validEpisodeNumbers.Contains(number))
+            {
+                break;
+            }
+
+            last = number;
+        }
+
+        return last > firstEpisode ? last : null;
     }
 
     private static string? GetSkipReason(
@@ -255,4 +276,4 @@ public static class PackEpisodeResolver
         fileSizes is not null && fileSizes.TryGetValue(relativePath, out var size) ? size : 0;
 }
 
-public sealed record PackEpisodeCandidate(string RelativePath, string FileName, int Season, int Episode);
+public sealed record PackEpisodeCandidate(string RelativePath, string FileName, int Season, int Episode, int? LastEpisode = null);

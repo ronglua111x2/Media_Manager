@@ -414,7 +414,7 @@ public static class PackTorrentInventoryAnalyzer
         // claim one episode; apply the same collision rule across groups.
         var crossGroup = resolutions
             .Where(pair => pair.Value.Status == PackEpisodeResolutionStatus.RegularEpisode && pair.Value.EpisodeNumber is not null)
-            .Select(pair => new PackEpisodeCandidate(pair.Key, fileNames[pair.Key], pair.Value.SeasonNumber, pair.Value.EpisodeNumber!.Value))
+            .Select(pair => new PackEpisodeCandidate(pair.Key, fileNames[pair.Key], pair.Value.SeasonNumber, pair.Value.EpisodeNumber!.Value, pair.Value.LastEpisodeNumber))
             .GroupBy(candidate => (candidate.Season, candidate.Episode))
             .Where(group => group.Count() > 1)
             .SelectMany(group => group)
@@ -772,6 +772,7 @@ public static class PackTorrentInventoryAnalyzer
                 return Skipped(relativePath, fileName, "No tracked episode match.");
             }
 
+            var lastEpisodeNumber = GetLinkedLastEpisode(resolution, seasonNumber.Value, episodeNumber.Value, episodesByKey);
             return new PackFileEntry
             {
                 RelativePath = relativePath,
@@ -779,7 +780,10 @@ public static class PackTorrentInventoryAnalyzer
                 Classification = PackFileClassification.RegularEpisode,
                 MatchedSeasonNumber = seasonNumber,
                 MatchedEpisodeNumber = episodeNumber,
-                MatchReason = $"Resolved S{seasonNumber:00}E{episodeNumber:00}, matched TMDB."
+                MatchedLastEpisodeNumber = lastEpisodeNumber,
+                MatchReason = lastEpisodeNumber is null
+                    ? $"Resolved S{seasonNumber:00}E{episodeNumber:00}, matched TMDB."
+                    : $"Resolved S{seasonNumber:00}E{episodeNumber:00}-E{lastEpisodeNumber:00}, matched TMDB."
             };
         }
 
@@ -815,10 +819,35 @@ public static class PackTorrentInventoryAnalyzer
             Classification = PackFileClassification.RegularEpisode,
             MatchedSeasonNumber = seasonNumber,
             MatchedEpisodeNumber = episodeNumber,
+            MatchedLastEpisodeNumber = GetLinkedLastEpisode(resolution, seasonNumber.Value, episodeNumber.Value, episodesByKey),
             MatchReason = hasDbMatch
                 ? $"Resolved S{seasonNumber:00}E{episodeNumber:00}, matched TMDB."
                 : $"Resolved S{seasonNumber:00}E{episodeNumber:00}."
         };
+    }
+
+    private static int? GetLinkedLastEpisode(
+        PackEpisodeResolution? resolution,
+        int seasonNumber,
+        int episodeNumber,
+        IReadOnlyDictionary<(int SeasonNumber, int EpisodeNumber), TrackedEpisode> episodesByKey)
+    {
+        if (resolution is not { Status: PackEpisodeResolutionStatus.RegularEpisode, LastEpisodeNumber: { } last } ||
+            resolution.SeasonNumber != seasonNumber ||
+            resolution.EpisodeNumber != episodeNumber)
+        {
+            return null;
+        }
+
+        for (var episode = episodeNumber + 1; episode <= last; episode++)
+        {
+            if (!episodesByKey.ContainsKey((seasonNumber, episode)))
+            {
+                return episode - 1 > episodeNumber ? episode - 1 : null;
+            }
+        }
+
+        return last;
     }
 
     private static PackFileEntry Skipped(string relativePath, string fileName, string reason) =>

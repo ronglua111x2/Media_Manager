@@ -764,16 +764,15 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
                                                                           episodesByKey.TryGetValue(
                                                                               (entry.MatchedSeasonNumber.Value, entry.MatchedEpisodeNumber.Value),
                                                                               out var episode):
-                            LinkSourceItem(
-                                CreateEpisodeSourceItem(
-                                    show,
-                                    episode,
-                                    torrent,
-                                    sourcePath,
-                                    AutoTorrentLinkKind.SeasonPack,
-                                    ownerSeason.SeasonNumber),
-                                result,
-                                index);
+                            var regularItem = CreateEpisodeSourceItem(
+                                show,
+                                episode,
+                                torrent,
+                                sourcePath,
+                                AutoTorrentLinkKind.SeasonPack,
+                                ownerSeason.SeasonNumber);
+                            regularItem.LastEpisodeNumber = entry.MatchedLastEpisodeNumber;
+                            LinkSourceItem(regularItem, result, index);
                             regularLinked++;
                             break;
                     }

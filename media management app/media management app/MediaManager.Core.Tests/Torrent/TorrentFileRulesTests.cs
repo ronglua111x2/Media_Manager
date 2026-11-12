@@ -131,6 +131,20 @@ public class TorrentFileRulesTests
         TorrentFileRules.SelectEpisodeFile(files, 1, 3)!.Name.Should().Be("Pack/Show.S01E03v2.1080p.mkv");
     }
 
+    [Fact]
+    public void SelectEpisodeFile_MultiEpisodeFile_MatchesEveryEpisodeOfItsRange()
+    {
+        var files = new[]
+        {
+            File("Pack/Show.S01E01E02.1080p.mkv", 2_000_000_000),
+            File("Pack/Show.S01E03.1080p.mkv", 1_000_000_000),
+        };
+
+        TorrentFileRules.SelectEpisodeFile(files, 1, 1)!.Name.Should().Be("Pack/Show.S01E01E02.1080p.mkv");
+        TorrentFileRules.SelectEpisodeFile(files, 1, 2)!.Name.Should().Be("Pack/Show.S01E01E02.1080p.mkv");
+        TorrentFileRules.SelectEpisodeFile(files, 1, 3)!.Name.Should().Be("Pack/Show.S01E03.1080p.mkv");
+    }
+
     private static TorrentContentFile File(string name, long size) =>
         new() { Name = name, Size = size, Progress = 1 };
 }

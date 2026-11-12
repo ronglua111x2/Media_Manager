@@ -36,6 +36,9 @@ public sealed class SourceItem
 
     public int? EpisodeNumber { get; set; }
 
+    /// <summary>Last episode of a multi-episode file (S01E01-E02); null for one episode (PARSE-06).</summary>
+    public int? LastEpisodeNumber { get; set; }
+
     public int? MappedSeasonNumber { get; set; }
 
     public int? MappedEpisodeNumber { get; set; }

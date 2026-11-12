@@ -217,6 +217,37 @@ public class TorrentCandidateParserTests
         result.TitleTokens.Should().Contain("Cat");
     }
 
+    // PARSE-06: multi-episode files keep their first episode and report the last one.
+    [Theory]
+    [InlineData("Show.Name.S01E01E02.1080p.mkv", 1, 1, 2)]
+    [InlineData("Show.Name.S01E01-E02.1080p.mkv", 1, 1, 2)]
+    [InlineData("Show.Name.S01E01-02.1080p.mkv", 1, 1, 2)]
+    [InlineData("Show.Name.S02E09-E10.1080p.mkv", 2, 9, 10)]
+    [InlineData("Show.Name.S01E01E02E03.mkv", 1, 1, 3)]
+    [InlineData("Show.Name.S01E01-E02v2.mkv", 1, 1, 2)]
+    [InlineData("Show.Name.S01E05.1080p.mkv", 1, 5, null)]
+    [InlineData("Show.Name.S01E05-1080p.mkv", 1, 5, null)]
+    [InlineData("Show.Name.S01E05-2019.mkv", 1, 5, null)]
+    [InlineData("Show.Name.S01E05-03.mkv", 1, 5, null)]
+    public void Parse_MultiEpisode_ReportsLastEpisode(string fileName, int season, int episode, int? lastEpisode)
+    {
+        var result = TorrentCandidateParser.Parse(fileName);
+
+        result.SeasonNumber.Should().Be(season);
+        result.EpisodeNumber.Should().Be(episode);
+        result.LastEpisodeNumber.Should().Be(lastEpisode);
+    }
+
+    [Fact]
+    public void Parse_MultiEpisode_KeepsEpisodeTitleClean()
+    {
+        var single = TorrentCandidateParser.Parse("Show.Name.S01E01.The.Pilot.1080p.mkv").EpisodeTitle;
+
+        TorrentCandidateParser.Parse("Show.Name.S01E01-E02.The.Pilot.1080p.mkv").EpisodeTitle.Should().Be(single);
+        TorrentCandidateParser.Parse("Show.Name.S01E01-02.The.Pilot.1080p.mkv").EpisodeTitle.Should().Be(single);
+        single.Should().StartWith("The Pilot");
+    }
+
     // Parser audit 2026-11, report section 2: the 35 hard cases run through the same calls the
     // pack grouper, special bucket detector and single-episode file picker use. Each row states the
     // desired result; rows still broken carry Skip = the finding that fixes them.
@@ -226,7 +257,7 @@ public class TorrentCandidateParserTests
     [Theory]
     [InlineData(1, "Show.Name.S01E05.1080p.WEB-DL.x264-GRP.mkv", 1, 5, 1, 5, false, false, null, false, null)]
     [InlineData(2, "Show.Name.S01E05v2.1080p.mkv", 1, 5, 1, 5, false, false, null, false, null)]
-    [InlineData(3, "Show.Name.S01E01E02.1080p.mkv", 1, 1, 1, 1, false, false, null, false, null, Skip = "PARSE-06")]
+    [InlineData(3, "Show.Name.S01E01E02.1080p.mkv", 1, 1, 1, 1, false, false, null, false, null)]
     [InlineData(4, "Show.Name.S01E01-E02.1080p.mkv", 1, 1, 1, 1, false, false, null, false, null)]
     [InlineData(5, "Show.Name.S01E01-02.1080p.mkv", 1, 1, 1, 1, false, false, null, false, null)]
     [InlineData(6, "Show.Name.1x05.HDTV.mkv", 1, 5, 1, 5, false, false, null, false, null)]

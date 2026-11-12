@@ -120,6 +120,9 @@ public static class TorrentFileRules
             parsed = TorrentCandidateParser.Parse(relativePath);
         }
 
-        return parsed.SeasonNumber == seasonNumber && parsed.EpisodeNumber == episodeNumber;
+        return parsed.SeasonNumber == seasonNumber &&
+               parsed.EpisodeNumber is { } first &&
+               episodeNumber >= first &&
+               episodeNumber <= (parsed.LastEpisodeNumber ?? first);
     }
 }

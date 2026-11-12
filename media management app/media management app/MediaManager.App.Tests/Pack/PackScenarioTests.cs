@@ -72,11 +72,12 @@ public class PackScenarioTests
     }
 
     [Fact]
-    public void F_MultiEpisodeFile_LinksItsFirstEpisode()
+    public void F_MultiEpisodeFile_LinksBothEpisodes()
     {
         var inventory = PackScenario.Run(Scenarios["F"]);
 
         PackScenario.AssertRegular(inventory, "Show/Season 1/Show.S01E01E02.1080p.mkv", 1, 1);
+        Assert.Equal(2, PackScenario.Entry(inventory, "Show/Season 1/Show.S01E01E02.1080p.mkv").MatchedLastEpisodeNumber);
         PackScenario.AssertRegular(inventory, "Show/Season 1/Show.S01E04.1080p.mkv", 1, 4);
         PackScenario.AssertRegular(inventory, "Show/Season 1/Show.S01E05.1080p.mkv", 1, 5);
     }
@@ -233,12 +234,13 @@ public class PackScenarioTests
         }
     }
 
-    [Fact(Skip = "PARSE-06")]
+    [Fact]
     public void L_MultiEpisodeFileInMultiSeasonPack_StaysInItsSeason()
     {
         var inventory = PackScenario.Run(Scenarios["L"]);
 
         PackScenario.AssertRegular(inventory, "Show.Complete/Show.S03E01E02.mkv", 3, 1);
+        Assert.Equal(2, PackScenario.Entry(inventory, "Show.Complete/Show.S03E01E02.mkv").MatchedLastEpisodeNumber);
         PackScenario.AssertRegular(inventory, "Show.Complete/Show.S03E03.mkv", 3, 3);
         PackScenario.AssertRegular(inventory, "Show.Complete/Show.S02E02.mkv", 2, 2);
     }
@@ -277,6 +279,16 @@ public class PackScenarioTests
 
         Assert.Equal(0, inventory.RegularEpisodeCount);
         Assert.Contains(inventory.Warnings, warning => warning.Contains("special", StringComparison.OrdinalIgnoreCase));
+    }
+
+    // The range stops where TMDB has no episode: S01E05-E06 in a 5-episode season links as E05 only.
+    [Fact]
+    public void MultiEpisodeFile_RangeBeyondTmdb_IsTrimmed()
+    {
+        var inventory = PackScenario.Run(Scenarios["multi-trim"]);
+
+        PackScenario.AssertRegular(inventory, "Show/Season 1/Show.S01E05-E06.mkv", 1, 5);
+        Assert.Null(PackScenario.Entry(inventory, "Show/Season 1/Show.S01E05-E06.mkv").MatchedLastEpisodeNumber);
     }
 
     [Fact]
@@ -445,6 +457,9 @@ public class PackScenarioTests
                 Owner: 1, Covered: [1], EpisodesPerSeason: new() { [1] = 3 },
                 Files: ["Show.S01/Show.S01E01.mkv", "Show.S01/Show.S01E02.mkv", "Show.S01/Show.S00E02.mkv"],
                 Specials: [(2, "2021-01-01", "Holiday Special")]),
+            ["multi-trim"] = new(
+                Owner: 1, Covered: [1], EpisodesPerSeason: new() { [1] = 5 },
+                Files: ["Show/Season 1/Show.S01E01-E02.mkv", "Show/Season 1/Show.S01E03.mkv", "Show/Season 1/Show.S01E04.mkv", "Show/Season 1/Show.S01E05-E06.mkv"]),
             ["K"] = new(
                 Owner: 1, Covered: [1], EpisodesPerSeason: new() { [1] = 6 },
                 Files: Enumerable.Range(1, 3).Select(e => $"Show/Season 1/Show.S01E{e:00}.mkv")
