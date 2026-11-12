@@ -132,7 +132,7 @@ public sealed class SearchOrchestrator(IndexerRequestGovernor governor, Func<str
         var total = Stopwatch.StartNew();
         var distinct = queries
             .Where(query => !string.IsNullOrWhiteSpace(query.Text) || query.ImdbId is not null)
-            .DistinctBy(query => (query.Text.ToLowerInvariant(), query.ImdbId))
+            .DistinctBy(query => (query.Text.ToLowerInvariant(), query.ImdbId, query.SpecificOnly))
             .ToList();
         var telemetry = new List<IndexerRunTelemetry>();
         if (distinct.Count == 0)
@@ -226,6 +226,11 @@ public sealed class SearchOrchestrator(IndexerRequestGovernor governor, Func<str
             foreach (var query in queries)
             {
                 if (query.ImdbId is null && !indexer.Capabilities.SupportsFreeText)
+                {
+                    continue;
+                }
+
+                if (query.SpecificOnly && !indexer.Capabilities.PrefersSpecificQueries)
                 {
                     continue;
                 }

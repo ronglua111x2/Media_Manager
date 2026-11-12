@@ -38,6 +38,50 @@ public static partial class NativeQueryText
         return reduced.Length == 0 ? QueryTemplateRenderer.CollapseSpaces(query) : reduced;
     }
 
+    /// <summary>
+    /// The quality-bearing form of a query ("Oppenheimer 2023 1080p" → "Oppenheimer 1080p" for movies), or null
+    /// when the query has no quality token. Paged HTML indexers get it in addition to the reduced query.
+    /// </summary>
+    public static string? Specific(string query, MediaKind kind)
+    {
+        if (string.IsNullOrWhiteSpace(query) || !QualityTokens().IsMatch(query))
+        {
+            return null;
+        }
+
+        var specific = kind == MediaKind.Movie ? TrailingYears().Replace(query, " ") : query;
+        specific = QueryTemplateRenderer.CollapseSpaces(specific);
+        return string.Equals(specific, Reduce(query, kind), StringComparison.OrdinalIgnoreCase) ? null : specific;
+    }
+
+    /// <summary>
+    /// Specific queries for paged HTML indexers (plan 08): the query's own quality form, or for a movie query
+    /// without one, "title + quality" for the recipe's two best allowed qualities (the qualities that make a
+    /// candidate "Good"). Empty when nothing specific applies.
+    /// </summary>
+    public static IReadOnlyList<string> SpecificQueries(string query, MediaKind kind, IReadOnlyList<string>? recipeQualities)
+    {
+        if (Specific(query, kind) is { } own)
+        {
+            return [own];
+        }
+
+        if (kind != MediaKind.Movie || recipeQualities is not { Count: > 0 })
+        {
+            return [];
+        }
+
+        var reduced = Reduce(query, kind);
+        return recipeQualities
+            .Where(quality => !string.IsNullOrWhiteSpace(quality))
+            .Select(quality => quality.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderByDescending(quality => media_management_app.Services.TorrentQuality.GetRank(quality))
+            .Take(2)
+            .Select(quality => $"{reduced} {quality}")
+            .ToList();
+    }
+
     /// <summary>One word of at most 6 letters ("Dune", "Heat", "Alien", "Us"): a bare title search is too broad.</summary>
     public static bool IsShortTitle(string title)
     {

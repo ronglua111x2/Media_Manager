@@ -20,7 +20,7 @@ public sealed partial class BitsearchIndexer(string baseUrl = "https://bitsearch
 
     public string EngineName => "bitsearch";
 
-    public IndexerCapabilities Capabilities { get; } = new(IndexerMediaKinds.All, IsDhtIndex: true);
+    public IndexerCapabilities Capabilities { get; } = new(IndexerMediaKinds.All, IsDhtIndex: true, PrefersSpecificQueries: true);
 
     public async Task<IReadOnlyList<IndexerResult>> SearchAsync(IndexerQuery query, IIndexerHttp http, CancellationToken cancellationToken)
     {

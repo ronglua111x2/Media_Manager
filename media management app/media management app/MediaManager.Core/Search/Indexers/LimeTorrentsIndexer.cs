@@ -14,7 +14,8 @@ public sealed partial class LimeTorrentsIndexer(string baseUrl = "https://www.li
 
     public string EngineName => "limetorrents";
 
-    public IndexerCapabilities Capabilities { get; } = new(IndexerMediaKinds.All);
+    // Paged HTML search: "Title 1080p" reaches 1080p encodes that "Title" leaves on page 5+ (plan 08).
+    public IndexerCapabilities Capabilities { get; } = new(IndexerMediaKinds.All, PrefersSpecificQueries: true);
 
     private const int MaxPages = 4;
     private const int FullPageRows = 20;
@@ -24,7 +25,9 @@ public sealed partial class LimeTorrentsIndexer(string baseUrl = "https://www.li
         // Same depth as the old plugin (4 pages), but only while pages are full and paced by the governor:
         // LimeTorrents is the main source of good movie encodes (plan 08 measurement).
         var results = new List<IndexerResult>();
-        for (var page = 1; page <= MaxPages; page++)
+        // Specific ("title 1080p") queries are already narrow: two pages are enough.
+        var maxPages = query.SpecificOnly ? 2 : MaxPages;
+        for (var page = 1; page <= maxPages; page++)
         {
             var uri = new Uri($"{baseUrl.TrimEnd('/')}/search/all/{Uri.EscapeDataString(query.Text)}/seeds/{page}/");
             var response = await http.GetAsync(uri, cancellationToken);

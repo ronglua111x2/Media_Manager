@@ -71,9 +71,17 @@ public static class MoviesCompareCommand
 
             var nativeWatch = Stopwatch.StartNew();
             var nativeRows = new List<TorrentSearchResult>();
-            foreach (var reduced in queries.Select(query => NativeQueryText.Reduce(query, MediaKind.Movie)).Distinct(StringComparer.OrdinalIgnoreCase))
+            var qualities = RecipeCandidateFilter.GetFilterModule(recipe)?.QualityAllowList;
+            var nativeQueries = queries
+                .SelectMany(query => NativeQueryText.SpecificQueries(query, MediaKind.Movie, qualities)
+                    .Select(specific => new IndexerQuery(specific, MediaKind.Movie, anime, SpecificOnly: true))
+                    .Prepend(new IndexerQuery(NativeQueryText.Reduce(query, MediaKind.Movie), MediaKind.Movie, anime)))
+                .DistinctBy(query => (query.Text.ToLowerInvariant(), query.SpecificOnly))
+                .ToList();
+            foreach (var nativeQuery in nativeQueries)
             {
-                var outcome = await orchestrator.SearchAsync([new IndexerQuery(reduced, MediaKind.Movie, anime)], indexers, SearchLane.Interactive, SearchBudget.Interactive, CancellationToken.None);
+                var reduced = nativeQuery.Text;
+                var outcome = await orchestrator.SearchAsync([nativeQuery], indexers, SearchLane.Interactive, SearchBudget.Interactive, CancellationToken.None);
                 nativeRows.AddRange(outcome.Results);
                 Console.Error.WriteLine($"  native '{reduced}': {outcome.Summary}");
             }

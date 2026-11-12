@@ -27,7 +27,8 @@ public sealed record IndexerCapabilities(
     bool SupportsImdbLookup = false,
     bool IsMetaIndexer = false,
     bool IsDhtIndex = false,
-    IndexerTrust Trust = IndexerTrust.Normal);
+    IndexerTrust Trust = IndexerTrust.Normal,
+    bool PrefersSpecificQueries = false);
 
 /// <summary>One query sent to one indexer.</summary>
 public sealed record IndexerQuery(
@@ -36,7 +37,8 @@ public sealed record IndexerQuery(
     bool IsAnime = false,
     string? ImdbId = null,
     int? Season = null,
-    int? Episode = null);
+    int? Episode = null,
+    bool SpecificOnly = false);
 
 /// <summary>One raw row parsed from an indexer response.</summary>
 public sealed record IndexerResult(

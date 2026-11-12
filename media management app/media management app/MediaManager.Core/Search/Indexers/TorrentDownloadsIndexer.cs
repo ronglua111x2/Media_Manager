@@ -17,7 +17,8 @@ public sealed partial class TorrentDownloadsIndexer(string baseUrl = "https://ww
 
     public string EngineName => "torrentdownloads";
 
-    public IndexerCapabilities Capabilities { get; } = new(IndexerMediaKinds.All);
+    // The search RSS returns 50 rows: a quality-specific query fills them with relevant encodes (plan 08).
+    public IndexerCapabilities Capabilities { get; } = new(IndexerMediaKinds.All, PrefersSpecificQueries: true);
 
     public async Task<IReadOnlyList<IndexerResult>> SearchAsync(IndexerQuery query, IIndexerHttp http, CancellationToken cancellationToken)
     {

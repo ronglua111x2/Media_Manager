@@ -167,7 +167,8 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
         // Recipe templates multiply queries that full-text indexers answer identically ("X 2014 1080p",
         // "X 1080p", "X"): search the reduced text once and reuse it for a while (native-search P4).
         var reduced = NativeQueryText.Reduce(query, kind);
-        var key = $"{kind}|{IsAnimeRecipe(recipe)}|{subject?.TmdbId}|{subject?.Season}|{subject?.Episode}|{reduced}";
+        var specifics = NativeQueryText.SpecificQueries(query, kind, RecipeCandidateFilter.GetFilterModule(recipe)?.QualityAllowList);
+        var key = $"{kind}|{IsAnimeRecipe(recipe)}|{subject?.TmdbId}|{subject?.Season}|{subject?.Episode}|{reduced}|{string.Join(",", specifics)}";
         var now = DateTimeOffset.UtcNow;
         if (_recent.TryGetValue(key, out var recent) && recent.Expires > now)
         {
@@ -181,7 +182,7 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
             }
         }
 
-        var task = SearchReducedAsync(recipe, reduced, kind, cancellationToken, subject);
+        var task = SearchReducedAsync(recipe, reduced, specifics, kind, cancellationToken, subject);
         _recent[key] = (now + RecentTtl, task);
         try
         {
@@ -201,7 +202,7 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
         }
     }
 
-    private async Task<IReadOnlyList<TorrentSearchResult>> SearchReducedAsync(SearchRecipe recipe, string query, MediaKind kind, CancellationToken cancellationToken, SearchSubject? subject)
+    private async Task<IReadOnlyList<TorrentSearchResult>> SearchReducedAsync(SearchRecipe recipe, string query, IReadOnlyList<string> specifics, MediaKind kind, CancellationToken cancellationToken, SearchSubject? subject)
     {
         var settings = Settings;
         var lane = LaneScope.Value ?? SearchLane.Interactive;
@@ -220,7 +221,11 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
         // TV: EZTV searches by IMDb id. Movies: YTS accepts the IMDb id for an exact lookup (plan 08 §Q2).
         var imdbId = subject is not null ? await ResolveImdbIdAsync(subject, cancellationToken) : null;
         var outcome = await orchestrator.SearchAsync(
-            [new IndexerQuery(query, kind, isAnime, imdbId, subject?.Season, subject?.Episode)],
+            // Paged HTML indexers also get quality-bearing forms (plan 08: they reach deeper encodes).
+            [
+                new IndexerQuery(query, kind, isAnime, imdbId, subject?.Season, subject?.Episode),
+                .. specifics.Select(specific => new IndexerQuery(specific, kind, isAnime, imdbId, subject?.Season, subject?.Episode, SpecificOnly: true))
+            ],
             NativeIndexerCatalog.Create(settings),
             lane,
             budget,

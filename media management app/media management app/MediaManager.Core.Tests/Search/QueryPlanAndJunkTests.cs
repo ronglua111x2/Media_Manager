@@ -120,3 +120,42 @@ public class NativeQueryTextTests
         media_management_app.Search.NativeQueryText.Reduce(query, kind).Should().Be(expected);
     }
 }
+
+public class NativeSpecificQueryTests
+{
+    [Theory]
+    [InlineData("Oppenheimer 2023 1080p", "Oppenheimer 1080p")]
+    [InlineData("Oppenheimer 1080p", "Oppenheimer 1080p")]
+    [InlineData("Oppenheimer 2023", null)]
+    [InlineData("Oppenheimer", null)]
+    public void Specific_KeepsQualityDropsMovieYear(string query, string? expected)
+    {
+        media_management_app.Search.NativeQueryText.Specific(query, media_management_app.Common.MediaKind.Movie).Should().Be(expected);
+    }
+
+    [Fact]
+    public void YtsDownloadUrl_YieldsInfoHash()
+    {
+        CandidateDeduplicator.TryGetInfoHash("https://yts.mx/torrent/download/02A5AD1A0B1C2D3E4F5061728394A5B6C7D8E9F0")
+            .Should().Be("02a5ad1a0b1c2d3e4f5061728394a5b6c7d8e9f0");
+    }
+}
+
+public class NativeSpecificQueriesForRecipeTests
+{
+    [Fact]
+    public void MovieWithoutQuality_GetsTopTwoRecipeQualities()
+    {
+        media_management_app.Search.NativeQueryText
+            .SpecificQueries("Spider-Man No Way Home", media_management_app.Common.MediaKind.Movie, ["1080p", "2160p", "720p"])
+            .Should().Equal("Spider-Man No Way Home 2160p", "Spider-Man No Way Home 1080p");
+    }
+
+    [Fact]
+    public void EpisodeWithoutQuality_GetsNothingExtra()
+    {
+        media_management_app.Search.NativeQueryText
+            .SpecificQueries("Show S01E05", media_management_app.Common.MediaKind.TvEpisode, ["1080p"])
+            .Should().BeEmpty();
+    }
+}

@@ -19,7 +19,8 @@ namespace media_management_app.Services;
 public static class CandidateDeduplicator
 {
     private static readonly Regex Btih = new(@"xt=urn:btih:(?<hash>[a-z0-9]+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-    private static readonly Regex TorrentPathHash = new(@"/(?<hash>[0-9a-f]{40})\.torrent(?:$|[?#])", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    // …/<HASH>.torrent (itorrents) and …/download/<HASH> (YTS download links).
+    private static readonly Regex TorrentPathHash = new(@"/(?:download/)?(?<hash>[0-9a-f]{40})(?:\.torrent)?(?:$|[/?#])", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex CrcTag = new(@"[\[(][0-9a-f]{8}[\])]", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex VideoExtension = new(@"\.(mkv|mp4|avi|m4v|ts|wmv)$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex Separators = new(@"[\s._\-\[\]()]+", RegexOptions.Compiled);
