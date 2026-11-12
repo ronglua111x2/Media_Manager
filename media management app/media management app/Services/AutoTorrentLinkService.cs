@@ -337,9 +337,18 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
 
         // Remove hardlinks and reset SourceItem link fields (handles the case where file still exists)
         var unlinkResult = RemoveEpisodeLinks(showId, seasonNumber, episodeNumber);
-        result.LinkedCount += unlinkResult.LinkedCount;
-        result.SkippedCount += unlinkResult.SkippedCount;
-        result.Messages.AddRange(unlinkResult.Messages);
+        Merge(result, unlinkResult);
+        if (unlinkResult.ErrorCount > 0)
+        {
+            // Deleting the records now would orphan the library file and its Jellyfin symlink,
+            // and the re-download could never be linked ("Output already exists") (PARSE-28).
+            _logger.Warning(
+                $"Reset aborted for show id={showId} S{seasonNumber:00}E{episodeNumber:00}: {unlinkResult.ErrorCount} unlink error(s).",
+                LogTarget.File | LogTarget.Console);
+            result.Messages.Add(
+                $"Reset aborted: {unlinkResult.ErrorCount} library link(s) could not be removed. Close any player using the file and retry.");
+            return result;
+        }
 
         // Find the episode record
         var episode = _databaseService.GetTrackedEpisodes(showId)
@@ -485,9 +494,16 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
         var result = new AutoTorrentLinkResult();
 
         var unlinkResult = RemoveMovieLinks(movieId);
-        result.LinkedCount += unlinkResult.LinkedCount;
-        result.SkippedCount += unlinkResult.SkippedCount;
-        result.Messages.AddRange(unlinkResult.Messages);
+        Merge(result, unlinkResult);
+        if (unlinkResult.ErrorCount > 0)
+        {
+            _logger.Warning(
+                $"Reset aborted for movie id={movieId}: {unlinkResult.ErrorCount} unlink error(s).",
+                LogTarget.File | LogTarget.Console);
+            result.Messages.Add(
+                $"Reset aborted: {unlinkResult.ErrorCount} library link(s) could not be removed. Close any player using the file and retry.");
+            return result;
+        }
 
         var movie = _databaseService.GetTrackedMovie(movieId);
         if (movie is null)

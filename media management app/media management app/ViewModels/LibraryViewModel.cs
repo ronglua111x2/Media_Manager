@@ -759,10 +759,12 @@ public sealed partial class LibraryViewModel : ViewModelBase
         try
         {
             StatusMessage = $"Resetting {episode.EpisodeCode}...";
-            _autoTorrentLinkService.ResetEpisodeForRedownload(episode.ShowId, episode.SeasonNumber, episode.EpisodeNumber);
+            var result = _autoTorrentLinkService.ResetEpisodeForRedownload(episode.ShowId, episode.SeasonNumber, episode.EpisodeNumber);
             _trackedShowService.RefreshAvailability(episode.ShowId);
             await ReloadSelectedDetailAsync();
-            StatusMessage = $"{episode.EpisodeCode} reset — episode is now Missing and ready to search.";
+            StatusMessage = result.ErrorCount > 0
+                ? $"{episode.EpisodeCode} reset aborted: {result.Messages.LastOrDefault() ?? result.Summary}"
+                : $"{episode.EpisodeCode} reset — episode is now Missing and ready to search.";
         }
         catch (Exception ex)
         {
@@ -1143,10 +1145,12 @@ public sealed partial class LibraryViewModel : ViewModelBase
         try
         {
             StatusMessage = $"Resetting {movie.Title}...";
-            _autoTorrentLinkService.ResetMovieForRedownload(movie.Id);
+            var result = _autoTorrentLinkService.ResetMovieForRedownload(movie.Id);
             _trackedMovieService.RefreshAvailability(movie.Id);
             await ReloadSelectedDetailAsync();
-            StatusMessage = $"{movie.Title} reset — movie is now Missing and ready to search.";
+            StatusMessage = result.ErrorCount > 0
+                ? $"{movie.Title} reset aborted: {result.Messages.LastOrDefault() ?? result.Summary}"
+                : $"{movie.Title} reset — movie is now Missing and ready to search.";
         }
         catch (Exception ex)
         {

@@ -118,7 +118,7 @@ public sealed class LinkStateScenarioTests : IDisposable
     }
 
     // PARSE-28 (LINK-05, harness C): reset must stop when the library file cannot be removed.
-    [Fact(Skip = "PARSE-28")]
+    [Fact]
     public async Task ResetEpisode_WhenLibraryFileIsLocked_KeepsRecordAndReportsError()
     {
         _host.AddTorrent("HR", "Demo.S01E05.1080p.mkv");
@@ -137,6 +137,44 @@ public sealed class LinkStateScenarioTests : IDisposable
         var item = Assert.Single(_host.Items());
         Assert.Equal(linkedPath, item.LinkedPath);
         Assert.Equal("HR", _host.Db.GetTrackedEpisodes(showId).Single().TorrentHash);
+    }
+
+    // PARSE-28 (LINK-05): the movie reset has the same guard.
+    [Fact]
+    public async Task ResetMovie_WhenLibraryFileIsLocked_KeepsRecordAndReportsError()
+    {
+        _host.AddTorrent("HMV", "Demo.Movie.2016.1080p.mkv");
+        var movieId = _host.Db.UpsertTrackedMovie(new TrackedMovie { TmdbId = 9002, Title = "Demo Movie", ReleaseYear = 2016 });
+        _host.Db.UpdateTrackedMovieTorrent(movieId, "HMV", "HMV", "uploading", 1);
+        await _host.Link.LinkMovieAsync(movieId);
+        var linkedPath = _host.Items().Single().LinkedPath!;
+
+        AutoTorrentLinkResult reset;
+        using (new FileStream(linkedPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+        {
+            reset = _host.Link.ResetMovieForRedownload(movieId);
+        }
+
+        Assert.True(reset.ErrorCount > 0);
+        Assert.Equal(linkedPath, Assert.Single(_host.Items()).LinkedPath);
+        Assert.Equal("HMV", _host.Db.GetTrackedMovie(movieId)!.TorrentHash);
+    }
+
+    // PARSE-28: an unlocked reset still clears everything.
+    [Fact]
+    public async Task ResetEpisode_WhenFileIsFree_ClearsRecordAndHash()
+    {
+        _host.AddTorrent("HRF", "Demo.S01E05.1080p.mkv");
+        var showId = _host.AddShow(5012, "Demo Show", (1, 5, "Five"));
+        _host.AssignEpisodeTorrent(showId, 1, 5, "HRF");
+        await _host.Link.LinkEpisodeAsync(showId, 1, 5);
+
+        var reset = _host.Link.ResetEpisodeForRedownload(showId, 1, 5);
+
+        Assert.Equal(0, reset.ErrorCount);
+        Assert.Empty(_host.Items());
+        Assert.Empty(_host.LibraryFiles());
+        Assert.True(string.IsNullOrEmpty(_host.Db.GetTrackedEpisodes(showId).Single().TorrentHash));
     }
 
     // PARSE-27: deleting both the download and the library file still purges the record.
