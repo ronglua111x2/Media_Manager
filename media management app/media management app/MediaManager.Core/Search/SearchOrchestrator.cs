@@ -32,6 +32,27 @@ public static class IndexerResultNormalizer
         return magnet + string.Concat(PublicTrackers.Select(tracker => "&tr=" + Uri.EscapeDataString(tracker)));
     }
 
+    /// <summary>
+    /// Meta indexers (Knaben) report the original tracker per row; map it to the old qBittorrent plugin name so
+    /// recipe engine priorities ("nyaasi", "thepiratebay"...) still apply to those rows.
+    /// </summary>
+    public static string EngineNameFor(IndexerResult row, string indexerEngineName)
+    {
+        var source = (row.Source ?? string.Empty).ToLowerInvariant();
+        return source switch
+        {
+            _ when source.Contains("nyaa") => "nyaasi",
+            _ when source.Contains("pirate bay") => "thepiratebay",
+            _ when source.Contains("1337x") => "one337x",
+            _ when source.Contains("yts") => "yts",
+            _ when source.Contains("tokyo") => "tokyotoshokan",
+            _ when source.Contains("eztv") => "eztvx",
+            _ when source.Contains("limetorrents") => "limetorrents",
+            _ when source.Contains("torrentdownloads") => "torrentdownloads",
+            _ => indexerEngineName
+        };
+    }
+
     public static bool IsValidInfoHash(string? hash) =>
         hash is { Length: 40 } && hash.All(Uri.IsHexDigit) && hash.Any(character => character != '0');
 
@@ -182,7 +203,9 @@ public sealed class SearchOrchestrator(IndexerRequestGovernor governor, Func<str
                 rows.AddRange(found
                     // Knaben flags likely malware; never let those reach the candidate list.
                     .Where(row => row.VirusProbability is null or < 0.5)
-                    .Select(row => IndexerResultNormalizer.ToSearchResult(row, indexer.EngineName)));
+                    .Select(row => IndexerResultNormalizer.ToSearchResult(
+                        row,
+                        indexer.Capabilities.IsMetaIndexer ? IndexerResultNormalizer.EngineNameFor(row, indexer.EngineName) : indexer.EngineName)));
             }
         }
         catch (OperationCanceledException) when (callerToken.IsCancellationRequested)

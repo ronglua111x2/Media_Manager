@@ -21,6 +21,13 @@ var only = (argsMap.GetValueOrDefault("only") ?? string.Empty)
     .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 var maxSeconds = int.TryParse(argsMap.GetValueOrDefault("max-seconds"), out var ms) ? ms : 60;
 var pluginsOverride = argsMap.GetValueOrDefault("plugins");
+var useNative = string.Equals(argsMap.GetValueOrDefault("backend"), "native", StringComparison.OrdinalIgnoreCase);
+using var nativeHttp = new HttpClient(new SocketsHttpHandler { AllowAutoRedirect = true, AutomaticDecompression = System.Net.DecompressionMethods.All }) { Timeout = TimeSpan.FromSeconds(20) };
+var governor = new media_management_app.Search.IndexerRequestGovernor();
+var responseCache = new media_management_app.Search.IndexerResponseCache();
+var orchestrator = new media_management_app.Search.SearchOrchestrator(governor, (id, lane, budget) =>
+    new media_management_app.Search.GovernedIndexerHttp(nativeHttp, governor, responseCache, id, lane, budget.MaxGovernorWait, TimeSpan.FromMinutes(30), "MediaManager/1.0 (+native-search; SearchBench)"));
+var nativeIndexers = media_management_app.Search.NativeIndexerCatalog.Create();
 
 if (command == "compare")
 {
@@ -106,7 +113,22 @@ async Task<List<TorrentSearchResult>> RunAll(IReadOnlyList<string> queries)
     {
         if (!cache.TryGetValue(query + "|" + pluginsOverride, out var run))
         {
-            run = await backend.SearchAsync(query, pluginsOverride ?? "enabled", maxSeconds, CancellationToken.None);
+            if (useNative)
+            {
+                var watch = System.Diagnostics.Stopwatch.StartNew();
+                var native = await orchestrator.SearchAsync(
+                    [new media_management_app.Search.IndexerQuery(query, MediaKind.Movie, IsAnime: false)],
+                    nativeIndexers,
+                    media_management_app.Search.SearchLane.Interactive,
+                    media_management_app.Search.SearchBudget.Interactive,
+                    CancellationToken.None);
+                run = new SearchRun(query, native.Results, "native", watch.Elapsed.TotalSeconds);
+            }
+            else
+            {
+                run = await backend.SearchAsync(query, pluginsOverride ?? "enabled", maxSeconds, CancellationToken.None);
+            }
+
             cache[query + "|" + pluginsOverride] = run;
             Console.Error.WriteLine($"  searched '{query}': {run.Rows.Count} rows, {run.Status}, {run.Seconds:0}s");
         }

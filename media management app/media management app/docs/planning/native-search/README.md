@@ -1,6 +1,6 @@
 # Native Search: search torrent bằng indexer của chính app
 
-> **Trạng thái:** KẾ HOẠCH, **chờ user xác nhận** trước khi viết code.
+> **Trạng thái (12/11/2026):** user đã xác nhận. **P1–P5 đã triển khai** trên `feat/native-search`. **P6 (chuyển hẳn) đang chờ cổng A/B**: cần chạy chế độ `Both` thật trong vài ngày trước khi đổi mặc định và xoá đường qBittorrent. Chi tiết ở mục [Trạng thái triển khai](#9-trạng-thái-triển-khai).
 > **Nhánh:** `feat/native-search`, cắt từ `main` @ `ff2caa3`.
 > **Nguồn:** audit [07b — hunt search](../../code-review/2026-11/07b-hunt-search.md) và số liệu đo bằng [`tools/SearchProbe`](../../../tools/SearchProbe/README.md), ngày 12/11/2026.
 
@@ -98,6 +98,19 @@ Danh sách việc, PR và tiêu chí nghiệm thu của từng giai đoạn: [07
 1. User đọc và xác nhận bộ plan này (có thể sửa từng mục).
 2. Mỗi giai đoạn làm trên nhánh con hoặc commit trên `feat/native-search`. Mỗi PR nhỏ, có test.
 3. Sau mỗi giai đoạn: chạy lại `tools/SearchProbe` và ghi số liệu vào [07-phases.md](./07-phases.md#số-liệu-sau-từng-giai-đoạn).
+
+## 9. Trạng thái triển khai
+
+| Giai đoạn | Trạng thái | Ghi chú |
+|---|---|---|
+| P1 | Xong | `TitleNormalizer`, `YearMatcher` (±1 năm, bỏ số trong tiêu đề, loại remake), query bỏ năm, tên thay thế, đánh giá hết rồi lấy top N, `CandidateDeduplicator` (theo infohash, kể cả hash trong link `.torrent`) |
+| P2 | Xong | `ITorrentIndexer`, `SearchOrchestrator`, `IndexerRequestGovernor` (lưu `indexer-state.json`), cache cùng single-flight, cờ `Search.Backend`, card **Settings → Search engines**, magnet add thẳng |
+| P3 | Xong | 14 indexer: Knaben, apibay, LimeTorrents, EZTV (theo IMDb id, cache `imdb-ids.json`), YTS, torrents-csv, bitsearch, BT4G, torrentdownloads (RSS), nyaa, TsukiHime, SubsPlease, nekoBT, AnimeTosho (mặc định tắt vì chỉ còn là kho lưu trữ) |
+| P4 | Xong | Query pack theo từng season, search nhắm đích cho tập mà snapshot bỏ sót, biến thể số tập anime có đệm số 0 |
+| P5 | Xong | `JunkFilter` (`SuspiciousRelease`), picker có dòng thuộc tính và ô lọc nhanh, movie giữ tới 40 ứng viên |
+| P6 | **Chờ cổng** | Cách làm: bật `Both` (hoặc `Native` riêng cho Movie) trong Settings, dùng thật vài ngày, chạy `tools/SearchBench compare` và `movies --backend native`, rồi mới đổi mặc định và xoá code theo [06 §5](./06-rollout-and-migration.md#5-danh-sách-xoá-ở-p6-sau-khi-qua-cổng) |
+
+Khác với plan ban đầu: IMDb id và trạng thái governor được lưu bằng file JSON thay cho bảng DB (xem [06](./06-rollout-and-migration.md)). Native hiện dùng **mọi indexer đang bật** cho mỗi loại media, chưa theo danh sách plugin của từng recipe (recipe v2 thuộc P6).
 
 ## Mục lục
 
