@@ -1544,7 +1544,7 @@
                                         <ComboBox ItemsSource="{Binding SearchBackendOverrideOptions}" SelectedItem="{Binding SearchBackendEpisode, Mode=TwoWay}" Margin="3,0,3,0" ToolTip="TV episodes" />
                                         <ComboBox ItemsSource="{Binding SearchBackendOverrideOptions}" SelectedItem="{Binding SearchBackendPack, Mode=TwoWay}" Margin="6,0,0,0" ToolTip="Season packs" />
                                     </UniformGrid>
-                                    <TextBlock Text="Time per indexer / per search (seconds)" Style="{StaticResource SettingsLabelStyle}" />
+                                    <TextBlock Text="Timeout per request / budget per search incl. waiting for rate limits (seconds)" Style="{StaticResource SettingsLabelStyle}" />
                                     <UniformGrid Columns="2" Margin="0,0,0,8">
                                         <Border Style="{StaticResource SettingsNumericChromeStyle}" Margin="0,0,6,0">
                                             <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
@@ -1554,7 +1554,7 @@
                                         <Border Style="{StaticResource SettingsNumericChromeStyle}" Margin="6,0,0,0">
                                             <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
                                                                           Value="{Binding SearchOverallTimeoutSeconds, UpdateSourceTrigger=PropertyChanged}"
-                                                                          Minimum="5" Maximum="120" />
+                                                                          Minimum="10" Maximum="600" />
                                         </Border>
                                     </UniformGrid>
                                     <CheckBox IsChecked="{Binding SearchPauseAll, Mode=TwoWay}"

@@ -92,7 +92,8 @@ public sealed class GovernedIndexerHttp(
     SearchLane lane,
     TimeSpan maxWait,
     TimeSpan cacheTtl,
-    string userAgent) : IIndexerHttp
+    string userAgent,
+    TimeSpan? requestTimeout = null) : IIndexerHttp
 {
     public Task<IndexerHttpResponse> GetAsync(Uri uri, CancellationToken cancellationToken) =>
         cache.GetOrAddAsync($"{indexerId} GET {uri}", cacheTtl, () => SendAsync(() => new HttpRequestMessage(HttpMethod.Get, uri), cancellationToken));
@@ -109,9 +110,12 @@ public sealed class GovernedIndexerHttp(
         using var request = build();
         request.Headers.UserAgent.ParseAdd(userAgent);
         HttpResponseMessage response;
+        // The per-request timeout starts after the governor lease: waiting for our turn is not the site's fault.
+        using var requestCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        requestCts.CancelAfter(requestTimeout ?? TimeSpan.FromSeconds(15));
         try
         {
-            response = await http.SendAsync(request, cancellationToken);
+            response = await http.SendAsync(request, requestCts.Token);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -131,7 +135,17 @@ public sealed class GovernedIndexerHttp(
 
         using (response)
         {
-            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            string body;
+            try
+            {
+                body = await response.Content.ReadAsStringAsync(requestCts.Token);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                governor.Report(indexerId, IndexerFailureKind.Timeout, detail: "HTTP body timeout");
+                throw new IndexerHttpException(indexerId, IndexerFailureKind.Timeout, "HTTP body timeout");
+            }
+
             var contentType = response.Content.Headers.ContentType?.MediaType;
             var status = (int)response.StatusCode;
             var finalUri = response.RequestMessage?.RequestUri ?? request.RequestUri!;

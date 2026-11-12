@@ -40,7 +40,7 @@ public partial class SettingsViewModel
     private int searchPerIndexerTimeoutSeconds = 15;
 
     [ObservableProperty]
-    private int searchOverallTimeoutSeconds = 30;
+    private int searchOverallTimeoutSeconds = 90;
 
     public void AttachNativeSearch(INativeSearchService nativeSearch)
     {
@@ -70,7 +70,7 @@ public partial class SettingsViewModel
         SetOverride(search, "TvEpisode", SearchBackendEpisode);
         SetOverride(search, "TvSeasonPack", SearchBackendPack);
         search.PerIndexerTimeoutSeconds = Math.Clamp(SearchPerIndexerTimeoutSeconds, 3, 60);
-        search.OverallTimeoutSeconds = Math.Clamp(SearchOverallTimeoutSeconds, 5, 120);
+        search.OverallTimeoutSeconds = Math.Clamp(SearchOverallTimeoutSeconds, 10, 600);
         foreach (var row in SearchIndexers)
         {
             if (!search.Indexers.TryGetValue(row.Id, out var config))

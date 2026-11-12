@@ -25,9 +25,11 @@ public sealed class NativeSearchSettings
 
     public Dictionary<string, IndexerSettings> Indexers { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>Timeout of each network request to an indexer (a hanging site is cut off).</summary>
     public int PerIndexerTimeoutSeconds { get; set; } = 15;
 
-    public int OverallTimeoutSeconds { get; set; } = 30;
+    /// <summary>Budget of one interactive search, including waiting for a site's rate limit (Auto-Track gets 5 min).</summary>
+    public int OverallTimeoutSeconds { get; set; } = 90;
 
     public bool PauseAll { get; set; }
 }

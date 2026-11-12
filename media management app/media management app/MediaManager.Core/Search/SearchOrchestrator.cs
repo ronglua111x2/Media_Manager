@@ -96,11 +96,16 @@ public sealed record OrchestratedSearch(
         string.Join(", ", Indexers.Select(i => $"{i.IndexerId}:{i.Status}:{i.Rows}/{i.ElapsedMs}ms{(i.Detail is null ? "" : $" ({i.Detail})")}"));
 }
 
+/// <summary>
+/// Time budget of one search. PerIndexer limits each network request (a hanging site is cut off);
+/// Overall limits the whole search including waiting for the request governor: when a site's rate limit is
+/// used up, the search waits its turn instead of skipping the site.
+/// </summary>
 public sealed record SearchBudget(TimeSpan PerIndexer, TimeSpan Overall, TimeSpan MaxGovernorWait)
 {
-    public static SearchBudget Interactive { get; } = new(TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(10));
+    public static SearchBudget Interactive { get; } = new(TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(90), TimeSpan.FromSeconds(90));
 
-    public static SearchBudget Background { get; } = new(TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(45), TimeSpan.FromSeconds(30));
+    public static SearchBudget Background { get; } = new(TimeSpan.FromSeconds(15), TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5));
 }
 
 /// <summary>
@@ -184,8 +189,6 @@ public sealed class SearchOrchestrator(IndexerRequestGovernor governor, Func<str
         var watch = Stopwatch.StartNew();
         var rows = new List<TorrentSearchResult>();
         var http = httpFactory(indexer.Id, lane, budget);
-        using var perIndexer = CancellationTokenSource.CreateLinkedTokenSource(overallToken);
-        perIndexer.CancelAfter(budget.PerIndexer);
         var ran = 0;
         string status = "ok";
         string? detail = null;
@@ -198,7 +201,7 @@ public sealed class SearchOrchestrator(IndexerRequestGovernor governor, Func<str
                     continue;
                 }
 
-                var found = await indexer.SearchAsync(query, http, perIndexer.Token);
+                var found = await indexer.SearchAsync(query, http, overallToken);
                 ran++;
                 rows.AddRange(found
                     // Knaben flags likely malware; never let those reach the candidate list.
@@ -215,7 +218,7 @@ public sealed class SearchOrchestrator(IndexerRequestGovernor governor, Func<str
         catch (OperationCanceledException)
         {
             status = "timeout";
-            detail = overallToken.IsCancellationRequested ? "overall budget" : $"{budget.PerIndexer.TotalSeconds:0}s per-indexer budget";
+            detail = $"{budget.Overall.TotalSeconds:0}s search budget";
         }
         catch (IndexerBlockedException ex)
         {

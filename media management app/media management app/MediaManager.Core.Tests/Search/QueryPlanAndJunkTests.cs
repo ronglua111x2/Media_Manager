@@ -102,3 +102,19 @@ public class QueryPlanAndJunkTests
         ChallengeDetector.LooksLikeChallenge("<html><head><title>Just a moment...</title></head></html>", "text/html").Should().BeTrue();
     }
 }
+
+public class NativeQueryTextTests
+{
+    [Theory]
+    [InlineData("Coherence 2014 1080p", media_management_app.Common.MediaKind.Movie, "Coherence")]
+    [InlineData("Coherence 1080p", media_management_app.Common.MediaKind.Movie, "Coherence")]
+    [InlineData("2001 A Space Odyssey 1968", media_management_app.Common.MediaKind.Movie, "2001 A Space Odyssey")]
+    [InlineData("1917 2019 2160p", media_management_app.Common.MediaKind.Movie, "1917")]
+    [InlineData("Rick and Morty S03E05 1080p", media_management_app.Common.MediaKind.TvEpisode, "Rick and Morty S03E05")]
+    [InlineData("Rick and Morty 2013 season 3 1080p", media_management_app.Common.MediaKind.TvSeasonPack, "Rick and Morty 2013 season 3")]
+    [InlineData("Kanata Kara 06 1080p", media_management_app.Common.MediaKind.TvEpisode, "Kanata Kara 06")]
+    public void Reduce_DropsQualityAndMovieYears(string query, media_management_app.Common.MediaKind kind, string expected)
+    {
+        media_management_app.Search.NativeQueryText.Reduce(query, kind).Should().Be(expected);
+    }
+}

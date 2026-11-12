@@ -32,7 +32,7 @@ public sealed record IndexerPolicy(
         "knaben" => new IndexerPolicy(10, 1, TimeSpan.FromSeconds(2), 500),
         "apibay" => new IndexerPolicy(15, 2, TimeSpan.FromSeconds(1), 800),
         "nyaa" => new IndexerPolicy(10, 1, TimeSpan.FromSeconds(2), 600),
-        "limetorrents" => new IndexerPolicy(6, 1, TimeSpan.FromSeconds(5), 300),
+        "limetorrents" => new IndexerPolicy(8, 1, TimeSpan.FromSeconds(4), 400),
         "eztv" => new IndexerPolicy(10, 1, TimeSpan.FromSeconds(2), 300),
         _ => Conservative
     };

@@ -26,8 +26,11 @@ using var nativeHttp = new HttpClient(new SocketsHttpHandler { AllowAutoRedirect
 var governor = new media_management_app.Search.IndexerRequestGovernor();
 var responseCache = new media_management_app.Search.IndexerResponseCache();
 var orchestrator = new media_management_app.Search.SearchOrchestrator(governor, (id, lane, budget) =>
-    new media_management_app.Search.GovernedIndexerHttp(nativeHttp, governor, responseCache, id, lane, budget.MaxGovernorWait, TimeSpan.FromMinutes(30), "MediaManager/1.0 (+native-search; SearchBench)"));
+    new media_management_app.Search.GovernedIndexerHttp(nativeHttp, governor, responseCache, id, lane, budget.MaxGovernorWait, TimeSpan.FromMinutes(30), "MediaManager/1.0 (+native-search; SearchBench)", budget.PerIndexer));
 var nativeIndexers = media_management_app.Search.NativeIndexerCatalog.Create();
+var nativeReduced = new Dictionary<string, SearchRun>(StringComparer.OrdinalIgnoreCase);
+SearchRecipe? currentRecipe = null;
+bool IsAnimeMovieRecipe() => currentRecipe is not null && RecipeRuntimeSettings.UsesAnimeAbsoluteEpisodeNumbering(currentRecipe);
 
 if (command == "compare")
 {
@@ -66,6 +69,7 @@ foreach (var movie in movies)
 {
     var recipe = recipes.FirstOrDefault(r => r.RecipeId == movie.RecipeId && r.TargetKind == MediaKind.Movie)
                  ?? recipes.First(r => r.TargetKind == MediaKind.Movie && r.RecipeId.StartsWith("default", StringComparison.OrdinalIgnoreCase));
+    currentRecipe = recipe;
     var source = recipe.Modules.FirstOrDefault(m => m.BlockType == RecipeBlockType.SearchSource && m.IsEnabled);
     var plugins = pluginsOverride ?? (string.IsNullOrWhiteSpace(source?.Plugins) ? "enabled" : source!.Plugins);
 
@@ -116,13 +120,26 @@ async Task<List<TorrentSearchResult>> RunAll(IReadOnlyList<string> queries)
             if (useNative)
             {
                 var watch = System.Diagnostics.Stopwatch.StartNew();
+                var reducedQuery = media_management_app.Search.NativeQueryText.Reduce(query, MediaKind.Movie);
+                if (nativeReduced.TryGetValue(reducedQuery, out var reusedRun))
+                {
+                    cache[query + "|" + pluginsOverride] = reusedRun;
+                    foreach (var row in reusedRun.Rows.Where(row => !string.IsNullOrWhiteSpace(row.FileUrl)))
+                    {
+                        merged.TryAdd(row.FileUrl, row);
+                    }
+
+                    continue;
+                }
+
                 var native = await orchestrator.SearchAsync(
-                    [new media_management_app.Search.IndexerQuery(query, MediaKind.Movie, IsAnime: false)],
+                    [new media_management_app.Search.IndexerQuery(reducedQuery, MediaKind.Movie, IsAnime: IsAnimeMovieRecipe())],
                     nativeIndexers,
                     media_management_app.Search.SearchLane.Interactive,
                     media_management_app.Search.SearchBudget.Interactive,
                     CancellationToken.None);
-                run = new SearchRun(query, native.Results, "native", watch.Elapsed.TotalSeconds);
+                run = new SearchRun(reducedQuery, native.Results, "native " + string.Join(",", native.Indexers.Where(i => i.Status != "ok").Select(i => $"{i.IndexerId}:{i.Status}")), watch.Elapsed.TotalSeconds);
+                nativeReduced[reducedQuery] = run;
             }
             else
             {

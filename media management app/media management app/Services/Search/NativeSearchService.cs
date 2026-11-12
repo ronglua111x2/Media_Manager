@@ -61,6 +61,9 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
     private readonly Dictionary<string, string> _imdbIds;
     private readonly HashSet<string> _imdbMisses = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim _imdbGate = new(1, 1);
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (DateTimeOffset Expires, Task<IReadOnlyList<TorrentSearchResult>> Rows)> _recent =
+        new(StringComparer.OrdinalIgnoreCase);
+    private static readonly TimeSpan RecentTtl = TimeSpan.FromMinutes(15);
     private readonly object _saveGate = new();
     private System.Threading.Timer? _saveTimer;
 
@@ -157,19 +160,58 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
 
     public async Task<IReadOnlyList<TorrentSearchResult>> SearchAsync(SearchRecipe recipe, string query, MediaKind kind, CancellationToken cancellationToken, SearchSubject? subject = null)
     {
+        // Recipe templates multiply queries that full-text indexers answer identically ("X 2014 1080p",
+        // "X 1080p", "X"): search the reduced text once and reuse it for a while (native-search P4).
+        var reduced = NativeQueryText.Reduce(query, kind);
+        var key = $"{kind}|{IsAnimeRecipe(recipe)}|{subject?.TmdbId}|{subject?.Season}|{subject?.Episode}|{reduced}";
+        var now = DateTimeOffset.UtcNow;
+        if (_recent.TryGetValue(key, out var recent) && recent.Expires > now)
+        {
+            try
+            {
+                return await recent.Rows;
+            }
+            catch
+            {
+                _recent.TryRemove(key, out _);
+            }
+        }
+
+        var task = SearchReducedAsync(recipe, reduced, kind, cancellationToken, subject);
+        _recent[key] = (now + RecentTtl, task);
+        try
+        {
+            var rows = await task;
+            if (rows.Count == 0)
+            {
+                // Do not remember empty answers: they may come from a governor refusal or a timeout.
+                _recent.TryRemove(key, out _);
+            }
+
+            return rows;
+        }
+        catch
+        {
+            _recent.TryRemove(key, out _);
+            throw;
+        }
+    }
+
+    private async Task<IReadOnlyList<TorrentSearchResult>> SearchReducedAsync(SearchRecipe recipe, string query, MediaKind kind, CancellationToken cancellationToken, SearchSubject? subject)
+    {
         var settings = Settings;
         var lane = LaneScope.Value ?? SearchLane.Interactive;
-        var budget = new SearchBudget(
-            TimeSpan.FromSeconds(Math.Clamp(settings.PerIndexerTimeoutSeconds, 3, 60)),
-            TimeSpan.FromSeconds(Math.Clamp(settings.OverallTimeoutSeconds, 5, 120)),
-            lane == SearchLane.Background ? TimeSpan.FromSeconds(30) : TimeSpan.FromSeconds(10));
+        var overall = lane == SearchLane.Background
+            ? TimeSpan.FromMinutes(5)
+            : TimeSpan.FromSeconds(Math.Clamp(settings.OverallTimeoutSeconds, 10, 600));
+        var budget = new SearchBudget(TimeSpan.FromSeconds(Math.Clamp(settings.PerIndexerTimeoutSeconds, 3, 60)), overall, overall);
         foreach (var id in NativeIndexerCatalog.AllIds)
         {
             _governor.SetDisabled(id, !NativeIndexerCatalog.IsEnabled(settings, id));
         }
 
         var orchestrator = new SearchOrchestrator(_governor, (id, searchLane, searchBudget) => new GovernedIndexerHttp(
-            _http, _governor, _cache, id, searchLane, searchBudget.MaxGovernorWait, TimeSpan.FromMinutes(45), UserAgent));
+            _http, _governor, _cache, id, searchLane, searchBudget.MaxGovernorWait, TimeSpan.FromMinutes(45), UserAgent, searchBudget.PerIndexer));
         var isAnime = IsAnimeRecipe(recipe);
         var imdbId = subject is not null && kind != MediaKind.Movie ? await ResolveImdbIdAsync(subject, cancellationToken) : null;
         var outcome = await orchestrator.SearchAsync(

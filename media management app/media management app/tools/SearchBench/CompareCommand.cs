@@ -32,7 +32,7 @@ public static class CompareCommand
         var governor = new IndexerRequestGovernor();
         var cache = new IndexerResponseCache();
         var orchestrator = new SearchOrchestrator(governor, (id, lane, budget) =>
-            new GovernedIndexerHttp(http, governor, cache, id, lane, budget.MaxGovernorWait, TimeSpan.FromMinutes(30), "MediaManager/1.0 (+native-search; SearchBench)"));
+            new GovernedIndexerHttp(http, governor, cache, id, lane, budget.MaxGovernorWait, TimeSpan.FromMinutes(30), "MediaManager/1.0 (+native-search; SearchBench)", budget.PerIndexer));
         var indexers = NativeIndexerCatalog.Create();
         using var qbit = new QbittorrentSearchBackend();
         await qbit.InitAsync(CancellationToken.None);
