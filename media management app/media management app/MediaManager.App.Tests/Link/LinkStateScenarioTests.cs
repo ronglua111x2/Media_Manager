@@ -33,9 +33,10 @@ public sealed class LinkStateScenarioTests : IDisposable
     }
 
     // PARSE-24 (LINK-01, harness A): a special that becomes an orphan on re-link must move, not keep S00E08.
-    [Fact(Skip = "PARSE-24")]
+    [Fact]
     public async Task PackRelink_SpecialBecomesOrphan_MovesLinkAndClearsEpisode()
     {
+        _host.FollowHardlinkRemovals();
         var showId = PackShow("HA", 5002, "Pack/Specials/Demo.OVA.Monaka.mkv");
         await _host.ApplyPackAsync(showId, 1, ("Pack/Specials/Demo.OVA.Monaka.mkv", PackFileClassification.MatchedSpecial, 0, 8));
         _host.Symlinks.ReconcileAll();
@@ -54,9 +55,10 @@ public sealed class LinkStateScenarioTests : IDisposable
     }
 
     // PARSE-24 (LINK-01, harness B): orphans that become matched specials must get their own S00 links.
-    [Fact(Skip = "PARSE-24")]
+    [Fact]
     public async Task PackRelink_OrphansBecomeSpecials_EachGetsItsOwnEpisodeLink()
     {
+        _host.FollowHardlinkRemovals();
         var showId = PackShow("HB", 5003, "Pack/Specials/Demo.OVA.Monaka.mkv", "Pack/Specials/Demo.OVA.Second.mkv");
         await _host.ApplyPackAsync(showId, 1,
             ("Pack/Specials/Demo.OVA.Monaka.mkv", PackFileClassification.UnmatchedExtra, null, null),
@@ -83,7 +85,7 @@ public sealed class LinkStateScenarioTests : IDisposable
     }
 
     // PARSE-12: re-linking a file with a corrected episode number must replace the wrong link.
-    [Fact(Skip = "PARSE-12")]
+    [Fact]
     public async Task PackRelink_CorrectedEpisodeNumber_ReplacesWrongLink()
     {
         var showId = PackShow("HC", 5004, "Pack/Demo - 02.mkv");
@@ -100,7 +102,7 @@ public sealed class LinkStateScenarioTests : IDisposable
     }
 
     // PARSE-32 (LINK-09): a second file for an already linked episode must not create a second link.
-    [Fact(Skip = "PARSE-32")]
+    [Fact]
     public async Task SecondFileForLinkedEpisode_IsSkipped()
     {
         _host.AddTorrent("HSINGLE", "Demo.S01E05.1080p.mkv");
@@ -262,7 +264,7 @@ public sealed class LinkStateScenarioTests : IDisposable
             LastSeenUtc = DateTime.UtcNow
         });
         _host.Symlinks.ReconcileAll();
-        _host.Hub.HardlinkRemoved += (_, args) => _host.Symlinks.RemoveItem(args.Item, args.LinkedPath);
+        _host.FollowHardlinkRemovals();
 
         _host.Link.RemoveMovieLinks(movieId);
         _host.Symlinks.ReconcileAll();

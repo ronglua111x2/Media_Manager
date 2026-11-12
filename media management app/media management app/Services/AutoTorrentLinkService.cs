@@ -879,16 +879,41 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
     {
         TryMigrateLegacyOrphanPath(sourceItem, result, index);
 
+        var releasedChangedLink = false;
         if (TryGetExistingLinkedItem(sourceItem, index, out var existingItem) && existingItem is not null)
         {
-            existingItem.AutoTorrentLinkKind = sourceItem.AutoTorrentLinkKind;
-            existingItem.AutoTorrentTorrentHash = sourceItem.AutoTorrentTorrentHash;
-            existingItem.AutoTorrentPackOwnerSeasonNumber = sourceItem.AutoTorrentPackOwnerSeasonNumber;
-            existingItem.IsOrphanPackSpecial = sourceItem.IsOrphanPackSpecial;
-            existingItem.LastSeenUtc = DateTime.UtcNow;
-            _databaseService.UpdateSourceItem(existingItem);
-            index?.Replace(existingItem);
-            AddSkip(result, $"{sourceItem.DisplayTitle}: already linked.");
+            if (HasSameLinkTarget(existingItem, sourceItem))
+            {
+                existingItem.AutoTorrentLinkKind = sourceItem.AutoTorrentLinkKind;
+                existingItem.AutoTorrentTorrentHash = sourceItem.AutoTorrentTorrentHash;
+                existingItem.AutoTorrentPackOwnerSeasonNumber = sourceItem.AutoTorrentPackOwnerSeasonNumber;
+                existingItem.LastSeenUtc = DateTime.UtcNow;
+                _databaseService.UpdateSourceItem(existingItem);
+                index?.Replace(existingItem);
+                AddSkip(result, $"{sourceItem.DisplayTitle}: already linked.");
+                return;
+            }
+
+            // The same file now maps to another episode, or flips between special and orphan
+            // extra: replace the old link instead of keeping it (PARSE-12, PARSE-24).
+            if (!TryReleaseChangedLink(existingItem, sourceItem, result, index))
+            {
+                return;
+            }
+
+            releasedChangedLink = true;
+        }
+
+        if (TryGetOtherLinkedItemForEpisode(sourceItem, index, out var otherItem) && otherItem is not null)
+        {
+            // Another file already provides this episode; a second link (often with another
+            // extension) would duplicate it in Jellyfin (PARSE-32).
+            if (releasedChangedLink)
+            {
+                PersistUnlinkedMapping(sourceItem, index, $"Episode already linked from {otherItem.FileName}.");
+            }
+
+            AddSkip(result, $"{sourceItem.DisplayTitle}: already linked from {otherItem.FileName}; skipped {sourceItem.FileName}.");
             return;
         }
 
@@ -905,8 +930,106 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             return;
         }
 
+        if (releasedChangedLink)
+        {
+            PersistUnlinkedMapping(sourceItem, index, errorMessage);
+        }
+
         result.ErrorCount++;
         result.Messages.Add($"{sourceItem.FileName}: {errorMessage}");
+    }
+
+    /// <summary>
+    /// True when an existing link already gives the new item the same library identity:
+    /// same media, same episode key and same special/orphan role. A missing provider id on a
+    /// legacy record is treated as unknown rather than as a change.
+    /// </summary>
+    private static bool HasSameLinkTarget(SourceItem existing, SourceItem candidate)
+    {
+        if (existing.MediaKind != candidate.MediaKind ||
+            existing.IsOrphanPackSpecial != candidate.IsOrphanPackSpecial ||
+            GetOutputEpisodeKey(existing) != GetOutputEpisodeKey(candidate))
+        {
+            return false;
+        }
+
+        return string.IsNullOrWhiteSpace(existing.ProviderId) ||
+               string.IsNullOrWhiteSpace(candidate.ProviderId) ||
+               string.Equals(existing.ProviderId, candidate.ProviderId, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool TryReleaseChangedLink(
+        SourceItem existingItem,
+        SourceItem sourceItem,
+        AutoTorrentLinkResult result,
+        SourceItemPathIndex? index)
+    {
+        var change = $"{DescribeLinkTarget(existingItem)} -> {DescribeLinkTarget(sourceItem)}";
+        if (!_hardlinkService.RemoveHardLink(existingItem, out _, out var removeError))
+        {
+            result.ErrorCount++;
+            result.Messages.Add(
+                $"{sourceItem.FileName}: mapping changed ({change}) but the old library link could not be removed: {removeError}");
+            return false;
+        }
+
+        existingItem.LinkedPath = null;
+        existingItem.State = ItemState.Parsed;
+        _databaseService.UpdateSourceItem(existingItem);
+        index?.Replace(existingItem);
+        result.Messages.Add($"{sourceItem.FileName}: mapping changed ({change}); old library link removed.");
+        _logger.Info($"Link mapping changed for {sourceItem.FilePath}: {change}.", LogTarget.File | LogTarget.Console);
+        return true;
+    }
+
+    /// <summary>Records the new mapping of a file whose old link was removed but whose new link was not created.</summary>
+    private void PersistUnlinkedMapping(SourceItem sourceItem, SourceItemPathIndex? index, string? reason)
+    {
+        sourceItem.State = ItemState.Parsed;
+        sourceItem.LinkedPath = null;
+        sourceItem.Notes = reason;
+        _databaseService.UpdateSourceItem(sourceItem);
+        index?.Replace(sourceItem);
+    }
+
+    private bool TryGetOtherLinkedItemForEpisode(
+        SourceItem sourceItem,
+        SourceItemPathIndex? index,
+        out SourceItem? otherItem)
+    {
+        otherItem = null;
+        var key = GetOutputEpisodeKey(sourceItem);
+        if (sourceItem.MediaKind != MediaKind.TvEpisode ||
+            sourceItem.IsOrphanPackSpecial ||
+            key is null ||
+            string.IsNullOrWhiteSpace(sourceItem.ProviderId))
+        {
+            return false;
+        }
+
+        IEnumerable<SourceItem> candidates = index is not null ? index.All() : _databaseService.GetSourceItems();
+        otherItem = candidates.FirstOrDefault(item =>
+            item.MediaKind == MediaKind.TvEpisode &&
+            !item.IsOrphanPackSpecial &&
+            !string.Equals(item.FilePath, sourceItem.FilePath, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(item.ProviderId, sourceItem.ProviderId, StringComparison.OrdinalIgnoreCase) &&
+            GetOutputEpisodeKey(item) == key &&
+            !string.IsNullOrWhiteSpace(item.LinkedPath) &&
+            File.Exists(item.LinkedPath));
+        return otherItem is not null;
+    }
+
+    private static string DescribeLinkTarget(SourceItem item)
+    {
+        if (item.IsOrphanPackSpecial)
+        {
+            return "orphan extra";
+        }
+
+        var key = GetOutputEpisodeKey(item);
+        return key is null
+            ? item.MediaKind.ToString()
+            : $"S{key.Value.SeasonNumber:00}E{key.Value.EpisodeNumber:00}";
     }
 
     private void TryMigrateLegacyOrphanPath(
@@ -1293,6 +1416,8 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
                 !string.IsNullOrWhiteSpace(item.LinkedPath) &&
                 File.Exists(item.LinkedPath));
         }
+
+        public IEnumerable<SourceItem> All() => _byFilePath.Values.SelectMany(items => items);
 
         public SourceItem? FindLegacyOrphan(string filePath)
         {
