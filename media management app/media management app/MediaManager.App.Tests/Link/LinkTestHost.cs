@@ -322,7 +322,21 @@ public sealed class LinkTestHost : IDisposable
     public Task<AutoTorrentLinkResult> ApplyPackAsync(
         long showId,
         int ownerSeason,
-        params (string RelativePath, PackFileClassification Classification, int? Season, int? Episode)[] files)
+        params (string RelativePath, PackFileClassification Classification, int? Season, int? Episode)[] files) =>
+        ApplyPackEntriesAsync(
+            showId,
+            ownerSeason,
+            files.Select(file => new PackFileEntry
+            {
+                RelativePath = file.RelativePath,
+                FileName = Path.GetFileName(file.RelativePath),
+                Classification = file.Classification,
+                MatchedSeasonNumber = file.Season,
+                MatchedEpisodeNumber = file.Episode
+            }).ToArray());
+
+    /// <summary>Same as <see cref="ApplyPackAsync"/> with full entries (for example a multi-episode range).</summary>
+    public Task<AutoTorrentLinkResult> ApplyPackEntriesAsync(long showId, int ownerSeason, params PackFileEntry[] entries)
     {
         var show = Db.GetTrackedShow(showId)!;
         var season = Db.GetTrackedSeasons(showId).Single(item => item.SeasonNumber == ownerSeason);
@@ -330,21 +344,22 @@ public sealed class LinkTestHost : IDisposable
         {
             Show = show,
             OwnerSeason = season,
-            Inventory = new PackTorrentInventory
-            {
-                Files = files.Select(file => new PackFileEntry
-                {
-                    RelativePath = file.RelativePath,
-                    FileName = Path.GetFileName(file.RelativePath),
-                    Classification = file.Classification,
-                    MatchedSeasonNumber = file.Season,
-                    MatchedEpisodeNumber = file.Episode
-                }).ToList()
-            },
+            Inventory = new PackTorrentInventory { Files = entries.ToList() },
             SpecialMappings = new SpecialMappingResult()
         };
         return Link.ApplySeasonPackLinkAsync(preview);
     }
+
+    public static PackFileEntry RegularEntry(string relativePath, int season, int episode, int? lastEpisode = null) =>
+        new()
+        {
+            RelativePath = relativePath,
+            FileName = Path.GetFileName(relativePath),
+            Classification = PackFileClassification.RegularEpisode,
+            MatchedSeasonNumber = season,
+            MatchedEpisodeNumber = episode,
+            MatchedLastEpisodeNumber = lastEpisode
+        };
 
     public EpisodeAvailability Availability(long showId, int season, int episode)
     {

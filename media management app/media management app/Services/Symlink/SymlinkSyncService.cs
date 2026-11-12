@@ -385,8 +385,12 @@ public sealed class SymlinkSyncService : ISymlinkSyncService
             MatchedYear = year,
             Provider = source.Provider,
             ProviderId = source.ProviderId,
+            SourceRootFolder = source.SourceRootFolder,
+            ParentFolder = source.ParentFolder,
             SeasonNumber = source.SeasonNumber,
             EpisodeNumber = source.EpisodeNumber,
+            // The path builder names a multi-episode file "S01E01-E02"; without the range Jellyfin sees only E01 (audit L1-H1).
+            LastEpisodeNumber = source.LastEpisodeNumber,
             MappedSeasonNumber = source.MappedSeasonNumber,
             MappedEpisodeNumber = source.MappedEpisodeNumber,
             ParserPattern = source.ParserPattern,
