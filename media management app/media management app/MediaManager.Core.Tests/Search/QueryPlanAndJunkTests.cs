@@ -59,7 +59,7 @@ public class QueryPlanAndJunkTests
     public void Junk_NamesAreRejected(string name)
     {
         var recipe = RecipeBuilder.Movie().Build();
-        JunkFilter.GetJunkReason(recipe, TorrentResultBuilder.Magnet(name, fileSize: 2_000_000_000), "1080p").Should().NotBeNull();
+        JunkFilter.GetJunkReason(recipe, TorrentResultBuilder.Magnet(name, fileSize: 2_000_000_000)).Should().NotBeNull();
     }
 
     [Fact]
@@ -67,9 +67,45 @@ public class QueryPlanAndJunkTests
     {
         var recipe = RecipeBuilder.Movie().Build();
 
-        JunkFilter.GetJunkReason(recipe, TorrentResultBuilder.Magnet("Movie 2014 1080p", fileSize: 120L * 1024 * 1024), "1080p").Should().NotBeNull();
-        JunkFilter.GetJunkReason(recipe, TorrentResultBuilder.Magnet("Movie 2014 1080p", fileSize: 1_400_000_000), "1080p").Should().BeNull();
-        JunkFilter.GetJunkReason(recipe, TorrentResultBuilder.Magnet("Movie 2014 1080p", fileSize: 0), "1080p").Should().BeNull();
+        JunkFilter.GetJunkReason(recipe, TorrentResultBuilder.Magnet("Movie 2014 1080p", fileSize: 120L * 1024 * 1024)).Should().NotBeNull();
+        JunkFilter.GetJunkReason(recipe, TorrentResultBuilder.Magnet("Movie 2014 1080p", fileSize: 1_400_000_000)).Should().BeNull();
+        JunkFilter.GetJunkReason(recipe, TorrentResultBuilder.Magnet("Movie 2014 1080p", fileSize: 0)).Should().BeNull();
+    }
+
+    // Audit 07c NS-10: "4K" marketing words and "kbps" no longer force the 2160p minimum; ".Bat." in a title is
+    // not an executable.
+    [Theory]
+    [InlineData("Lawrence.of.Arabia.1962.4K.Remastered.1080p.BluRay.x265-GROUP", 900)]
+    [InlineData("Coherence.2013.AAC.384kbps.DVDRip.720p.x264-GROUP", 700)]
+    [InlineData("The.Bat.Whispers.1930.1080p.BluRay.x264-GROUP", 2000)]
+    [InlineData("The.Bat.1959.SCR.720p.x264-GROUP", 900)]
+    public void Junk_FalsePositives_AreNotRejected(string name, int sizeMb)
+    {
+        var recipe = RecipeBuilder.Movie().Build();
+
+        JunkFilter.GetJunkReason(recipe, TorrentResultBuilder.Magnet(name, fileSize: sizeMb * 1024L * 1024)).Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("Movie.2014.2160p.UHD.BluRay.x265-GROUP", "2160p")]
+    [InlineData("Movie.2014.4K.HDR.x265-GROUP", "2160p")]
+    [InlineData("Movie.2014.4K.Remastered.1080p.BluRay-GROUP", "1080p")]
+    [InlineData("Movie.2014.AAC.384kbps.720p-GROUP", "720p")]
+    [InlineData("Movie.2014.DVDRip.x264-GROUP", null)]
+    public void Junk_ResolutionFromTokens(string name, string? expected)
+    {
+        JunkFilter.ResolutionFromTokens(name).Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData("Movie.2014.1080p.BluRay.x264.scr")]
+    [InlineData("Movie.2014.1080p.BluRay.x264.bat")]
+    [InlineData("Movie 2014 1080p setup.msi")]
+    public void Junk_ExecutableExtensions_AreRejected(string name)
+    {
+        var recipe = RecipeBuilder.Movie().Build();
+
+        JunkFilter.GetJunkReason(recipe, TorrentResultBuilder.Magnet(name, fileSize: 2_000_000_000)).Should().NotBeNull();
     }
 
     [Fact]
@@ -78,7 +114,7 @@ public class QueryPlanAndJunkTests
         var recipe = RecipeBuilder.TvEpisode().AnimeAbsolute().Build();
         var result = TorrentResultBuilder.Magnet("[SubsPlease] Short Anime - 05 (1080p).mkv", fileSize: 60L * 1024 * 1024);
 
-        JunkFilter.GetJunkReason(recipe, result, "1080p").Should().BeNull();
+        JunkFilter.GetJunkReason(recipe, result).Should().BeNull();
     }
 
     [Fact]

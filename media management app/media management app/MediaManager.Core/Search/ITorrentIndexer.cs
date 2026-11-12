@@ -27,6 +27,15 @@ public interface IIndexerHttp
     Task<IndexerHttpResponse> GetAsync(Uri uri, CancellationToken cancellationToken);
 
     Task<IndexerHttpResponse> PostJsonAsync(Uri uri, string json, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Called by the orchestrator after the indexer parsed (or failed to parse) the responses of one query.
+    /// A site counts as healthy only once its answer was understood: a 200 "soft block" page that no parser
+    /// recognizes must count towards the breaker (audit 07c NS-04).
+    /// </summary>
+    void ReportParsed(bool parsed)
+    {
+    }
 }
 
 public sealed record IndexerHttpResponse(int StatusCode, string Body, string? ContentType, Uri FinalUri);

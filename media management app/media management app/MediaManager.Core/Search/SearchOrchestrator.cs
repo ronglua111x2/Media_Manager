@@ -236,6 +236,7 @@ public sealed class SearchOrchestrator(IndexerRequestGovernor governor, Func<str
                 }
 
                 var found = await indexer.SearchAsync(query, http, overallToken);
+                http.ReportParsed(true);
                 ran++;
                 rows.AddRange(found
                     // Knaben flags likely malware; never let those reach the candidate list.
@@ -269,12 +270,13 @@ public sealed class SearchOrchestrator(IndexerRequestGovernor governor, Func<str
             status = ex.Kind.ToString().ToLowerInvariant();
             detail = ex.Message;
         }
-        catch (Exception ex) when (ex is JsonException or XmlException or FormatException or KeyNotFoundException or InvalidOperationException)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // The site answered but we could not parse it (layout/API change): counts towards the breaker.
-            governor.Report(indexer.Id, IndexerFailureKind.BadResponse, detail: ex.GetType().Name);
+            // The site answered but we could not parse it (layout/API change, or any parser bug): counts towards
+            // the breaker, and never fails the other indexers' results (audit 07c NS-15).
+            http.ReportParsed(false);
             status = "parse-error";
-            detail = ex.Message;
+            detail = $"{ex.GetType().Name}: {ex.Message}";
         }
 
         return (new IndexerRunTelemetry(indexer.Id, status, rows.Count, ran, watch.ElapsedMilliseconds, detail), rows);

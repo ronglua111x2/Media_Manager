@@ -102,7 +102,7 @@ public sealed class NekoBtIndexer(string baseUrl = "https://nekobt.to") : ITorre
                     MagnetUri: magnet,
                     TorrentUrl: null,
                     DetailsUrl: string.IsNullOrWhiteSpace(id) ? null : $"{site}/torrents/{id}",
-                    PublishedUtc: uploadedMs > 0 ? DateTimeOffset.FromUnixTimeMilliseconds(uploadedMs) : null,
+                    PublishedUtc: IndexerParsing.FromUnixMilliseconds(uploadedMs),
                     IndexerId: "nekobt",
                     Source: "nekobt"));
             }

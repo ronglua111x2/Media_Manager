@@ -79,7 +79,7 @@ public sealed class TsukiHimeIndexer(string baseUrl = "https://api.tsukihime.org
                     MagnetUri: null,
                     TorrentUrl: nyaaId > 0 ? $"https://nyaa.si/download/{nyaaId}.torrent" : null,
                     DetailsUrl: nyaaId > 0 ? $"https://nyaa.si/view/{nyaaId}" : null,
-                    PublishedUtc: sourceDate > 0 ? DateTimeOffset.FromUnixTimeSeconds(sourceDate) : null,
+                    PublishedUtc: IndexerParsing.FromUnix(sourceDate),
                     IndexerId: "tsukihime",
                     Source: "tsukihime"));
             }

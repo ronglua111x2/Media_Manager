@@ -66,10 +66,14 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
     private readonly IndexerRequestGovernor _governor;
     private readonly ITmdbExternalIdService _externalIds;
     private readonly Dictionary<string, string> _imdbIds;
-    private readonly HashSet<string> _imdbMisses = new(StringComparer.Ordinal);
+    // Lookups that found nothing, with the time to try again: TMDB being blocked for a night must not stop
+    // EZTV (IMDb-only) for the rest of the session (audit 07c NS-20).
+    private readonly Dictionary<string, DateTimeOffset> _imdbMisses = new(StringComparer.Ordinal);
+    private static readonly TimeSpan ImdbLookupTimeout = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan ImdbMissRetry = TimeSpan.FromHours(1);
+    private static readonly TimeSpan ImdbFailureRetry = TimeSpan.FromMinutes(10);
     private readonly SemaphoreSlim _imdbGate = new(1, 1);
-    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (DateTimeOffset Expires, Task<IReadOnlyList<TorrentSearchResult>> Rows)> _recent =
-        new(StringComparer.OrdinalIgnoreCase);
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, MemoEntry> _recent = new(StringComparer.OrdinalIgnoreCase);
     private static readonly TimeSpan RecentTtl = TimeSpan.FromMinutes(15);
     private readonly object _saveGate = new();
     private System.Threading.Timer? _saveTimer;
@@ -168,41 +172,83 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
         // "X 1080p", "X"): search the reduced text once and reuse it for a while (native-search P4).
         var reduced = NativeQueryText.Reduce(query, kind);
         var specifics = NativeQueryText.SpecificQueries(query, kind, RecipeCandidateFilter.GetFilterModule(recipe)?.QualityAllowList);
-        var key = $"{kind}|{IsAnimeRecipe(recipe)}|{subject?.TmdbId}|{subject?.Season}|{subject?.Episode}|{reduced}|{string.Join(",", specifics)}";
-        var now = DateTimeOffset.UtcNow;
-        if (_recent.TryGetValue(key, out var recent) && recent.Expires > now)
+        var settings = Settings;
+        var lane = LaneScope.Value ?? SearchLane.Interactive;
+        var enabled = string.Join(",", NativeIndexerCatalog.AllIds.Where(id => NativeIndexerCatalog.IsEnabled(settings, id)));
+        // The lane and the enabled indexers are part of the key: a background answer may wait 5 minutes, and an
+        // indexer turned on in Settings must be asked at once (audit 07c NS-06/07).
+        var key = $"{kind}|{IsAnimeRecipe(recipe)}|{subject?.TmdbId}|{subject?.Season}|{subject?.Episode}|{reduced}|{string.Join(",", specifics)}|{lane}|{enabled}";
+        while (true)
         {
+            var now = DateTimeOffset.UtcNow;
+            SweepRecent(now);
+            var mine = new MemoEntry(now + RecentTtl, new Lazy<Task<NativeOutcome>>(() => SearchReducedAsync(recipe, reduced, specifics, kind, cancellationToken, subject)));
+            var entry = _recent.GetOrAdd(key, mine);
+            var owned = ReferenceEquals(entry, mine);
+            if (!owned && entry.Expires <= now)
+            {
+                _recent.TryRemove(new KeyValuePair<string, MemoEntry>(key, entry));
+                continue;
+            }
+
+            NativeOutcome outcome;
             try
             {
-                return await recent.Rows;
+                // A caller that joins a search another caller started waits with its own token (Cancel button,
+                // budget), not with the starter's.
+                outcome = await entry.Search.Value.WaitAsync(cancellationToken);
+            }
+            catch (OperationCanceledException) when (!owned && !cancellationToken.IsCancellationRequested)
+            {
+                // The search we joined was cancelled by its starter: run our own.
+                _recent.TryRemove(new KeyValuePair<string, MemoEntry>(key, entry));
+                continue;
+            }
+            catch (OperationCanceledException) when (!owned)
+            {
+                throw;
             }
             catch
             {
-                _recent.TryRemove(key, out _);
+                _recent.TryRemove(new KeyValuePair<string, MemoEntry>(key, entry));
+                throw;
             }
-        }
 
-        var task = SearchReducedAsync(recipe, reduced, specifics, kind, cancellationToken, subject);
-        _recent[key] = (now + RecentTtl, task);
-        try
-        {
-            var rows = await task;
-            if (rows.Count == 0)
+            if (owned && (outcome.Rows.Count == 0 || !outcome.Complete))
             {
-                // Do not remember empty answers: they may come from a governor refusal or a timeout.
-                _recent.TryRemove(key, out _);
+                // Do not remember empty or degraded answers (a site timed out, was blocked or refused by the
+                // governor): the next search asks those sites again. Healthy sites answer from the HTTP cache.
+                _recent.TryRemove(new KeyValuePair<string, MemoEntry>(key, entry));
             }
 
-            return rows;
-        }
-        catch
-        {
-            _recent.TryRemove(key, out _);
-            throw;
+            return outcome.Rows;
         }
     }
 
-    private async Task<IReadOnlyList<TorrentSearchResult>> SearchReducedAsync(SearchRecipe recipe, string query, IReadOnlyList<string> specifics, MediaKind kind, CancellationToken cancellationToken, SearchSubject? subject)
+    private sealed record MemoEntry(DateTimeOffset Expires, Lazy<Task<NativeOutcome>> Search);
+
+    private readonly record struct NativeOutcome(IReadOnlyList<TorrentSearchResult> Rows, bool Complete);
+
+    /// <summary>Drops expired memo entries: keys rarely repeat (new episodes), so they would pile up (NS-08).</summary>
+    private void SweepRecent(DateTimeOffset now)
+    {
+        foreach (var pair in _recent)
+        {
+            if (pair.Value.Expires <= now && pair.Value.Search.IsValueCreated && pair.Value.Search.Value.IsCompleted)
+            {
+                _recent.TryRemove(pair);
+            }
+        }
+    }
+
+    /// <summary>
+    /// True when every indexer that was asked answered ("ok"), or was skipped only because it is disabled.
+    /// A timeout, block, rate limit, breaker or parse error makes the answer partial.
+    /// </summary>
+    public static bool IsComplete(IReadOnlyList<IndexerRunTelemetry> runs) =>
+        runs.All(run => run.Status == "ok" || (run.Status == "skipped" && run.Detail == "disabled"));
+
+    private async Task<NativeOutcome> SearchReducedAsync(SearchRecipe recipe, string query, IReadOnlyList<string> specifics, MediaKind kind, CancellationToken cancellationToken, SearchSubject? subject)
     {
         var settings = Settings;
         var lane = LaneScope.Value ?? SearchLane.Interactive;
@@ -231,7 +277,7 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
             budget,
             cancellationToken);
         _logger.Info($"[Search] native query='{query}' kind={kind}{(isAnime ? " anime" : "")} lane={lane}: {outcome.Summary}", LogTarget.File | LogTarget.Console);
-        return outcome.Results;
+        return new NativeOutcome(outcome.Results, IsComplete(outcome.Indexers));
     }
 
     private static async Task<IReadOnlyList<TorrentSearchResult>> TimedAsync(
@@ -354,26 +400,39 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
                 return cached;
             }
 
-            if (_imdbMisses.Contains(key))
+            if (_imdbMisses.TryGetValue(key, out var retryAt) && retryAt > DateTimeOffset.UtcNow)
             {
                 return null;
             }
 
             string? imdbId = null;
+            var failed = false;
+            // The IMDb id only helps (EZTV, YTS exact lookup): a slow or blocked TMDB must neither hold the search
+            // for its 100 s HttpClient timeout nor look like the user pressing Cancel (audit 07c NS-03).
+            using var lookup = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            lookup.CancelAfter(ImdbLookupTimeout);
             try
             {
-                imdbId = await _externalIds.GetImdbIdAsync(subject.IsMovie, subject.TmdbId, cancellationToken);
+                imdbId = await _externalIds.GetImdbIdAsync(subject.IsMovie, subject.TmdbId, lookup.Token);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                failed = true;
+                _logger.Warning($"[Search] IMDb id lookup for {key} timed out; searching without it.", LogTarget.File);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
+                failed = true;
                 _logger.Warning($"[Search] could not resolve the IMDb id for {key}: {ex.Message}", LogTarget.File);
             }
 
             if (string.IsNullOrWhiteSpace(imdbId))
             {
-                _imdbMisses.Add(key);
+                _imdbMisses[key] = DateTimeOffset.UtcNow + (failed ? ImdbFailureRetry : ImdbMissRetry);
                 return null;
             }
+
+            _imdbMisses.Remove(key);
 
             _imdbIds[key] = imdbId;
             SaveImdbCache();

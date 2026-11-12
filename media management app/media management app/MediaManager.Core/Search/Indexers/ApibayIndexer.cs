@@ -48,7 +48,7 @@ public sealed class ApibayIndexer(string baseUrl = "https://apibay.org") : ITorr
                 MagnetUri: null,
                 TorrentUrl: null,
                 DetailsUrl: $"https://thepiratebay.org/description.php?id={Str(row, "id")}",
-                PublishedUtc: added > 0 ? DateTimeOffset.FromUnixTimeSeconds(added) : null,
+                PublishedUtc: IndexerParsing.FromUnix(added),
                 IndexerId: "apibay",
                 Source: Str(row, "status") is { Length: > 0 } status ? $"tpb:{status}" : "tpb"));
         }

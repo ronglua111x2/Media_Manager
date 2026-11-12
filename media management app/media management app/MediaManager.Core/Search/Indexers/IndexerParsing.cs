@@ -5,6 +5,28 @@ namespace media_management_app.Search.Indexers;
 
 internal static class IndexerParsing
 {
+    private const long MaxUnixSeconds = 253_402_300_799;
+
+    /// <summary>Unix seconds (or milliseconds, when the value is too large for seconds) as a date; null when out of range.</summary>
+    public static DateTimeOffset? FromUnix(long value)
+    {
+        if (value <= 0)
+        {
+            return null;
+        }
+
+        if (value > MaxUnixSeconds)
+        {
+            value /= 1000;
+        }
+
+        return value is > 0 and <= MaxUnixSeconds ? DateTimeOffset.FromUnixTimeSeconds(value) : null;
+    }
+
+    /// <summary>Unix milliseconds as a date; null when out of range.</summary>
+    public static DateTimeOffset? FromUnixMilliseconds(long value) =>
+        value is > 0 and <= (MaxUnixSeconds * 1000) + 999 ? DateTimeOffset.FromUnixTimeMilliseconds(value) : null;
+
     private static readonly Regex SizeRegex = new(@"(?<value>[\d.,]+)\s*(?<unit>[KMGT]i?B|B|bytes)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     /// <summary>"1.24 GB", "430.5 MiB", "700 MB" → bytes (binary multiples, as torrent sites use them).</summary>

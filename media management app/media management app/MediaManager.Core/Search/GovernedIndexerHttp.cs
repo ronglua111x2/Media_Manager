@@ -45,15 +45,33 @@ public static class ChallengeDetector
 /// </summary>
 public sealed class IndexerResponseCache(TimeProvider? time = null)
 {
+    private static readonly TimeSpan SweepInterval = TimeSpan.FromMinutes(5);
     private readonly TimeProvider _time = time ?? TimeProvider.System;
     private readonly ConcurrentDictionary<string, Entry> _entries = new(StringComparer.Ordinal);
+    private DateTimeOffset _nextSweep = DateTimeOffset.MinValue;
 
-    public async Task<IndexerHttpResponse> GetOrAddAsync(string key, TimeSpan ttl, Func<Task<IndexerHttpResponse>> factory)
+    public int Count => _entries.Count;
+
+    /// <summary>
+    /// The cached response for <paramref name="key"/>, or the result of <paramref name="factory"/>. Callers that join
+    /// a request another caller started wait with their own <paramref name="cancellationToken"/>; if that request is
+    /// cancelled by its starter (its budget or Cancel button), they start their own (audit 07c NS-06).
+    /// <paramref name="fromNetwork"/> runs when this call's own factory produced the response.
+    /// </summary>
+    public async Task<IndexerHttpResponse> GetOrAddAsync(
+        string key,
+        TimeSpan ttl,
+        Func<Task<IndexerHttpResponse>> factory,
+        CancellationToken cancellationToken = default,
+        Action? fromNetwork = null)
     {
-        var now = _time.GetUtcNow();
         while (true)
         {
-            var entry = _entries.GetOrAdd(key, _ => new Entry(new Lazy<Task<IndexerHttpResponse>>(factory), now + ttl));
+            var now = _time.GetUtcNow();
+            SweepExpired(now);
+            var mine = new Entry(new Lazy<Task<IndexerHttpResponse>>(factory), now + ttl);
+            var entry = _entries.GetOrAdd(key, mine);
+            var owned = ReferenceEquals(entry, mine);
             if (entry.ExpiresUtc <= now && entry.Value.IsValueCreated && entry.Value.Value.IsCompleted)
             {
                 _entries.TryRemove(new KeyValuePair<string, Entry>(key, entry));
@@ -62,7 +80,23 @@ public sealed class IndexerResponseCache(TimeProvider? time = null)
 
             try
             {
-                return await entry.Value.Value;
+                var response = await entry.Value.Value.WaitAsync(cancellationToken);
+                if (owned)
+                {
+                    fromNetwork?.Invoke();
+                }
+
+                return response;
+            }
+            catch (OperationCanceledException) when (!owned && !cancellationToken.IsCancellationRequested)
+            {
+                // The request we joined was cancelled by the caller that started it, not by us: start our own.
+                _entries.TryRemove(new KeyValuePair<string, Entry>(key, entry));
+            }
+            catch (OperationCanceledException) when (!owned)
+            {
+                // We stopped waiting; the shared request carries on for the others.
+                throw;
             }
             catch
             {
@@ -73,7 +107,28 @@ public sealed class IndexerResponseCache(TimeProvider? time = null)
         }
     }
 
+    /// <summary>Forgets one response (the indexer could not parse it: never serve it again).</summary>
+    public void Remove(string key) => _entries.TryRemove(key, out _);
+
     public void Clear() => _entries.Clear();
+
+    /// <summary>Drops expired, completed entries every few minutes: keys rarely repeat, so they would pile up (NS-08).</summary>
+    private void SweepExpired(DateTimeOffset now)
+    {
+        if (now < _nextSweep)
+        {
+            return;
+        }
+
+        _nextSweep = now + SweepInterval;
+        foreach (var pair in _entries)
+        {
+            if (pair.Value.ExpiresUtc <= now && pair.Value.Value.IsValueCreated && pair.Value.Value.Value.IsCompleted)
+            {
+                _entries.TryRemove(pair);
+            }
+        }
+    }
 
     private sealed record Entry(Lazy<Task<IndexerHttpResponse>> Value, DateTimeOffset ExpiresUtc);
 }
@@ -95,14 +150,66 @@ public sealed class GovernedIndexerHttp(
     string userAgent,
     TimeSpan? requestTimeout = null) : IIndexerHttp
 {
+    private readonly object _pendingLock = new();
+    private readonly List<string> _pendingKeys = [];
+    private int _pendingNetworkResponses;
+
     public Task<IndexerHttpResponse> GetAsync(Uri uri, CancellationToken cancellationToken) =>
-        cache.GetOrAddAsync($"{indexerId} GET {uri}", cacheTtl, () => SendAsync(() => new HttpRequestMessage(HttpMethod.Get, uri), cancellationToken));
+        GetCachedAsync($"{indexerId} GET {uri}", () => SendAsync(() => new HttpRequestMessage(HttpMethod.Get, uri), cancellationToken), cancellationToken);
 
     public Task<IndexerHttpResponse> PostJsonAsync(Uri uri, string json, CancellationToken cancellationToken) =>
-        cache.GetOrAddAsync($"{indexerId} POST {uri} {json}", cacheTtl, () => SendAsync(() => new HttpRequestMessage(HttpMethod.Post, uri)
+        GetCachedAsync($"{indexerId} POST {uri} {json}", () => SendAsync(() => new HttpRequestMessage(HttpMethod.Post, uri)
         {
             Content = new StringContent(json, Encoding.UTF8, "application/json")
-        }, cancellationToken));
+        }, cancellationToken), cancellationToken);
+
+    /// <summary>
+    /// Success is reported to the governor only once the indexer understood the answer; an answer it could not
+    /// parse is reported as BadResponse and dropped from the cache. Cache hits report nothing: the site was not
+    /// contacted (audit 07c NS-04).
+    /// </summary>
+    public void ReportParsed(bool parsed)
+    {
+        string[] keys;
+        int networkResponses;
+        lock (_pendingLock)
+        {
+            keys = [.. _pendingKeys];
+            networkResponses = _pendingNetworkResponses;
+            _pendingKeys.Clear();
+            _pendingNetworkResponses = 0;
+        }
+
+        if (!parsed)
+        {
+            foreach (var key in keys)
+            {
+                cache.Remove(key);
+            }
+        }
+
+        if (networkResponses > 0)
+        {
+            governor.Report(indexerId, parsed ? IndexerFailureKind.None : IndexerFailureKind.BadResponse, detail: parsed ? null : "response could not be parsed");
+        }
+    }
+
+    private async Task<IndexerHttpResponse> GetCachedAsync(string key, Func<Task<IndexerHttpResponse>> send, CancellationToken cancellationToken)
+    {
+        var response = await cache.GetOrAddAsync(key, cacheTtl, send, cancellationToken, () =>
+        {
+            lock (_pendingLock)
+            {
+                _pendingNetworkResponses++;
+            }
+        });
+        lock (_pendingLock)
+        {
+            _pendingKeys.Add(key);
+        }
+
+        return response;
+    }
 
     private async Task<IndexerHttpResponse> SendAsync(Func<HttpRequestMessage> build, CancellationToken cancellationToken)
     {
@@ -176,7 +283,7 @@ public sealed class GovernedIndexerHttp(
                 throw new IndexerHttpException(indexerId, IndexerFailureKind.BadResponse, $"HTTP {status}");
             }
 
-            governor.Report(indexerId, IndexerFailureKind.None);
+            // Success is reported after parsing (ReportParsed), not here.
             return new IndexerHttpResponse(status, body, contentType, finalUri);
         }
     }

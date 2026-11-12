@@ -145,7 +145,7 @@ public sealed class EztvIndexer(string baseUrl = "https://eztvx.to") : ITorrentI
                 MagnetUri: hasMagnet ? magnet : null,
                 TorrentUrl: null,
                 DetailsUrl: null,
-                PublishedUtc: released > 0 ? DateTimeOffset.FromUnixTimeSeconds(released) : null,
+                PublishedUtc: IndexerParsing.FromUnix(released),
                 IndexerId: "eztv",
                 Source: "eztv"));
         }

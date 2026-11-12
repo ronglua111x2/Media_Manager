@@ -94,8 +94,15 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
             return Rejected(result, CandidateRejectReason.TitleMismatch, "does not contain enough movie title or alias tokens");
         }
 
-        // A release without any year is only trusted when one title variant matches completely.
-        if (yearMatch.Kind == YearMatchKind.Missing && !IsCompleteTitleMatch(titleVariants, candidateTokens))
+        // When the year does not confirm the film (one off, or none), the release title must match one title
+        // variant completely and carry no sequel marker the variant lacks: otherwise "Kill Bill Vol 1" (2003) is
+        // taken for Vol. 2 (2004) and "Dune Part Two" for "Dune" (audit 07c NS-01/02).
+        if (yearMatch.Kind == YearMatchKind.OffByOne && !MovieReleaseTitle.MatchesTitle(result.FileName, titleVariants, strict: false))
+        {
+            return Rejected(result, CandidateRejectReason.YearMismatch, $"{yearMatch.Detail} and the title is not an exact match");
+        }
+
+        if (yearMatch.Kind == YearMatchKind.Missing && !MovieReleaseTitle.MatchesTitle(result.FileName, titleVariants, strict: true))
         {
             return Rejected(result, CandidateRejectReason.YearMismatch, $"no release year and title is not an exact match (expected {movie.ReleaseYear})");
         }
@@ -180,20 +187,6 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
         }
 
         return (false, 0);
-    }
-
-    private static bool IsCompleteTitleMatch(IReadOnlyList<string> titles, IReadOnlyList<string> candidateTokens)
-    {
-        var normalizedCandidate = TitleNormalizer.NormalizeTokens(candidateTokens);
-        return titles
-            .Where(title => !string.IsNullOrWhiteSpace(title))
-            // Numbers are part of the identity ("Jujutsu Kaisen 0" is not "Jujutsu Kaisen - 53"), so they are
-            // required here even though they are shorter than the usual significant-token threshold.
-            .Select(title => TitleNormalizer.MatchTokens(title)
-                .Where(token => token.Length > 2 || token.All(char.IsDigit))
-                .Distinct(StringComparer.Ordinal)
-                .ToList())
-            .Any(tokens => tokens.Count > 0 && tokens.All(normalizedCandidate.Contains));
     }
 
     private static int EvaluateEpisodeTitleMatch(string? targetTitle, string? candidateTitle)

@@ -14,9 +14,12 @@ public static partial class JunkFilter
 {
     private const long Mb = 1024L * 1024L;
 
-    public static string? GetJunkReason(SearchRecipe recipe, TorrentSearchResult result, string? detectedQuality)
+    public static string? GetJunkReason(SearchRecipe recipe, TorrentSearchResult result)
     {
         var name = result.FileName ?? string.Empty;
+        // Resolution from standalone tokens only: the substring detection used for quality filters reads
+        // "4K.Remastered.1080p" and "384kbps" as 2160p, which made normal 1080p/720p sizes look implausible.
+        var detectedQuality = ResolutionFromTokens(name);
         if (ExecutableRegex().IsMatch(name))
         {
             return "name looks like an executable or installer";
@@ -33,6 +36,51 @@ public static partial class JunkFilter
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// The resolution a release claims, read from standalone tokens. An explicit pixel resolution wins over
+    /// "4K"/"UHD" marketing words ("4K Remastered 1080p" is 1080p); with several pixel resolutions the lowest is
+    /// used (conservative for a size check). Null when the name has none.
+    /// </summary>
+    public static string? ResolutionFromTokens(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return null;
+        }
+
+        var tokens = TorrentCandidateParser.Tokenize(name).Select(token => token.ToLowerInvariant()).ToList();
+        int? pixels = null;
+        foreach (var token in tokens)
+        {
+            int? value = token switch
+            {
+                "2160p" => 2160,
+                "1440p" => 1440,
+                "1080p" or "1080i" => 1080,
+                "720p" => 720,
+                _ => null
+            };
+            if (value is not null && (pixels is null || value < pixels))
+            {
+                pixels = value;
+            }
+        }
+
+        if (pixels is null && tokens.Any(token => token is "4k" or "uhd"))
+        {
+            pixels = 2160;
+        }
+
+        return pixels switch
+        {
+            2160 => "2160p",
+            1440 => "1440p",
+            1080 => "1080p",
+            720 => "720p",
+            _ => null
+        };
     }
 
     private static long? MinimumPlausibleSize(MediaKind kind, string? quality)
@@ -57,7 +105,9 @@ public static partial class JunkFilter
         };
     }
 
-    [GeneratedRegex(@"\.(exe|scr|bat|cmd|msi|lnk|vbs|apk)(\b|$)", RegexOptions.IgnoreCase)]
+    // exe/msi/lnk/vbs/apk never occur as words in titles; scr/bat/cmd do (".SCR." screener tag, "The.Bat.1959"),
+    // so those only count as the final extension of the name.
+    [GeneratedRegex(@"\.(exe|msi|lnk|vbs|apk)\b|\.(scr|bat|cmd)\s*$", RegexOptions.IgnoreCase)]
     private static partial Regex ExecutableRegex();
 
     [GeneratedRegex(@"\bcodec\s*pack\b|\bkeygen\b|\bpassword\s*(protected|\.txt|in\s+(comments|description|file))", RegexOptions.IgnoreCase)]

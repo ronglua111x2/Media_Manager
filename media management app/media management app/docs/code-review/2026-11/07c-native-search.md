@@ -27,39 +27,39 @@
 
 ## 1. Bảng tóm tắt
 
-| ID | Mức | Mảng | Vấn đề | Kiểm chứng |
-|---|---|---|---|---|
-| NS-01 | Cao | M | Movie lệch năm ±1 mà tên khớp lỏng thì nhận nhầm phần khác của cùng franchise | K, T |
-| NS-02 | Cao | M | Bản không có năm nhận nhầm phần tiếp theo (Dune Part Two, Frozen II); số "5.1" của audio được tính là số trong tên | K, T |
-| NS-03 | Cao | A | TMDB timeout khi tra IMDb id làm dừng cả lượt cart hoặc Auto-Track như thể user bấm Hủy | K |
-| NS-04 | Cao | G | Lỗi parse (trang lạ trả 200) không bao giờ mở breaker | K |
-| NS-05 | TB | G | Retry-After: giới hạn 30 phút, giá trị 0 hoặc thời điểm đã qua làm mất cooldown, 503 bị bỏ qua | K |
-| NS-06 | TB | G, A | Cache single-flight và memo query buộc mọi người gọi sau theo token, lane và thời hạn của người gọi đầu | K |
-| NS-07 | TB | A | Memo 15 phút lưu cả kết quả thiếu (một số site timeout hoặc bị chặn) | K |
-| NS-08 | TB | G, A | Cache response và memo không bao giờ dọn, bộ nhớ tăng mãi khi app chạy nhiều ngày | K |
-| NS-09 | TB | G | Lane interactive không được ưu tiên hơn lane background | R |
-| NS-10 | TB | M | Junk filter: chuỗi "4k" nằm bất kỳ đâu trong tên bắt áp ngưỡng 2160p; `.Bat.` bị coi là file thực thi | K, T |
-| NS-11 | TB | M | Movie có tên là số giống năm (1917, Wonder Woman 1984) luôn bị loại vì sai tên (có từ trước, nằm ở parser) | T |
-| NS-12 | TB | M | Anime `- 06v2` bị loại vì sai tập (có từ trước, nằm ở parser) | T |
-| NS-13 | TB | P | LimeTorrents đổi layout thì trả 0 dòng kèm trạng thái "ok"; nhiều indexer JSON cũng vậy | K |
-| NS-14 | TB | P | SubsPlease nhận query có số tập, mà API của nó chỉ khớp tên show, nên luôn trả rỗng | K |
-| NS-15 | TB | P, G | Một exception lạ ở một indexer (ví dụ timestamp ngoài phạm vi) làm mất kết quả của mọi indexer | K |
-| NS-16 | TB | A | Both: qBittorrent lỗi vẫn ghi record với qBittorrent = 0, nên cổng P6 có thể qua nhờ qBittorrent hỏng | K |
-| NS-17 | TB | A | Both: snapshot và dry-run hỏng hẳn khi qBittorrent tắt, dù native vẫn chạy được | K |
-| NS-18 | TB | M | Rút gọn query bỏ mất năm nằm trong tên phim (Blade Runner 2049 → "Blade Runner") | K, T |
-| NS-19 | TB | M | Tên thay thế toàn token ngắn ("IS", "Us") khớp với mọi bản | T |
-| NS-20 | TB | A | Lần tra IMDb id thất bại được nhớ tới khi tắt app, nên EZTV im lặng không search show đó | K |
-| NS-21 | TB | P | BT4G, TsukiHime và SubsPlease luôn báo seed = 0 (nghĩa là không biết), nên bị `MinimumSeeders` loại | R |
-| NS-22 | Thấp | A | Checkbox "Pause all" hiển thị lệch với trạng thái thật sau khi rời Settings mà không lưu | R |
-| NS-23 | Thấp | G | Một request thành công đang chạy dở đóng lại breaker vừa mở vì 403 (apibay chạy 2 request song song) | R |
-| NS-24 | Thấp | G | Trạng thái governor chỉ lưu khi có 2 s không có hoạt động, nên crash giữa lượt hunt làm mất breaker | R |
-| NS-25 | Thấp | A, G | Timeout từng indexer đặt trên 20 s không có tác dụng (`HttpClient.Timeout` = 20 s) | R |
-| NS-26 | Thấp | G, P | Policy LimeTorrents được nới hai lần mà không có số đo; `FullPageRows = 20` trong khi một trang thật có 40 dòng | R |
-| NS-27 | Thấp | P | Không lọc theo category: sách, nhạc và app chiếm chỗ trong 4 trang LimeTorrents | R |
-| NS-28 | Thấp | P, G | Dedupe fuzzy: dung lượng trôi dần theo bản được giữ; merge giữ size 0 dù bản khác có size | R |
-| NS-29 | Thấp | P | TsukiHime không đọc `is_adult` | R |
-| NS-30 | Thấp | nhiều | Các lỗi nhỏ khác, xem mục 3 | R |
-| NS-31 | TB | đo | Bench chỉ đo movie; TV, anime và pack chưa được đo theo recipe | K |
+| ID | Mức | Mảng | Vấn đề | Kiểm chứng | Trạng thái |
+|---|---|---|---|---|---|
+| NS-01 | Cao | M | Movie lệch năm ±1 mà tên khớp lỏng thì nhận nhầm phần khác của cùng franchise | K, T | Đã sửa |
+| NS-02 | Cao | M | Bản không có năm nhận nhầm phần tiếp theo (Dune Part Two, Frozen II); số "5.1" của audio được tính là số trong tên | K, T | Đã sửa |
+| NS-03 | Cao | A | TMDB timeout khi tra IMDb id làm dừng cả lượt cart hoặc Auto-Track như thể user bấm Hủy | K | Đã sửa |
+| NS-04 | Cao | G | Lỗi parse (trang lạ trả 200) không bao giờ mở breaker | K | Đã sửa |
+| NS-05 | TB | G | Retry-After: giới hạn 30 phút, giá trị 0 hoặc thời điểm đã qua làm mất cooldown, 503 bị bỏ qua | K | Chưa |
+| NS-06 | TB | G, A | Cache single-flight và memo query buộc mọi người gọi sau theo token, lane và thời hạn của người gọi đầu | K | Đã sửa |
+| NS-07 | TB | A | Memo 15 phút lưu cả kết quả thiếu (một số site timeout hoặc bị chặn) | K | Đã sửa |
+| NS-08 | TB | G, A | Cache response và memo không bao giờ dọn, bộ nhớ tăng mãi khi app chạy nhiều ngày | K | Đã sửa |
+| NS-09 | TB | G | Lane interactive không được ưu tiên hơn lane background | R | Chưa |
+| NS-10 | TB | M | Junk filter: chuỗi "4k" nằm bất kỳ đâu trong tên bắt áp ngưỡng 2160p; `.Bat.` bị coi là file thực thi | K, T | Đã sửa |
+| NS-11 | TB | M | Movie có tên là số giống năm (1917, Wonder Woman 1984) luôn bị loại vì sai tên (có từ trước, nằm ở parser) | T | Chưa |
+| NS-12 | TB | M | Anime `- 06v2` bị loại vì sai tập (có từ trước, nằm ở parser) | T | Chưa |
+| NS-13 | TB | P | LimeTorrents đổi layout thì trả 0 dòng kèm trạng thái "ok"; nhiều indexer JSON cũng vậy | K | Chưa |
+| NS-14 | TB | P | SubsPlease nhận query có số tập, mà API của nó chỉ khớp tên show, nên luôn trả rỗng | K | Chưa |
+| NS-15 | TB | P, G | Một exception lạ ở một indexer (ví dụ timestamp ngoài phạm vi) làm mất kết quả của mọi indexer | K | Đã sửa |
+| NS-16 | TB | A | Both: qBittorrent lỗi vẫn ghi record với qBittorrent = 0, nên cổng P6 có thể qua nhờ qBittorrent hỏng | K | Chưa |
+| NS-17 | TB | A | Both: snapshot và dry-run hỏng hẳn khi qBittorrent tắt, dù native vẫn chạy được | K | Chưa |
+| NS-18 | TB | M | Rút gọn query bỏ mất năm nằm trong tên phim (Blade Runner 2049 → "Blade Runner") | K, T | Chưa |
+| NS-19 | TB | M | Tên thay thế toàn token ngắn ("IS", "Us") khớp với mọi bản | T | Chưa |
+| NS-20 | TB | A | Lần tra IMDb id thất bại được nhớ tới khi tắt app, nên EZTV im lặng không search show đó | K | Sửa một phần |
+| NS-21 | TB | P | BT4G, TsukiHime và SubsPlease luôn báo seed = 0 (nghĩa là không biết), nên bị `MinimumSeeders` loại | R | Chưa |
+| NS-22 | Thấp | A | Checkbox "Pause all" hiển thị lệch với trạng thái thật sau khi rời Settings mà không lưu | R | Chưa |
+| NS-23 | Thấp | G | Một request thành công đang chạy dở đóng lại breaker vừa mở vì 403 (apibay chạy 2 request song song) | R | Chưa |
+| NS-24 | Thấp | G | Trạng thái governor chỉ lưu khi có 2 s không có hoạt động, nên crash giữa lượt hunt làm mất breaker | R | Chưa |
+| NS-25 | Thấp | A, G | Timeout từng indexer đặt trên 20 s không có tác dụng (`HttpClient.Timeout` = 20 s) | R | Chưa |
+| NS-26 | Thấp | G, P | Policy LimeTorrents được nới hai lần mà không có số đo; `FullPageRows = 20` trong khi một trang thật có 40 dòng | R | Chưa |
+| NS-27 | Thấp | P | Không lọc theo category: sách, nhạc và app chiếm chỗ trong 4 trang LimeTorrents | R | Chưa |
+| NS-28 | Thấp | P, G | Dedupe fuzzy: dung lượng trôi dần theo bản được giữ; merge giữ size 0 dù bản khác có size | R | Chưa |
+| NS-29 | Thấp | P | TsukiHime không đọc `is_adult` | R | Chưa |
+| NS-30 | Thấp | nhiều | Các lỗi nhỏ khác, xem mục 3 | R | Chưa |
+| NS-31 | TB | đo | Bench chỉ đo movie; TV, anime và pack chưa được đo theo recipe | K | Chưa |
 
 ---
 
@@ -311,7 +311,23 @@ Trên indexer HTML có phân trang, các phim cùng tên khác sẽ chiếm hế
 
 ---
 
-## 6. Thứ tự sửa đề xuất
+## 6. Đợt sửa 1 (ngày 2026-11-12)
+
+| ID | Đã làm | Test mới |
+|---|---|---|
+| NS-01, NS-02 | Thêm `MovieReleaseTitle`, chỉ lấy phần tên của bản phát hành: phần đứng trước năm, ngoặc, hoặc token chất lượng/nguồn/codec/audio, và bỏ qua `[Group]` ở đầu. Khi năm lệch 1 hoặc không có năm, phần tên này phải chứa đủ mọi từ của một tên phim (`the`/`a`/`an`/`and` là tùy chọn). Nó cũng không được có marker phần tiếp theo (số, số La Mã, `part`, `vol`, `two`…) mà tên phim không có. Bản không có năm còn bị từ chối nếu có từ thừa, trừ các từ phiên bản như Extended, Remastered, The Movie. | 15 ca trong `MovieMatchingTests` (Kill Bill, Deathly Hallows, Detective Conan, Your Name/Kimi no…, Dune Part Two, Frozen II, Frozen Fever, DD5.1, kèm các ca phải được nhận) |
+| NS-10 | Junk filter đọc độ phân giải từ token đứng riêng. Độ phân giải pixel thắng "4K"/"UHD", nên `4K Remastered 1080p` được hiểu là 1080p, và `384kbps` không còn bị coi là 4K. `.scr`/`.bat`/`.cmd` chỉ bị coi là file thực thi khi nằm ở cuối tên. | `QueryPlanAndJunkTests` (Lawrence of Arabia 4K, 384kbps, The Bat Whispers, `.SCR.`) |
+| NS-04 | Chỉ báo "thành công" cho governor sau khi indexer parse xong (`IIndexerHttp.ReportParsed`). Response không parse được bị báo `BadResponse` và bị xóa khỏi cache. Trúng cache thì không báo gì. | `GovernedHttpAndOrchestratorTests`: 3 trang lạ trả 200 làm mở breaker; trúng cache không bị tính lỗi |
+| NS-15 | Orchestrator có nhánh bắt mọi lỗi: một indexer lỗi thì ghi `parse-error` cho riêng nó. Timestamp được parse an toàn (`IndexerParsing.FromUnix*`). | indexer ném `ArgumentOutOfRangeException` mà vẫn giữ được dòng của indexer khác |
+| NS-06 | Cache single-flight và memo: người gọi sau chờ bằng token của chính mình. Nếu task chung bị hủy bởi người khởi tạo, người gọi sau tự chạy lại. Khóa memo có thêm lane. | người gọi sau không bị hủy theo người gọi đầu, và tự dừng được bằng token riêng |
+| NS-07 | Memo chỉ lưu khi mọi indexer được hỏi đều trả "ok" (hoặc bị bỏ qua vì đang tắt). Khóa memo có tập indexer đang bật. Dùng `GetOrAdd` nguyên tử. | `NativeSearchServiceTests.IsComplete` |
+| NS-08 | Cache response và memo tự dọn mục hết hạn (cache quét mỗi 5 phút). | |
+| NS-03 | Tra IMDb id có hạn 10 s. Timeout của TMDB (kể cả timeout 100 s của `HttpClient`) giờ được coi là "không có IMDb id", không còn là user hủy. | `NativeSearchServiceTests`: TMDB timeout không làm search ném lỗi, và query sau không chờ lại |
+| NS-20 (một phần) | Lần tra thất bại được nhớ 10 phút; TMDB trả về không có IMDb id thì nhớ 1 giờ, thay vì tới khi tắt app. | như trên |
+
+Kết quả: 475 test Core và 140 test App đều pass. SearchBench build được.
+
+## 7. Thứ tự sửa đề xuất
 
 1. **Trước khi để Native hoặc Both chạy tự động (Auto-Track):**
    - NS-01, NS-02: khớp movie.

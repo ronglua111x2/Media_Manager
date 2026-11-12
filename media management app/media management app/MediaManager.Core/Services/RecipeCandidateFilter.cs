@@ -24,8 +24,7 @@ public static class RecipeCandidateFilter
         parsed ??= TorrentCandidateParser.Parse(
             result.FileName,
             RecipeRuntimeSettings.UsesAnimeAbsoluteEpisodeNumbering(recipe));
-        var junkQuality = string.IsNullOrWhiteSpace(parsed.Quality) ? TorrentQuality.Detect(result.FileName) : parsed.Quality;
-        if (JunkFilter.GetJunkReason(recipe, result, junkQuality) is { } junk)
+        if (JunkFilter.GetJunkReason(recipe, result) is { } junk)
         {
             return (CandidateRejectReason.SuspiciousRelease, junk);
         }

@@ -54,7 +54,7 @@ public sealed class TorrentsCsvIndexer(string baseUrl = "https://torrents-csv.co
                 MagnetUri: null,
                 TorrentUrl: null,
                 DetailsUrl: null,
-                PublishedUtc: created > 0 ? DateTimeOffset.FromUnixTimeSeconds(created) : null,
+                PublishedUtc: IndexerParsing.FromUnix(created),
                 IndexerId: "torrents-csv",
                 Source: "torrents-csv"));
         }

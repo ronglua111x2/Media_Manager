@@ -87,7 +87,7 @@ public sealed partial class YtsIndexer(string baseUrl = "https://yts.gg") : ITor
                     MagnetUri: null,
                     TorrentUrl: Str(torrent, "url"),
                     DetailsUrl: Str(movie, "url"),
-                    PublishedUtc: uploaded > 0 ? DateTimeOffset.FromUnixTimeSeconds(uploaded) : null,
+                    PublishedUtc: IndexerParsing.FromUnix(uploaded),
                     IndexerId: "yts",
                     Source: "yts"));
             }
