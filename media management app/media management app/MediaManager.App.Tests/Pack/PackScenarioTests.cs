@@ -11,7 +11,7 @@ namespace MediaManager.App.Tests.Pack;
 // still broken carry Skip = the finding that fixes them.
 public class PackScenarioTests
 {
-    [Fact(Skip = "PARSE-04")]
+    [Fact]
     public void A_RootSeasonRangeFolderWithSpaces_KeepsEachFileInItsOwnSeason()
     {
         var scenario = Scenarios["A"];
@@ -39,7 +39,7 @@ public class PackScenarioTests
         }
     }
 
-    [Fact(Skip = "PARSE-03")]
+    [Fact]
     public void C_ShowTitleContainsSpecial_EpisodesStayRegular()
     {
         var inventory = PackScenario.Run(Scenarios["C"]);
@@ -51,7 +51,7 @@ public class PackScenarioTests
         }
     }
 
-    [Fact(Skip = "PARSE-08")]
+    [Fact]
     public void D_EpisodeTitleContainsMovie_EpisodeStaysRegular()
     {
         var inventory = PackScenario.Run(Scenarios["D"]);
@@ -219,7 +219,7 @@ public class PackScenarioTests
         }
     }
 
-    [Fact(Skip = "PARSE-04")]
+    [Fact]
     public void K_SeasonPartTwoFolder_IsNotLinkedOverPartOne()
     {
         var inventory = PackScenario.Run(Scenarios["K"]);
@@ -243,7 +243,7 @@ public class PackScenarioTests
         PackScenario.AssertRegular(inventory, "Show.Complete/Show.S02E02.mkv", 2, 2);
     }
 
-    [Fact(Skip = "PARSE-03")]
+    [Fact]
     public void M_EpisodeTitleContainsSpecial_EpisodeStaysRegular()
     {
         var inventory = PackScenario.Run(Scenarios["M"]);
@@ -270,13 +270,45 @@ public class PackScenarioTests
 
     // Report section 10.4 point 5: a release of shorts named like regular episodes, whose titles
     // match specials and not the season's episodes, must not be linked as episodes 1-6.
-    [Fact(Skip = "Report section 10.4 point 5 (PR-8)")]
+    [Fact]
     public void ShortsNamedLikeEpisodes_WithSpecialTitles_AreNotLinkedAsRegularEpisodes()
     {
         var inventory = PackScenario.Run(Scenarios["shorts-titled"]);
 
         Assert.Equal(0, inventory.RegularEpisodeCount);
         Assert.Contains(inventory.Warnings, warning => warning.Contains("special", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void ShortsMixedIntoAPack_FarSmallerThanOtherEpisodes_AreHeldForReview()
+    {
+        var inventory = PackScenario.Run(Scenarios["shorts-by-size"]);
+
+        Assert.Equal(6, inventory.RegularEpisodeCount);
+        foreach (var number in new[] { 7, 8 })
+        {
+            var entry = PackScenario.Entry(inventory, $"[Grp] Show/[Grp] Show - {number:00} [1080p].mkv");
+            Assert.Equal(PackFileClassification.Skipped, entry.Classification);
+            Assert.Contains("smaller", entry.MatchReason);
+        }
+    }
+
+    [Fact]
+    public void SeasonFolderDisagreesWithFileName_FileNameWins()
+    {
+        var inventory = PackScenario.Run(Scenarios["folder-vs-name"]);
+
+        PackScenario.AssertRegular(inventory, "Show/Season 2/Show.S01E03.mkv", 1, 3);
+        PackScenario.AssertRegular(inventory, "Show/Season 2/Show.S02E01.mkv", 2, 1);
+    }
+
+    [Fact]
+    public void S00EpisodeFileWithoutSpecialsFolder_IsNotLinkedAsRegularEpisode()
+    {
+        var inventory = PackScenario.Run(Scenarios["s00-in-root"]);
+
+        PackScenario.AssertRegular(inventory, "Show.S01/Show.S01E02.mkv", 1, 2);
+        Assert.NotEqual(PackFileClassification.RegularEpisode, PackScenario.Entry(inventory, "Show.S01/Show.S00E02.mkv").Classification);
     }
 
     [Theory]
@@ -400,6 +432,19 @@ public class PackScenarioTests
                 Specials: Enumerable.Range(1, 12)
                     .Select(e => (e, new DateTime(2020, 1, 1).AddDays(7 * e).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), $"Special {e}"))
                     .ToArray()),
+            ["shorts-by-size"] = new(
+                Owner: 1, Covered: [1], EpisodesPerSeason: new() { [1] = 8 },
+                Files: Enumerable.Range(1, 8).Select(e => $"[Grp] Show/[Grp] Show - {e:00} [1080p].mkv").ToArray(),
+                Sizes: Enumerable.Range(1, 8).ToDictionary(
+                    e => $"[Grp] Show/[Grp] Show - {e:00} [1080p].mkv",
+                    e => e <= 6 ? 1_300_000_000L : 60_000_000L)),
+            ["folder-vs-name"] = new(
+                Owner: 1, Covered: [1, 2], EpisodesPerSeason: new() { [1] = 3, [2] = 3 },
+                Files: ["Show/Season 2/Show.S01E03.mkv", "Show/Season 2/Show.S02E01.mkv"]),
+            ["s00-in-root"] = new(
+                Owner: 1, Covered: [1], EpisodesPerSeason: new() { [1] = 3 },
+                Files: ["Show.S01/Show.S01E01.mkv", "Show.S01/Show.S01E02.mkv", "Show.S01/Show.S00E02.mkv"],
+                Specials: [(2, "2021-01-01", "Holiday Special")]),
             ["K"] = new(
                 Owner: 1, Covered: [1], EpisodesPerSeason: new() { [1] = 6 },
                 Files: Enumerable.Range(1, 3).Select(e => $"Show/Season 1/Show.S01E{e:00}.mkv")

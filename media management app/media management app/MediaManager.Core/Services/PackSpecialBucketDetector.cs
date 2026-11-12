@@ -50,8 +50,7 @@ public static class PackSpecialBucketDetector
             return null;
         }
 
-        if (IsUnderMoviesFolder(relativePath) ||
-            fileName.Contains("movie", StringComparison.OrdinalIgnoreCase))
+        if (PackMovieRules.IsMovieFile(relativePath, fileName))
         {
             return null;
         }
@@ -185,18 +184,24 @@ public static class PackSpecialBucketDetector
             return true;
         }
 
-        if (parsed.SeasonNumber == seasonHint &&
-            parsed.EpisodeNumber is null &&
-            (fileName.Contains("OVA", StringComparison.OrdinalIgnoreCase) ||
-             fileName.Contains("special", StringComparison.OrdinalIgnoreCase)))
+        // A regular SxxEyy file is not a special because "special"/"OVA" appears in its title (PARSE-03).
+        if (parsed.SeasonNumber is > 0 && parsed.EpisodeNumber is not null)
         {
-            return true;
+            return false;
         }
 
-        return TorrentCandidateParser.TryParseBareEpisodeIndex(fileName) is not null &&
-               (fileName.Contains("OVA", StringComparison.OrdinalIgnoreCase) ||
-                fileName.Contains("special", StringComparison.OrdinalIgnoreCase));
+        if (!SpecialWordRegex.IsMatch(fileName))
+        {
+            return false;
+        }
+
+        return (parsed.SeasonNumber == seasonHint && parsed.EpisodeNumber is null) ||
+               TorrentCandidateParser.TryParseBareEpisodeIndex(fileName) is not null;
     }
+
+    private static readonly System.Text.RegularExpressions.Regex SpecialWordRegex = new(
+        @"(?:^|[^a-z0-9])(?:ova|oad|specials?)(?:$|[^a-z0-9])",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Compiled);
 
     private static string[] NormalizeSegments(string relativePath) =>
         relativePath
@@ -209,9 +214,6 @@ public static class PackSpecialBucketDetector
         segment.Equals("special", StringComparison.OrdinalIgnoreCase) ||
         segment.Equals("season 00", StringComparison.OrdinalIgnoreCase) ||
         segment.Equals("season00", StringComparison.OrdinalIgnoreCase);
-
-    private static bool IsUnderMoviesFolder(string relativePath) =>
-        PathContainsFolder(relativePath, "movies") || PathContainsFolder(relativePath, "films");
 
     private static bool IsUnderTorrentExtrasFolder(string relativePath) =>
         PathContainsFolder(relativePath, "extras") || PathContainsFolder(relativePath, "extra");

@@ -27,9 +27,13 @@ public static class PackSeasonFileGrouper
                 continue;
             }
 
-            var seasonHint = tree?.PathSeasonHints.TryGetValue(file.RelativePath, out var hint) == true
-                ? hint
-                : TorrentCandidateParser.TryGetSeasonHintFromPath(file.RelativePath);
+            // SxxEyy in the file name outranks the folder (PARSE-04); the folder outranks nothing.
+            var parsedName = TorrentCandidateParser.Parse(file.FileName, file.RelativePath);
+            var seasonHint = parsedName is { SeasonNumber: > 0, EpisodeNumber: not null }
+                ? parsedName.SeasonNumber
+                : tree?.PathSeasonHints.TryGetValue(file.RelativePath, out var hint) == true
+                    ? hint
+                    : TorrentCandidateParser.TryGetSeasonHintFromPath(file.RelativePath);
 
             if (seasonHint is > 0)
             {
@@ -72,8 +76,7 @@ public static class PackSeasonFileGrouper
             return "sample";
         }
 
-        if (IsUnderMoviesFolder(relativePath) ||
-            fileName.Contains("movie", StringComparison.OrdinalIgnoreCase))
+        if (PackMovieRules.IsMovieFile(relativePath, fileName))
         {
             return "movie";
         }
@@ -91,9 +94,6 @@ public static class PackSeasonFileGrouper
         var parsed = TorrentCandidateParser.Parse(fileName, relativePath);
         return parsed.IsExtraContent ? "extra-content" : null;
     }
-
-    private static bool IsUnderMoviesFolder(string relativePath) =>
-        PathContainsFolder(relativePath, "movies") || PathContainsFolder(relativePath, "films");
 
     private static bool IsUnderExtrasFolder(string relativePath) =>
         PathContainsFolder(relativePath, "extras") || PathContainsFolder(relativePath, "extra");

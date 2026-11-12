@@ -151,9 +151,27 @@ public static class PackEpisodeResolver
         out string? failure)
     {
         failure = null;
+        var explicitSeasonEpisode = HasSeasonEpisode(parsed) && !parsed!.IsMultiSeason;
+        if (explicitSeasonEpisode && TorrentCandidateParser.Parse(stem) is { SeasonNumber: 0, EpisodeNumber: not null })
+        {
+            failure = "S00 episode in the file name — handled by the specials pipeline.";
+            return null;
+        }
+
         if (TryExtractFromParsed(parsed, seasonNumber, validEpisodeNumbers, out var episode))
         {
             return (seasonNumber, episode);
+        }
+
+        // Sonarr read an explicit season/episode that does not fit this group: the pattern inferrer
+        // would only guess from character positions, so report instead (PARSE-04).
+        if (explicitSeasonEpisode)
+        {
+            failure = GetSkipReason(parsed, seasonNumber, validEpisodeNumbers);
+            if (failure is not null)
+            {
+                return null;
+            }
         }
 
         // Absolute numbers come before the pattern inferrer: the inferrer only sees character

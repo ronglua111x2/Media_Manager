@@ -49,7 +49,14 @@ public static class PackTorrentInventoryAnalyzer
                 group => group.Select(episode => episode.EpisodeNumber).ToHashSet() as IReadOnlySet<int>);
         var fallbackPatterns = BuildFallbackPatternsBySeason(seasonGroups, seasonCountsFromDb);
         var absoluteMapper = new AbsoluteEpisodeMapper(BuildSeasonEpisodeCounts(seasonCountsFromDb, episodesBySeason));
-        var resolutionsByPath = ResolveRegularEpisodesBySeason(seasonGroups, validEpisodesBySeason, fallbackPatterns, fileSizes, absoluteMapper);
+        var resolutionsByPath = ResolveRegularEpisodesBySeason(
+            seasonGroups,
+            validEpisodesBySeason,
+            fallbackPatterns,
+            fileSizes,
+            absoluteMapper,
+            inventory.Warnings);
+        FlagSpecialLikeEpisodes(resolutionsByPath, files, fileSizes, episodes, inventory.Warnings);
         var specialMappings = BuildSpecialMappings(files, tree, specialsEpisodes, resolvedSpecialMappings);
 
         foreach (var (relativePath, fileName) in files)
@@ -329,7 +336,8 @@ public static class PackTorrentInventoryAnalyzer
         IReadOnlyDictionary<int, IReadOnlySet<int>> validEpisodesBySeason,
         IReadOnlyDictionary<int, InferredEpisodePattern> fallbackPatterns,
         IReadOnlyDictionary<string, long>? fileSizes,
-        AbsoluteEpisodeMapper absoluteMapper)
+        AbsoluteEpisodeMapper absoluteMapper,
+        List<string> warnings)
     {
         var resolutions = new Dictionary<string, PackEpisodeResolution>(StringComparer.OrdinalIgnoreCase);
         var fileNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -338,17 +346,62 @@ public static class PackTorrentInventoryAnalyzer
         {
             var validEpisodes = validEpisodesBySeason.GetValueOrDefault(group.SeasonNumber) ?? new HashSet<int>();
             fallbackPatterns.TryGetValue(group.SeasonNumber, out var fallbackPattern);
+            var pattern = fallbackPattern?.IsValid == true ? fallbackPattern : null;
+
+            // "Season N Part 2" folders are resolved on their own so a renumbered part cannot collide
+            // with (and knock out) the files of part 1.
+            var partFiles = group.Files
+                .Select(file => (File: file, Part: TorrentCandidateParser.TryGetSeasonPartFromPath(file.RelativePath)))
+                .Where(item => item.Part is not null)
+                .ToList();
+            var mainFiles = group.Files
+                .Where(file => TorrentCandidateParser.TryGetSeasonPartFromPath(file.RelativePath) is null)
+                .ToList();
+
             var seasonResolutions = PackEpisodeResolver.ResolveSeason(
-                group.Files,
+                mainFiles,
                 group.SeasonNumber,
                 validEpisodes,
-                fallbackPattern?.IsValid == true ? fallbackPattern : null,
+                pattern,
                 fileSizes,
                 absoluteMapper);
-
             foreach (var (path, resolution) in seasonResolutions)
             {
                 resolutions[path] = resolution;
+            }
+
+            foreach (var partGroup in partFiles.GroupBy(item => item.Part!.Value))
+            {
+                var partResolutions = PackEpisodeResolver.ResolveSeason(
+                    partGroup.Select(item => item.File).ToList(),
+                    group.SeasonNumber,
+                    validEpisodes,
+                    pattern,
+                    fileSizes,
+                    absoluteMapper);
+                var linked = partResolutions.Values
+                    .Where(resolution => resolution.Status == PackEpisodeResolutionStatus.RegularEpisode)
+                    .Select(resolution => (resolution.SeasonNumber, Episode: resolution.EpisodeNumber!.Value))
+                    .ToList();
+                var mainLinked = seasonResolutions.Values
+                    .Where(resolution => resolution.Status == PackEpisodeResolutionStatus.RegularEpisode)
+                    .Select(resolution => (resolution.SeasonNumber, Episode: resolution.EpisodeNumber!.Value))
+                    .ToHashSet();
+                var (partSeason, part) = partGroup.Key;
+                var restarts = linked.Count > 0 && (linked.Min(item => item.Episode) == 1 || linked.Any(mainLinked.Contains));
+                foreach (var (path, resolution) in partResolutions)
+                {
+                    resolutions[path] = restarts
+                        ? PackEpisodeResolution.Skipped(
+                            group.SeasonNumber,
+                            $"Folder 'Season {partSeason} Part {part}' restarts episode numbers; not linking it, review which TMDB episodes it holds.")
+                        : resolution;
+                }
+
+                if (restarts)
+                {
+                    warnings.Add($"Season {partSeason} Part {part} restarts episode numbers; its files were not linked and need review.");
+                }
             }
 
             foreach (var file in group.Files)
@@ -373,6 +426,101 @@ public static class PackTorrentInventoryAnalyzer
 
         return resolutions;
     }
+
+    private static readonly HashSet<string> TitleStopWords = new(
+        ["a", "an", "the", "of", "and", "to", "in", "on", "at", "for", "with", "is", "episode", "ep", "special", "specials", "ova", "part"],
+        StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Report section 10.4 point 5: a release of shorts or specials named like regular episodes
+    /// ("Show - 01..06", no "Special" word, no Specials folder) would be linked as episodes 1-6.
+    /// Files without an explicit SxxEyy are held back for review when their title matches a TMDB
+    /// special and no regular episode, or when they are far smaller than the pack's other episodes.
+    /// </summary>
+    private static void FlagSpecialLikeEpisodes(
+        Dictionary<string, PackEpisodeResolution> resolutions,
+        IReadOnlyList<(string RelativePath, string FileName)> files,
+        IReadOnlyDictionary<string, long>? fileSizes,
+        IReadOnlyList<TrackedEpisode> episodes,
+        List<string> warnings)
+    {
+        var linked = files
+            .Where(file => resolutions.TryGetValue(file.RelativePath, out var resolution) &&
+                           resolution.Status == PackEpisodeResolutionStatus.RegularEpisode)
+            .ToList();
+        if (linked.Count == 0)
+        {
+            return;
+        }
+
+        var specialTitles = episodes
+            .Where(episode => episode.SeasonNumber == AppConstants.SpecialsSeasonNumber)
+            .Select(episode => (episode.EpisodeNumber, Tokens: TitleTokens(episode.Title)))
+            .Where(item => item.Tokens.Count >= 2)
+            .ToList();
+        var regularTitles = episodes
+            .Where(episode => episode.SeasonNumber > 0)
+            .Select(episode => TitleTokens(episode.Title))
+            .Where(tokens => tokens.Count >= 2)
+            .ToList();
+        var sizes = linked
+            .Select(file => GetFileSize(fileSizes, file.RelativePath))
+            .Where(size => size > 0)
+            .Order()
+            .ToList();
+        var medianSize = sizes.Count >= 3 ? sizes[sizes.Count / 2] : 0;
+        var flagged = 0;
+
+        foreach (var (relativePath, fileName) in linked)
+        {
+            if (TorrentCandidateParser.Parse(fileName, relativePath) is { SeasonNumber: > 0, EpisodeNumber: not null })
+            {
+                continue;
+            }
+
+            var resolution = resolutions[relativePath];
+            string? reason = null;
+            var titleTokens = TitleTokens(TorrentCandidateParser.Parse(fileName, relativePath, allowAnimeAbsolute: true).EpisodeTitle);
+            if (titleTokens.Count >= 2 && !regularTitles.Any(tokens => tokens.IsSubsetOf(titleTokens)))
+            {
+                var special = specialTitles.FirstOrDefault(item => item.Tokens.IsSubsetOf(titleTokens));
+                if (special.Tokens is not null)
+                {
+                    reason = $"Title matches special S00E{special.EpisodeNumber:00} and no regular episode; may be a special named like an episode, review before linking.";
+                }
+            }
+
+            var size = GetFileSize(fileSizes, relativePath);
+            if (reason is null && medianSize > 0 && size > 0 && size * 4 < medianSize)
+            {
+                reason = $"File is {size / 1_048_576} MB, far smaller than the pack's other episodes ({medianSize / 1_048_576} MB); may be a short or special named like an episode, review before linking.";
+            }
+
+            if (reason is null)
+            {
+                continue;
+            }
+
+            resolutions[relativePath] = PackEpisodeResolution.Skipped(resolution.SeasonNumber, reason);
+            flagged++;
+        }
+
+        if (flagged > 0)
+        {
+            warnings.Add($"{flagged} file(s) look like specials or shorts named as regular episodes; they were not linked and need review.");
+        }
+    }
+
+    private static HashSet<string> TitleTokens(string? title) =>
+        string.IsNullOrWhiteSpace(title)
+            ? []
+            : TorrentCandidateParser.Tokenize(title)
+                .Where(token => token.Length > 1 && !token.All(char.IsDigit) && !TitleStopWords.Contains(token))
+                .Select(token => token.ToLowerInvariant())
+                .ToHashSet();
+
+    private static long GetFileSize(IReadOnlyDictionary<string, long>? fileSizes, string relativePath) =>
+        fileSizes is not null && fileSizes.TryGetValue(relativePath, out var size) ? size : 0;
 
     private static Dictionary<int, int> BuildSeasonEpisodeCounts(
         IReadOnlyDictionary<int, int> seasonCountsFromDb,
@@ -511,7 +659,7 @@ public static class PackTorrentInventoryAnalyzer
             return Skipped(relativePath, fileName, "Sample or proof file.");
         }
 
-        if (IsMoviePackFile(relativePath, fileName) || IsUnderMoviesFolder(relativePath))
+        if (PackMovieRules.IsMovieFile(relativePath, fileName))
         {
             return new PackFileEntry
             {
@@ -682,17 +830,13 @@ public static class PackTorrentInventoryAnalyzer
             MatchReason = reason
         };
 
+    // The season group already ranks SxxEyy in the file name above the folder (PARSE-04).
     private static int? ResolveSeason(
         string relativePath,
         TorrentCandidateParseResult parsed,
         int? pathSeasonHint,
         IReadOnlyList<PackSeasonFileGrouper.SeasonFileGroup> seasonGroups)
     {
-        if (pathSeasonHint is > 0)
-        {
-            return pathSeasonHint;
-        }
-
         var owningGroup = seasonGroups.FirstOrDefault(group =>
             group.Files.Any(file => string.Equals(file.RelativePath, relativePath, StringComparison.OrdinalIgnoreCase)));
         if (owningGroup?.SeasonNumber > 0)
@@ -700,20 +844,13 @@ public static class PackTorrentInventoryAnalyzer
             return owningGroup.SeasonNumber;
         }
 
+        if (pathSeasonHint is > 0)
+        {
+            return pathSeasonHint;
+        }
+
         return parsed.SeasonNumber;
     }
-
-    private static bool IsMoviePackFile(string relativePath, string fileName)
-    {
-        var normalizedPath = relativePath.Replace('\\', '/');
-        return normalizedPath
-                   .Split('/', StringSplitOptions.RemoveEmptyEntries)
-                   .Any(segment => string.Equals(segment, "movies", StringComparison.OrdinalIgnoreCase)) ||
-               fileName.Contains("movie", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static bool IsUnderMoviesFolder(string relativePath) =>
-        PathContainsFolder(relativePath, "movies") || PathContainsFolder(relativePath, "films");
 
     private static bool IsUnderExtrasFolder(string relativePath) =>
         PathContainsFolder(relativePath, "extras") || PathContainsFolder(relativePath, "extra");
