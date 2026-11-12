@@ -240,6 +240,18 @@ public class TvIndexerTests
             .Which.AbsoluteUri.Should().Be("https://www.torrentdownloads.pro/rss.xml?type=search&search=Coherence+2013");
     }
 
+    [Theory]
+    [InlineData("Zootopia 2 2025 1440p DCP WEBRIP AC3 SDR H264", "Golam 1440p", false)]
+    [InlineData("Golam 2024 1080p WEB-DL", "Golam 1440p", true)]
+    [InlineData("Coherence 2014 720p", "Coherence 2013", true)]
+    [InlineData("Spider-Man Across the Spider-Verse 2023 1080p", "Spider-Man Across the Spider-Verse 1080p", true)]
+    [InlineData("[SubsPlease] Kanata Kara - 06 (1080p)", "Kanata Kara 06", true)]
+    [InlineData("[SubsPlease] Kanata Kara - 07 (1080p)", "Kanata Kara 06", false)]
+    public void TorrentDownloads_KeepsOnlyRowsWithAllTitleWords(string title, string query, bool expected)
+    {
+        TorrentDownloadsIndexer.MatchesTitleWords(title, query).Should().Be(expected);
+    }
+
     /// <summary>Records requests; with a null responder any call fails the test.</summary>
     private sealed class FakeIndexerHttp(Func<Uri, string>? responder) : IIndexerHttp
     {

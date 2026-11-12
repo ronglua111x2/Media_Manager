@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
+using media_management_app.Services;
 
 namespace media_management_app.Search.Indexers;
 
@@ -30,7 +31,26 @@ public sealed partial class TorrentDownloadsIndexer(string baseUrl = "https://ww
         var search = Uri.EscapeDataString(query.Text.Trim()).Replace("%20", "+", StringComparison.Ordinal);
         var uri = new Uri($"{baseUrl.TrimEnd('/')}/rss.xml?type=search&search={search}");
         var response = await http.GetAsync(uri, cancellationToken);
-        return Parse(response.Body, $"{response.FinalUri.Scheme}://{response.FinalUri.Authority}");
+        var rows = Parse(response.Body, $"{response.FinalUri.Scheme}://{response.FinalUri.Authority}");
+        return rows.Where(row => MatchesTitleWords(row.Title, query.Text)).ToList();
+    }
+
+    /// <summary>
+    /// The search RSS matches ANY word: "Golam 1440p" returns 50 unrelated 1440p releases. A row is kept only when
+    /// it contains every title word of the query; years and quality markers are optional (the evaluator checks them).
+    /// </summary>
+    public static bool MatchesTitleWords(string title, string queryText)
+    {
+        var required = TitleNormalizer.MatchTokens(queryText)
+            .Where(token => !NativeQueryText.IsQualityToken(token) && !NativeQueryText.IsYearToken(token))
+            .ToList();
+        if (required.Count == 0)
+        {
+            return true;
+        }
+
+        var tokens = TitleNormalizer.MatchTokens(title).ToHashSet(StringComparer.Ordinal);
+        return required.All(tokens.Contains);
     }
 
     public static IReadOnlyList<IndexerResult> Parse(string rss, string siteRoot = "https://www.torrentdownloads.pro")

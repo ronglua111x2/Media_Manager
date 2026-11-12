@@ -82,6 +82,12 @@ public static partial class NativeQueryText
             .ToList();
     }
 
+    /// <summary>A quality marker ("1080p", "4k", "x265"...) as used in recipe queries.</summary>
+    public static bool IsQualityToken(string token) => QualityTokens().IsMatch(token) && QualityTokens().Match(token).Length == token.Length;
+
+    /// <summary>A four-digit year (1900–2099).</summary>
+    public static bool IsYearToken(string token) => token.Length == 4 && (token.StartsWith("19") || token.StartsWith("20")) && token.All(char.IsDigit);
+
     /// <summary>One word of at most 6 letters ("Dune", "Heat", "Alien", "Us"): a bare title search is too broad.</summary>
     public static bool IsShortTitle(string title)
     {

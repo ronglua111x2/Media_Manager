@@ -107,3 +107,37 @@ Thời gian mỗi movie: native 2–26 s, qBittorrent 13–242 s.
 Bước tiếp theo:
 - cho phép native giữ query `title + quality` với **indexer HTML có phân trang** (LimeTorrents);
 - chạy `Both` thật vài ngày rồi dùng `SearchBench gate`.
+
+### Lần đo 2 (sau `09fda5f`: query `title + chất lượng`)
+
+`09fda5f` gửi thêm query `title + 2 chất lượng cao nhất của recipe` (ví dụ `Oppenheimer 1080p`, `Oppenheimer 2160p`) tới các indexer có phân trang hoặc trả ít dòng: LimeTorrents, Bitsearch, TorrentDownloads. Hash cũng được lấy từ link tải của YTS.
+
+| Movie | qBittorrent | Native | Chỉ qBit có | Chỉ native có |
+|---|---|---|---|---|
+| Coherence | 20 | 21 | 2 | 3 |
+| Predestination | 23 | 24 | 3 | 4 |
+| Your Name. | 108 | 100 | 18 | 10 |
+| Liz and the Blue Bird | 16 | 15 | 6 | 5 |
+| The Lego Movie 2 | 41 | 35 | 6 | 0 |
+| Euphonium – Our Promise | 15 | 19 | 2 | 6 |
+| El Camino | 27 | 24 | 4 | 1 |
+| Spider-Man: No Way Home | 79 | 94 | 4 | 19 |
+| Jujutsu Kaisen 0 | 1 | 12 | 0 | 11 |
+| Oppenheimer | 106 | 103 | 17 | 14 |
+| Euphonium: Ensemble Contest | 0 | 0 | 0 | 0 |
+| Spider-Man: Across the Spider-Verse | 54 | 68 | 12 | 26 |
+| Golam | 0 | 8 | 0 | 8 |
+| Cosmic Princess Kaguya! | 0 | 3 | 0 | 3 |
+| Project Hail Mary | 70 | 81 | 4 | 15 |
+| **Tổng** | **560** | **607 (108%)** | **78** | **125** |
+
+- **Cổng 90% đạt.** Native có 607 bản tốt, bằng 108% của qBittorrent trong cùng lần chạy. Nếu so với tổng của lần đo 1 (qBittorrent 660, vì kết quả của các site thay đổi giữa các lần chạy), tỉ lệ là 92%.
+- **Độ phủ trên tập hợp chung** (685 bản tốt mà ít nhất một bên tìm được): native 89%, qBittorrent 82%.
+- **Bản #1:** giống nhau ở 8/15 movie. Ở 7 movie còn lại, bản #1 của native có điểm cao hơn ở 6, thấp hơn ở 1 (Jujutsu Kaisen 0: bản của qBittorrent không phải bản tốt).
+- **Thời gian:** native mất 15–76 s mỗi movie (lần đo 1: 2–26 s), vì mỗi tên được search thêm 2 query chất lượng và bench chạy tuần tự từng query. qBittorrent mất 11–242 s. Movie nhỏ có lúc native chậm hơn: Ensemble Contest 41 s so với 14 s, Golam 28 s so với 11 s.
+- **78 bản chỉ qBittorrent có**, chủ yếu từ:
+  - kickass, vẫn tắt vì trang danh sách không có hash;
+  - thepiratebay: apibay chỉ trả 100 dòng đầu;
+  - vài bản native có nhưng loại do seed thấp hơn ngưỡng ở thời điểm đo.
+
+**Sửa sau lần đo.** RSS search của TorrentDownloads khớp **bất kỳ từ nào**: `Golam 1440p` trả về 50 bản 1440p không liên quan. Indexer giờ chỉ giữ dòng có đủ mọi từ trong tên; năm và token chất lượng là tùy chọn.
