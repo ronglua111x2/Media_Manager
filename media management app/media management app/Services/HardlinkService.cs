@@ -39,7 +39,7 @@ public sealed class HardlinkService : IHardlinkService
         var seasonFolder = $"Season {seasonNumber:00}";
         if (item.IsOrphanPackSpecial)
         {
-            var orphanFileName = SanitizeFileName(item.FileName);
+            var orphanFileName = SanitizeFileName(BuildOrphanFileName(item));
             return Path.Combine(outputRoot, showName, AppConstants.OrphanExtrasFolderName, orphanFileName);
         }
 
@@ -235,6 +235,21 @@ public sealed class HardlinkService : IHardlinkService
         }
 
         return string.Join(' ', value.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+    }
+
+    /// <summary>
+    /// Orphan extras keep their release file name. When the file sits in a season folder of the pack
+    /// (<c>Season 1/NCOP.mkv</c>, <c>Season 2/NCOP.mkv</c>) the season is prefixed, so same-named extras
+    /// of different seasons no longer collide with "Output already exists" (PARSE-14). Files in other
+    /// folders (for example <c>Extras/</c>) keep their current name.
+    /// </summary>
+    private static string BuildOrphanFileName(SourceItem item)
+    {
+        var parentFolder = Path.GetFileName(Path.GetDirectoryName(item.FilePath) ?? string.Empty);
+        var season = string.IsNullOrWhiteSpace(parentFolder)
+            ? null
+            : TorrentCandidateParser.TryParseSeasonFolderSegment(parentFolder);
+        return season is > 0 ? $"S{season.Value:00} - {item.FileName}" : item.FileName;
     }
 
     private static string SanitizeFileName(string fileName)

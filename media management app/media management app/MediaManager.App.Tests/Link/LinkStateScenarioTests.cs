@@ -370,6 +370,23 @@ public sealed class LinkStateScenarioTests : IDisposable
         Assert.Empty(_host.JellyfinFiles());
     }
 
+    // PARSE-14: same-named extras from different season folders get distinct orphan names;
+    // extras outside season folders keep their release name.
+    [Fact]
+    public async Task OrphanExtras_SameNameInTwoSeasonFolders_AreBothLinked()
+    {
+        var showId = PackShow("HO", 5018, "Pack/Season 1/NCOP.mkv", "Pack/Season 2/NCOP.mkv", "Pack/Extras/NCED 01.mkv");
+
+        var result = await _host.ApplyPackAsync(showId, 1,
+            ("Pack/Season 1/NCOP.mkv", PackFileClassification.UnmatchedExtra, null, null),
+            ("Pack/Season 2/NCOP.mkv", PackFileClassification.UnmatchedExtra, null, null),
+            ("Pack/Extras/NCED 01.mkv", PackFileClassification.UnmatchedExtra, null, null));
+
+        Assert.Equal(0, result.ErrorCount);
+        var names = _host.LibraryFiles().Select(Path.GetFileName).OrderBy(name => name).ToList();
+        Assert.Equal(["NCED 01.mkv", "S01 - NCOP.mkv", "S02 - NCOP.mkv"], names);
+    }
+
     private long PackShow(string hash, int tmdbId, params string[] files)
     {
         _host.AddTorrent(hash, files);
