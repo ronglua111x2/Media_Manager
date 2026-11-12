@@ -11,6 +11,7 @@ namespace media_management_app.Search.Indexers;
 public sealed class KnabenIndexer(string baseUrl = "https://api.knaben.org") : ITorrentIndexer
 {
     private const int PageSize = 100;
+    private const int MaxPages = 2;
 
     public string Id => "knaben";
 
@@ -20,20 +21,32 @@ public sealed class KnabenIndexer(string baseUrl = "https://api.knaben.org") : I
 
     public async Task<IReadOnlyList<IndexerResult>> SearchAsync(IndexerQuery query, IIndexerHttp http, CancellationToken cancellationToken)
     {
-        var body = new JsonObject
+        // A full page means there is more: fetch one more (governed) page, never an unbounded crawl.
+        var results = new List<IndexerResult>();
+        for (var page = 0; page < MaxPages; page++)
         {
-            ["search_type"] = "100%",
-            ["search_field"] = "title",
-            ["query"] = query.Text,
-            ["order_by"] = "seeders",
-            ["order_direction"] = "desc",
-            ["from"] = 0,
-            ["size"] = PageSize,
-            ["hide_unsafe"] = true,
-            ["hide_xxx"] = true
-        };
-        var response = await http.PostJsonAsync(new Uri(baseUrl.TrimEnd('/') + "/v1"), body.ToJsonString(), cancellationToken);
-        return Parse(response.Body);
+            var body = new JsonObject
+            {
+                ["search_type"] = "100%",
+                ["search_field"] = "title",
+                ["query"] = query.Text,
+                ["order_by"] = "seeders",
+                ["order_direction"] = "desc",
+                ["from"] = page * PageSize,
+                ["size"] = PageSize,
+                ["hide_unsafe"] = true,
+                ["hide_xxx"] = true
+            };
+            var response = await http.PostJsonAsync(new Uri(baseUrl.TrimEnd('/') + "/v1"), body.ToJsonString(), cancellationToken);
+            var rows = Parse(response.Body);
+            results.AddRange(rows);
+            if (rows.Count < PageSize)
+            {
+                break;
+            }
+        }
+
+        return results;
     }
 
     public static IReadOnlyList<IndexerResult> Parse(string json)

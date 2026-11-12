@@ -19,16 +19,26 @@ namespace media_management_app.Services;
 public static class CandidateDeduplicator
 {
     private static readonly Regex Btih = new(@"xt=urn:btih:(?<hash>[a-z0-9]+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex TorrentPathHash = new(@"/(?<hash>[0-9a-f]{40})\.torrent(?:$|[?#])", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex CrcTag = new(@"[\[(][0-9a-f]{8}[\])]", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex VideoExtension = new(@"\.(mkv|mp4|avi|m4v|ts|wmv)$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex Separators = new(@"[\s._\-\[\]()]+", RegexOptions.Compiled);
 
-    /// <summary>Lower-case 40-char hex info-hash from a magnet link (hex or base32 form), or null.</summary>
+    /// <summary>
+    /// Lower-case 40-char hex info-hash from a magnet link (hex or base32 form) or from a hash-named
+    /// .torrent URL such as itorrents.net/torrent/&lt;HASH&gt;.torrent, or null.
+    /// </summary>
     public static string? TryGetInfoHash(string? url)
     {
-        if (string.IsNullOrWhiteSpace(url) || !url.StartsWith("magnet:", StringComparison.OrdinalIgnoreCase))
+        if (string.IsNullOrWhiteSpace(url))
         {
             return null;
+        }
+
+        if (!url.StartsWith("magnet:", StringComparison.OrdinalIgnoreCase))
+        {
+            var path = TorrentPathHash.Match(url);
+            return path.Success ? path.Groups["hash"].Value.ToLowerInvariant() : null;
         }
 
         var match = Btih.Match(url);

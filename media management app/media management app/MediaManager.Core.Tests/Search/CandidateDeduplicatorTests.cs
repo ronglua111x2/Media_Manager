@@ -35,6 +35,19 @@ public class CandidateDeduplicatorTests
     }
 
     [Fact]
+    public void Exact_HashNamedTorrentUrl_EqualsMagnetOfSameHash()
+    {
+        // The qBittorrent limetorrents plugin returns itorrents .torrent links; native indexers return magnets.
+        var rows = new[]
+        {
+            new Row("Coherence (2013) 1080p BrRip x264 - YIFY", 1335637818, "http://itorrents.net/torrent/95863294E0C5A182FC358C4C09C9DEA26330DF71.torrent?title=Coherence", 448),
+            new Row("Coherence (2013) 1080p BrRip x264 - YIFY", 1335637818, "magnet:?xt=urn:btih:95863294e0c5a182fc358c4c09c9dea26330df71&dn=x", 384)
+        };
+
+        Dedupe(rows, fuzzy: false).Should().ContainSingle().Which.Seeders.Should().Be(448);
+    }
+
+    [Fact]
     public void Exact_DifferentTorrents_AreKept()
     {
         var rows = new[]
