@@ -333,6 +333,15 @@ public class PackScenarioTests
         Assert.Null(PackScenario.Entry(inventory, "Show/Season 1/Show.S01E05-E06.mkv").MatchedLastEpisodeNumber);
     }
 
+    // Audit L1-L3: SD episodes are smaller than 1080p ones by nature; the size check compares like with like.
+    [Fact]
+    public void MixedQualityBatch_SmallerSdEpisodes_AreStillLinked()
+    {
+        var inventory = PackScenario.Run(Scenarios["mixed-quality-sizes"]);
+
+        Assert.Equal(12, inventory.RegularEpisodeCount);
+    }
+
     [Fact]
     public void ShortsMixedIntoAPack_FarSmallerThanOtherEpisodes_AreHeldForReview()
     {
@@ -550,6 +559,12 @@ public class PackScenarioTests
                 AirDates: Enumerable.Range(1, 12).ToDictionary(
                     e => (1, e),
                     e => new DateTime(2019, 10, 1).AddDays(7 * (e - 1)).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))),
+            ["mixed-quality-sizes"] = new(
+                Owner: 1, Covered: [1], EpisodesPerSeason: new() { [1] = 12 },
+                Files: Enumerable.Range(1, 12).Select(e => $"[Grp] Show/[Grp] Show - {e:00} [{(e <= 6 ? "480p" : "1080p")}].mkv").ToArray(),
+                Sizes: Enumerable.Range(1, 12).ToDictionary(
+                    e => $"[Grp] Show/[Grp] Show - {e:00} [{(e <= 6 ? "480p" : "1080p")}].mkv",
+                    e => e <= 6 ? 170_000_000L : 1_000_000_000L)),
             ["shorts-by-size"] = new(
                 Owner: 1, Covered: [1], EpisodesPerSeason: new() { [1] = 8 },
                 Files: Enumerable.Range(1, 8).Select(e => $"[Grp] Show/[Grp] Show - {e:00} [1080p].mkv").ToArray(),

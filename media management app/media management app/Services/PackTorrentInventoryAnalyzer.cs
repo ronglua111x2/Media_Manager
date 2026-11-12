@@ -496,12 +496,21 @@ public static class PackTorrentInventoryAnalyzer
             .Select(episode => TitleTokens(episode.Title))
             .Where(tokens => tokens.Count >= 2)
             .ToList();
-        var sizes = linked
-            .Select(file => GetFileSize(fileSizes, file.RelativePath))
-            .Where(size => size > 0)
-            .Order()
-            .ToList();
-        var medianSize = sizes.Count >= 3 ? sizes[sizes.Count / 2] : 0;
+        // Median per quality: an SD episode is far smaller than a 1080p one by nature, so a mixed-quality
+        // batch must not hold back all its SD episodes (audit L1-L3).
+        var medianByQuality = linked
+            .Select(file => (Quality: TorrentQuality.Detect(file.FileName), Size: GetFileSize(fileSizes, file.RelativePath)))
+            .Where(item => item.Size > 0)
+            .GroupBy(item => item.Quality, StringComparer.OrdinalIgnoreCase)
+            .Where(group => group.Count() >= 3)
+            .ToDictionary(
+                group => group.Key,
+                group =>
+                {
+                    var ordered = group.Select(item => item.Size).Order().ToList();
+                    return ordered[ordered.Count / 2];
+                },
+                StringComparer.OrdinalIgnoreCase);
         var flagged = 0;
 
         foreach (var (relativePath, fileName) in linked)
@@ -524,6 +533,7 @@ public static class PackTorrentInventoryAnalyzer
             }
 
             var size = GetFileSize(fileSizes, relativePath);
+            var medianSize = medianByQuality.GetValueOrDefault(TorrentQuality.Detect(fileName));
             if (reason is null && medianSize > 0 && size > 0 && size * 4 < medianSize)
             {
                 reason = $"File is {size / 1_048_576} MB, far smaller than the pack's other episodes ({medianSize / 1_048_576} MB); may be a short or special named like an episode, review before linking.";
