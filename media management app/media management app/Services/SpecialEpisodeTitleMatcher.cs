@@ -8,7 +8,8 @@ namespace media_management_app.Services;
 /// Matches a special/OVA file to a TMDB Season 0 entry by its title. Only meaningful words count: stopwords,
 /// the show's own name, "OVA"/"special", release tags, file extensions, group tags in brackets and anything with
 /// a digit are dropped from both sides. A match needs at least <see cref="MinimumShare"/> of the TMDB title's
-/// meaningful words, and two entries with the same best score mean no match (parser audit SPEC-03).
+/// meaningful words, and two entries with the same best score mean no match (parser audit SPEC-03). Numbers in
+/// a TMDB title must appear in the file name for that entry to count (audit L2-01).
 /// </summary>
 public static class SpecialEpisodeTitleMatcher
 {
@@ -48,27 +49,10 @@ public static class SpecialEpisodeTitleMatcher
             return null;
         }
 
-        var scored = specialsEpisodes
-            .Where(episode => episode.SeasonNumber == AppConstants.SpecialsSeasonNumber)
-            .Select(episode => (Episode: episode, Score: Score(fileTokens, EpisodeTitleTokens(episode.Title, showTitle))))
-            .Where(item => item.Score.Share >= MinimumShare)
-            .OrderByDescending(item => item.Score.Share)
-            .ThenByDescending(item => item.Score.Overlap)
-            .ToList();
-        if (scored.Count == 0)
-        {
-            return null;
-        }
-
-        var best = scored[0];
-        if (scored.Count > 1 && scored[1].Score == best.Score)
-        {
-            return null;
-        }
-
-        return claimedEpisodeNumbers is not null && claimedEpisodeNumbers.Contains(best.Episode.EpisodeNumber)
+        var best = BestMatch(fileName, fileTokens, showTitle, specialsEpisodes);
+        return best is null || (claimedEpisodeNumbers is not null && claimedEpisodeNumbers.Contains(best.EpisodeNumber))
             ? null
-            : best.Episode;
+            : best;
     }
 
     /// <summary>
@@ -107,12 +91,64 @@ public static class SpecialEpisodeTitleMatcher
         return null;
     }
 
-    /// <summary>True when the file's own title names this TMDB entry (used to trust a <c>S00Exx</c> file name).</summary>
-    public static bool Confirms(string fileName, string? showTitle, TrackedEpisode episode)
+    /// <summary>
+    /// True when the file's own title names this TMDB entry and no other one (used to trust a <c>S00Exx</c> file
+    /// name). Numbers in the TMDB title ("Part 2", "2019") must also be in the file name, because the words alone
+    /// cannot tell "Part 1" from "Part 2" (audit L2-01).
+    /// </summary>
+    public static bool Confirms(
+        string fileName,
+        string? showTitle,
+        TrackedEpisode episode,
+        IReadOnlyList<TrackedEpisode> specialsEpisodes)
     {
         var fileTokens = FileTitleTokens(fileName, showTitle);
-        return fileTokens.Count > 0 && Score(fileTokens, EpisodeTitleTokens(episode.Title, showTitle)).Share >= MinimumShare;
+        return fileTokens.Count > 0 &&
+               BestMatch(fileName, fileTokens, showTitle, specialsEpisodes.Append(episode).ToList()) is { } best &&
+               best.SeasonNumber == episode.SeasonNumber &&
+               best.EpisodeNumber == episode.EpisodeNumber;
     }
+
+    // The single best entry over the threshold whose numbers the file name carries; null when none, or when the
+    // best score is shared (SPEC-03).
+    private static TrackedEpisode? BestMatch(
+        string fileName,
+        IReadOnlySet<string> fileTokens,
+        string? showTitle,
+        IReadOnlyList<TrackedEpisode> specialsEpisodes)
+    {
+        var fileNumbers = FileNumbers(fileName);
+        var scored = specialsEpisodes
+            .Where(episode => episode.SeasonNumber == AppConstants.SpecialsSeasonNumber)
+            .GroupBy(episode => episode.EpisodeNumber)
+            .Select(group => group.First())
+            .Where(episode => TitleNumbers(episode.Title).IsSubsetOf(fileNumbers))
+            .Select(episode => (Episode: episode, Score: Score(fileTokens, EpisodeTitleTokens(episode.Title, showTitle))))
+            .Where(item => item.Score.Share >= MinimumShare)
+            .OrderByDescending(item => item.Score.Share)
+            .ThenByDescending(item => item.Score.Overlap)
+            .ToList();
+        if (scored.Count == 0 || (scored.Count > 1 && scored[1].Score == scored[0].Score))
+        {
+            return null;
+        }
+
+        return scored[0].Episode;
+    }
+
+    private static HashSet<int> FileNumbers(string fileName)
+    {
+        var stem = Path.GetFileNameWithoutExtension(fileName.Replace('\\', '/').Split('/').Last());
+        return StandaloneNumbers(BracketGroupRegex.Replace(stem, " "));
+    }
+
+    private static HashSet<int> TitleNumbers(string? title) => StandaloneNumbers(title ?? string.Empty);
+
+    private static HashSet<int> StandaloneNumbers(string text) =>
+        Words(text)
+            .Where(token => token.Length <= 4 && token.All(char.IsDigit))
+            .Select(int.Parse)
+            .ToHashSet();
 
     public static IReadOnlySet<string> FileTitleTokens(string fileName, string? showTitle)
     {

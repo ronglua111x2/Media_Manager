@@ -126,6 +126,80 @@ public class SpecialRuleMappingTests
         Assert.False(preview.RequiresReview);
     }
 
+    /// <summary>
+    /// Audit L2-01: "Part 1" and "Part 2" share every word, so the title alone does not confirm a S00E02 file
+    /// that is really Part 1 (TVDB vs TMDB numbering). It must go to review.
+    /// </summary>
+    [Fact]
+    public async Task Prepare_DirectS00EWhoseTitleNamesAnotherPart_RequiresReview()
+    {
+        var pack = NumberedPartsPack("Quiet Club/Specials/Quiet Club - S00E02 - Inside the Episode Part 1.mkv", 2);
+        using var host = new SpecialOrchestratorHost(_ => throw new InvalidOperationException("Gemini must not be called."), geminiEnabled: false);
+        var service = SpecialPackPrepareHost.Create(pack, host.Orchestrator);
+
+        var preview = await service.PrepareSeasonPackLinkAsync(SpecialPackPrepareHost.ShowId, 1, useGeminiForSpecials: false);
+
+        Assert.True(preview.RequiresReview);
+    }
+
+    [Fact]
+    public async Task Prepare_DirectS00EWhoseTitleNamesTheSamePart_LinksWithoutReview()
+    {
+        var pack = NumberedPartsPack("Quiet Club/Specials/Quiet Club - S00E02 - Inside the Episode Part 2.mkv", 2);
+        using var host = new SpecialOrchestratorHost(_ => throw new InvalidOperationException("Gemini must not be called."), geminiEnabled: false);
+        var service = SpecialPackPrepareHost.Create(pack, host.Orchestrator);
+
+        var preview = await service.PrepareSeasonPackLinkAsync(SpecialPackPrepareHost.ShowId, 1, useGeminiForSpecials: false);
+
+        Assert.Equal(2, preview.Inventory.Files.Single(file => file.FileName.Contains("S00E02")).MatchedEpisodeNumber);
+        Assert.False(preview.RequiresReview);
+    }
+
+    [Theory]
+    [InlineData("Inside the Episode Part 1", 1, true)]
+    [InlineData("Inside the Episode Part 1", 2, false)]
+    [InlineData("Christmas Special 2018", 3, true)]
+    [InlineData("Christmas Special 2018", 4, false)]
+    [InlineData("Recap", 5, false)]
+    public void TitleMatcher_Confirms_NeedsTheSameNumbersAndAUniqueBestTitle(string fileTitle, int episode, bool confirmed)
+    {
+        var specials = new List<TrackedEpisode>
+        {
+            SpecialShowBuilder.Episode(0, 1, "Inside the Episode: Part 1", new DateTime(2019, 1, 1)),
+            SpecialShowBuilder.Episode(0, 2, "Inside the Episode: Part 2", new DateTime(2019, 1, 8)),
+            SpecialShowBuilder.Episode(0, 3, "Christmas Special 2018", new DateTime(2018, 12, 25)),
+            SpecialShowBuilder.Episode(0, 4, "Christmas Special 2019", new DateTime(2019, 12, 25)),
+            SpecialShowBuilder.Episode(0, 5, "Recap", new DateTime(2020, 1, 1)),
+            SpecialShowBuilder.Episode(0, 6, "Recap", new DateTime(2021, 1, 1))
+        };
+
+        var result = SpecialEpisodeTitleMatcher.Confirms(
+            $"Quiet Club - S00E{episode:00} - {fileTitle}.mkv",
+            "Quiet Club",
+            specials.Single(item => item.EpisodeNumber == episode),
+            specials);
+
+        Assert.Equal(confirmed, result);
+    }
+
+    /// <summary>
+    /// Audit L2-02: <c>_S00E02_</c>, <c>S00E02v2</c> and <c>S0E2</c> still name S00E02, so the Direct rule places them
+    /// (and the Gemini guard sees the number).
+    /// </summary>
+    [Theory]
+    [InlineData("Quiet Club/Specials/Quiet_Club_S00E02_1080p.mkv")]
+    [InlineData("Quiet Club/Specials/Quiet Club - S00E02v2 [1080p].mkv")]
+    [InlineData("Quiet Club/Specials/Quiet Club S0E2.mkv")]
+    public async Task DirectS00E_SeparatorsRevisionsAndShortSeason_MappedByTheNumberInTheName(string specialFile)
+    {
+        var pack = DirectPack(specialFile);
+        using var host = new SpecialOrchestratorHost(_ => throw new InvalidOperationException("Gemini must not be called."));
+
+        var result = await host.ResolveAsync(pack, useGemini: false);
+
+        Assert.Equal(2, Mapped(result)[specialFile]);
+    }
+
     /// <summary>SPEC-02: "OVA - 01" is the first OVA, not TMDB S00E01 (here a recap).</summary>
     [Fact]
     public async Task OvaDash_NumberIsNotTheTmdbEpisode_NotMapped()
@@ -219,6 +293,15 @@ public class SpecialRuleMappingTests
             .RegularFiles(1, "Quiet Club/Season 01", episode => $"Quiet Club S01E{episode:00}.mkv")
             .SpecialFile(specialFile, 2)
             .Build("direct", "S00Exx in the file name");
+
+    private static SpecialCase NumberedPartsPack(string specialFile, int expected) =>
+        new SpecialShowBuilder("Quiet Club", 900008)
+            .Season(1, 3, new DateTime(2013, 4, 5))
+            .Special(1, "Inside the Episode: Part 1", new DateTime(2013, 9, 19))
+            .Special(2, "Inside the Episode: Part 2", new DateTime(2013, 9, 26))
+            .RegularFiles(1, "Quiet Club/Season 01", episode => $"Quiet Club S01E{episode:00}.mkv")
+            .SpecialFile(specialFile, expected)
+            .Build("numbered-parts", "S00Exx with a numbered title");
 
     private static SpecialCase OvaDashPack((string First, string Second) titles) =>
         new SpecialShowBuilder("Lantern Knight", 900021)

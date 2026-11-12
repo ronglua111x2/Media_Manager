@@ -6,10 +6,6 @@ namespace media_management_app.Services;
 
 public static class PackSpecialPayloadBuilder
 {
-    private static readonly Regex StandardS00ERegex = new(
-        @"\bS00E(?<episode>\d{1,4})\b",
-        RegexOptions.IgnoreCase | RegexOptions.Compiled);
-
     private static readonly Regex OvaWordRegex = new(
         @"\b(?:OVA|OAD)s?\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -138,7 +134,7 @@ public static class PackSpecialPayloadBuilder
             }
 
             claimed.Add(episode.EpisodeNumber);
-            var titleConfirmed = SpecialEpisodeTitleMatcher.Confirms(candidate.FileName, request.Context.ShowTitle, episode);
+            var titleConfirmed = SpecialEpisodeTitleMatcher.Confirms(candidate.FileName, request.Context.ShowTitle, episode, specialsEpisodes);
             items.Add(new SpecialMappingItem
             {
                 RelativePath = candidate.RelativePath,
@@ -508,7 +504,9 @@ public static class PackSpecialPayloadBuilder
         var localIndex = namingPattern switch
         {
             SpecialMappingNamingPattern.SnSnn => parsed.ReleaseSpecialIndex ?? 0,
-            SpecialMappingNamingPattern.StandardS00E => TryGetDirectS00EFromStem(stem) ?? 0,
+            SpecialMappingNamingPattern.StandardS00E => TryGetDirectS00EFromStem(stem) ??
+                                                       (parsed.SeasonNumber == AppConstants.SpecialsSeasonNumber ? parsed.EpisodeNumber : null) ??
+                                                       0,
             SpecialMappingNamingPattern.OvaDash => PackSpecialPatternInferrer.TryExtractIndex(stem, pattern) ?? 0,
             _ => PackSpecialPatternInferrer.TryExtractIndex(stem, pattern) ??
                  parsed.ReleaseSpecialIndex ??
@@ -555,16 +553,14 @@ public static class PackSpecialPayloadBuilder
     private static int? TryGetDirectS00E(SpecialMappingCandidate candidate)
     {
         var stem = Path.GetFileNameWithoutExtension(candidate.FileName);
-        return TryGetDirectS00EFromStem(stem);
+        return TryGetDirectS00EFromStem(stem) ??
+               (candidate.NamingPattern == SpecialMappingNamingPattern.StandardS00E && candidate.LocalIndex > 0
+                   ? candidate.LocalIndex
+                   : null);
     }
 
-    private static int? TryGetDirectS00EFromStem(string stem)
-    {
-        var match = StandardS00ERegex.Match(stem);
-        return match.Success && int.TryParse(match.Groups["episode"].Value, out var episode)
-            ? episode
-            : null;
-    }
+    private static int? TryGetDirectS00EFromStem(string stem) =>
+        PackSpecialPatternInferrer.TryExtractStandardS00Index(stem);
 
     private static string CountMismatchWarning(SpecialMappingContext context) =>
         $"{context.CandidateCount} torrent special file(s) vs {context.TmdbSpecialCount} TMDB S00 episode(s).";
