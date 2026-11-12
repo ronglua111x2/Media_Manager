@@ -41,6 +41,12 @@ public interface IAutoTorrentLinkService
 
     AutoTorrentLinkResult RemoveShowLinks(long showId);
 
+    /// <summary>
+    /// Removes every TV library link of a show and then its TV link records, so a new episode
+    /// numbering starts clean. Records are kept when any link could not be removed.
+    /// </summary>
+    AutoTorrentLinkResult ClearShowLinksForRenumbering(long showId);
+
     AutoTorrentLinkResult RemoveMovieLinks(long movieId);
 
     AutoTorrentLinkResult RemoveOrphanPackSpecialLink(long sourceItemId);

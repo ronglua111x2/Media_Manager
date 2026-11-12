@@ -203,6 +203,32 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
                                   string.Equals(item.ProviderId, providerId, StringComparison.OrdinalIgnoreCase));
     }
 
+    public AutoTorrentLinkResult ClearShowLinksForRenumbering(long showId)
+    {
+        var show = _databaseService.GetTrackedShow(showId);
+        var providerId = show?.TmdbId.ToString();
+        if (string.IsNullOrWhiteSpace(providerId))
+        {
+            return new AutoTorrentLinkResult { SkippedCount = 1, Messages = { "Tracked show was not found." } };
+        }
+
+        AutoTorrentLinkResult result;
+        using (_eventHub.BeginBulkMutation())
+        {
+            result = RemoveShowLinks(showId);
+        }
+
+        if (result.ErrorCount > 0)
+        {
+            return result;
+        }
+
+        // Unlinked rows still carry the old season/episode numbers and would mark the wrong
+        // episodes Available under the new numbering (PARSE-26).
+        DeleteAcceptedTvSourceItems(providerId, _ => true, result);
+        return result;
+    }
+
     public AutoTorrentLinkResult RemoveEpisodeLinks(long showId, int seasonNumber, int episodeNumber)
     {
         var show = _databaseService.GetTrackedShow(showId);

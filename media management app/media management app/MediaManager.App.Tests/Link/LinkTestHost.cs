@@ -88,6 +88,9 @@ public sealed class LinkTestHost : IDisposable
 
     public List<string> Warnings { get; } = [];
 
+    /// <summary>What the fake TMDB catalog returns for show refreshes and organization switches.</summary>
+    public TmdbShowDetails? TmdbDetails { get; set; }
+
     public static LinkTestHost Create()
     {
         var host = new LinkTestHost();
@@ -184,8 +187,12 @@ public sealed class LinkTestHost : IDisposable
         host.Symlinks = new SymlinkSyncService(settings, host.Hardlinks, symlinkService, host.Db, logger);
         host.Shows = new TrackedShowService(
             host.Db,
-            TestFake<ITmdbShowCatalogService>.Create(),
+            TestFake<ITmdbShowCatalogService>.Create((method, _) =>
+                method.Name is "GetTvShowDetailsAsync" or "GetTvShowDetailsByEpisodeGroupAsync"
+                    ? Task.FromResult(host.TmdbDetails ?? throw new InvalidOperationException("Set TmdbDetails first."))
+                    : null),
             TestFake<IPosterImageService>.Create(),
+            host.Link,
             logger);
         var movies = TestFake<ITrackedMovieService>.Create((method, _) => method.Name == "GetMovies" ? new List<TrackedMovie>() : null);
         host.Reconciliation = new TorrentReconciliationService(

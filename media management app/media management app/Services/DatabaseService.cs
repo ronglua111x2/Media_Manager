@@ -1293,6 +1293,7 @@ public sealed class DatabaseService : IDatabaseService
                 SelectedCandidateSeeders = TrackedEpisodes.SelectedCandidateSeeders,
                 SelectedCandidateQuality = TrackedEpisodes.SelectedCandidateQuality,
                 SelectedCandidateAudioCodec = TrackedEpisodes.SelectedCandidateAudioCodec,
+                RemovedUpstreamUtc = NULL,
                 UpdatedUtc = excluded.UpdatedUtc;
             """;
         command.Parameters.AddWithValue("$ShowId", episode.ShowId);
@@ -1321,6 +1322,31 @@ public sealed class DatabaseService : IDatabaseService
         command.ExecuteNonQuery();
     }
 
+    public void MarkTrackedEpisodeRemovedUpstream(long episodeId, DateTime removedUtc)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE TrackedEpisodes
+            SET RemovedUpstreamUtc = COALESCE(RemovedUpstreamUtc, $RemovedUpstreamUtc)
+            WHERE Id = $Id;
+            """;
+        command.Parameters.AddWithValue("$Id", episodeId);
+        command.Parameters.AddWithValue("$RemovedUpstreamUtc", removedUtc.ToString("O"));
+        command.ExecuteNonQuery();
+    }
+
+    public void DeleteTrackedEpisode(long episodeId)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM TrackedEpisodes WHERE Id = $Id;";
+        command.Parameters.AddWithValue("$Id", episodeId);
+        command.ExecuteNonQuery();
+    }
+
     public IReadOnlyList<TrackedEpisode> GetTrackedEpisodes(long showId)
     {
         var episodes = new List<TrackedEpisode>();
@@ -1333,7 +1359,7 @@ public sealed class DatabaseService : IDatabaseService
                    TorrentHash, TorrentName, TorrentState, TorrentProgress, TorrentUpdatedUtc,
                    SelectedCandidateName, SelectedCandidateUrl, SelectedCandidatePlugin, SelectedCandidateFileSize,
                    SelectedCandidateSeeders, SelectedCandidateQuality, SelectedCandidateAudioCodec,
-                   CreatedUtc, UpdatedUtc, Overview, VoteAverage, StillPath, UserRating, Thought
+                   CreatedUtc, UpdatedUtc, Overview, VoteAverage, StillPath, UserRating, Thought, RemovedUpstreamUtc
             FROM TrackedEpisodes
             WHERE ShowId = $ShowId
             ORDER BY SeasonNumber, EpisodeNumber;
@@ -2577,6 +2603,7 @@ public sealed class DatabaseService : IDatabaseService
         EnsureColumn(connection, "TrackedEpisodes", "StillPath", "TEXT NULL");
         EnsureColumn(connection, "TrackedEpisodes", "UserRating", "REAL NULL");
         EnsureColumn(connection, "TrackedEpisodes", "Thought", "TEXT NULL");
+        EnsureColumn(connection, "TrackedEpisodes", "RemovedUpstreamUtc", "TEXT NULL");
     }
 
     private static void InitializeTrackedMovies(SqliteConnection connection)
@@ -2851,7 +2878,10 @@ public sealed class DatabaseService : IDatabaseService
             VoteAverage = reader.IsDBNull(22) ? null : reader.GetDouble(22),
             StillPath = reader.IsDBNull(23) ? null : reader.GetString(23),
             UserRating = reader.IsDBNull(24) ? null : reader.GetDouble(24),
-            Thought = reader.IsDBNull(25) ? null : reader.GetString(25)
+            Thought = reader.IsDBNull(25) ? null : reader.GetString(25),
+            RemovedUpstreamUtc = reader.FieldCount > 26 && !reader.IsDBNull(26)
+                ? DateTime.Parse(reader.GetString(26), null, System.Globalization.DateTimeStyles.RoundtripKind)
+                : null
         };
     }
 

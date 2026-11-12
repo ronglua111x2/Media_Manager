@@ -17,7 +17,7 @@ public sealed partial class LibraryEpisodeRowViewModel : ObservableObject
         ShowId = episode.ShowId;
         SeasonNumber = episode.SeasonNumber;
         EpisodeNumber = episode.EpisodeNumber;
-        Title = episode.Title;
+        Title = episode.IsRemovedUpstream ? $"{episode.Title} (no longer on TMDB)" : episode.Title;
         AirDateDisplay = episode.AirDateDisplay;
         Availability = episode.Availability;
         TorrentHash = episode.TorrentHash ?? string.Empty;

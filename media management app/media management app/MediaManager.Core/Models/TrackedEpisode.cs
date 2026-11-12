@@ -54,6 +54,11 @@ public sealed class TrackedEpisode
 
     public string? SelectedCandidateAudioCodec { get; set; }
 
+    /// <summary>Set when TMDB stopped listing this episode while something still refers to it.</summary>
+    public DateTime? RemovedUpstreamUtc { get; set; }
+
+    public bool IsRemovedUpstream => RemovedUpstreamUtc is not null;
+
     public DateTime CreatedUtc { get; set; } = DateTime.UtcNow;
 
     public DateTime UpdatedUtc { get; set; } = DateTime.UtcNow;

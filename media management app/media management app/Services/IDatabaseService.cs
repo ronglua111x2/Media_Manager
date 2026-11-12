@@ -118,6 +118,11 @@ public interface IDatabaseService
 
     IReadOnlyList<TrackedEpisode> GetTrackedEpisodes(long showId);
 
+    /// <summary>Flags an episode TMDB no longer lists; keeps the first timestamp.</summary>
+    void MarkTrackedEpisodeRemovedUpstream(long episodeId, DateTime removedUtc);
+
+    void DeleteTrackedEpisode(long episodeId);
+
     void UpdateTrackedEpisodeAvailability(long episodeId, EpisodeAvailability availability);
 
     void UpdateTrackedEpisodeTorrent(

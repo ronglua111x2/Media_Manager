@@ -8,17 +8,20 @@ public sealed class TrackedShowService : ITrackedShowService
     private readonly IDatabaseService _databaseService;
     private readonly ITmdbShowCatalogService _catalogService;
     private readonly IPosterImageService _posterImageService;
+    private readonly IAutoTorrentLinkService _autoTorrentLinkService;
     private readonly IAppLogger _logger;
 
     public TrackedShowService(
         IDatabaseService databaseService,
         ITmdbShowCatalogService catalogService,
         IPosterImageService posterImageService,
+        IAutoTorrentLinkService autoTorrentLinkService,
         IAppLogger logger)
     {
         _databaseService = databaseService;
         _catalogService = catalogService;
         _posterImageService = posterImageService;
+        _autoTorrentLinkService = autoTorrentLinkService;
         _logger = logger;
     }
 
@@ -96,6 +99,16 @@ public sealed class TrackedShowService : ITrackedShowService
 
         var currentGroupId = string.IsNullOrWhiteSpace(show.EpisodeGroupId) ? null : show.EpisodeGroupId.Trim();
         var isSameRoute = string.Equals(currentGroupId, normalizedGroupId, StringComparison.Ordinal);
+
+        // Library links carry the old numbering: remove them before the rebuild, as the confirmation
+        // dialog promises. If any link cannot be removed, change nothing (PARSE-26).
+        var unlink = _autoTorrentLinkService.ClearShowLinksForRenumbering(show.Id);
+        if (unlink.ErrorCount > 0)
+        {
+            throw new InvalidOperationException(
+                $"Episode organization was not changed: {unlink.ErrorCount} library link(s) could not be removed. " +
+                "Close any player using them and retry.");
+        }
 
         // Always persist + hard-rebuild so mapping fixes and TMDB group edits are applied cleanly.
         _databaseService.UpdateTrackedShowEpisodeOrganization(show.Id, normalizedGroupId, normalizedGroupName);
@@ -405,7 +418,90 @@ public sealed class TrackedShowService : ITrackedShowService
             }
         }
 
+        if (existing is not null)
+        {
+            HandleEpisodesRemovedUpstream(showId, details);
+        }
+
         return showId;
+    }
+
+    /// <summary>
+    /// Episodes TMDB no longer lists (renumbering, a season split into two) used to stay forever:
+    /// an old linked number looked Available while the new number was hunted again (PARSE-31).
+    /// Only seasons TMDB returned are checked, so a partial response never removes a whole season.
+    /// Unused rows are deleted; rows something still refers to are kept and flagged.
+    /// </summary>
+    private void HandleEpisodesRemovedUpstream(long showId, TmdbShowDetails details)
+    {
+        var returnedSeasons = details.Seasons
+            .Where(season => season.Episodes.Count > 0)
+            .Select(season => season.SeasonNumber)
+            .ToHashSet();
+        if (returnedSeasons.Count == 0)
+        {
+            return;
+        }
+
+        var returnedEpisodes = details.Seasons
+            .SelectMany(season => season.Episodes)
+            .Select(episode => (episode.SeasonNumber, episode.EpisodeNumber))
+            .ToHashSet();
+        var stale = _databaseService.GetTrackedEpisodes(showId)
+            .Where(episode => returnedSeasons.Contains(episode.SeasonNumber) &&
+                              !returnedEpisodes.Contains((episode.SeasonNumber, episode.EpisodeNumber)))
+            .ToList();
+        if (stale.Count == 0)
+        {
+            return;
+        }
+
+        var show = _databaseService.GetTrackedShow(showId);
+        var linkedKeys = GetLinkedEpisodeKeys(show?.TmdbId.ToString());
+        var orderedEpisodeIds = _databaseService.GetTorrentCartOrders(MediaKind.TvEpisode, showId)
+            .Where(order => order.EpisodeId is not null)
+            .Select(order => order.EpisodeId!.Value)
+            .ToHashSet();
+        var now = DateTime.UtcNow;
+        foreach (var episode in stale)
+        {
+            var inUse = linkedKeys.Contains((episode.SeasonNumber, episode.EpisodeNumber)) ||
+                        !string.IsNullOrWhiteSpace(episode.TorrentHash) ||
+                        orderedEpisodeIds.Contains(episode.Id) ||
+                        episode.UserRating is not null ||
+                        !string.IsNullOrWhiteSpace(episode.Thought);
+            if (inUse)
+            {
+                _databaseService.MarkTrackedEpisodeRemovedUpstream(episode.Id, now);
+                _logger.Warning(
+                    $"TMDB no longer lists {show?.DisplayTitle} S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00}; kept because it is linked, downloading or rated.",
+                    LogTarget.All);
+                continue;
+            }
+
+            _databaseService.DeleteTrackedEpisode(episode.Id);
+            _logger.Info(
+                $"TMDB no longer lists {show?.DisplayTitle} S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00}; removed the unused episode row.",
+                LogTarget.File | LogTarget.Console);
+        }
+    }
+
+    private HashSet<(int SeasonNumber, int EpisodeNumber)> GetLinkedEpisodeKeys(string? providerId)
+    {
+        if (string.IsNullOrWhiteSpace(providerId))
+        {
+            return [];
+        }
+
+        return _databaseService.GetSourceItems()
+            .Where(item =>
+                item.MediaKind == MediaKind.TvEpisode &&
+                string.Equals(item.Provider, "tmdb", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(item.ProviderId, providerId, StringComparison.OrdinalIgnoreCase))
+            .Select(GetOutputEpisodeKey)
+            .Where(key => key is not null)
+            .Select(key => key!.Value)
+            .ToHashSet();
     }
 
     private Task<TmdbShowDetails> ResolveShowDetailsAsync(
