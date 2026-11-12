@@ -1131,6 +1131,13 @@
                                             </Button.Style>
                                         </Button>
                                     </Grid>
+                                    <CheckBox Content="Choose the model automatically (recommended)"
+                                              IsChecked="{Binding GeminiAutoSelectModel}"
+                                              Margin="0,0,0,4" />
+                                    <TextBlock Style="{StaticResource SettingsHintStyle}"
+                                               Text="Uses the newest free-tier model that still has quota today, and moves to the next one on quota limits, 503 or timeouts. Turn off to pick the model and fallbacks yourself."
+                                               Margin="0,0,0,10" />
+                                    <StackPanel IsEnabled="{Binding IsGeminiManualModelEnabled}">
                                     <TextBlock Text="Model" Style="{StaticResource SettingsLabelStyle}" />
                                     <ComboBox ItemsSource="{Binding GeminiModelOptions}"
                                               SelectedItem="{Binding SelectedGeminiModel, Mode=TwoWay}"
@@ -1190,8 +1197,9 @@
                                         </Button>
                                     </WrapPanel>
                                     <TextBlock Style="{StaticResource SettingsHintStyle}"
-                                               Text="Up to 3 fallbacks. On 429/503 the app retries the current model, then tries fallbacks in order."
+                                               Text="Up to 3 fallbacks. On quota limits, 503 or timeouts the app moves to the next model in this order."
                                                Margin="0,0,0,8" />
+                                    </StackPanel>
                                     <TextBlock Style="{StaticResource SettingsHintStyle}"
                                                Margin="0,0,0,8">
                                         <Hyperlink Command="{Binding OpenGeminiModelsFileCommand}">
@@ -1200,7 +1208,8 @@
                                         </Hyperlink>
                                     </TextBlock>
                                     <TextBlock Text="{Binding GeminiDailyUsageLabel}"
-                                               Style="{StaticResource SettingsLabelStyle}"
+                                               Style="{StaticResource SettingsHintStyle}"
+                                               TextWrapping="Wrap"
                                                Margin="0,0,0,8" />
                                     <WrapPanel Margin="0,0,0,8">
                                         <Button Command="{Binding RefreshGeminiModelsCommand}"

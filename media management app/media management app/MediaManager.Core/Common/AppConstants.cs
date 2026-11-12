@@ -100,16 +100,21 @@ public static class AppConstants
     #region Gemini
 
     public const string GeminiModelsFileName = "gemini-models.json";
-    public const string DefaultGeminiModel = "gemini-2.5-flash-lite";
+    public const string DefaultGeminiModel = "gemini-3.5-flash-lite";
     public const string GeminiApiBaseUrl = "https://generativelanguage.googleapis.com/v1beta/";
-    public const int GeminiDailyRequestLimit = 1500;
-    public const int GeminiDailyWarningThreshold = 1200;
-    public const string GeminiQuotaStateFileName = "gemini-quota.json";
+    public const string GeminiRouterStateFileName = "gemini-router-state.json";
     public const string GeminiMappingCacheFileName = "gemini-mapping-cache.json";
-    public const int GeminiMinRequestSpacingMs = 2000;
-    public const int GeminiMaxRetriesPerModel = 3;
-    public const int GeminiRetryBaseDelayMs = 2000;
     public const int GeminiMaxFallbackModels = 3;
+
+    /// <summary>Most models one Gemini call may try before giving up (keeps an outage from burning quota).</summary>
+    public const int GeminiMaxModelsPerCall = 3;
+
+    /// <summary>The router waits for a model's per-minute spacing up to this long before using the next model.</summary>
+    public const int GeminiMaxSpacingWaitSeconds = 12;
+
+    public const int GeminiDefaultTimeoutSeconds = 90;
+    public const int GeminiOverloadedLockSeconds = 60;
+    public const int GeminiServerErrorLockSeconds = 30;
 
     #endregion
 

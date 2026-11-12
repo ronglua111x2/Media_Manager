@@ -136,7 +136,10 @@ public sealed class GeminiSpecialMappingProvider
 
         var userJson = SpecialMappingCompactJson.SerializeRequest(request);
 
-        var model = _settingsService.Current.Gemini?.Model?.Trim() ?? AppConstants.DefaultGeminiModel;
+        var gemini = _settingsService.Current.Gemini;
+        var model = gemini?.AutoSelectModel ?? true
+            ? "auto"
+            : gemini?.Model?.Trim() ?? AppConstants.DefaultGeminiModel;
 
 
 
