@@ -272,10 +272,26 @@ public sealed class GeminiApiClient : IGeminiApiClient
             };
             request.Headers.Add("x-goog-api-key", apiKey);
 
-            // Google counts every request against the quota, including the ones that fail.
-            _router.RecordAttempt(route.Model);
+            // Google counts every request it receives against the quota, including the ones that fail. One that
+            // never reached it (offline, DNS failure, connection refused) is not counted (audit L2-06).
+            HttpResponseMessage sent;
+            try
+            {
+                sent = await _httpClient.SendAsync(request, timeoutCts.Token);
+            }
+            catch (HttpRequestException)
+            {
+                throw;
+            }
+            catch
+            {
+                // A timeout or cancellation may come after Google received the request.
+                _router.RecordAttempt(route.Model);
+                throw;
+            }
 
-            using var response = await _httpClient.SendAsync(request, timeoutCts.Token);
+            _router.RecordAttempt(route.Model);
+            using var response = sent;
             var responseText = await response.Content.ReadAsStringAsync(timeoutCts.Token);
             if (!response.IsSuccessStatusCode)
             {

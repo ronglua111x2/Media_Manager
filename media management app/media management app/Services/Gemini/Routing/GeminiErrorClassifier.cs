@@ -78,8 +78,9 @@ public static class GeminiErrorClassifier
                     return new GeminiCallOutcome(GeminiOutcomeKind.Fatal, "The Gemini API key is not valid. Check the key in Settings.");
                 }
 
-                if (string.Equals(error.Status, "FAILED_PRECONDITION", StringComparison.OrdinalIgnoreCase) &&
-                    message.Contains("free tier", StringComparison.OrdinalIgnoreCase))
+                // FAILED_PRECONDITION is about the caller (free tier not available, "User location is not
+                // supported"), not the model: every model would answer the same, so stop without a lock (audit L2-05).
+                if (string.Equals(error.Status, "FAILED_PRECONDITION", StringComparison.OrdinalIgnoreCase))
                 {
                     return new GeminiCallOutcome(GeminiOutcomeKind.Fatal, message);
                 }
@@ -114,7 +115,9 @@ public static class GeminiErrorClassifier
                 return new GeminiCallOutcome(GeminiOutcomeKind.ServerError, message);
 
             default:
-                return new GeminiCallOutcome(GeminiOutcomeKind.Incompatible, message);
+                // 3xx, 407 (proxy), 413 and other statuses come from the network path or the request, not the
+                // model. A permanent "Incompatible" lock on each model tried would disable them all (audit L2-05).
+                return new GeminiCallOutcome(GeminiOutcomeKind.Fatal, message);
         }
     }
 

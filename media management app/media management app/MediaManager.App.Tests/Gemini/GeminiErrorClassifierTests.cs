@@ -102,6 +102,24 @@ public sealed class GeminiErrorClassifierTests
         Assert.Equal(GeminiOutcomeKind.Incompatible, outcome.Kind);
     }
 
+    // Audit L2-05: request-level failures stop the call; they must not lock every model for good.
+    [Fact]
+    public void FailedPrecondition400_IsFatal_WhateverTheMessage()
+    {
+        const string body = """{"error":{"code":400,"message":"User location is not supported for the API use.","status":"FAILED_PRECONDITION"}}""";
+
+        Assert.Equal(GeminiOutcomeKind.Fatal, GeminiErrorClassifier.Classify(HttpStatusCode.BadRequest, body).Kind);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.ProxyAuthenticationRequired)]
+    [InlineData(HttpStatusCode.RequestEntityTooLarge)]
+    [InlineData(HttpStatusCode.Redirect)]
+    public void UnlistedStatus_IsFatal_NotAPermanentModelLock(HttpStatusCode status)
+    {
+        Assert.Equal(GeminiOutcomeKind.Fatal, GeminiErrorClassifier.Classify(status, "<html>not json</html>").Kind);
+    }
+
     [Theory]
     [InlineData(HttpStatusCode.NotFound, GeminiOutcomeKind.ModelGone)]
     [InlineData(HttpStatusCode.InternalServerError, GeminiOutcomeKind.ServerError)]

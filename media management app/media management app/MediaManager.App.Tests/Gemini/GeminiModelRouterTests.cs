@@ -1,5 +1,6 @@
 using System.IO;
 using System.Net;
+using System.Net.Http;
 using System.Text.Json;
 using media_management_app.Common;
 using media_management_app.Models;
@@ -86,6 +87,33 @@ public sealed class GeminiModelRouterTests
         Assert.Equal(1, host.Handler.Calls);
         Assert.Contains("API key", error.Message);
         Assert.Equal(GeminiModelLockReason.None, host.Snapshot(Best).LockReason);
+    }
+
+    // Audit L2-05: "User location is not supported" is about the caller, not the model: stop, lock nothing.
+    [Fact]
+    public async Task UnsupportedLocation400_StopsAfterOneRequest_AndLocksNoModel()
+    {
+        using var host = new GeminiTestHost(_ => ScriptedHandler.Json(
+            HttpStatusCode.BadRequest,
+            """{"error":{"code":400,"message":"User location is not supported for the API use.","status":"FAILED_PRECONDITION"}}"""));
+
+        await Assert.ThrowsAsync<GeminiRequestBlockedException>(() =>
+            host.Client.GenerateJsonTextWithModelAsync("system", "{}"));
+
+        Assert.Equal(1, host.Handler.Calls);
+        Assert.Equal(GeminiModelLockReason.None, host.Snapshot(Best).LockReason);
+    }
+
+    // Audit L2-06: a request that never reached Google (offline, DNS) does not use up the local daily count.
+    [Fact]
+    public async Task NetworkFailureBeforeAnyResponse_IsNotCountedAgainstTheDailyQuota()
+    {
+        using var host = new GeminiTestHost(_ => throw new HttpRequestException("No such host is known."));
+
+        await Assert.ThrowsAnyAsync<Exception>(() => host.Client.GenerateJsonTextWithModelAsync("system", "{}"));
+
+        Assert.True(host.Handler.Calls > 0);
+        Assert.Equal(0, host.Snapshot(Best).RequestsToday);
     }
 
     [Fact]
