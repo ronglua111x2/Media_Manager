@@ -121,6 +121,38 @@ public sealed class SpecialMappingCacheTests
         Assert.Equal(3, result.Items.Single(item => item.RelativePath.EndsWith("S1S03.mkv", StringComparison.Ordinal)).Episode?.EpisodeNumber);
     }
 
+    // Audit L2-04: the key has no regular-season air dates and no rule version, so a stored entry can hold rule
+    // pairs the current rules do not give (a moved season window, an app update). Such an entry is a cache miss.
+    // Simulated by swapping two rule-placed files in the stored file, read by a fresh cache.
+    [Fact]
+    public async Task CachedRulePairsThatDisagreeWithTheCurrentRules_AreACacheMiss()
+    {
+        var pack = SpecialCases.TwoSeasonBrassPack();
+        string cacheJson;
+        using (var writer = new SpecialOrchestratorHost(FakeGeminiResponses.CorrectTwoSeasonPack))
+        {
+            writer.Orchestrator.RememberAccepted(await ResolveWithCacheAsync(writer, pack));
+            cacheJson = await File.ReadAllTextAsync(CachePath(writer));
+        }
+
+        var root = System.Text.Json.Nodes.JsonNode.Parse(cacheJson)!;
+        var items = root.AsArray().SelectMany(entry => entry!["Result"]!["Items"]!.AsArray()).ToList();
+        var s1s03 = items.Single(item => item!["RelativePath"]!.GetValue<string>().EndsWith("S1S03.mkv", StringComparison.Ordinal))!;
+        var s1s04 = items.Single(item => item!["RelativePath"]!.GetValue<string>().EndsWith("S1S04.mkv", StringComparison.Ordinal))!;
+        var episode03 = s1s03["Episode"]!.DeepClone();
+        s1s03["Episode"] = s1s04["Episode"]!.DeepClone();
+        s1s04["Episode"] = episode03;
+
+        using var host = new SpecialOrchestratorHost(FakeGeminiResponses.CorrectTwoSeasonPack);
+        await File.WriteAllTextAsync(CachePath(host), root.ToJsonString());
+
+        var result = await ResolveWithCacheAsync(host, pack);
+
+        Assert.Equal(1, host.Gemini.Calls);
+        Assert.False(result.FromCache);
+        Assert.Equal(3, result.Items.Single(item => item.RelativePath.EndsWith("S1S03.mkv", StringComparison.Ordinal)).Episode?.EpisodeNumber);
+    }
+
     private static Task<SpecialMappingResult> ResolveWithCacheAsync(SpecialOrchestratorHost host, SpecialCase pack)
     {
         var tree = PackFolderTreeAnalyzer.Analyze(pack.Files.Select(file => file.RelativePath).ToList());

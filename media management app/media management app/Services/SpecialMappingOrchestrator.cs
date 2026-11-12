@@ -241,8 +241,9 @@ public sealed class SpecialMappingOrchestrator : ISpecialMappingOrchestrator
     }
 
     /// <summary>
-    /// A cached result is used only if it still passes every hard check. An entry from before PR-15 must also
-    /// cover the same files and agree with every pair the rules now place.
+    /// A cached result is used only if it still passes every hard check, covers the same files and agrees with
+    /// every pair the rules place now. The key holds neither the regular seasons' air dates (season windows) nor
+    /// a rule version, so this applies to new entries as well as entries from before PR-15 (audit L2-04).
     /// </summary>
     private static IReadOnlyList<string> CheckCached(
         SpecialMappingResult cached,
@@ -254,9 +255,18 @@ public sealed class SpecialMappingOrchestrator : ISpecialMappingOrchestrator
             .Concat(SpecialMappingValidator.ValidateGeminiPairs(cached, request))
             .Select(violation => violation.Message)
             .ToList();
-        if (!isLegacy)
+
+        // A rule pair the current rules no longer give (for example a season window that moved) must not be replayed.
+        var proposedPaths = request.Proposals
+            .Select(proposal => request.Context.Candidates[proposal.CandidateIndex].RelativePath)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in cached.Items.Where(item =>
+                     !isLegacy &&
+                     item.Source == SpecialMappingSource.Rule &&
+                     item.Episode is not null &&
+                     !proposedPaths.Contains(item.RelativePath)))
         {
-            return problems;
+            problems.Add($"'{Path.GetFileName(item.RelativePath)}' was placed by a rule that no longer applies");
         }
 
         var candidatePaths = request.Context.Candidates
