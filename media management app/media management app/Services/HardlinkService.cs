@@ -40,6 +40,13 @@ public sealed class HardlinkService : IHardlinkService
         if (item.IsOrphanPackSpecial)
         {
             var orphanFileName = SanitizeFileName(item.FileName);
+            // "Vol.1/NCOP.mkv" and "Vol.2/NCOP.mkv" (Disc, Part, ...) would share one extras path and the second
+            // failed with "Output already exists" on every re-link: keep the container in the name (audit L3-10).
+            if (FindOrphanContainerFolder(item) is { } container)
+            {
+                orphanFileName = $"{Sanitize(container)} - {orphanFileName}";
+            }
+
             var orphanSeason = FindOrphanSeasonFolder(item);
             return orphanSeason is > 0
                 ? Path.Combine(outputRoot, showName, $"Season {orphanSeason.Value:00}", AppConstants.OrphanExtrasFolderName, orphanFileName)
@@ -268,27 +275,50 @@ public sealed class HardlinkService : IHardlinkService
     /// save path. Null when the file is not under a season folder; it then goes to the show's
     /// extras folder. Separate season folders also keep same-named extras apart (PARSE-14).
     /// </summary>
-    private static int? FindOrphanSeasonFolder(SourceItem item)
+    private static readonly System.Text.RegularExpressions.Regex OrphanContainerRegex = new(
+        @"\b(?:vol(?:ume)?|disc|disk|dvd|bd|cd|part)[\s._-]*\d{1,3}\b",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>The nearest volume/disc/part folder above an orphan extra, or null.</summary>
+    private static string? FindOrphanContainerFolder(SourceItem item) =>
+        GetFolderSegmentsBelowSourceRoot(item)
+            .Reverse()
+            .FirstOrDefault(segment => !string.IsNullOrWhiteSpace(segment) && OrphanContainerRegex.IsMatch(segment));
+
+    // Folder names between the torrent's save path and the file. Both sides are normalized first, so a save path
+    // with forward slashes ("D:/Downloads/TV") still matches (audit L3-10).
+    private static IReadOnlyList<string> GetFolderSegmentsBelowSourceRoot(SourceItem item)
     {
         var directory = Path.GetDirectoryName(item.FilePath);
         if (string.IsNullOrWhiteSpace(directory))
         {
-            return null;
+            return [];
         }
 
-        IEnumerable<string> segments;
-        if (!string.IsNullOrWhiteSpace(item.SourceRootFolder) &&
-            directory.StartsWith(item.SourceRootFolder.TrimEnd('\\', '/') + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        try
         {
-            segments = Path.GetRelativePath(item.SourceRootFolder, directory)
-                .Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        }
-        else
-        {
-            segments = [Path.GetFileName(directory)];
-        }
+            var fullDirectory = Path.GetFullPath(directory);
+            if (!string.IsNullOrWhiteSpace(item.SourceRootFolder))
+            {
+                var root = Path.GetFullPath(item.SourceRootFolder).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                if (fullDirectory.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                {
+                    return Path.GetRelativePath(root, fullDirectory)
+                        .Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                }
+            }
 
-        foreach (var segment in segments.Reverse())
+            return [Path.GetFileName(fullDirectory)];
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return [Path.GetFileName(directory)];
+        }
+    }
+
+    private static int? FindOrphanSeasonFolder(SourceItem item)
+    {
+        foreach (var segment in GetFolderSegmentsBelowSourceRoot(item).Reverse())
         {
             if (!string.IsNullOrWhiteSpace(segment) &&
                 TorrentCandidateParser.TryParseSeasonFolderSegment(segment) is > 0 and var season)

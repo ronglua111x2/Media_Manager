@@ -475,6 +475,23 @@ public sealed class LinkStateScenarioTests : IDisposable
         Assert.Empty(_host.JellyfinFiles());
     }
 
+    // Audit L3-10: same-named extras in volume/disc folders each get their own extras file.
+    [Fact]
+    public async Task OrphanExtras_SameNameInVolumeFolders_BothLinked()
+    {
+        var showId = PackShow("HVOL", 5043, "Pack/Vol.1/NCOP.mkv", "Pack/Vol.2/NCOP.mkv");
+
+        var result = await _host.ApplyPackAsync(showId, 1,
+            ("Pack/Vol.1/NCOP.mkv", PackFileClassification.UnmatchedExtra, null, null),
+            ("Pack/Vol.2/NCOP.mkv", PackFileClassification.UnmatchedExtra, null, null));
+
+        Assert.Equal(0, result.ErrorCount);
+        var linked = _host.Items().Select(item => item.LinkedPath!).ToList();
+        Assert.Equal(2, linked.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+        Assert.All(linked, path => Assert.Contains(AppConstants.OrphanExtrasFolderName, path));
+        Assert.Contains(linked, path => path.EndsWith("Vol.1 - NCOP.mkv", StringComparison.Ordinal));
+    }
+
     // Audit L3-07: an old import of show A's library file that was matched to show B. Removing show B's links
     // must not delete show A's library file.
     [Fact]
