@@ -562,6 +562,16 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             return;
         }
 
+        if (NamesAnotherEpisode(selectedFile, episode, out var namedEpisode))
+        {
+            // A single-file torrent is taken as-is; refuse it when its name says it is another
+            // episode (for example a torrent adopted under the wrong episode) (PARSE-25).
+            AddSkip(
+                result,
+                $"{show.DisplayTitle} S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00}: file '{Path.GetFileName(selectedFile.Name)}' is {namedEpisode}, not linked.");
+            return;
+        }
+
         LinkSourceItem(
             CreateEpisodeSourceItem(
                 show,
@@ -1308,6 +1318,17 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             var parsed = TorrentCandidateParser.Parse(file.Name);
             return parsed.SeasonNumber == episode.SeasonNumber && parsed.EpisodeNumber == episode.EpisodeNumber;
         });
+    }
+
+    private static bool NamesAnotherEpisode(TorrentContentFile file, TrackedEpisode episode, out string namedEpisode)
+    {
+        var parsed = TorrentCandidateParser.Parse(Path.GetFileName(file.Name));
+        namedEpisode = parsed.SeasonNumber is not null && parsed.EpisodeNumber is not null
+            ? $"S{parsed.SeasonNumber:00}E{parsed.EpisodeNumber:00}"
+            : string.Empty;
+        return parsed.SeasonNumber is not null &&
+               parsed.EpisodeNumber is not null &&
+               (parsed.SeasonNumber != episode.SeasonNumber || parsed.EpisodeNumber != episode.EpisodeNumber);
     }
 
     private static SourceItem CreateEpisodeSourceItem(

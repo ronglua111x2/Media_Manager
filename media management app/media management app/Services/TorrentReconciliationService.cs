@@ -74,6 +74,9 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
 
         // Torrents still awaiting add-gate validation (live or interrupted by a crash) are never adopted by name.
         var usedHashes = InterruptedOrderRecovery.CollectPendingValidationHashes(_databaseService.GetTorrentCartOrders());
+        // A torrent already tracked by any show, season, movie, order or link is never adopted for
+        // something else, also when this pass is scoped to one show (PARSE-25).
+        usedHashes.UnionWith(CollectTrackedHashes());
         await RefreshSavedEpisodeHashesAsync(episodesById.Values, torrentsByHash, usedHashes, result, cancellationToken);
         await RefreshSavedSeasonPackHashesAsync(seasons, torrentsByHash, usedHashes, result, cancellationToken);
         await RefreshSavedMovieHashesAsync(movies, torrentsByHash, usedHashes, result, cancellationToken);
@@ -97,6 +100,48 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
         _logger.Info($"Torrent reconciliation complete. {result.Summary}", LogTarget.All);
         Reconciled?.Invoke(this, EventArgs.Empty);
         return result;
+    }
+
+    private HashSet<string> CollectTrackedHashes()
+    {
+        var hashes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        void Add(string? hash)
+        {
+            if (!string.IsNullOrWhiteSpace(hash))
+            {
+                hashes.Add(hash);
+            }
+        }
+
+        foreach (var show in _trackedShowService.GetShows())
+        {
+            foreach (var episode in _trackedShowService.GetEpisodes(show.Id))
+            {
+                Add(episode.TorrentHash);
+            }
+
+            foreach (var season in _trackedShowService.GetSeasons(show.Id))
+            {
+                Add(season.PackTorrentHash);
+            }
+        }
+
+        foreach (var movie in _trackedMovieService.GetMovies())
+        {
+            Add(movie.TorrentHash);
+        }
+
+        foreach (var order in _databaseService.GetTorrentCartOrders())
+        {
+            Add(order.TorrentHash);
+        }
+
+        foreach (var item in _databaseService.GetSourceItems())
+        {
+            Add(item.AutoTorrentTorrentHash);
+        }
+
+        return hashes;
     }
 
     private void RefreshLinkStatusForScope(TorrentReconciliationScope scope)
@@ -384,16 +429,25 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
         TorrentReconciliationResult result,
         CancellationToken cancellationToken)
     {
+        // The episode/season/movie lists are a snapshot taken before adoption; remember what this
+        // pass adopted so a later torrent cannot overwrite it.
+        var adoptedEpisodeIds = new HashSet<long>();
+        var adoptedSeasons = new HashSet<(long ShowId, int SeasonNumber)>();
+        var adoptedMovieIds = new HashSet<long>();
+
         foreach (var torrent in torrents.Where(torrent => !usedHashes.Contains(torrent.Hash)))
         {
             var matches = new List<Func<Task>>();
 
-            foreach (var (show, episode) in episodes.Where(item => string.IsNullOrWhiteSpace(item.Episode.TorrentHash)))
+            foreach (var (show, episode) in episodes.Where(item =>
+                         string.IsNullOrWhiteSpace(item.Episode.TorrentHash) &&
+                         !adoptedEpisodeIds.Contains(item.Episode.Id)))
             {
                 if (MatchesEpisode(torrent.Name, show, episode))
                 {
                     matches.Add(() =>
                     {
+                        adoptedEpisodeIds.Add(episode.Id);
                         _trackedShowService.UpdateTorrentState(episode.Id, torrent);
                         CountMatched(torrent, result);
                         return AutoLinkEpisodeIfConfiguredAsync(show, episode, torrent, result, cancellationToken);
@@ -401,12 +455,15 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
                 }
             }
 
-            foreach (var (show, season) in seasons.Where(item => string.IsNullOrWhiteSpace(item.Season.PackTorrentHash)))
+            foreach (var (show, season) in seasons.Where(item =>
+                         string.IsNullOrWhiteSpace(item.Season.PackTorrentHash) &&
+                         !adoptedSeasons.Contains((item.Show.Id, item.Season.SeasonNumber))))
             {
                 if (MatchesSeasonPack(torrent.Name, show, season))
                 {
                     matches.Add(async () =>
                     {
+                        adoptedSeasons.Add((show.Id, season.SeasonNumber));
                         _trackedShowService.UpdateSeasonPackTorrent(show.Id, season.SeasonNumber, torrent);
                         CountMatched(torrent, result);
                         await _packLinkCoordinatorService.TryAutoReconcilePackAsync(
@@ -420,12 +477,15 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
                 }
             }
 
-            foreach (var movie in movies.Where(movie => string.IsNullOrWhiteSpace(movie.TorrentHash)))
+            foreach (var movie in movies.Where(movie =>
+                         string.IsNullOrWhiteSpace(movie.TorrentHash) &&
+                         !adoptedMovieIds.Contains(movie.Id)))
             {
                 if (MatchesMovie(torrent.Name, movie))
                 {
                     matches.Add(() =>
                     {
+                        adoptedMovieIds.Add(movie.Id);
                         _trackedMovieService.UpdateTorrentState(movie.Id, torrent);
                         CountMatched(torrent, result);
                         return AutoLinkMovieIfConfiguredAsync(movie, torrent, result, cancellationToken);
@@ -589,9 +649,27 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
             return true;
         }
 
-        return ContainsNormalized(torrentName, show.Title) &&
-               (ContainsToken(torrentName, $"S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00}") ||
-                ContainsNumberToken(torrentName, episode.EpisodeNumber));
+        if (!ContainsNormalized(torrentName, show.Title))
+        {
+            return false;
+        }
+
+        // Only an explicit SxxEyy or a parsed episode number counts. A bare number anywhere in the
+        // name (AAC2.0, DD 5 1, x265, a CRC) matched unrelated episodes before (PARSE-25).
+        if (ContainsToken(torrentName, $"S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00}"))
+        {
+            return true;
+        }
+
+        var parsed = TorrentCandidateParser.Parse(torrentName, allowAnimeAbsolute: true);
+        if (parsed.EpisodeNumber != episode.EpisodeNumber)
+        {
+            return false;
+        }
+
+        // Absolute anime numbering carries no season; accept it for season 1 only.
+        return parsed.SeasonNumber == episode.SeasonNumber ||
+               (parsed.SeasonNumber is null && episode.SeasonNumber == 1);
     }
 
     private static bool MatchesSeasonPack(string torrentName, TrackedShow show, TrackedSeason season)
@@ -635,10 +713,17 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
                string.Equals(Normalize(left), Normalize(right), StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>Whole-word containment: "Lara" no longer matches inside "Laramie" (PARSE-25).</summary>
     private static bool ContainsNormalized(string source, string value)
     {
-        return !string.IsNullOrWhiteSpace(value) &&
-               Normalize(source).Contains(Normalize(value), StringComparison.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        var normalizedValue = Normalize(value);
+        return normalizedValue.Length > 0 &&
+               $" {Normalize(source)} ".Contains($" {normalizedValue} ", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool ContainsToken(string source, string token)

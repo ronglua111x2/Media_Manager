@@ -242,7 +242,7 @@ public sealed class LinkStateScenarioTests : IDisposable
     }
 
     // PARSE-25 (LINK-02, harness F): "AAC2.0" in a manually added torrent must not adopt it as episode 2.
-    [Fact(Skip = "PARSE-25")]
+    [Fact]
     public async Task AdoptManualTorrent_AudioTagNumber_DoesNotMatchAnotherEpisode()
     {
         _host.Settings.AutoTorrent.AutoLinkCompletedDownloads = true;
@@ -258,6 +258,66 @@ public sealed class LinkStateScenarioTests : IDisposable
         Assert.True(string.IsNullOrEmpty(episode2.TorrentHash));
         Assert.DoesNotContain(_host.Items(), item => item.EpisodeNumber == 2);
         Assert.DoesNotContain(_host.LibraryFiles(), path => path.Contains("S01E02"));
+    }
+
+    // PARSE-25: a correctly named manual torrent is still adopted and linked.
+    [Fact]
+    public async Task AdoptManualTorrent_MatchingEpisode_IsAdopted()
+    {
+        _host.Settings.AutoTorrent.AutoLinkCompletedDownloads = true;
+        var showId = _host.AddShow(5013, "Demo Show", (1, 3, "Three"));
+        const string name = "Demo.Show.S01E03.1080p.WEB-DL.AAC2.0.H.264-Grp.mkv";
+        _host.AddNamedTorrent("HADOPT", name, name);
+
+        await _host.Reconciliation.ReconcileAsync(TorrentReconciliationScope.ForMedia(MediaKind.TvEpisode, showId));
+
+        Assert.Equal("HADOPT", _host.Db.GetTrackedEpisodes(showId).Single().TorrentHash);
+        Assert.Equal(3, Assert.Single(_host.Items()).EpisodeNumber);
+    }
+
+    // PARSE-25: absolute anime numbering is still adopted for season 1.
+    [Fact]
+    public async Task AdoptManualTorrent_AbsoluteAnimeNumber_IsAdoptedForSeasonOne()
+    {
+        var showId = _host.AddShow(5014, "Demo Show", (1, 2, "Two"), (1, 3, "Three"));
+        const string name = "[Grp] Demo Show - 03 [1080p].mkv";
+        _host.AddNamedTorrent("HANIME", name, name);
+
+        await _host.Reconciliation.ReconcileAsync(TorrentReconciliationScope.ForMedia(MediaKind.TvEpisode, showId));
+
+        var episodes = _host.Db.GetTrackedEpisodes(showId);
+        Assert.Equal("HANIME", episodes.Single(item => item.EpisodeNumber == 3).TorrentHash);
+        Assert.True(string.IsNullOrEmpty(episodes.Single(item => item.EpisodeNumber == 2).TorrentHash));
+    }
+
+    // PARSE-25: a torrent tracked by another show is not adopted when reconciling one show.
+    [Fact]
+    public async Task AdoptManualTorrent_TorrentOfAnotherShow_IsNotAdoptedInShowScope()
+    {
+        var showId = _host.AddShow(5015, "Demo Show", (1, 5, "Five"));
+        var otherShowId = _host.AddShow(5016, "Demo Show Extra", (1, 5, "Five"));
+        const string name = "Demo.Show.Extra.S01E05.1080p.mkv";
+        _host.AddNamedTorrent("HOTHER", name, name);
+        _host.AssignEpisodeTorrent(otherShowId, 1, 5, "HOTHER");
+
+        await _host.Reconciliation.ReconcileAsync(TorrentReconciliationScope.ForMedia(MediaKind.TvEpisode, showId));
+
+        Assert.True(string.IsNullOrEmpty(_host.Db.GetTrackedEpisodes(showId).Single().TorrentHash));
+    }
+
+    // PARSE-25: a single-file torrent named as another episode is not linked to this one.
+    [Fact]
+    public async Task EpisodeLink_SingleFileNamedAsAnotherEpisode_IsNotLinked()
+    {
+        _host.AddTorrent("HWRONG", "Demo.S01E12.1080p.mkv");
+        var showId = _host.AddShow(5017, "Demo Show", (1, 2, "Two"));
+        _host.AssignEpisodeTorrent(showId, 1, 2, "HWRONG");
+
+        var result = await _host.Link.LinkEpisodeAsync(showId, 1, 2);
+
+        Assert.Equal(0, result.LinkedCount);
+        Assert.Empty(_host.Items());
+        Assert.Contains(result.Messages, message => message.Contains("S01E12", StringComparison.Ordinal));
     }
 
     // PARSE-29 (LINK-06, harness E): a library file deleted outside the app must make the episode Missing
