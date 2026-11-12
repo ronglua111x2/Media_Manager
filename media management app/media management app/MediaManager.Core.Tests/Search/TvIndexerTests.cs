@@ -246,7 +246,13 @@ public class TvIndexerTests
     [InlineData("Coherence 2014 720p", "Coherence 2013", true)]
     [InlineData("Spider-Man Across the Spider-Verse 2023 1080p", "Spider-Man Across the Spider-Verse 1080p", true)]
     [InlineData("[SubsPlease] Kanata Kara - 06 (1080p)", "Kanata Kara 06", true)]
-    [InlineData("[SubsPlease] Kanata Kara - 07 (1080p)", "Kanata Kara 06", false)]
+    [InlineData("[SubsPlease] Kanata Kara - 07 (1080p)", "Kanata Kara 06", true)]
+    [InlineData("Rick.and.Morty.S03.1080p.BluRay.x264-GRP", "Rick and Morty 2013 season 3", true)]
+    [InlineData("Rick.and.Morty.S03.1080p.BluRay.x264-GRP", "Rick and Morty S03 complete", true)]
+    [InlineData("Rick.and.Morty.S03E06.1080p.WEB.x264-GRP", "Rick and Morty 3x06", true)]
+    [InlineData("Black Clover S02E05 1080p", "Rick and Morty S02E05", false)]
+    [InlineData("1917 2019 1080p BluRay x264", "1917 1080p", true)]
+    [InlineData("Zootopia 2 2025 1080p WEBRip", "1917 1080p", false)]
     public void TorrentDownloads_KeepsOnlyRowsWithAllTitleWords(string title, string query, bool expected)
     {
         TorrentDownloadsIndexer.MatchesTitleWords(title, query).Should().Be(expected);

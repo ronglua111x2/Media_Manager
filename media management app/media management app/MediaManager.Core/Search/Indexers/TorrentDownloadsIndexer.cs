@@ -37,21 +37,34 @@ public sealed partial class TorrentDownloadsIndexer(string baseUrl = "https://ww
 
     /// <summary>
     /// The search RSS matches ANY word: "Golam 1440p" returns 50 unrelated 1440p releases. A row is kept only when
-    /// it contains every title word of the query; years and quality markers are optional (the evaluator checks them).
+    /// it contains every title word of the query. Years, quality markers, numbers, episode/season markers
+    /// ("S03", "S03E05", "1x06") and pack filler words ("season", "complete"...) are optional: release names
+    /// write them in many forms and the evaluator checks them afterwards.
     /// </summary>
     public static bool MatchesTitleWords(string title, string queryText)
     {
-        var required = TitleNormalizer.MatchTokens(queryText)
-            .Where(token => !NativeQueryText.IsQualityToken(token) && !NativeQueryText.IsYearToken(token))
+        var queryTokens = TitleNormalizer.MatchTokens(queryText)
+            .Where(token => !NativeQueryText.IsQualityToken(token))
+            .ToList();
+        var required = queryTokens
+            .Where(token => !NativeQueryText.IsYearToken(token) && !OptionalQueryToken().IsMatch(token))
             .ToList();
         if (required.Count == 0)
         {
-            return true;
+            // A title made only of numbers ("1917"): require them, or the any-word feed lets everything through.
+            required = queryTokens.Where(token => !OptionalQueryToken().IsMatch(token) || token.All(char.IsDigit)).ToList();
+            if (required.Count == 0)
+            {
+                return true;
+            }
         }
 
         var tokens = TitleNormalizer.MatchTokens(title).ToHashSet(StringComparer.Ordinal);
         return required.All(tokens.Contains);
     }
+
+    [GeneratedRegex(@"^(s\d{1,2}(e\d{1,4})*|e\d{1,4}|\d{1,2}x\d{1,4}|\d+|season|seasons|complete|pack|batch|episode|ep)$")]
+    private static partial Regex OptionalQueryToken();
 
     public static IReadOnlyList<IndexerResult> Parse(string rss, string siteRoot = "https://www.torrentdownloads.pro")
     {
