@@ -4,8 +4,77 @@ using media_management_app.Models;
 
 namespace media_management_app.Services;
 
+/// <summary>
+/// Matches a special/OVA file to a TMDB Season 0 entry by its title. Only meaningful words count: stopwords,
+/// the show's own name, "OVA"/"special", release tags, file extensions, group tags in brackets and anything with
+/// a digit are dropped from both sides. A match needs at least <see cref="MinimumShare"/> of the TMDB title's
+/// meaningful words, and two entries with the same best score mean no match (parser audit SPEC-03).
+/// </summary>
 public static class SpecialEpisodeTitleMatcher
 {
+    public const double MinimumShare = 0.6;
+
+    private static readonly Regex BracketGroupRegex = new(@"\[[^\]]*\]|\{[^}]*\}", RegexOptions.Compiled);
+
+    private static readonly HashSet<string> StopWords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "a", "an", "the", "of", "and", "or", "to", "in", "on", "at", "for", "with", "from", "by", "as", "into",
+        "is", "are", "was", "be", "it", "its", "this", "that", "vs", "so", "but", "not", "no", "my", "your",
+        "our", "his", "her", "their", "we", "you", "me", "wa", "ga", "wo", "ni", "de"
+    };
+
+    private static readonly HashSet<string> NoiseWords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "ova", "ovas", "oad", "ona", "special", "specials", "sp", "extra", "extras", "episode", "ep",
+        "mkv", "mp4", "avi", "m2ts", "ts", "webm", "wmv",
+        "bd", "bdrip", "bluray", "web", "webrip", "webdl", "dl", "hevc", "avc", "aac", "flac", "opus", "dts",
+        "dual", "audio", "multi", "sub", "subs", "subbed", "dub", "dubbed", "eng", "raw", "remux", "hdr", "sdr",
+        "proper", "repack", "batch", "uncensored", "uncut"
+    };
+
+    /// <summary>
+    /// Best title match among <paramref name="specialsEpisodes"/>, or null when nothing reaches the threshold, the
+    /// best score is shared, or the best entry is already claimed.
+    /// </summary>
+    public static TrackedEpisode? TryMatch(
+        string fileName,
+        string? showTitle,
+        IReadOnlyList<TrackedEpisode> specialsEpisodes,
+        IReadOnlySet<int>? claimedEpisodeNumbers = null)
+    {
+        var fileTokens = FileTitleTokens(fileName, showTitle);
+        if (fileTokens.Count == 0)
+        {
+            return null;
+        }
+
+        var scored = specialsEpisodes
+            .Where(episode => episode.SeasonNumber == AppConstants.SpecialsSeasonNumber)
+            .Select(episode => (Episode: episode, Score: Score(fileTokens, EpisodeTitleTokens(episode.Title, showTitle))))
+            .Where(item => item.Score.Share >= MinimumShare)
+            .OrderByDescending(item => item.Score.Share)
+            .ThenByDescending(item => item.Score.Overlap)
+            .ToList();
+        if (scored.Count == 0)
+        {
+            return null;
+        }
+
+        var best = scored[0];
+        if (scored.Count > 1 && scored[1].Score == best.Score)
+        {
+            return null;
+        }
+
+        return claimedEpisodeNumbers is not null && claimedEpisodeNumbers.Contains(best.Episode.EpisodeNumber)
+            ? null
+            : best.Episode;
+    }
+
+    /// <summary>
+    /// Inspect-path overload (no show title known). Title first, then the special index the parser read
+    /// (<c>S1S03</c>, <c>OVA 03</c>) as a TMDB episode number, as before.
+    /// </summary>
     public static TrackedEpisode? TryMatch(
         TorrentCandidateParseResult parsed,
         IReadOnlyList<TrackedEpisode> specialsEpisodes,
@@ -19,8 +88,8 @@ public static class SpecialEpisodeTitleMatcher
             return null;
         }
 
-        var titleMatch = MatchByTitleTokens(parsed, candidates);
-        if (titleMatch is not null && !IsClaimed(titleMatch.EpisodeNumber, claimedEpisodeNumbers))
+        var titleMatch = TryMatch(parsed.RawTitle, showTitle: null, candidates, claimedEpisodeNumbers);
+        if (titleMatch is not null)
         {
             return titleMatch;
         }
@@ -36,6 +105,57 @@ public static class SpecialEpisodeTitleMatcher
         }
 
         return null;
+    }
+
+    /// <summary>True when the file's own title names this TMDB entry (used to trust a <c>S00Exx</c> file name).</summary>
+    public static bool Confirms(string fileName, string? showTitle, TrackedEpisode episode)
+    {
+        var fileTokens = FileTitleTokens(fileName, showTitle);
+        return fileTokens.Count > 0 && Score(fileTokens, EpisodeTitleTokens(episode.Title, showTitle)).Share >= MinimumShare;
+    }
+
+    public static IReadOnlySet<string> FileTitleTokens(string fileName, string? showTitle)
+    {
+        var stem = Path.GetFileNameWithoutExtension(fileName.Replace('\\', '/').Split('/').Last());
+        return Meaningful(BracketGroupRegex.Replace(stem, " "), showTitle).ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
+
+    public static IReadOnlySet<string> EpisodeTitleTokens(string? title, string? showTitle) =>
+        Meaningful(title ?? string.Empty, showTitle).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+    private static (double Share, int Overlap) Score(IReadOnlySet<string> fileTokens, IReadOnlySet<string> episodeTokens)
+    {
+        if (episodeTokens.Count == 0)
+        {
+            return (0, 0);
+        }
+
+        var overlap = episodeTokens.Count(fileTokens.Contains);
+        return ((double)overlap / episodeTokens.Count, overlap);
+    }
+
+    private static IEnumerable<string> Meaningful(string text, string? showTitle)
+    {
+        var showTokens = Words(showTitle ?? string.Empty).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return Words(text).Where(token =>
+            token.Length > 1 &&
+            !token.Any(char.IsDigit) &&
+            !StopWords.Contains(token) &&
+            !NoiseWords.Contains(token) &&
+            !showTokens.Contains(token));
+    }
+
+    private static IEnumerable<string> Words(string text)
+    {
+        var buffer = new char[text.Length];
+        for (var index = 0; index < text.Length; index++)
+        {
+            buffer[index] = char.IsLetterOrDigit(text[index]) || text[index] == '\'' ? char.ToLowerInvariant(text[index]) : ' ';
+        }
+
+        return new string(buffer)
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Select(token => token.EndsWith("'s", StringComparison.Ordinal) ? token[..^2] : token.Replace("'", string.Empty));
     }
 
     private static int? ResolveSpecialIndex(TorrentCandidateParseResult parsed)
@@ -55,71 +175,4 @@ public static class SpecialEpisodeTitleMatcher
 
     private static bool IsClaimed(int episodeNumber, IReadOnlySet<int>? claimedEpisodeNumbers) =>
         claimedEpisodeNumbers is not null && claimedEpisodeNumbers.Contains(episodeNumber);
-
-    private static TrackedEpisode? MatchByTitleTokens(TorrentCandidateParseResult parsed, IReadOnlyList<TrackedEpisode> candidates)
-    {
-        var searchTokens = BuildSearchTokens(parsed);
-        if (searchTokens.Count == 0)
-        {
-            return null;
-        }
-
-        TrackedEpisode? bestMatch = null;
-        var bestScore = 0;
-        foreach (var candidate in candidates)
-        {
-            var episodeTokens = TorrentCandidateParser.Tokenize(candidate.Title).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            if (episodeTokens.Count == 0)
-            {
-                continue;
-            }
-
-            var overlap = searchTokens.Count(token => episodeTokens.Contains(token));
-            if (overlap > bestScore)
-            {
-                bestScore = overlap;
-                bestMatch = candidate;
-            }
-        }
-
-        return bestScore >= 2 ? bestMatch : null;
-    }
-
-    private static HashSet<string> BuildSearchTokens(TorrentCandidateParseResult parsed)
-    {
-        var tokens = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var token in parsed.TitleTokens)
-        {
-            tokens.Add(token);
-        }
-
-        if (!string.IsNullOrWhiteSpace(parsed.EpisodeTitle))
-        {
-            foreach (var token in TorrentCandidateParser.Tokenize(parsed.EpisodeTitle))
-            {
-                tokens.Add(token);
-            }
-        }
-
-        foreach (var token in TorrentCandidateParser.Tokenize(parsed.RawTitle))
-        {
-            if (token.Length >= 4 &&
-                !IsNoiseToken(token))
-            {
-                tokens.Add(token);
-            }
-        }
-
-        return tokens;
-    }
-
-    private static bool IsNoiseToken(string token)
-    {
-        return token.Equals("ova", StringComparison.OrdinalIgnoreCase) ||
-               token.Equals("special", StringComparison.OrdinalIgnoreCase) ||
-               token.Equals("mkv", StringComparison.OrdinalIgnoreCase) ||
-               token.Equals("mp4", StringComparison.OrdinalIgnoreCase) ||
-               Regex.IsMatch(token, @"^s\d+e\d+$", RegexOptions.IgnoreCase) ||
-               Regex.IsMatch(token, @"^s\d+s\d+$", RegexOptions.IgnoreCase);
-    }
 }

@@ -443,8 +443,11 @@ public static class TorrentCandidateParser
             return null;
         }
 
+        // Release tags after the number ("Show - 10 [1080p][0000000A]") do not hide it; without this,
+        // unpadded "- N [CRC]" specials had no index and were ordered by name ("- 10" before "- 2").
+        var withoutTrailingTags = Regex.Replace(nameWithoutExtension, @"(?:\s*[\[\(][^\[\]\(\)]*[\]\)])+\s*$", string.Empty);
         var episodeMatch = Regex.Match(
-            nameWithoutExtension,
+            withoutTrailingTags,
             @"(?:^|\s)-\s*(?<episode>\d{1,4})\s*$",
             RegexOptions.IgnoreCase);
         if (episodeMatch.Success && int.TryParse(episodeMatch.Groups["episode"].Value, out var dashEpisode))

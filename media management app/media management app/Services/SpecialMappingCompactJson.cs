@@ -48,7 +48,28 @@ public static class SpecialMappingCompactJson
         return response!;
     }
 
+    /// <summary>
+    /// Reads <c>{"m":[[candidateIndex,s00e],...],"w":[...]}</c>. Never throws: a response without an
+    /// <c>m</c> array is a failure, and a pair that is not two 32-bit integers is skipped with a warning.
+    /// </summary>
     public static bool TryParseResponse(string raw, out SpecialMappingAIResponse? response, out string? error)
+    {
+        response = null;
+        error = null;
+
+        try
+        {
+            return TryParseResponseCore(raw, out response, out error);
+        }
+        catch (Exception ex)
+        {
+            response = null;
+            error = $"Gemini response could not be parsed: {ex.Message}";
+            return false;
+        }
+    }
+
+    private static bool TryParseResponseCore(string raw, out SpecialMappingAIResponse? response, out string? error)
     {
         response = null;
         error = null;
@@ -60,29 +81,32 @@ public static class SpecialMappingCompactJson
             return false;
         }
 
-        JsonException? lastException = null;
+        Exception? lastException = null;
         string? lastCandidate = null;
+        string? shapeError = null;
         foreach (var candidate in candidates)
         {
             lastCandidate = candidate;
             try
             {
-                if (TryParseResponseDocument(candidate, out response))
+                if (TryParseResponseDocument(candidate, out response, out var candidateShapeError))
                 {
                     return true;
                 }
+
+                shapeError ??= candidateShapeError;
             }
-            catch (JsonException ex)
+            catch (Exception ex)
             {
                 lastException = ex;
             }
         }
 
-        if (lastException is null && lastCandidate is not null)
+        if (lastException is null && shapeError is null && lastCandidate is not null)
         {
             try
             {
-                JsonDocument.Parse(lastCandidate);
+                using var _ = JsonDocument.Parse(lastCandidate);
             }
             catch (JsonException ex)
             {
@@ -97,51 +121,82 @@ public static class SpecialMappingCompactJson
             return true;
         }
 
-        error = lastException is not null && lastCandidate is not null
-            ? BuildParseErrorMessage(lastException, lastCandidate)
-            : "Gemini response could not be parsed as JSON.";
+        response = null;
+        error = shapeError
+            ?? (lastException is not null && lastCandidate is not null
+                ? BuildParseErrorMessage(lastException, lastCandidate)
+                : "Gemini response could not be parsed as JSON.");
         return false;
     }
 
-    private static bool TryParseResponseDocument(string normalized, out SpecialMappingAIResponse? response)
+    private static bool TryParseResponseDocument(string normalized, out SpecialMappingAIResponse? response, out string? shapeError)
     {
         response = null;
+        shapeError = null;
         using var document = JsonDocument.Parse(normalized);
-            var root = document.RootElement;
-            var mappings = new List<(int CandidateIndex, int S00E)>();
-            var warnings = new List<string>();
+        var root = document.RootElement;
+        if (root.ValueKind != JsonValueKind.Object)
+        {
+            shapeError = $"Gemini response root is a JSON {root.ValueKind}, not an object.";
+            return false;
+        }
 
-            if (root.TryGetProperty("m", out var mappingElement) && mappingElement.ValueKind == JsonValueKind.Array)
+        if (!root.TryGetProperty("m", out var mappingElement) || mappingElement.ValueKind != JsonValueKind.Array)
+        {
+            shapeError = "Gemini response has no 'm' mapping array.";
+            return false;
+        }
+
+        var mappings = new List<(int CandidateIndex, int S00E)>();
+        var warnings = new List<string>();
+        var position = 0;
+        foreach (var item in mappingElement.EnumerateArray())
+        {
+            if (TryReadPair(item, out var candidateIndex, out var s00e))
             {
-                foreach (var item in mappingElement.EnumerateArray())
-                {
-                    if (item.ValueKind != JsonValueKind.Array || item.GetArrayLength() < 2)
-                    {
-                        continue;
-                    }
-
-                    mappings.Add((item[0].GetInt32(), item[1].GetInt32()));
-                }
+                mappings.Add((candidateIndex, s00e));
+            }
+            else
+            {
+                warnings.Add($"Ignored malformed Gemini mapping #{position + 1}: {Shorten(item.GetRawText())}.");
             }
 
-            if (root.TryGetProperty("w", out var warningElement) && warningElement.ValueKind == JsonValueKind.Array)
+            position++;
+        }
+
+        if (root.TryGetProperty("w", out var warningElement) && warningElement.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in warningElement.EnumerateArray())
             {
-                foreach (var item in warningElement.EnumerateArray())
+                if (item.ValueKind == JsonValueKind.String)
                 {
-                    if (item.ValueKind == JsonValueKind.String)
-                    {
-                        warnings.Add(item.GetString() ?? string.Empty);
-                    }
+                    warnings.Add(item.GetString() ?? string.Empty);
                 }
             }
+        }
 
-            response = new SpecialMappingAIResponse
-            {
-                Mappings = mappings,
-                Warnings = warnings
-            };
-            return true;
+        response = new SpecialMappingAIResponse
+        {
+            Mappings = mappings,
+            Warnings = warnings
+        };
+        return true;
     }
+
+    private static bool TryReadPair(JsonElement item, out int candidateIndex, out int s00e)
+    {
+        candidateIndex = 0;
+        s00e = 0;
+        return item.ValueKind == JsonValueKind.Array &&
+               item.GetArrayLength() >= 2 &&
+               item[0].ValueKind == JsonValueKind.Number &&
+               item[1].ValueKind == JsonValueKind.Number &&
+               item[0].TryGetInt32(out candidateIndex) &&
+               item[1].TryGetInt32(out s00e);
+    }
+
+    private static string Shorten(string value) =>
+        value.Length <= 40 ? value : value[..40] + "...";
 
     private static List<string> GetResponseJsonCandidates(string raw)
     {
@@ -329,7 +384,15 @@ public static class SpecialMappingCompactJson
         }
 
         var synthetic = $"{{\"m\":{mappingsJson},\"w\":[]}}";
-        return TryParseResponseDocument(synthetic, out response) && response!.Mappings.Count > 0;
+        try
+        {
+            return TryParseResponseDocument(synthetic, out response, out _) && response!.Mappings.Count > 0;
+        }
+        catch (JsonException)
+        {
+            response = null;
+            return false;
+        }
     }
 
     private static string? ExtractPropertyArrayJson(string json, string propertyName)
@@ -411,9 +474,11 @@ public static class SpecialMappingCompactJson
         return null;
     }
 
-    private static string BuildParseErrorMessage(JsonException ex, string normalized)
+    private static string BuildParseErrorMessage(Exception ex, string normalized)
     {
-        var position = ex.BytePositionInLine >= 0 ? (int)ex.BytePositionInLine : 0;
+        var position = ex is JsonException { BytePositionInLine: >= 0 } jsonException
+            ? (int)jsonException.BytePositionInLine!.Value
+            : 0;
         var excerpt = BuildResponseExcerpt(normalized, position);
         return $"Gemini JSON parse failed at byte {position}: {ex.Message}. Excerpt: {excerpt}";
     }
@@ -489,6 +554,9 @@ public static class SpecialMappingCompactJson
         SpecialMappingProposalReason.Flatten => "flatten",
         SpecialMappingProposalReason.Title => "title",
         SpecialMappingProposalReason.Ordinal => "ordinal",
+        SpecialMappingProposalReason.Window => "window",
+        SpecialMappingProposalReason.Inferred => "inferred",
+        SpecialMappingProposalReason.OvaNumber => "ova",
         _ => "none"
     };
 }

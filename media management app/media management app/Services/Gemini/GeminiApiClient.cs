@@ -79,7 +79,7 @@ public sealed class GeminiApiClient : IGeminiApiClient
             responseSchema,
             progress,
             cancellationToken);
-        return new GeminiJsonTextResult(result.Model, result.Json);
+        return new GeminiJsonTextResult(result.Model, result.Json, result.FinishReason);
     }
 
     public async Task<T> GenerateJsonAsync<T>(
@@ -127,7 +127,7 @@ public sealed class GeminiApiClient : IGeminiApiClient
             {
                 try
                 {
-                    var json = await SendGenerateRequestAsync(
+                    var (json, finishReason) = await SendGenerateRequestAsync(
                         model,
                         systemPrompt,
                         userJson,
@@ -137,7 +137,8 @@ public sealed class GeminiApiClient : IGeminiApiClient
 
                     if (string.IsNullOrWhiteSpace(json))
                     {
-                        throw new InvalidOperationException($"Gemini model '{model}' returned an empty response.");
+                        throw new InvalidOperationException(
+                            $"Gemini model '{model}' returned an empty response{FormatFinishReason(finishReason)}.");
                     }
 
                     if (recordQuota)
@@ -147,7 +148,18 @@ public sealed class GeminiApiClient : IGeminiApiClient
                             LogTarget.All);
                     }
 
-                    return new GeminiGenerateResult(model, json);
+                    if (IsEarlyStop(finishReason))
+                    {
+                        _logger.Warning(
+                            $"Gemini model '{model}' stopped early (finishReason={finishReason}); the answer may be incomplete.",
+                            LogTarget.All);
+                    }
+
+                    return new GeminiGenerateResult(model, json, finishReason);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
                 }
                 catch (GeminiRequestFailedException ex)
                 {
@@ -207,7 +219,7 @@ public sealed class GeminiApiClient : IGeminiApiClient
             lastError);
     }
 
-    private async Task<string?> SendGenerateRequestAsync(
+    private async Task<(string? Text, string? FinishReason)> SendGenerateRequestAsync(
         string model,
         string systemPrompt,
         string userJson,
@@ -279,17 +291,21 @@ public sealed class GeminiApiClient : IGeminiApiClient
             }
 
             var parsed = JsonSerializer.Deserialize<GeminiGenerateContentResponse>(responseText, SerializerOptions);
-            var text = parsed?.Candidates?
-                .SelectMany(candidate => candidate.Content?.Parts ?? [])
-                .Select(part => part.Text)
-                .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+            var answer = parsed?.Candidates?
+                .Select(candidate => (
+                    Text: candidate.Content?.Parts?
+                        .Select(part => part.Text)
+                        .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)),
+                    candidate.FinishReason))
+                .FirstOrDefault(candidate => !string.IsNullOrWhiteSpace(candidate.Text));
+            var finishReason = answer?.FinishReason ?? parsed?.Candidates?.FirstOrDefault()?.FinishReason;
 
             if (recordQuota)
             {
                 _quotaTracker.RecordRequest();
             }
 
-            return text?.Trim();
+            return (answer?.Text?.Trim(), finishReason);
         }
         finally
         {
@@ -387,7 +403,16 @@ public sealed class GeminiApiClient : IGeminiApiClient
     private static string TrimForLog(string value) =>
         value.Length <= 240 ? value : value[..240] + "...";
 
-    private sealed record GeminiGenerateResult(string Model, string Json);
+    private sealed record GeminiGenerateResult(string Model, string Json, string? FinishReason);
+
+    /// <summary>True when Gemini stopped for another reason than finishing its answer (MAX_TOKENS, SAFETY, ...).</summary>
+    public static bool IsEarlyStop(string? finishReason) =>
+        !string.IsNullOrWhiteSpace(finishReason) &&
+        !string.Equals(finishReason, "STOP", StringComparison.OrdinalIgnoreCase) &&
+        !string.Equals(finishReason, "FINISH_REASON_UNSPECIFIED", StringComparison.OrdinalIgnoreCase);
+
+    private static string FormatFinishReason(string? finishReason) =>
+        string.IsNullOrWhiteSpace(finishReason) ? string.Empty : $" (finishReason={finishReason})";
 
     private sealed class GeminiRequestFailedException : Exception
     {
@@ -437,5 +462,7 @@ public sealed class GeminiApiClient : IGeminiApiClient
     private sealed class GeminiCandidate
     {
         public GeminiContent? Content { get; set; }
+
+        public string? FinishReason { get; set; }
     }
 }

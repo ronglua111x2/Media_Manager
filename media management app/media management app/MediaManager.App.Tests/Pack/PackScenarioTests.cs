@@ -136,7 +136,7 @@ public class PackScenarioTests
         }
     }
 
-    [Fact(Skip = "PARSE-09 (Track C, PR-13)")]
+    [Fact]
     public void I_SeasonSpecialFiles_AreNotGuessedOntoUnrelatedSpecials()
     {
         var inventory = PackScenario.Run(Scenarios["I"]);
@@ -496,7 +496,12 @@ public class PackScenarioTests
                 Files: Enumerable.Range(1, 12).Select(e => $"Show [Grp]/Specials/[Grp] Show - {e} [{e:X8}].mkv").ToArray(),
                 Specials: Enumerable.Range(1, 12)
                     .Select(e => (e, new DateTime(2020, 1, 1).AddDays(7 * e).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), $"Special {e}"))
-                    .ToArray()),
+                    .ToArray(),
+                // Season 1 air dates let the special season-window mapper (track C) place the specials;
+                // the whole-pack Ordinal rule this scenario first relied on no longer exists.
+                AirDates: Enumerable.Range(1, 12).ToDictionary(
+                    e => (1, e),
+                    e => new DateTime(2019, 10, 1).AddDays(7 * (e - 1)).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))),
             ["shorts-by-size"] = new(
                 Owner: 1, Covered: [1], EpisodesPerSeason: new() { [1] = 8 },
                 Files: Enumerable.Range(1, 8).Select(e => $"[Grp] Show/[Grp] Show - {e:00} [1080p].mkv").ToArray(),
@@ -588,7 +593,7 @@ internal static class PackScenario
             seasons,
             scenario.Covered.ToHashSet(),
             PackAnalyzeMode.Link,
-            ResolveSpecialsOffline(files, specials),
+            ResolveSpecialsOffline(files, specials, episodes.Where(episode => episode.SeasonNumber > 0).ToList()),
             ownerSeasonNumber: scenario.Owner,
             fileSizes: scenario.Sizes);
     }
@@ -596,10 +601,11 @@ internal static class PackScenario
     // Mirrors the offline branch of SpecialMappingOrchestrator.ResolveAsync (Gemini off or no key).
     private static SpecialMappingResult ResolveSpecialsOffline(
         IReadOnlyList<(string RelativePath, string FileName)> files,
-        IReadOnlyList<TrackedEpisode> specials)
+        IReadOnlyList<TrackedEpisode> specials,
+        IReadOnlyList<TrackedEpisode> regularEpisodes)
     {
         var tree = PackFolderTreeAnalyzer.Analyze(files.Select(file => file.RelativePath).ToList());
-        var request = PackSpecialPayloadBuilder.Build(files, tree, specials, "Show", 1);
+        var request = PackSpecialPayloadBuilder.Build(files, tree, specials, "Show", 1, regularEpisodes);
         if (request.Context.CandidateCount == 0)
         {
             return new SpecialMappingResult();

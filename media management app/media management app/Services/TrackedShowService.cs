@@ -498,9 +498,7 @@ public sealed class TrackedShowService : ITrackedShowService
                 item.MediaKind == MediaKind.TvEpisode &&
                 string.Equals(item.Provider, "tmdb", StringComparison.OrdinalIgnoreCase) &&
                 string.Equals(item.ProviderId, providerId, StringComparison.OrdinalIgnoreCase))
-            .Select(GetOutputEpisodeKey)
-            .Where(key => key is not null)
-            .Select(key => key!.Value)
+            .SelectMany(GetOutputEpisodeKeys)
             .ToHashSet();
     }
 

@@ -49,7 +49,7 @@ public sealed class MultiEpisodeLinkTests : IDisposable
 
         Assert.Equal(2, Assert.Single(database.GetSourceItems()).LastEpisodeNumber);
 
-        new TrackedShowService(database, null!, null!, logger).RefreshAvailability(showId);
+        new TrackedShowService(database, null!, null!, null!, logger).RefreshAvailability(showId);
 
         var availability = database.GetTrackedEpisodes(showId).ToDictionary(episode => episode.EpisodeNumber, episode => episode.Availability);
         Assert.Equal(EpisodeAvailability.Available, availability[1]);

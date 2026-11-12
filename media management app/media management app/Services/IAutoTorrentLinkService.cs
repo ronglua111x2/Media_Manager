@@ -6,8 +6,6 @@ public interface IAutoTorrentLinkService
 {
     Task<AutoTorrentLinkResult> LinkEpisodeAsync(long showId, int seasonNumber, int episodeNumber, CancellationToken cancellationToken = default);
 
-    Task<AutoTorrentLinkResult> LinkShowAsync(long showId, CancellationToken cancellationToken = default);
-
     Task<SeasonPackLinkPreview> PrepareSeasonPackLinkAsync(
         long showId,
         int ownerSeasonNumber,
@@ -19,18 +17,6 @@ public interface IAutoTorrentLinkService
     Task<AutoTorrentLinkResult> ApplySeasonPackLinkAsync(
         SeasonPackLinkPreview preview,
         IProgress<PackLinkProgressUpdate>? progress = null,
-        CancellationToken cancellationToken = default);
-
-    Task<AutoTorrentLinkResult> LinkSeasonPackAsync(
-        long showId,
-        int ownerSeasonNumber,
-        IProgress<PackLinkProgressUpdate>? progress = null,
-        CancellationToken cancellationToken = default);
-
-    Task<AutoTorrentLinkResult> LinkSeasonPackFromInventoryAsync(
-        long showId,
-        int ownerSeasonNumber,
-        PackTorrentInventory inventory,
         CancellationToken cancellationToken = default);
 
     Task<AutoTorrentLinkResult> LinkMovieAsync(long movieId, CancellationToken cancellationToken = default);

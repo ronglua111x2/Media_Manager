@@ -22,6 +22,12 @@ public partial class PackLinkProgressWindow : Window
         if (!_viewModel.CanClose)
         {
             e.Cancel = true;
+
+            // Closing a running pack link means "stop": cancel it and keep the window until it has stopped.
+            if (_viewModel.CanCancel)
+            {
+                _viewModel.CancelCommand.Execute(null);
+            }
         }
     }
 }

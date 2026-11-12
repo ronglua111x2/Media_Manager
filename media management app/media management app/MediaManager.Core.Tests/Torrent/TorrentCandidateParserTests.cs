@@ -179,6 +179,13 @@ public class TorrentCandidateParserTests
     }
 
     [Fact]
+    public void TryParseBareEpisodeIndex_DashNumberBeforeReleaseTags_ParsesEpisode()
+    {
+        TorrentCandidateParser.TryParseBareEpisodeIndex("[Grp] Show - 10 [0000000A].mkv").Should().Be(10);
+        TorrentCandidateParser.TryParseBareEpisodeIndex("[Grp] Show - 05 (1080p) [ABCD1234].mkv").Should().Be(5);
+    }
+
+    [Fact]
     public void TryParseBareEpisodeIndex_DashSuffix_ParsesEpisode()
     {
         TorrentCandidateParser.TryParseBareEpisodeIndex("Special Title - 04.mkv")
