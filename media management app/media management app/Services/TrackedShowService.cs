@@ -100,6 +100,35 @@ public sealed class TrackedShowService : ITrackedShowService
         var currentGroupId = string.IsNullOrWhiteSpace(show.EpisodeGroupId) ? null : show.EpisodeGroupId.Trim();
         var isSameRoute = string.Equals(currentGroupId, normalizedGroupId, StringComparison.Ordinal);
 
+        // Fetch first: if TMDB fails, the show, its links and its records stay as they were (audit L3-01).
+        var details = await ResolveShowDetailsAsync(show.TmdbId, normalizedGroupId, cancellationToken);
+
+        if (isSameRoute && KeepsEveryEpisodeNumber(show.Id, details))
+        {
+            // Re-applying the same organization with unchanged numbering: nothing to renumber, so keep every
+            // link and record and only refresh the episode list (audit L3-01).
+            _databaseService.UpdateTrackedShowEpisodeOrganization(show.Id, normalizedGroupId, normalizedGroupName);
+            var refreshedId = ImportShow(details, show.PreferredQuality, normalizedGroupId, normalizedGroupName);
+            await CachePosterAsync(details.TmdbId, details.PosterPath, cancellationToken);
+            RefreshAvailability(refreshedId);
+            var refreshed = _databaseService.GetTrackedShow(refreshedId) ?? throw new InvalidOperationException("Tracked show was not refreshed.");
+            _logger.Info(
+                $"Tracked show organization re-applied with unchanged numbering, links kept: {refreshed.DisplayTitle} ({refreshed.EpisodeOrganizationLabel})",
+                LogTarget.All);
+            return refreshed;
+        }
+
+        // A library hardlink whose download is gone is the only copy of that file; removing it for the
+        // renumbering would delete the media for good (audit L3-01).
+        var onlyCopies = CountLinksThatAreTheOnlyCopy(show.TmdbId);
+        if (onlyCopies > 0)
+        {
+            throw new InvalidOperationException(
+                $"Episode organization was not changed: {onlyCopies} library file(s) of this show no longer have their download, " +
+                "so the library file is the only copy and renumbering would delete it. " +
+                "Re-download those episodes, or import the library folder with Import Existing, then retry.");
+        }
+
         // Library links carry the old numbering: remove them before the rebuild, as the confirmation
         // dialog promises. If any link cannot be removed, change nothing (PARSE-26).
         var unlink = _autoTorrentLinkService.ClearShowLinksForRenumbering(show.Id);
@@ -110,12 +139,11 @@ public sealed class TrackedShowService : ITrackedShowService
                 "Close any player using them and retry.");
         }
 
-        // Always persist + hard-rebuild so mapping fixes and TMDB group edits are applied cleanly.
+        // Persist + hard-rebuild so mapping fixes and TMDB group edits are applied cleanly.
         _databaseService.UpdateTrackedShowEpisodeOrganization(show.Id, normalizedGroupId, normalizedGroupName);
         _databaseService.DeleteTrackedSeasonsAndEpisodes(show.Id);
         _databaseService.DeleteFetchJobsForMedia(show.Id, MediaKind.TvEpisode);
 
-        var details = await ResolveShowDetailsAsync(show.TmdbId, normalizedGroupId, cancellationToken);
         var showId = ImportShow(details, show.PreferredQuality, normalizedGroupId, normalizedGroupName);
         await CachePosterAsync(details.TmdbId, details.PosterPath, cancellationToken);
         RefreshAvailability(showId);
@@ -127,6 +155,44 @@ public sealed class TrackedShowService : ITrackedShowService
                 : $"Tracked show organization switched: {rebuilt.DisplayTitle} -> {rebuilt.EpisodeOrganizationLabel}, Episodes={rebuilt.TotalEpisodes}",
             LogTarget.All);
         return rebuilt;
+    }
+
+    /// <summary>
+    /// True when every episode the show has now is still in <paramref name="details"/> under the same number,
+    /// with the same title and air date, so no existing link points at a different episode afterwards.
+    /// </summary>
+    private bool KeepsEveryEpisodeNumber(long showId, TmdbShowDetails details)
+    {
+        var current = _databaseService.GetTrackedEpisodes(showId);
+        if (current.Count == 0)
+        {
+            return false;
+        }
+
+        var fetched = details.Seasons
+            .SelectMany(season => season.Episodes)
+            .GroupBy(episode => (episode.SeasonNumber, episode.EpisodeNumber))
+            .ToDictionary(group => group.Key, group => group.First());
+
+        return current.All(episode =>
+            fetched.TryGetValue((episode.SeasonNumber, episode.EpisodeNumber), out var match) &&
+            (!string.IsNullOrWhiteSpace(episode.Title) || episode.AirDate is not null) &&
+            string.Equals(episode.Title?.Trim(), match.Title?.Trim(), StringComparison.OrdinalIgnoreCase) &&
+            episode.AirDate?.Date == match.AirDate?.Date);
+    }
+
+    private int CountLinksThatAreTheOnlyCopy(int tmdbId)
+    {
+        var providerId = tmdbId.ToString();
+        return _databaseService.GetSourceItems().Count(item =>
+            item.MediaKind == MediaKind.TvEpisode &&
+            !item.IsExternalImport &&
+            string.Equals(item.Provider, "tmdb", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(item.ProviderId, providerId, StringComparison.OrdinalIgnoreCase) &&
+            !string.IsNullOrWhiteSpace(item.LinkedPath) &&
+            !string.Equals(item.LinkedPath, item.FilePath, StringComparison.OrdinalIgnoreCase) &&
+            File.Exists(item.LinkedPath) &&
+            !File.Exists(item.FilePath));
     }
 
     public IReadOnlyList<TrackedShow> GetShows()

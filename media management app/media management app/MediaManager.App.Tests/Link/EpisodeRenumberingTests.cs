@@ -48,6 +48,69 @@ public sealed class EpisodeRenumberingTests : IDisposable
         Assert.Contains(_host.Db.GetTrackedEpisodes(showId), item => item.SeasonNumber == 1 && item.EpisodeNumber == 13);
     }
 
+    // Audit L3-01: the TMDB fetch failed after every link had been deleted.
+    [Fact]
+    public async Task SwitchEpisodeOrganization_WhenTmdbFetchFails_ChangesNothing()
+    {
+        var showId = LinkedShow(5024, "HTF");
+        _host.TmdbDetails = null;
+        var linkedPath = _host.Items().Single().LinkedPath!;
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _host.Shows.SwitchEpisodeOrganizationAsync(_host.Db.GetTrackedShow(showId)!, "group-1", "Arcs"));
+
+        Assert.True(File.Exists(linkedPath));
+        Assert.Equal(linkedPath, Assert.Single(_host.Items()).LinkedPath);
+        Assert.Equal(3, _host.Db.GetTrackedEpisodes(showId).Count);
+        Assert.Null(_host.Db.GetTrackedShow(showId)!.EpisodeGroupId);
+    }
+
+    // Audit L3-01: with the download removed, the library hardlink is the only copy of the media.
+    [Fact]
+    public async Task SwitchEpisodeOrganization_WhenDownloadIsGone_RefusesAndKeepsTheLibraryFile()
+    {
+        var showId = LinkedShow(5025, "HGN");
+        _host.TmdbDetails = Details(5025, (1, 1), (2, 1));
+        var item = _host.Items().Single();
+        File.Delete(item.FilePath);
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _host.Shows.SwitchEpisodeOrganizationAsync(_host.Db.GetTrackedShow(showId)!, "group-1", "Arcs"));
+
+        Assert.Contains("only copy", error.Message);
+        Assert.True(File.Exists(item.LinkedPath));
+        Assert.Single(_host.Items());
+        Assert.Null(_host.Db.GetTrackedShow(showId)!.EpisodeGroupId);
+    }
+
+    // Audit L3-01: re-applying the same organization with the same numbering must not unlink anything.
+    [Fact]
+    public async Task SwitchEpisodeOrganization_SameRouteSameNumbering_KeepsLinks()
+    {
+        var showId = LinkedShow(5026, "HSR");
+        _host.TmdbDetails = TitledDetails(5026, (1, 1, "One"), (1, 2, "Two"), (1, 13, "Thirteen"));
+        var linkedPath = _host.Items().Single().LinkedPath!;
+
+        await _host.Shows.SwitchEpisodeOrganizationAsync(_host.Db.GetTrackedShow(showId)!, null, null);
+
+        Assert.True(File.Exists(linkedPath));
+        Assert.Equal(linkedPath, Assert.Single(_host.Items()).LinkedPath);
+        Assert.Equal(EpisodeAvailability.Available, _host.Availability(showId, 1, 13));
+    }
+
+    [Fact]
+    public async Task SwitchEpisodeOrganization_SameRouteRenumbered_StillRebuilds()
+    {
+        _host.FollowHardlinkRemovals();
+        var showId = LinkedShow(5027, "HRN");
+        _host.TmdbDetails = TitledDetails(5027, (1, 1, "One"), (1, 2, "Two"), (1, 13, "A Different Episode"));
+
+        await _host.Shows.SwitchEpisodeOrganizationAsync(_host.Db.GetTrackedShow(showId)!, null, null);
+
+        Assert.Empty(_host.Items());
+        Assert.Equal(EpisodeAvailability.Missing, _host.Availability(showId, 1, 13));
+    }
+
     [Fact]
     public async Task RefreshShow_EpisodeRemovedUpstream_DeletesUnusedAndFlagsLinked()
     {
@@ -97,6 +160,17 @@ public sealed class EpisodeRenumberingTests : IDisposable
             0);
         Assert.Single(_host.Items());
         return showId;
+    }
+
+    private static TmdbShowDetails TitledDetails(int tmdbId, params (int Season, int Episode, string Title)[] episodes)
+    {
+        var details = Details(tmdbId, episodes.Select(item => (item.Season, item.Episode)).ToArray());
+        foreach (var episode in details.Seasons.SelectMany(season => season.Episodes))
+        {
+            episode.Title = episodes.Single(item => item.Season == episode.SeasonNumber && item.Episode == episode.EpisodeNumber).Title;
+        }
+
+        return details;
     }
 
     private static TmdbShowDetails Details(int tmdbId, params (int Season, int Episode)[] episodes) => new()
