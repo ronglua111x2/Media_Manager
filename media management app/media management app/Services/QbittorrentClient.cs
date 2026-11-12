@@ -299,7 +299,10 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
             .Select(torrent => torrent.Hash)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        if (!string.IsNullOrWhiteSpace(request.PluginName) && !ShouldSkipSearchPluginDownload(torrentUrl))
+        // Magnets never need a search plugin to download (and native-search results carry indexer names that
+        // are not qBittorrent plugins), so they go straight to torrents/add.
+        var isMagnet = torrentUrl.StartsWith("magnet:?", StringComparison.OrdinalIgnoreCase);
+        if (!isMagnet && !string.IsNullOrWhiteSpace(request.PluginName) && !ShouldSkipSearchPluginDownload(torrentUrl))
         {
             _logger.Info($"Trying qBittorrent search plugin download. Plugin='{request.PluginName}', Url='{torrentUrl}'", LogTarget.All);
             await PostSearchDownloadTorrentAsync(torrentUrl, request.PluginName, cancellationToken);
@@ -317,7 +320,7 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
 
             _logger.Warning("qBittorrent search plugin download did not create a torrent. Falling back to URL resolver.", LogTarget.All);
         }
-        else if (!string.IsNullOrWhiteSpace(request.PluginName) && ShouldSkipSearchPluginDownload(torrentUrl))
+        else if (!isMagnet && !string.IsNullOrWhiteSpace(request.PluginName) && ShouldSkipSearchPluginDownload(torrentUrl))
         {
             _logger.Info(
                 $"Skipping qBittorrent search plugin for details-page URL. Resolving magnet or .torrent directly. Url='{torrentUrl}'.",

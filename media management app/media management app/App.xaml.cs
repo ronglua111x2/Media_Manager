@@ -333,6 +333,7 @@ public partial class App : System.Windows.Application
         services.AddSingleton<IJellyfinMediaNavigationService, JellyfinMediaNavigationService>();
         services.AddSingleton<IQbittorrentViewerService, QbittorrentViewerService>();
         services.AddSingleton<ShowSearchSnapshotService>();
+        services.AddSingleton<INativeSearchService, NativeSearchService>();
         services.AddSingleton<TmdbMetadataProvider>();
         services.AddSingleton<IMetadataProvider>(provider => provider.GetRequiredService<TmdbMetadataProvider>());
         services.AddSingleton<ITmdbShowCatalogService>(provider => provider.GetRequiredService<TmdbMetadataProvider>());

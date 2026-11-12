@@ -590,6 +590,8 @@ public sealed class AutoTrackService : IAutoTrackService
 
         try
         {
+            // Unattended hunt: native searches use the background lane (smaller share of each site's budget).
+            using var backgroundSearch = NativeSearchService.BackgroundScope();
             await RunFetchAndAddPhaseAsync(
                 pendingOrdersByShow,
                 settings,

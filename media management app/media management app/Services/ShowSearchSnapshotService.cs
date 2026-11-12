@@ -13,6 +13,7 @@ public sealed class ShowSearchSnapshotService
     private readonly IQbittorrentClient _qbittorrentClient;
     private readonly IQbittorrentSearchPluginService _searchPluginService;
     private readonly IAppLogger _logger;
+    private readonly INativeSearchService _nativeSearch;
 
     public ShowSearchSnapshotService(
         ISettingsService settingsService,
@@ -20,8 +21,10 @@ public sealed class ShowSearchSnapshotService
         ISearchPlanBuilder searchPlanBuilder,
         IQbittorrentClient qbittorrentClient,
         IQbittorrentSearchPluginService searchPluginService,
-        IAppLogger logger)
+        IAppLogger logger,
+        INativeSearchService nativeSearch)
     {
+        _nativeSearch = nativeSearch;
         _settingsService = settingsService;
         _recipeService = recipeService;
         _searchPlanBuilder = searchPlanBuilder;
@@ -65,8 +68,11 @@ public sealed class ShowSearchSnapshotService
 
         var searchSource = recipe.Modules.FirstOrDefault(module => module.BlockType == RecipeBlockType.SearchSource && module.IsEnabled);
         var savedPlugins = string.IsNullOrWhiteSpace(searchSource?.Plugins) ? "enabled" : searchSource!.Plugins;
-        var livePlugins = await _searchPluginService.GetPluginsAsync(cancellationToken);
-        var resolved = _searchPluginService.ResolveForSearch(savedPlugins, livePlugins, _logger);
+        // Native-only search needs nothing from qBittorrent's plugin list (it may even be offline).
+        var nativeOnly = _nativeSearch.UsesNative(recipeKind) && !_nativeSearch.ComparesWithQbittorrent(recipeKind);
+        var resolved = nativeOnly
+            ? new SearchPluginResolveResult { PluginsForApi = "enabled", RequestedNames = [] }
+            : _searchPluginService.ResolveForSearch(savedPlugins, await _searchPluginService.GetPluginsAsync(cancellationToken), _logger);
         if (resolved.SkipSearch)
         {
             _logger.Warning($"Snapshot search skipped for {show.DisplayTitle}: no valid enabled plugins remain.", LogTarget.All);
@@ -78,13 +84,18 @@ public sealed class ShowSearchSnapshotService
         foreach (var query in queries)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var snapshot = await CaptureSnapshotAsync(
+            var snapshot = await _nativeSearch.SearchOrFallbackAsync(
+                recipe,
                 query,
-                targetResults,
-                timeoutSeconds,
-                idleTimeoutSeconds,
-                resolved.PluginsForApi,
-                resolved.RequestedNames,
+                recipeKind,
+                () => CaptureSnapshotAsync(
+                    query,
+                    targetResults,
+                    timeoutSeconds,
+                    idleTimeoutSeconds,
+                    resolved.PluginsForApi,
+                    resolved.RequestedNames,
+                    cancellationToken),
                 cancellationToken);
             completedQueries++;
             progressService?.Report(completedQueries, $"Search: Query {completedQueries}/{totalQueries}");

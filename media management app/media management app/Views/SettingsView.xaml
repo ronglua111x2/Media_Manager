@@ -1525,6 +1525,73 @@
                                     </Button>
                                 </StackPanel>
                             </materialDesign:Card>
+
+                            <materialDesign:Card Style="{StaticResource SettingsCardStyle}">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <iconPacks:PackIconLucide Kind="Search" Width="20" Height="20" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                        <TextBlock Text="Search engines" Style="{StaticResource SettingsSectionTitleStyle}" Margin="0" />
+                                    </StackPanel>
+                                    <TextBlock Text="Search backend" Style="{StaticResource SettingsLabelStyle}" />
+                                    <ComboBox ItemsSource="{Binding SearchBackendOptions}"
+                                              SelectedItem="{Binding SearchBackend, Mode=TwoWay}"
+                                              Margin="0,0,0,4" />
+                                    <TextBlock Style="{StaticResource SettingsHintStyle}" Margin="0,0,0,8"
+                                               Text="Qbittorrent: search through qBittorrent's plugins (current behaviour). Native: the app's own indexers with per-site rate limits. Both: use native results and log a comparison with qBittorrent." />
+                                    <TextBlock Text="Override for movies / TV episodes / season packs" Style="{StaticResource SettingsLabelStyle}" />
+                                    <UniformGrid Columns="3" Margin="0,0,0,8">
+                                        <ComboBox ItemsSource="{Binding SearchBackendOverrideOptions}" SelectedItem="{Binding SearchBackendMovie, Mode=TwoWay}" Margin="0,0,6,0" ToolTip="Movies" />
+                                        <ComboBox ItemsSource="{Binding SearchBackendOverrideOptions}" SelectedItem="{Binding SearchBackendEpisode, Mode=TwoWay}" Margin="3,0,3,0" ToolTip="TV episodes" />
+                                        <ComboBox ItemsSource="{Binding SearchBackendOverrideOptions}" SelectedItem="{Binding SearchBackendPack, Mode=TwoWay}" Margin="6,0,0,0" ToolTip="Season packs" />
+                                    </UniformGrid>
+                                    <TextBlock Text="Time per indexer / per search (seconds)" Style="{StaticResource SettingsLabelStyle}" />
+                                    <UniformGrid Columns="2" Margin="0,0,0,8">
+                                        <Border Style="{StaticResource SettingsNumericChromeStyle}" Margin="0,0,6,0">
+                                            <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
+                                                                          Value="{Binding SearchPerIndexerTimeoutSeconds, UpdateSourceTrigger=PropertyChanged}"
+                                                                          Minimum="3" Maximum="60" />
+                                        </Border>
+                                        <Border Style="{StaticResource SettingsNumericChromeStyle}" Margin="6,0,0,0">
+                                            <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
+                                                                          Value="{Binding SearchOverallTimeoutSeconds, UpdateSourceTrigger=PropertyChanged}"
+                                                                          Minimum="5" Maximum="120" />
+                                        </Border>
+                                    </UniformGrid>
+                                    <CheckBox IsChecked="{Binding SearchPauseAll, Mode=TwoWay}"
+                                              Margin="0,0,0,8"
+                                              Content="Pause all native searches (kill switch)" />
+                                    <DockPanel Margin="0,4,0,6">
+                                        <Button DockPanel.Dock="Right"
+                                                Command="{Binding RefreshSearchHealthCommand}"
+                                                Style="{StaticResource SettingsIconTextButtonStyle}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconLucide Kind="RefreshCw" Width="14" Height="14" Margin="0,0,6,0" />
+                                                <TextBlock Text="Refresh" />
+                                            </StackPanel>
+                                        </Button>
+                                        <TextBlock Text="Indexers" Style="{StaticResource SettingsLabelStyle}" VerticalAlignment="Center" />
+                                    </DockPanel>
+                                    <ItemsControl ItemsSource="{Binding SearchIndexers}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border BorderBrush="{DynamicResource MaterialDesign.Brush.Card.Border}" BorderThickness="0,0,0,1" Padding="0,6">
+                                                    <StackPanel>
+                                                        <DockPanel>
+                                                            <TextBlock DockPanel.Dock="Right" Text="{Binding Usage}" Style="{StaticResource SettingsHintStyle}" Margin="8,0,0,0" />
+                                                            <CheckBox IsChecked="{Binding Enabled, Mode=TwoWay}" Content="{Binding Id}" />
+                                                        </DockPanel>
+                                                        <TextBlock Text="{Binding Status}" Style="{StaticResource SettingsHintStyle}" Margin="24,2,0,0" />
+                                                        <TextBlock Text="{Binding LastError}" Style="{StaticResource SettingsHintStyle}" Margin="24,0,0,0"
+                                                                   TextWrapping="Wrap" />
+                                                    </StackPanel>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <TextBlock Style="{StaticResource SettingsHintStyle}" Margin="0,8,0,0"
+                                               Text="Every request goes through a per-site limiter (requests per minute, daily budget, back-off on 429, pause on 403/bot challenge). Auto-Track only uses part of each site's daily budget. Limits survive restarts (indexer-state.json). Searches run through WARP like the qBittorrent search." />
+                                </StackPanel>
+                            </materialDesign:Card>
                         </StackPanel>
 
                         <Border Grid.Column="2" Style="{StaticResource SettingsGuidePanelStyle}">

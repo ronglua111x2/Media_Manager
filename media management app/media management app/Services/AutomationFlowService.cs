@@ -18,6 +18,7 @@ public sealed class AutomationFlowService : IAutomationFlowService
     private readonly ISettingsService _settingsService;
     private readonly IOperationProgressService _progressService;
     private readonly IAppLogger _logger;
+    private readonly INativeSearchService _nativeSearch;
 
     public AutomationFlowService(
         IDatabaseService databaseService,
@@ -30,8 +31,10 @@ public sealed class AutomationFlowService : IAutomationFlowService
         ITrackedMovieService trackedMovieService,
         ISettingsService settingsService,
         IOperationProgressService progressService,
-        IAppLogger logger)
+        IAppLogger logger,
+        INativeSearchService nativeSearch)
     {
+        _nativeSearch = nativeSearch;
         _databaseService = databaseService;
         _recipeService = recipeService;
         _searchPlanBuilder = searchPlanBuilder;
@@ -157,8 +160,11 @@ public sealed class AutomationFlowService : IAutomationFlowService
         var requestLimit = searchSource?.ResultLimit is > 0 ? searchSource.ResultLimit : 100;
         var savedPlugins = string.IsNullOrWhiteSpace(searchSource?.Plugins) ? "enabled" : searchSource!.Plugins;
         var category = string.IsNullOrWhiteSpace(searchSource?.Category) ? "all" : searchSource!.Category;
-        var livePlugins = await _searchPluginService.GetPluginsAsync(cancellationToken);
-        var resolved = _searchPluginService.ResolveForSearch(savedPlugins, livePlugins, _logger);
+        // Native-only search needs nothing from qBittorrent's plugin list (it may even be offline).
+        var nativeOnly = _nativeSearch.UsesNative(recipe.TargetKind) && !_nativeSearch.ComparesWithQbittorrent(recipe.TargetKind);
+        var resolved = nativeOnly
+            ? new SearchPluginResolveResult { PluginsForApi = "enabled", RequestedNames = [] }
+            : _searchPluginService.ResolveForSearch(savedPlugins, await _searchPluginService.GetPluginsAsync(cancellationToken), _logger);
         if (resolved.SkipSearch)
         {
             _logger.Warning($"Recipe search skipped: no valid enabled plugins remain for recipe '{recipe.Name}'.", LogTarget.All);
@@ -202,7 +208,11 @@ public sealed class AutomationFlowService : IAutomationFlowService
                 await throttler.WaitAsync(cancellationToken);
                 try
                 {
-                    var queryResults = paginationEnabled
+                    var queryResults = await _nativeSearch.SearchOrFallbackAsync(
+                        recipe,
+                        query,
+                        recipe.TargetKind,
+                        async () => paginationEnabled
                         ? await SearchQueryWithPaginationAsync(
                             query,
                             plugins,
@@ -224,7 +234,8 @@ public sealed class AutomationFlowService : IAutomationFlowService
                             IdleTimeoutSeconds = searchIdleTimeoutSeconds,
                             TimeoutSeconds = timeoutSeconds,
                             RequestedEngineNames = requestedEngineNames
-                        }, cancellationToken);
+                        }, cancellationToken),
+                        cancellationToken);
                     var completed = Interlocked.Increment(ref completedQueries);
                     _progressService.Report(completed, $"Search: Query {completed}/{totalQueries}");
                     _logger.Info(

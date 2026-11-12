@@ -18,6 +18,7 @@ public sealed class FetchJobService : IFetchJobService
     private readonly ISearchPlanBuilder _searchPlanBuilder;
     private readonly ICandidateEvaluationService _candidateEvaluationService;
     private readonly ISearchTitleResolver _titleResolver;
+    private readonly INativeSearchService _nativeSearch;
     private readonly ShowSearchSnapshotService _snapshotService;
     private readonly ITorrentBlacklistService _blacklistService;
     private readonly IOperationProgressService _progressService;
@@ -42,8 +43,10 @@ public sealed class FetchJobService : IFetchJobService
         ShowSearchSnapshotService snapshotService,
         ITorrentBlacklistService blacklistService,
         IOperationProgressService progressService,
-        IAppLogger logger)
+        IAppLogger logger,
+        INativeSearchService nativeSearch)
     {
+        _nativeSearch = nativeSearch;
         _databaseService = databaseService;
         _settingsService = settingsService;
         _qbittorrentClient = qbittorrentClient;
@@ -754,7 +757,19 @@ public sealed class FetchJobService : IFetchJobService
         return new EpisodeSearchSummary(candidates, searchResults, evaluated);
     }
 
-    private async Task<IReadOnlyList<TorrentSearchResult>> SearchSingleQueryAsync(
+    private Task<IReadOnlyList<TorrentSearchResult>> SearchSingleQueryAsync(
+        SearchRecipe recipe,
+        string query,
+        CancellationToken cancellationToken) =>
+        // native-search: Search.Backend decides between native indexers and the qBittorrent search.
+        _nativeSearch.SearchOrFallbackAsync(
+            recipe,
+            query,
+            MediaKind.TvEpisode,
+            () => SearchSingleQueryQbittorrentAsync(recipe, query, cancellationToken),
+            cancellationToken);
+
+    private async Task<IReadOnlyList<TorrentSearchResult>> SearchSingleQueryQbittorrentAsync(
         SearchRecipe recipe,
         string query,
         CancellationToken cancellationToken)
