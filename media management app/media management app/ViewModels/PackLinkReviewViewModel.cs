@@ -51,9 +51,15 @@ public sealed partial class PackLinkReviewViewModel : ObservableObject
             : $"{preview.RegularEpisodeCount} regular episodes";
         var skipped = preview.Inventory.Files.Count(file => file.Classification == PackFileClassification.Skipped);
 
+        var model = preview.SpecialMappings.GeminiModel;
         SummaryText =
             $"Regular: {regularSummary}. Specials/OVAs: {preview.MatchedSpecialCount} matched, {preview.OrphanExtraCount} orphan extras." +
-            (skipped > 0 ? $" {skipped} file(s) skipped." : string.Empty);
+            (skipped > 0 ? $" {skipped} file(s) skipped." : string.Empty) +
+            (string.IsNullOrWhiteSpace(model)
+                ? string.Empty
+                : preview.SpecialMappings.FromCache
+                    ? $" Gemini answer from the cache ({model})."
+                    : $" Answered by {model}.");
 
         Warnings.Clear();
         foreach (var warning in preview.SpecialMappings.Warnings.Concat(preview.Inventory.Warnings).Distinct(StringComparer.Ordinal))
@@ -151,6 +157,7 @@ public sealed partial class PackLinkReviewViewModel : ObservableObject
             IsMatched = isMatched,
             NeedsAttention = !isMatched ||
                              item is null ||
+                             item.MatchesSuggestion == false ||
                              !SpecialMappingReviewPolicy.IsTrustedWithoutReview(item) && proposalReason != SpecialMappingProposalReason.Window
         };
     }

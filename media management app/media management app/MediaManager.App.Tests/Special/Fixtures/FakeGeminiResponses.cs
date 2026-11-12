@@ -51,21 +51,48 @@ internal static class FakeGeminiResponses
             return index is null ? null : index + 8;
         });
 
-    /// <summary>The correct answer plus a second, different pair for the first S1 special (same candidateIndex twice).</summary>
+    /// <summary>
+    /// The correct answer plus a second, different pair for the first S2 special (same candidateIndex twice).
+    /// Since PR-14 Gemini only sees season 2: the rules place every season 1 special.
+    /// </summary>
     public static string DuplicateCandidateIndex(string userJson)
     {
-        var pairs = Pairs(userJson, fileName => SpecialIndex(fileName, "S1S") is { } index ? index : null);
+        var pairs = Pairs(userJson, fileName => SpecialIndex(fileName, "S2S") is { } index ? index + 8 : null);
         var first = pairs.First();
-        pairs.Insert(1, (first.CandidateIndex, 20));
+        pairs.Insert(1, (first.CandidateIndex, 19));
         return Serialize(pairs);
     }
 
-    /// <summary>Two different files mapped to S00E01.</summary>
+    /// <summary>Two different season 2 files mapped to S00E09.</summary>
     public static string DuplicateS00E(string userJson) =>
-        ByFileName(userJson, fileName => SpecialIndex(fileName, "S1S") switch
+        ByFileName(userJson, fileName => SpecialIndex(fileName, "S2S") switch
         {
-            1 or 2 => 1,
-            { } index => index,
+            1 or 2 => 9,
+            { } index => index + 8,
+            _ => null
+        });
+
+    /// <summary>
+    /// One-to-one but out of order: S2S07 gets S00E09 (aired before the others). Only the season order check
+    /// catches this kind of answer (PARSE-16, the 7/15 case moved to the season Gemini still sees).
+    /// </summary>
+    public static string SeasonTwoBreaksOrder(string userJson) =>
+        ByFileName(userJson, fileName => SpecialIndex(fileName, "S2S") switch
+        {
+            7 => 9,
+            { } index => index + 9,
+            _ => null
+        });
+
+    /// <summary>
+    /// Plausible but not what the season-window suggestion says: S2S07 to S00E16 (the first recap) instead of
+    /// S00E15. Order and window checks pass, so the row must stand out in review.
+    /// </summary>
+    public static string SeasonTwoLastDiffersFromSuggestion(string userJson) =>
+        ByFileName(userJson, fileName => SpecialIndex(fileName, "S2S") switch
+        {
+            7 => 16,
+            { } index => index + 8,
             _ => null
         });
 

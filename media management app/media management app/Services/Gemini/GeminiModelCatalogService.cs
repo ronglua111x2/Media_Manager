@@ -82,15 +82,16 @@ public sealed class GeminiModelCatalogService : IGeminiModelCatalogService
             return entry.Id;
         }
 
-        var knownDeprecated = _current.Models
-            .FirstOrDefault(candidate =>
-                candidate.Deprecated &&
-                string.Equals(candidate.Id, trimmed, StringComparison.OrdinalIgnoreCase));
-        if (knownDeprecated?.Replacement is not null)
+        // R7: a model the catalog does not know is kept (it may be newer than the catalog), not silently swapped
+        // for the default. Only ids that cannot be a text model fall back to the default.
+        if (GeminiTextModelFilter.IsSuitableForTextJsonMapping(trimmed))
         {
-            return Normalize(knownDeprecated.Replacement);
+            return trimmed;
         }
 
+        _logger.Warning(
+            $"Gemini model '{trimmed}' is not a text model; using '{DefaultModel}' instead.",
+            LogTarget.All);
         return DefaultModel;
     }
 
@@ -108,9 +109,22 @@ public sealed class GeminiModelCatalogService : IGeminiModelCatalogService
 
             var json = File.ReadAllText(CatalogFilePath);
             var loaded = JsonSerializer.Deserialize<GeminiModelCatalogFile>(json, FileJsonOptions);
-            _current = loaded is null || loaded.Models.Count == 0
-                ? GeminiModelCatalogDefaults.CreateSeed()
-                : loaded;
+            if (loaded is null || loaded.Models.Count == 0)
+            {
+                _current = GeminiModelCatalogDefaults.CreateSeed();
+                SaveToDisk();
+                return;
+            }
+
+            _current = loaded;
+            if (loaded.SeedVersion < GeminiModelCatalogDefaults.SeedVersion)
+            {
+                MergeSeed(_current, GeminiModelCatalogDefaults.CreateSeed());
+                SaveToDisk();
+                _logger.Info(
+                    $"Gemini model catalog updated to built-in list v{GeminiModelCatalogDefaults.SeedVersion}.",
+                    LogTarget.All);
+            }
         }
         catch (Exception ex)
         {
@@ -202,37 +216,99 @@ public sealed class GeminiModelCatalogService : IGeminiModelCatalogService
         };
     }
 
-    private async Task<HashSet<string>> ListAvailableModelIdsAsync(string apiKey, CancellationToken cancellationToken)
+    /// <summary>
+    /// Updates the models the built-in seed knows (flags, limits, dates, thinking, rank) and adds new seed models.
+    /// Entries the seed does not know (added by ListModels or by hand) are kept as they are.
+    /// </summary>
+    public static void MergeSeed(GeminiModelCatalogFile target, GeminiModelCatalogFile seed)
     {
-        var url = $"{AppConstants.GeminiApiBaseUrl}models?key={Uri.EscapeDataString(apiKey)}";
-        using var response = await _httpClient.GetAsync(url, cancellationToken);
-        var responseText = await response.Content.ReadAsStringAsync(cancellationToken);
-        if (!response.IsSuccessStatusCode)
+        foreach (var seedEntry in seed.Models)
         {
-            throw new InvalidOperationException(
-                $"Gemini ListModels returned HTTP {(int)response.StatusCode}: {TrimForLog(responseText)}");
-        }
-
-        var parsed = JsonSerializer.Deserialize<GeminiListModelsResponse>(responseText, ApiJsonOptions);
-        var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var model in parsed?.Models ?? [])
-        {
-            if (string.IsNullOrWhiteSpace(model.Name))
+            var existing = target.Models.FirstOrDefault(entry =>
+                string.Equals(entry.Id, seedEntry.Id, StringComparison.OrdinalIgnoreCase));
+            if (existing is null)
             {
+                target.Models.Add(seedEntry);
                 continue;
             }
 
-            var id = model.Name.StartsWith("models/", StringComparison.OrdinalIgnoreCase)
-                ? model.Name["models/".Length..]
-                : model.Name;
-
-            if (model.SupportedGenerationMethods is null ||
-                model.SupportedGenerationMethods.Any(method =>
-                    string.Equals(method, "generateContent", StringComparison.OrdinalIgnoreCase)))
-            {
-                ids.Add(id);
-            }
+            existing.DisplayName = seedEntry.DisplayName;
+            existing.Deprecated = seedEntry.Deprecated;
+            existing.Replacement = seedEntry.Replacement;
+            existing.Notes = seedEntry.Notes;
+            existing.SupportsTextMapping = seedEntry.SupportsTextMapping;
+            existing.AutoRoute = seedEntry.AutoRoute;
+            existing.Rank = seedEntry.Rank;
+            existing.FreeRequestsPerMinute = seedEntry.FreeRequestsPerMinute;
+            existing.FreeRequestsPerDay = seedEntry.FreeRequestsPerDay;
+            existing.ThinkingLevel = seedEntry.ThinkingLevel;
+            existing.ThinkingBudget = seedEntry.ThinkingBudget;
+            existing.RetireAfterUtc = seedEntry.RetireAfterUtc;
         }
+
+        bool IsUsable(string id) => target.Models.Any(entry =>
+            string.Equals(entry.Id, id, StringComparison.OrdinalIgnoreCase) && !entry.Deprecated);
+
+        if (string.IsNullOrWhiteSpace(target.DefaultModel) || !IsUsable(target.DefaultModel))
+        {
+            target.DefaultModel = seed.DefaultModel;
+        }
+
+        if (target.FallbackModels.Count == 0 || target.FallbackModels.Any(id => !IsUsable(id)))
+        {
+            target.FallbackModels = [.. seed.FallbackModels];
+        }
+
+        target.SeedVersion = seed.SeedVersion;
+    }
+
+    private async Task<HashSet<string>> ListAvailableModelIdsAsync(string apiKey, CancellationToken cancellationToken)
+    {
+        var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        string? pageToken = null;
+        var pages = 0;
+        do
+        {
+            var url = $"{AppConstants.GeminiApiBaseUrl}models?pageSize=1000";
+            if (!string.IsNullOrWhiteSpace(pageToken))
+            {
+                url += $"&pageToken={Uri.EscapeDataString(pageToken)}";
+            }
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Headers.Add("x-goog-api-key", apiKey);
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            var responseText = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(
+                    $"Gemini ListModels returned HTTP {(int)response.StatusCode}: {TrimForLog(responseText)}");
+            }
+
+            var parsed = JsonSerializer.Deserialize<GeminiListModelsResponse>(responseText, ApiJsonOptions);
+            foreach (var model in parsed?.Models ?? [])
+            {
+                if (string.IsNullOrWhiteSpace(model.Name))
+                {
+                    continue;
+                }
+
+                var id = model.Name.StartsWith("models/", StringComparison.OrdinalIgnoreCase)
+                    ? model.Name["models/".Length..]
+                    : model.Name;
+
+                if (model.SupportedGenerationMethods is null ||
+                    model.SupportedGenerationMethods.Any(method =>
+                        string.Equals(method, "generateContent", StringComparison.OrdinalIgnoreCase)))
+                {
+                    ids.Add(id);
+                }
+            }
+
+            pageToken = parsed?.NextPageToken;
+            pages++;
+        }
+        while (!string.IsNullOrWhiteSpace(pageToken) && pages < 20);
 
         _logger.Debug(
             $"Gemini ListModels parsed {ids.Count} generateContent model(s).",
@@ -271,6 +347,8 @@ public sealed class GeminiModelCatalogService : IGeminiModelCatalogService
     private sealed class GeminiListModelsResponse
     {
         public List<GeminiListedModel>? Models { get; set; }
+
+        public string? NextPageToken { get; set; }
     }
 
     private sealed class GeminiListedModel

@@ -58,41 +58,39 @@ public sealed class GeminiSpecialMappingProvider
 
 
 
+    /// <summary>Version of the prompt and payload format; part of the cache key (PR-15).</summary>
+    public const int SpecialPromptVersion = 2;
+
     private const string SystemPrompt =
-
         """
+        You map anime special/OVA files from a torrent to TMDB Season 0 (S00) episodes.
 
-        You finalize anime special/OVA torrent-to-TMDB mappings.
+        Input JSON:
+        ctx.t show title.
+        ctx.sw season windows: [[season, seasonStartDate, [S00 episodes that aired during that season]]].
+        ctx.c the files to map: [[folder, fileName, parentSeason, localIndex, patternCode, titleFromName]].
+          candidateIndex is the 0-based position of a file in ctx.c.
+          parentSeason 0 = unknown. localIndex = the number in the file name, 0 = none.
+          patternCode: s = SnSnn (n-th special of season n), o = "OVA - N", 0 = S00Exx in the name, ? = no clear number.
+        ctx.e TMDB S00 episodes: [[episode, airDate, title]].
+        ctx.fx episodes already given to other files: [[episode, fileName]]. Never use these.
+        ctx.free the only episode numbers you may use.
 
-        Input JSON keys:
-
-        ctx.t show title, ctx.id TMDB id, ctx.blk [[parentSeason,fileCount]], ctx.c [[path,fileName,parentSeason,localIndex,globalSort,patternCode]], ctx.e [[episode,airDate,title]], ctx.x stats.
-
-        patternCode: s=SnSnn, o=OVA-dash, 0=S00E explicit, ?=opaque.
-
-        p[] = [[candidateIndex, proposedS00E, reasonCode]] rule proposals to review.
-
-        Rules: one candidateIndex per mapping, one s00e per mapping, prefer chronological TMDB order across season blocks, do not use title matching for patternCode s or ?.
-
-
+        Rules:
+        - Map a file only when you are confident; leave it out otherwise.
+        - Prefer the episodes in the window of the file's parentSeason.
+        - Within one season keep the order of localIndex: a higher localIndex never gets a lower episode.
+        - Use titleFromName against the TMDB titles when it has words.
+        - Each candidateIndex and each episode at most once.
 
         OUTPUT (strict):
-
         - Return exactly one JSON object, no markdown fences, no prose before or after.
-
         - Shape: {"m":[[candidateIndex,s00e],...],"w":[]}
-
         - m: pairs of integers only (candidateIndex, TMDB S00 episode number). Never strings or titles.
-
-        - w: usually []. Only short plain-ASCII warnings if needed (max 80 chars each, no double-quotes inside). Never copy ctx.e episode titles, filenames, or paths.
-
+        - w: usually []. Only short plain-ASCII warnings if needed (max 80 chars each, no double-quotes inside). Never copy titles, file names or paths.
         - No duplicate keys, no trailing commas, no second object.
-
-        Example: {"m":[[0,3],[1,7]],"w":[]}
-
+        Example: {"m":[[0,9],[1,10]],"w":[]}
         """;
-
-
 
     private readonly IGeminiApiClient _geminiApiClient;
 
@@ -136,13 +134,16 @@ public sealed class GeminiSpecialMappingProvider
 
         var userJson = SpecialMappingCompactJson.SerializeRequest(request);
 
-        var model = _settingsService.Current.Gemini?.Model?.Trim() ?? AppConstants.DefaultGeminiModel;
+        var gemini = _settingsService.Current.Gemini;
+        var model = gemini?.AutoSelectModel ?? true
+            ? "auto"
+            : gemini?.Model?.Trim() ?? AppConstants.DefaultGeminiModel;
 
 
 
         _logger.Info(
 
-            $"Gemini special mapping sending: model={model}, payloadChars={userJson.Length}.",
+            $"Gemini special mapping sending: model={model}, files={request.GeminiCandidateIndices.Count} of {request.Context.CandidateCount}, payloadChars={userJson.Length}.",
 
             LogTarget.All);
 
@@ -156,7 +157,7 @@ public sealed class GeminiSpecialMappingProvider
 
             PackLinkProgressStatus.Active,
 
-            $"Calling Gemini ({model})...",
+            $"Calling Gemini ({model}) for {request.GeminiCandidateIndices.Count} file(s) the rules could not place...",
 
             $"Payload size: {userJson.Length} chars");
 
@@ -272,7 +273,9 @@ public sealed class GeminiSpecialMappingProvider
                 $"Gemini stopped before finishing (finishReason={apiResult.FinishReason}); some specials may be missing.");
         }
 
-        return PackSpecialPayloadBuilder.BuildFromAiResponse(request, parsed, specialsEpisodes, extraWarnings);
+        return PackSpecialPayloadBuilder
+            .BuildFromAiResponse(request, parsed, specialsEpisodes, extraWarnings)
+            .WithCacheInfo(cacheKey: null, apiResult.Model);
 
     }
 

@@ -32,10 +32,32 @@ public static class PackSpecialPayloadBuilder
         {
             Context = context,
             Proposals = tier.Proposals,
-            Task = "finalize",
+            Task = "map",
             Suggestions = tier.Suggestions,
-            UnresolvedReasons = tier.UnresolvedReasons
+            UnresolvedReasons = tier.UnresolvedReasons,
+            GeminiCandidateIndices = OrderForGemini(context, tier.Proposals),
+            SeasonBlocks = tier.Blocks
         };
+    }
+
+    /// <summary>
+    /// Candidates the rules left open, in the order Gemini sees them: by parent season, numbered files by their
+    /// number, unnumbered files after the numbered ones of the same season (PR-14).
+    /// </summary>
+    private static IReadOnlyList<int> OrderForGemini(
+        SpecialMappingContext context,
+        IReadOnlyList<SpecialMappingProposal> proposals)
+    {
+        var resolved = proposals.Select(proposal => proposal.CandidateIndex).ToHashSet();
+        return Enumerable.Range(0, context.Candidates.Count)
+            .Where(index => !resolved.Contains(index))
+            .Select(index => (Index: index, Candidate: context.Candidates[index]))
+            .OrderBy(item => item.Candidate.ParentSeason ?? int.MaxValue)
+            .ThenBy(item => item.Candidate.LocalIndex > 0 ? 0 : 1)
+            .ThenBy(item => item.Candidate.LocalIndex)
+            .ThenBy(item => item.Candidate.FileName, StringComparer.OrdinalIgnoreCase)
+            .Select(item => item.Index)
+            .ToList();
     }
 
     public static SpecialMappingResult ApplyProposals(
@@ -43,13 +65,55 @@ public static class PackSpecialPayloadBuilder
         IReadOnlyList<TrackedEpisode> specialsEpisodes,
         SpecialMappingSource source)
     {
+        var (items, claimed) = BuildRuleItems(request, specialsEpisodes, source);
+        var warnings = new List<string>();
+
+        for (var index = 0; index < request.Context.Candidates.Count; index++)
+        {
+            var candidate = request.Context.Candidates[index];
+            if (items.Any(item => string.Equals(item.RelativePath, candidate.RelativePath, StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            request.Suggestions.TryGetValue(index, out var suggestion);
+            if (suggestion is not null && claimed.Contains(suggestion.EpisodeNumber))
+            {
+                suggestion = null;
+            }
+
+            items.Add(new SpecialMappingItem
+            {
+                RelativePath = candidate.RelativePath,
+                Episode = null,
+                Source = source,
+                ProposalReason = SpecialMappingProposalReason.None,
+                Reason = BuildUnmappedReason(request.UnresolvedReasons.GetValueOrDefault(index), suggestion),
+                SuggestedEpisode = suggestion
+            });
+        }
+
+        if (request.Context.CountMismatch)
+        {
+            warnings.Add(CountMismatchWarning(request.Context));
+        }
+
+        return BuildResult(items, warnings, usedGemini: source == SpecialMappingSource.Gemini);
+    }
+
+    /// <summary>One item per rule proposal (the deterministic tier), plus the S00 episodes those items took.</summary>
+    private static (List<SpecialMappingItem> Items, HashSet<int> Claimed) BuildRuleItems(
+        SpecialMappingAIRequest request,
+        IReadOnlyList<TrackedEpisode> specialsEpisodes,
+        SpecialMappingSource source)
+    {
         var episodesByNumber = specialsEpisodes
             .Where(episode => episode.SeasonNumber == AppConstants.SpecialsSeasonNumber)
-            .ToDictionary(episode => episode.EpisodeNumber);
+            .GroupBy(episode => episode.EpisodeNumber)
+            .ToDictionary(group => group.Key, group => group.First());
 
         var claimed = new HashSet<int>();
         var items = new List<SpecialMappingItem>();
-        var warnings = new List<string>();
 
         foreach (var proposal in request.Proposals.OrderBy(item => item.CandidateIndex))
         {
@@ -86,39 +150,15 @@ public static class PackSpecialPayloadBuilder
             });
         }
 
-        for (var index = 0; index < request.Context.Candidates.Count; index++)
-        {
-            var candidate = request.Context.Candidates[index];
-            if (items.Any(item => string.Equals(item.RelativePath, candidate.RelativePath, StringComparison.OrdinalIgnoreCase)))
-            {
-                continue;
-            }
-
-            request.Suggestions.TryGetValue(index, out var suggestion);
-            if (suggestion is not null && claimed.Contains(suggestion.EpisodeNumber))
-            {
-                suggestion = null;
-            }
-
-            items.Add(new SpecialMappingItem
-            {
-                RelativePath = candidate.RelativePath,
-                Episode = null,
-                Source = source,
-                ProposalReason = SpecialMappingProposalReason.None,
-                Reason = BuildUnmappedReason(request.UnresolvedReasons.GetValueOrDefault(index), suggestion),
-                SuggestedEpisode = suggestion
-            });
-        }
-
-        if (request.Context.CountMismatch)
-        {
-            warnings.Add(CountMismatchWarning(request.Context));
-        }
-
-        return BuildResult(items, warnings, usedGemini: source == SpecialMappingSource.Gemini);
+        return (items, claimed);
     }
 
+    /// <summary>
+    /// Rule pairs stay as the rules placed them; Gemini's pairs fill only the files it was sent
+    /// (<see cref="SpecialMappingAIRequest.GeminiCandidateIndices"/>; Gemini's candidateIndex k is the k-th of them).
+    /// A Gemini pair on an episode the rules already took is dropped. Each Gemini pair is compared with the rule
+    /// suggestion for that file, when there is one.
+    /// </summary>
     public static SpecialMappingResult BuildFromAiResponse(
         SpecialMappingAIRequest request,
         SpecialMappingAIResponse response,
@@ -127,40 +167,68 @@ public static class PackSpecialPayloadBuilder
     {
         var episodesByNumber = specialsEpisodes
             .Where(episode => episode.SeasonNumber == AppConstants.SpecialsSeasonNumber)
-            .ToDictionary(episode => episode.EpisodeNumber);
+            .GroupBy(episode => episode.EpisodeNumber)
+            .ToDictionary(group => group.Key, group => group.First());
 
-        var items = new List<SpecialMappingItem>();
+        var (items, claimedByRules) = BuildRuleItems(request, specialsEpisodes, SpecialMappingSource.Rule);
+        var sent = request.GeminiCandidateIndices;
         var mappedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var warnings = response.Warnings.ToList();
 
-        foreach (var (candidateIndex, s00e) in response.Mappings)
+        foreach (var (geminiIndex, s00e) in response.Mappings)
         {
-            if (candidateIndex < 0 || candidateIndex >= request.Context.Candidates.Count)
+            if (geminiIndex < 0 || geminiIndex >= sent.Count)
             {
                 warnings.Add(
-                    $"Gemini returned candidate index {candidateIndex}, outside 0..{request.Context.Candidates.Count - 1}; ignored.");
+                    $"Gemini returned candidate index {geminiIndex}, outside 0..{sent.Count - 1}; ignored.");
                 continue;
             }
 
-            var candidate = request.Context.Candidates[candidateIndex];
-            mappedPaths.Add(candidate.RelativePath);
+            var contextIndex = sent[geminiIndex];
+            var candidate = request.Context.Candidates[contextIndex];
             episodesByNumber.TryGetValue(s00e, out var episode);
+            if (episode is not null && claimedByRules.Contains(episode.EpisodeNumber))
+            {
+                warnings.Add(
+                    $"Gemini gave S00E{s00e:00} to '{candidate.FileName}', but the rules already placed another file there; ignored.");
+                continue;
+            }
+
+            mappedPaths.Add(candidate.RelativePath);
+            request.Suggestions.TryGetValue(contextIndex, out var suggestion);
+            bool? matchesSuggestion = suggestion is null || episode is null
+                ? null
+                : suggestion.EpisodeNumber == episode.EpisodeNumber;
             items.Add(new SpecialMappingItem
             {
                 RelativePath = candidate.RelativePath,
                 Episode = episode,
                 Source = SpecialMappingSource.Gemini,
+                SuggestedEpisode = suggestion,
+                MatchesSuggestion = matchesSuggestion,
                 Reason = episode is null
                     ? $"Gemini mapped to missing TMDB S00E{s00e:00}."
-                    : $"Gemini mapped to TMDB S00E{episode.EpisodeNumber:00}."
+                    : matchesSuggestion switch
+                    {
+                        true => $"Gemini mapped to TMDB S00E{episode.EpisodeNumber:00}; the season-window suggestion agrees.",
+                        false => $"Gemini mapped to TMDB S00E{episode.EpisodeNumber:00}; the season-window suggestion was S00E{suggestion!.EpisodeNumber:00}. Check this one.",
+                        _ => $"Gemini mapped to TMDB S00E{episode.EpisodeNumber:00}."
+                    }
             });
         }
 
-        foreach (var candidate in request.Context.Candidates)
+        foreach (var contextIndex in sent)
         {
+            var candidate = request.Context.Candidates[contextIndex];
             if (mappedPaths.Contains(candidate.RelativePath))
             {
                 continue;
+            }
+
+            request.Suggestions.TryGetValue(contextIndex, out var suggestion);
+            if (suggestion is not null && claimedByRules.Contains(suggestion.EpisodeNumber))
+            {
+                suggestion = null;
             }
 
             items.Add(new SpecialMappingItem
@@ -168,7 +236,10 @@ public static class PackSpecialPayloadBuilder
                 RelativePath = candidate.RelativePath,
                 Episode = null,
                 Source = SpecialMappingSource.Gemini,
-                Reason = "Gemini did not map this special/OVA file."
+                SuggestedEpisode = suggestion,
+                Reason = suggestion is null
+                    ? "Gemini did not map this special/OVA file."
+                    : $"Gemini did not map this special/OVA file. Suggestion (not applied): S00E{suggestion.EpisodeNumber:00} '{suggestion.Title}'."
             });
         }
 
@@ -293,7 +364,8 @@ public static class PackSpecialPayloadBuilder
     private static (
         IReadOnlyList<SpecialMappingProposal> Proposals,
         IReadOnlyDictionary<int, TrackedEpisode> Suggestions,
-        IReadOnlyDictionary<int, string> UnresolvedReasons) BuildProposals(
+        IReadOnlyDictionary<int, string> UnresolvedReasons,
+        IReadOnlyList<SpecialSeasonBlock> Blocks) BuildProposals(
         SpecialMappingContext context,
         IReadOnlyList<TrackedEpisode> specialsEpisodes,
         IReadOnlyList<TrackedEpisode> regularEpisodes)
@@ -302,7 +374,7 @@ public static class PackSpecialPayloadBuilder
         var noReasons = new Dictionary<int, string>();
         if (context.Candidates.Count == 0)
         {
-            return ([], noSuggestions, noReasons);
+            return ([], noSuggestions, noReasons, []);
         }
 
         var specials = specialsEpisodes
@@ -415,7 +487,7 @@ public static class PackSpecialPayloadBuilder
             unresolved.Remove(index);
         }
 
-        return (proposals, suggestions, unresolved);
+        return (proposals, suggestions, unresolved, blocks);
     }
 
     /// <summary>TMDB title such as "OVA 2: Beach Day" or "OAD #2" for OVA number <paramref name="ovaNumber"/>.</summary>

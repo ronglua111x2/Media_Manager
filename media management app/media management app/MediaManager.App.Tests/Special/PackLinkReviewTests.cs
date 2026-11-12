@@ -43,18 +43,21 @@ public class PackLinkReviewTests
     public async Task LoadPreview_GeminiMapping_RowsShowTmdbTitleAirDateAndSource()
     {
         var pack = SpecialCases.TwoSeasonBrassPack();
-        using var host = new SpecialOrchestratorHost(FakeGeminiResponses.RecordedSevenOfFifteenWrong);
+        using var host = new SpecialOrchestratorHost(FakeGeminiResponses.SeasonTwoLastDiffersFromSuggestion);
         var service = SpecialPackPrepareHost.Create(pack, host.Orchestrator);
         var preview = await service.PrepareSeasonPackLinkAsync(SpecialPackPrepareHost.ShowId, 1, useGeminiForSpecials: true);
 
         var viewModel = new PackLinkReviewViewModel(preview);
 
-        var row = viewModel.Rows.Single(item => item.FileName == "[Grp] Harbor Brass - S1S07.mkv");
-        Assert.Equal("S00E01", row.TargetLabel);
-        Assert.Equal("Practice Room Days #1", row.TmdbTitle);
-        Assert.Equal("2015-06-17", row.AirDateLabel);
+        // A Gemini pair that differs from the season-window suggestion: with the TMDB title and air date next to
+        // the file, S2S07 to "Harbor Brass Movie: Recap Part 1 (2017-09-13)" stands out, and the row is flagged.
+        var row = viewModel.Rows.Single(item => item.FileName == "[Grp] Harbor Brass - S2S07.mkv");
+        Assert.Equal("S00E16", row.TargetLabel);
+        Assert.Equal("Harbor Brass Movie: Recap Part 1", row.TmdbTitle);
+        Assert.Equal("2017-09-13", row.AirDateLabel);
         Assert.Equal("Gemini AI", row.SourceLabel);
         Assert.True(row.NeedsAttention);
+        Assert.Contains("S00E15", row.Reason);
         Assert.True(viewModel.CanRetry);
         Assert.StartsWith("Review AI mappings", viewModel.WindowTitle, StringComparison.Ordinal);
     }

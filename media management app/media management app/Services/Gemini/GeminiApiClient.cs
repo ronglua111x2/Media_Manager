@@ -5,8 +5,21 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using media_management_app.Common;
 using media_management_app.Models;
+using media_management_app.Services.Gemini.Routing;
 
 namespace media_management_app.Services.Gemini;
+
+/// <summary>Gemini refused the request in a way no other model can fix (invalid key, verification, billing).</summary>
+public sealed class GeminiRequestBlockedException : InvalidOperationException
+{
+    public GeminiRequestBlockedException(string message, HttpStatusCode statusCode)
+        : base(message)
+    {
+        StatusCode = statusCode;
+    }
+
+    public HttpStatusCode StatusCode { get; }
+}
 
 public sealed class GeminiApiClient : IGeminiApiClient
 {
@@ -18,31 +31,27 @@ public sealed class GeminiApiClient : IGeminiApiClient
 
     private readonly ISettingsService _settingsService;
     private readonly HttpClient _httpClient;
-    private readonly GeminiQuotaTracker _quotaTracker;
-    private readonly IGeminiModelCatalogService _modelCatalog;
+    private readonly GeminiModelRouter _router;
     private readonly IAppLogger _logger;
     private readonly SemaphoreSlim _requestGate = new(1, 1);
 
     public GeminiApiClient(
         ISettingsService settingsService,
         HttpClient httpClient,
-        GeminiQuotaTracker quotaTracker,
-        IGeminiModelCatalogService modelCatalog,
+        GeminiModelRouter router,
         IAppLogger logger)
     {
         _settingsService = settingsService;
         _httpClient = httpClient;
-        _quotaTracker = quotaTracker;
-        _modelCatalog = modelCatalog;
+        _router = router;
         _logger = logger;
     }
 
     public async Task<string> TestConnectionAsync(CancellationToken cancellationToken = default)
     {
-        var result = await GenerateWithFallbackAsync(
+        var result = await GenerateRoutedAsync(
             systemPrompt: "Reply with JSON {\"ok\":true}.",
             userJson: "{\"ping\":true}",
-            recordQuota: false,
             responseSchema: null,
             progress: null,
             cancellationToken);
@@ -55,13 +64,7 @@ public sealed class GeminiApiClient : IGeminiApiClient
         string userJson,
         CancellationToken cancellationToken = default)
     {
-        var result = await GenerateWithFallbackAsync(
-            systemPrompt,
-            userJson,
-            recordQuota: true,
-            responseSchema: null,
-            progress: null,
-            cancellationToken);
+        var result = await GenerateRoutedAsync(systemPrompt, userJson, responseSchema: null, progress: null, cancellationToken);
         return result.Json;
     }
 
@@ -72,13 +75,7 @@ public sealed class GeminiApiClient : IGeminiApiClient
         IProgress<PackLinkProgressUpdate>? progress = null,
         CancellationToken cancellationToken = default)
     {
-        var result = await GenerateWithFallbackAsync(
-            systemPrompt,
-            userJson,
-            recordQuota: true,
-            responseSchema,
-            progress,
-            cancellationToken);
+        var result = await GenerateRoutedAsync(systemPrompt, userJson, responseSchema, progress, cancellationToken);
         return new GeminiJsonTextResult(result.Model, result.Json, result.FinishReason);
     }
 
@@ -87,13 +84,7 @@ public sealed class GeminiApiClient : IGeminiApiClient
         string userJson,
         CancellationToken cancellationToken = default)
     {
-        var result = await GenerateWithFallbackAsync(
-            systemPrompt,
-            userJson,
-            recordQuota: true,
-            responseSchema: null,
-            progress: null,
-            cancellationToken);
+        var result = await GenerateRoutedAsync(systemPrompt, userJson, responseSchema: null, progress: null, cancellationToken);
         var parsed = JsonSerializer.Deserialize<T>(result.Json, SerializerOptions);
         if (parsed is null)
         {
@@ -103,128 +94,11 @@ public sealed class GeminiApiClient : IGeminiApiClient
         return parsed;
     }
 
-    private async Task<GeminiGenerateResult> GenerateWithFallbackAsync(
+    private async Task<GeminiGenerateResult> GenerateRoutedAsync(
         string systemPrompt,
         string userJson,
-        bool recordQuota,
         JsonElement? responseSchema,
         IProgress<PackLinkProgressUpdate>? progress,
-        CancellationToken cancellationToken)
-    {
-        var models = GetModelChain();
-        Exception? lastError = null;
-
-        for (var modelIndex = 0; modelIndex < models.Count; modelIndex++)
-        {
-            var model = models[modelIndex];
-            if (modelIndex > 0)
-            {
-                ReportWaiting(progress, $"Switching to fallback: {model}");
-                _logger.Info($"Gemini trying fallback model '{model}'.", LogTarget.All);
-            }
-
-            for (var attempt = 0; attempt <= AppConstants.GeminiMaxRetriesPerModel; attempt++)
-            {
-                try
-                {
-                    var (json, finishReason) = await SendGenerateRequestAsync(
-                        model,
-                        systemPrompt,
-                        userJson,
-                        recordQuota,
-                        responseSchema,
-                        cancellationToken);
-
-                    if (string.IsNullOrWhiteSpace(json))
-                    {
-                        throw new InvalidOperationException(
-                            $"Gemini model '{model}' returned an empty response{FormatFinishReason(finishReason)}.");
-                    }
-
-                    if (recordQuota)
-                    {
-                        _logger.Info(
-                            $"Gemini generateContent succeeded (model: {model}, responseChars: {json.Length}).",
-                            LogTarget.All);
-                    }
-
-                    if (IsEarlyStop(finishReason))
-                    {
-                        _logger.Warning(
-                            $"Gemini model '{model}' stopped early (finishReason={finishReason}); the answer may be incomplete.",
-                            LogTarget.All);
-                    }
-
-                    return new GeminiGenerateResult(model, json, finishReason);
-                }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-                {
-                    throw;
-                }
-                catch (GeminiRequestFailedException ex)
-                {
-                    lastError = ex;
-
-                    if (ex.StatusCode is HttpStatusCode.BadRequest)
-                    {
-                        _logger.Warning(
-                            $"Gemini model '{model}' returned HTTP 400 (unsupported for text JSON). Skipping model.",
-                            LogTarget.All);
-                        break;
-                    }
-
-                    if (ex.StatusCode is HttpStatusCode.NotFound)
-                    {
-                        _logger.Warning(
-                            $"Gemini model '{model}' returned HTTP 404. Trying next model.",
-                            LogTarget.All);
-                        break;
-                    }
-
-                    if (IsBackoffStatus(ex.StatusCode) && attempt < AppConstants.GeminiMaxRetriesPerModel)
-                    {
-                        var delayMs = CalculateBackoffDelayMs(attempt, ex.RetryAfterSeconds);
-                        var retryNumber = attempt + 1;
-                        var statusLabel = FormatStatusLabel(ex.StatusCode);
-                        var message =
-                            $"{model}: {statusLabel}, retry {retryNumber}/{AppConstants.GeminiMaxRetriesPerModel} in {delayMs / 1000}s…";
-                        _logger.Warning(message, LogTarget.All);
-                        ReportWaiting(progress, message);
-                        await Task.Delay(delayMs, cancellationToken);
-                        continue;
-                    }
-
-                    if (IsBackoffStatus(ex.StatusCode))
-                    {
-                        _logger.Warning(
-                            $"Gemini model '{model}' exhausted retries after HTTP {(int)ex.StatusCode}. Trying next model.",
-                            LogTarget.All);
-                        break;
-                    }
-
-                    _logger.Warning($"Gemini model '{model}' failed: {ex.Message}", LogTarget.All);
-                    break;
-                }
-                catch (Exception ex)
-                {
-                    lastError = ex;
-                    _logger.Warning($"Gemini model '{model}' failed: {ex.Message}", LogTarget.All);
-                    break;
-                }
-            }
-        }
-
-        throw new InvalidOperationException(
-            BuildFallbackFailureMessage(models, lastError),
-            lastError);
-    }
-
-    private async Task<(string? Text, string? FinishReason)> SendGenerateRequestAsync(
-        string model,
-        string systemPrompt,
-        string userJson,
-        bool recordQuota,
-        JsonElement? responseSchema,
         CancellationToken cancellationToken)
     {
         var apiKey = _settingsService.Current.Gemini?.ApiKey?.Trim();
@@ -233,22 +107,139 @@ public sealed class GeminiApiClient : IGeminiApiClient
             throw new InvalidOperationException("Gemini API key is not configured.");
         }
 
-        if (recordQuota)
+        var tried = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var failures = new List<string>();
+
+        while (tried.Count < AppConstants.GeminiMaxModelsPerCall)
         {
-            _quotaTracker.EnsureCanRequest();
+            var decision = _router.Select(tried);
+            if (decision.Selected is not { } route)
+            {
+                var reason = decision.UnavailableReason ?? "No Gemini model is available.";
+                if (decision.NextAvailableUtc is { } next)
+                {
+                    reason += $" Next model frees up at {next.ToLocalTime():yyyy-MM-dd HH:mm}.";
+                }
+
+                if (failures.Count > 0)
+                {
+                    reason += " Tried: " + string.Join("; ", failures);
+                }
+
+                throw new InvalidOperationException(reason);
+            }
+
+            tried.Add(route.Model);
+            if (tried.Count > 1)
+            {
+                ReportWaiting(progress, $"Switching to {route.Model}");
+                _logger.Info($"Gemini trying next model '{route.Model}'.", LogTarget.All);
+            }
+
+            if (route.Wait > TimeSpan.Zero)
+            {
+                ReportWaiting(progress, $"{route.Model}: waiting {Math.Ceiling(route.Wait.TotalSeconds)}s for the per-minute limit…");
+                await Task.Delay(route.Wait, cancellationToken);
+            }
+
+            var serverRetryUsed = false;
+            while (true)
+            {
+                try
+                {
+                    var (json, finishReason) = await SendGenerateRequestAsync(
+                        apiKey,
+                        route,
+                        systemPrompt,
+                        userJson,
+                        responseSchema,
+                        cancellationToken);
+
+                    if (string.IsNullOrWhiteSpace(json))
+                    {
+                        throw new InvalidOperationException(
+                            $"Gemini model '{route.Model}' returned an empty response{FormatFinishReason(finishReason)}.");
+                    }
+
+                    _logger.Info(
+                        $"Gemini generateContent succeeded (model: {route.Model}, responseChars: {json.Length}).",
+                        LogTarget.All);
+
+                    if (IsEarlyStop(finishReason))
+                    {
+                        _logger.Warning(
+                            $"Gemini model '{route.Model}' stopped early (finishReason={finishReason}); the answer may be incomplete.",
+                            LogTarget.All);
+                    }
+
+                    return new GeminiGenerateResult(route.Model, json, finishReason);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (GeminiHttpFailureException failure)
+                {
+                    var outcome = GeminiErrorClassifier.Classify(failure.StatusCode, failure.ResponseBody);
+                    if (_router.Report(route.Model, outcome))
+                    {
+                        _logger.Warning($"Gemini request stopped (HTTP {(int)failure.StatusCode}): {outcome.Message}", LogTarget.All);
+                        throw new GeminiRequestBlockedException(outcome.Message, failure.StatusCode);
+                    }
+
+                    if (outcome.Kind == GeminiOutcomeKind.ServerError && !serverRetryUsed)
+                    {
+                        serverRetryUsed = true;
+                        var delay = TimeSpan.FromMilliseconds(2000 + Random.Shared.Next(0, 2000));
+                        var message = $"{route.Model}: HTTP {(int)failure.StatusCode}, retrying once in {delay.TotalSeconds:0}s…";
+                        _logger.Warning(message, LogTarget.All);
+                        ReportWaiting(progress, message);
+                        await Task.Delay(delay, cancellationToken);
+                        continue;
+                    }
+
+                    var label = $"{route.Model}: {DescribeOutcome(outcome, failure.StatusCode)}";
+                    failures.Add(label);
+                    _logger.Warning($"Gemini {label}. Trying another model.", LogTarget.All);
+                    ReportWaiting(progress, label);
+                    break;
+                }
+                catch (OperationCanceledException)
+                {
+                    // Our own timeout, not the caller's cancellation: treat like an overloaded model.
+                    _router.Report(route.Model, new GeminiCallOutcome(GeminiOutcomeKind.Overloaded, "Request timed out."));
+                    var label = $"{route.Model}: timed out after {GetTimeoutSeconds()}s";
+                    failures.Add(label);
+                    _logger.Warning($"Gemini {label}. Trying another model.", LogTarget.All);
+                    ReportWaiting(progress, label);
+                    break;
+                }
+                catch (Exception ex) when (ex is not GeminiRequestBlockedException)
+                {
+                    failures.Add($"{route.Model}: {ex.Message}");
+                    _logger.Warning($"Gemini model '{route.Model}' failed: {ex.Message}", LogTarget.All);
+                    break;
+                }
+            }
         }
 
+        throw new InvalidOperationException(
+            $"Gemini API request failed for {tried.Count} model(s). {string.Join("; ", failures)}");
+    }
+
+    private async Task<(string? Text, string? FinishReason)> SendGenerateRequestAsync(
+        string apiKey,
+        GeminiRoutedModel route,
+        string systemPrompt,
+        string userJson,
+        JsonElement? responseSchema,
+        CancellationToken cancellationToken)
+    {
         await _requestGate.WaitAsync(cancellationToken);
         try
         {
-            await _quotaTracker.WaitForSpacingAsync(cancellationToken);
-
-            var timeoutSeconds = Math.Clamp(
-                _settingsService.Current.Gemini?.TimeoutSeconds ?? 45,
-                10,
-                120);
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeoutCts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(GetTimeoutSeconds()));
 
             var requestBody = new GeminiGenerateContentRequest
             {
@@ -266,11 +257,12 @@ public sealed class GeminiApiClient : IGeminiApiClient
                 GenerationConfig = new GeminiGenerationConfig
                 {
                     ResponseMimeType = "application/json",
-                    ResponseSchema = responseSchema
+                    ResponseSchema = responseSchema,
+                    ThinkingConfig = BuildThinkingConfig(route)
                 }
             };
 
-            var url = $"{AppConstants.GeminiApiBaseUrl}models/{model}:generateContent?key={Uri.EscapeDataString(apiKey)}";
+            var url = $"{AppConstants.GeminiApiBaseUrl}models/{Uri.EscapeDataString(route.Model)}:generateContent";
             using var request = new HttpRequestMessage(HttpMethod.Post, url)
             {
                 Content = new StringContent(
@@ -278,31 +270,35 @@ public sealed class GeminiApiClient : IGeminiApiClient
                     Encoding.UTF8,
                     "application/json")
             };
+            request.Headers.Add("x-goog-api-key", apiKey);
+
+            // Google counts every request against the quota, including the ones that fail.
+            _router.RecordAttempt(route.Model);
 
             using var response = await _httpClient.SendAsync(request, timeoutCts.Token);
             var responseText = await response.Content.ReadAsStringAsync(timeoutCts.Token);
             if (!response.IsSuccessStatusCode)
             {
-                var retryAfterSeconds = TryReadRetryAfterSeconds(response);
-                throw new GeminiRequestFailedException(
-                    $"Gemini returned HTTP {(int)response.StatusCode} for model '{model}': {TrimForLog(responseText)}",
-                    response.StatusCode,
-                    retryAfterSeconds);
+                throw new GeminiHttpFailureException(response.StatusCode, responseText);
             }
 
             var parsed = JsonSerializer.Deserialize<GeminiGenerateContentResponse>(responseText, SerializerOptions);
             var answer = parsed?.Candidates?
                 .Select(candidate => (
                     Text: candidate.Content?.Parts?
+                        .Where(part => part.Thought != true)
                         .Select(part => part.Text)
                         .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)),
                     candidate.FinishReason))
                 .FirstOrDefault(candidate => !string.IsNullOrWhiteSpace(candidate.Text));
             var finishReason = answer?.FinishReason ?? parsed?.Candidates?.FirstOrDefault()?.FinishReason;
 
-            if (recordQuota)
+            if (!string.IsNullOrWhiteSpace(parsed?.ModelVersion) &&
+                !string.Equals(parsed.ModelVersion, route.Model, StringComparison.OrdinalIgnoreCase))
             {
-                _quotaTracker.RecordRequest();
+                _logger.Warning(
+                    $"Gemini answered '{route.Model}' with model '{parsed.ModelVersion}' (Google redirected the model).",
+                    LogTarget.All);
             }
 
             return (answer?.Text?.Trim(), finishReason);
@@ -313,73 +309,30 @@ public sealed class GeminiApiClient : IGeminiApiClient
         }
     }
 
-    private string GetPrimaryModel() =>
-        _modelCatalog.Normalize(_settingsService.Current.Gemini?.Model);
+    private int GetTimeoutSeconds() =>
+        Math.Clamp(
+            _settingsService.Current.Gemini?.TimeoutSeconds ?? AppConstants.GeminiDefaultTimeoutSeconds,
+            10,
+            180);
 
-    private IReadOnlyList<string> GetModelChain()
+    private static GeminiThinkingConfig? BuildThinkingConfig(GeminiRoutedModel route)
     {
-        var chain = new List<string> { GetPrimaryModel() };
-        var fallbacks = _settingsService.Current.Gemini?.FallbackModels ?? [];
-        if (fallbacks.Length == 0)
+        if (!string.IsNullOrWhiteSpace(route.ThinkingLevel))
         {
-            fallbacks = _modelCatalog.FallbackModels.ToArray();
+            return new GeminiThinkingConfig { ThinkingLevel = route.ThinkingLevel };
         }
 
-        foreach (var fallback in fallbacks)
-        {
-            if (chain.Count >= AppConstants.GeminiMaxFallbackModels + 1)
-            {
-                break;
-            }
-
-            var normalized = _modelCatalog.Normalize(fallback);
-            if (!chain.Contains(normalized, StringComparer.OrdinalIgnoreCase)
-                && GeminiTextModelFilter.IsSuitableForTextJsonMapping(normalized))
-            {
-                chain.Add(normalized);
-            }
-        }
-
-        return chain;
+        return route.ThinkingBudget is { } budget ? new GeminiThinkingConfig { ThinkingBudget = budget } : null;
     }
 
-    private static bool IsBackoffStatus(HttpStatusCode statusCode) =>
-        statusCode is HttpStatusCode.TooManyRequests
-            or HttpStatusCode.ServiceUnavailable
-            or HttpStatusCode.BadGateway;
-
-    private static int CalculateBackoffDelayMs(int attempt, int? retryAfterSeconds)
+    private static string DescribeOutcome(GeminiCallOutcome outcome, HttpStatusCode statusCode) => outcome.Kind switch
     {
-        var exponentialMs = AppConstants.GeminiRetryBaseDelayMs * (int)Math.Pow(2, attempt);
-        if (retryAfterSeconds is > 0)
-        {
-            exponentialMs = Math.Max(exponentialMs, retryAfterSeconds.Value * 1000);
-        }
-
-        return Math.Clamp(exponentialMs, AppConstants.GeminiRetryBaseDelayMs, 60_000);
-    }
-
-    private static int? TryReadRetryAfterSeconds(HttpResponseMessage response)
-    {
-        if (!response.Headers.TryGetValues("Retry-After", out var values))
-        {
-            return null;
-        }
-
-        var value = values.FirstOrDefault();
-        if (int.TryParse(value, out var seconds))
-        {
-            return seconds;
-        }
-
-        return null;
-    }
-
-    private static string FormatStatusLabel(HttpStatusCode statusCode) => statusCode switch
-    {
-        HttpStatusCode.TooManyRequests => "rate limited (429)",
-        HttpStatusCode.ServiceUnavailable => "high demand (503)",
-        HttpStatusCode.BadGateway => "bad gateway (502)",
+        GeminiOutcomeKind.DailyQuota => "daily free quota used (429)",
+        GeminiOutcomeKind.MinuteQuota => "per-minute limit (429)",
+        GeminiOutcomeKind.NoFreeTier => "no free-tier quota (429)",
+        GeminiOutcomeKind.Overloaded => "high demand (503)",
+        GeminiOutcomeKind.ModelGone => "model not found (404)",
+        GeminiOutcomeKind.Incompatible => $"request rejected (HTTP {(int)statusCode})",
         _ => $"HTTP {(int)statusCode}"
     };
 
@@ -393,16 +346,6 @@ public sealed class GeminiApiClient : IGeminiApiClient
         });
     }
 
-    private static string BuildFallbackFailureMessage(IReadOnlyList<string> models, Exception? lastError)
-    {
-        var modelList = string.Join(", ", models);
-        var detail = lastError?.Message ?? "Unknown error.";
-        return $"Gemini API request failed for all configured models ({modelList}). {detail}";
-    }
-
-    private static string TrimForLog(string value) =>
-        value.Length <= 240 ? value : value[..240] + "...";
-
     private sealed record GeminiGenerateResult(string Model, string Json, string? FinishReason);
 
     /// <summary>True when Gemini stopped for another reason than finishing its answer (MAX_TOKENS, SAFETY, ...).</summary>
@@ -414,18 +357,18 @@ public sealed class GeminiApiClient : IGeminiApiClient
     private static string FormatFinishReason(string? finishReason) =>
         string.IsNullOrWhiteSpace(finishReason) ? string.Empty : $" (finishReason={finishReason})";
 
-    private sealed class GeminiRequestFailedException : Exception
+    private sealed class GeminiHttpFailureException : Exception
     {
-        public GeminiRequestFailedException(string message, HttpStatusCode statusCode, int? retryAfterSeconds)
-            : base(message)
+        public GeminiHttpFailureException(HttpStatusCode statusCode, string responseBody)
+            : base($"Gemini returned HTTP {(int)statusCode}.")
         {
             StatusCode = statusCode;
-            RetryAfterSeconds = retryAfterSeconds;
+            ResponseBody = responseBody;
         }
 
         public HttpStatusCode StatusCode { get; }
 
-        public int? RetryAfterSeconds { get; }
+        public string ResponseBody { get; }
     }
 
     private sealed class GeminiGenerateContentRequest
@@ -442,6 +385,15 @@ public sealed class GeminiApiClient : IGeminiApiClient
         public string? ResponseMimeType { get; set; }
 
         public JsonElement? ResponseSchema { get; set; }
+
+        public GeminiThinkingConfig? ThinkingConfig { get; set; }
+    }
+
+    private sealed class GeminiThinkingConfig
+    {
+        public string? ThinkingLevel { get; set; }
+
+        public int? ThinkingBudget { get; set; }
     }
 
     private sealed class GeminiContent
@@ -452,11 +404,15 @@ public sealed class GeminiApiClient : IGeminiApiClient
     private sealed class GeminiPart
     {
         public string? Text { get; set; }
+
+        public bool? Thought { get; set; }
     }
 
     private sealed class GeminiGenerateContentResponse
     {
         public List<GeminiCandidate>? Candidates { get; set; }
+
+        public string? ModelVersion { get; set; }
     }
 
     private sealed class GeminiCandidate

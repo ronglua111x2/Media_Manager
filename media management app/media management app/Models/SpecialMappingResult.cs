@@ -17,6 +17,12 @@ public sealed class SpecialMappingItem
 
     /// <summary>A rule guess for an unmapped file (k-th → k-th of an inexact season window). Shown in review, never linked.</summary>
     public TrackedEpisode? SuggestedEpisode { get; init; }
+
+    /// <summary>
+    /// For a Gemini pair on a file that also had a rule suggestion: true when both give the same episode, false when
+    /// they differ (the review window highlights the row), null when there was no suggestion.
+    /// </summary>
+    public bool? MatchesSuggestion { get; init; }
 }
 
 public sealed class SpecialMappingResult
@@ -39,6 +45,30 @@ public sealed class SpecialMappingResult
     /// <summary>Why the rule mappings replace the requested Gemini mappings, or null when nothing failed.</summary>
     public string? FallbackReason { get; init; }
 
+    /// <summary>The Gemini model that answered (or answered the cached result), null when Gemini was not used.</summary>
+    public string? GeminiModel { get; init; }
+
+    /// <summary>Cache key to store this result under once the user accepts it (PR-15); null when it must not be cached.</summary>
+    public string? CacheKey { get; init; }
+
+    /// <summary>True when the result came from the cache instead of a Gemini request.</summary>
+    public bool FromCache { get; init; }
+
+    /// <summary>Copy that remembers where the result can be cached and which model answered.</summary>
+    public SpecialMappingResult WithCacheInfo(string? cacheKey, string? geminiModel, bool fromCache = false) =>
+        new()
+        {
+            Items = Items,
+            Warnings = Warnings,
+            UsedGemini = UsedGemini,
+            ByPath = ByPath,
+            RequiresReview = RequiresReview,
+            FallbackReason = FallbackReason,
+            GeminiModel = geminiModel,
+            CacheKey = cacheKey,
+            FromCache = fromCache
+        };
+
     /// <summary>Copy with extra warnings and the review flag set (items are unchanged).</summary>
     public SpecialMappingResult WithReview(IEnumerable<string> extraWarnings, string? fallbackReason = null) =>
         new()
@@ -48,6 +78,9 @@ public sealed class SpecialMappingResult
             UsedGemini = UsedGemini,
             ByPath = ByPath,
             RequiresReview = true,
-            FallbackReason = fallbackReason ?? FallbackReason
+            FallbackReason = fallbackReason ?? FallbackReason,
+            GeminiModel = GeminiModel,
+            CacheKey = CacheKey,
+            FromCache = FromCache
         };
 }

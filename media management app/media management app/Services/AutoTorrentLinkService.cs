@@ -71,11 +71,12 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             cancellationToken);
     }
 
-    public Task<AutoTorrentLinkResult> ApplySeasonPackLinkAsync(
+    public async Task<AutoTorrentLinkResult> ApplySeasonPackLinkAsync(
         SeasonPackLinkPreview preview,
         IProgress<PackLinkProgressUpdate>? progress = null,
-        CancellationToken cancellationToken = default) =>
-        LinkSeasonPackFromInventoryCoreAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var result = await LinkSeasonPackFromInventoryCoreAsync(
             preview.Show,
             preview.OwnerSeason,
             _databaseService.GetTrackedEpisodes(preview.Show.Id),
@@ -83,6 +84,12 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             preview.SpecialMappings,
             progress,
             cancellationToken);
+
+        // Applying a prepared pack is the user's accept (Gemini results always go through review): only now is
+        // the special mapping worth caching (PR-15).
+        _specialMappingOrchestrator.RememberAccepted(preview.SpecialMappings);
+        return result;
+    }
 
     public async Task<AutoTorrentLinkResult> LinkMovieAsync(long movieId, CancellationToken cancellationToken = default)
     {

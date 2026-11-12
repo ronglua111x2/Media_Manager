@@ -5,6 +5,7 @@ using System.Text;
 using MediaManager.App.Tests.Cleanup;
 using media_management_app.Models;
 using media_management_app.Services.Gemini;
+using media_management_app.Services.Gemini.Routing;
 
 namespace MediaManager.App.Tests.Special;
 
@@ -25,6 +26,7 @@ public sealed class GeminiClientCancellationTests : IDisposable
         {
             Enabled = true,
             ApiKey = "test-key",
+            AutoSelectModel = false,
             Model = "gemini-test-primary",
             FallbackModels = ["gemini-test-fallback"]
         };
@@ -77,15 +79,11 @@ public sealed class GeminiClientCancellationTests : IDisposable
 
     private GeminiApiClient CreateClient(HttpMessageHandler handler)
     {
-        var catalog = SpecialProxyFake<IGeminiModelCatalogService>.Create((method, args) => method.Name switch
-        {
-            nameof(IGeminiModelCatalogService.Normalize) => (object?)((string?)args![0] ?? "gemini-test-primary"),
-            "get_FallbackModels" => (IReadOnlyList<string>)["gemini-test-fallback"],
-            "get_DefaultModel" => "gemini-test-primary",
-            _ => null
-        });
-
-        return new GeminiApiClient(_settings, new HttpClient(handler), new GeminiQuotaTracker(_settings), catalog, new FakeAppLogger());
+        var httpClient = new HttpClient(handler);
+        var logger = new FakeAppLogger();
+        var catalog = new GeminiModelCatalogService(_settings, httpClient, logger);
+        var router = new GeminiModelRouter(_settings, catalog, new GeminiModelAvailabilityStore(_settings, TimeProvider.System), logger);
+        return new GeminiApiClient(_settings, httpClient, router, logger);
     }
 
     private sealed class StubHandler : HttpMessageHandler
