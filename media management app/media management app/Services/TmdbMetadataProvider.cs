@@ -9,7 +9,7 @@ using media_management_app.Models;
 
 namespace media_management_app.Services;
 
-public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogService, ITmdbMovieCatalogService
+public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogService, ITmdbMovieCatalogService, ITmdbExternalIdService
 {
     private const double HighConfidenceThreshold = 75;
     private readonly ISettingsService _settingsService;
@@ -254,6 +254,27 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
             .ToList();
 
         return searchResults;
+    }
+
+    /// <summary>IMDb id ("tt1234567") of a TMDB show or movie, or null (native-search: EZTV searches by IMDb id).</summary>
+    public async Task<string?> GetImdbIdAsync(bool isMovie, int tmdbId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(_settingsService.Current.TmdbReadAccessToken))
+        {
+            return null;
+        }
+
+        ConfigureHeaders();
+        using var response = await GetAsyncWithRetryAsync($"{(isMovie ? "movie" : "tv")}/{tmdbId}/external_ids", cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            return null;
+        }
+
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+        var imdbId = GetString(document.RootElement, "imdb_id");
+        return string.IsNullOrWhiteSpace(imdbId) ? null : imdbId.Trim();
     }
 
     public async Task<TmdbShowDetails> GetTvShowSummaryAsync(int tmdbId, CancellationToken cancellationToken = default)

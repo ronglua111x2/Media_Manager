@@ -16,7 +16,7 @@ public interface INativeSearchService
     bool ComparesWithQbittorrent(MediaKind kind);
 
     /// <summary>Runs one query on the native indexers (governed, cached) and returns rows in the app's result shape.</summary>
-    Task<IReadOnlyList<TorrentSearchResult>> SearchAsync(SearchRecipe recipe, string query, MediaKind kind, CancellationToken cancellationToken);
+    Task<IReadOnlyList<TorrentSearchResult>> SearchAsync(SearchRecipe recipe, string query, MediaKind kind, CancellationToken cancellationToken, SearchSubject? subject = null);
 
     /// <summary>
     /// Native search for a query; in "Both" mode also runs <paramref name="qbittorrentSearch"/> and logs a
@@ -27,12 +27,16 @@ public interface INativeSearchService
         string query,
         MediaKind kind,
         Func<Task<IReadOnlyList<TorrentSearchResult>>> qbittorrentSearch,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        SearchSubject? subject = null);
 
     IReadOnlyList<IndexerStateSnapshot> HealthSnapshot();
 
     bool PauseAll { get; set; }
 }
+
+/// <summary>What is being searched, so id-based indexers (EZTV by IMDb id) can be used and filtered.</summary>
+public sealed record SearchSubject(bool IsMovie, int TmdbId, int? Season = null, int? Episode = null);
 
 /// <summary>
 /// App side of native search (native-search P2): builds the indexer set from settings, owns the request
@@ -43,6 +47,7 @@ public interface INativeSearchService
 public sealed class NativeSearchService : INativeSearchService, IDisposable
 {
     private const string StateFileName = "indexer-state.json";
+    private const string ImdbCacheFileName = "imdb-ids.json";
     private const string UserAgent = "MediaManager/1.0 (+native-search)";
     private static readonly JsonSerializerOptions StateJson = new() { WriteIndented = true };
     private static readonly AsyncLocal<SearchLane?> LaneScope = new();
@@ -52,13 +57,19 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
     private readonly HttpClient _http;
     private readonly IndexerResponseCache _cache = new();
     private readonly IndexerRequestGovernor _governor;
+    private readonly ITmdbExternalIdService _externalIds;
+    private readonly Dictionary<string, string> _imdbIds;
+    private readonly HashSet<string> _imdbMisses = new(StringComparer.Ordinal);
+    private readonly SemaphoreSlim _imdbGate = new(1, 1);
     private readonly object _saveGate = new();
     private System.Threading.Timer? _saveTimer;
 
-    public NativeSearchService(ISettingsService settingsService, IAppLogger logger)
+    public NativeSearchService(ISettingsService settingsService, IAppLogger logger, ITmdbExternalIdService externalIds)
     {
         _settingsService = settingsService;
         _logger = logger;
+        _externalIds = externalIds;
+        _imdbIds = LoadImdbCache();
         _http = new HttpClient(new SocketsHttpHandler
         {
             AllowAutoRedirect = true,
@@ -108,7 +119,8 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
         string query,
         MediaKind kind,
         Func<Task<IReadOnlyList<TorrentSearchResult>>> qbittorrentSearch,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        SearchSubject? subject = null)
     {
         if (!UsesNative(kind))
         {
@@ -117,10 +129,10 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
 
         if (!ComparesWithQbittorrent(kind))
         {
-            return await SearchAsync(recipe, query, kind, cancellationToken);
+            return await SearchAsync(recipe, query, kind, cancellationToken, subject);
         }
 
-        var nativeTask = SearchAsync(recipe, query, kind, cancellationToken);
+        var nativeTask = SearchAsync(recipe, query, kind, cancellationToken, subject);
         var qbitTask = qbittorrentSearch();
         IReadOnlyList<TorrentSearchResult> qbitRows;
         try
@@ -143,7 +155,7 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
         return nativeRows;
     }
 
-    public async Task<IReadOnlyList<TorrentSearchResult>> SearchAsync(SearchRecipe recipe, string query, MediaKind kind, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<TorrentSearchResult>> SearchAsync(SearchRecipe recipe, string query, MediaKind kind, CancellationToken cancellationToken, SearchSubject? subject = null)
     {
         var settings = Settings;
         var lane = LaneScope.Value ?? SearchLane.Interactive;
@@ -153,14 +165,15 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
             lane == SearchLane.Background ? TimeSpan.FromSeconds(30) : TimeSpan.FromSeconds(10));
         foreach (var id in NativeIndexerCatalog.AllIds)
         {
-            _governor.SetDisabled(id, settings.Indexers.TryGetValue(id, out var config) && !config.Enabled);
+            _governor.SetDisabled(id, !NativeIndexerCatalog.IsEnabled(settings, id));
         }
 
         var orchestrator = new SearchOrchestrator(_governor, (id, searchLane, searchBudget) => new GovernedIndexerHttp(
             _http, _governor, _cache, id, searchLane, searchBudget.MaxGovernorWait, TimeSpan.FromMinutes(45), UserAgent));
         var isAnime = IsAnimeRecipe(recipe);
+        var imdbId = subject is not null && kind != MediaKind.Movie ? await ResolveImdbIdAsync(subject, cancellationToken) : null;
         var outcome = await orchestrator.SearchAsync(
-            [new IndexerQuery(query, kind, isAnime)],
+            [new IndexerQuery(query, kind, isAnime, imdbId, subject?.Season, subject?.Episode)],
             NativeIndexerCatalog.Create(settings),
             lane,
             budget,
@@ -180,6 +193,76 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
         var plugins = recipe.Modules.FirstOrDefault(module => module.BlockType == RecipeBlockType.SearchSource)?.Plugins ?? string.Empty;
         return plugins.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Any(plugin => plugin is "nyaasi" or "subsplease" or "nekobt" or "tsukihime" or "animetosho");
+    }
+
+    private async Task<string?> ResolveImdbIdAsync(SearchSubject subject, CancellationToken cancellationToken)
+    {
+        var key = $"{(subject.IsMovie ? "movie" : "tv")}:{subject.TmdbId}";
+        await _imdbGate.WaitAsync(cancellationToken);
+        try
+        {
+            if (_imdbIds.TryGetValue(key, out var cached))
+            {
+                return cached;
+            }
+
+            if (_imdbMisses.Contains(key))
+            {
+                return null;
+            }
+
+            string? imdbId = null;
+            try
+            {
+                imdbId = await _externalIds.GetImdbIdAsync(subject.IsMovie, subject.TmdbId, cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.Warning($"[Search] could not resolve the IMDb id for {key}: {ex.Message}", LogTarget.File);
+            }
+
+            if (string.IsNullOrWhiteSpace(imdbId))
+            {
+                _imdbMisses.Add(key);
+                return null;
+            }
+
+            _imdbIds[key] = imdbId;
+            SaveImdbCache();
+            return imdbId;
+        }
+        finally
+        {
+            _imdbGate.Release();
+        }
+    }
+
+    private string ImdbCachePath => Path.Combine(_settingsService.Current.StateFolder, ImdbCacheFileName);
+
+    private Dictionary<string, string> LoadImdbCache()
+    {
+        try
+        {
+            return File.Exists(ImdbCachePath)
+                ? JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(ImdbCachePath)) ?? new()
+                : new();
+        }
+        catch
+        {
+            return new();
+        }
+    }
+
+    private void SaveImdbCache()
+    {
+        try
+        {
+            File.WriteAllText(ImdbCachePath, JsonSerializer.Serialize(_imdbIds, StateJson));
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning($"[Search] could not save {ImdbCacheFileName}: {ex.Message}", LogTarget.File);
+        }
     }
 
     private string BackendFor(MediaKind kind)

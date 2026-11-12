@@ -80,6 +80,19 @@ foreach (var movie in movies)
     }
 
     var oldAccepted = rowsOld.Count(row => OldMovieAccepts(recipe, movie, row));
+    if (argsMap.ContainsKey("diag"))
+    {
+        var newRaw = rowsNew.Count(row => evaluator.EvaluateMovie(recipe, movie, row).IsAccepted);
+        var lost = rowsOld.Where(row => OldMovieAccepts(recipe, movie, row))
+            .Select(row => (Row: row, Eval: evaluator.EvaluateMovie(recipe, movie, row)))
+            .Where(item => !item.Eval.IsAccepted)
+            .ToList();
+        Console.Error.WriteLine($"DIAG {movie.Title}: old={oldAccepted} newRaw={newRaw} newDeduped={newAccepted.Count} oldAcceptedButNewRejects={lost.Count}");
+        foreach (var group in lost.GroupBy(item => item.Eval.RejectReason + ": " + item.Eval.RejectDetail).OrderByDescending(g => g.Count()).Take(6))
+        {
+            Console.Error.WriteLine($"   {group.Count(),3} x {group.Key}  e.g. {group.First().Row.FileName}");
+        }
+    }
     var top = newAccepted.OrderByDescending(r => r.TotalScore).FirstOrDefault();
     Console.WriteLine($"| {movie.Title} | {movie.ReleaseYear} | {recipe.Name} | {oldQueries.Count}→{newQueries.Count} | {rowsNew.Count} | {oldAccepted} | {newAccepted.Count} | {(top is null ? "-" : Escape(top.SearchResult.FileName) + $" ({top.SearchResult.Seeders} seeds, {top.SearchResult.EngineName})")} |");
 }

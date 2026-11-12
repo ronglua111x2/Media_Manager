@@ -38,7 +38,8 @@ public sealed class ShowSearchSnapshotService
         IOperationProgressService? progressService,
         CancellationToken cancellationToken,
         MediaKind recipeKind = MediaKind.TvEpisode,
-        string? recipeId = null)
+        string? recipeId = null,
+        IReadOnlyList<int>? packSeasons = null)
     {
         if (progressService is null)
         {
@@ -53,6 +54,16 @@ public sealed class ShowSearchSnapshotService
         var timeoutSeconds = RecipeRuntimeSettings.GetSnapshotTimeoutSeconds(recipe, fallback);
         var idleTimeoutSeconds = RecipeRuntimeSettings.GetSnapshotIdleTimeoutSeconds(recipe, fallback);
         var queries = _searchPlanBuilder.BuildShowSnapshotQueries(recipe, show);
+        if (recipeKind == MediaKind.TvSeasonPack && packSeasons is { Count: > 0 })
+        {
+            // native-search P4 / SRCH-03: targeted season queries first (the show-only query found 7 S03 packs
+            // for Rick and Morty, "Rick and Morty S03 1080p" found 111), then the show-level snapshot queries.
+            var seasonQueries = _searchPlanBuilder.BuildSeasonPackQueries(recipe, show, packSeasons);
+            queries = seasonQueries
+                .Concat(queries)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
         if (queries.Count == 0)
         {
             _logger.Info($"Snapshot search skipped for {show.DisplayTitle}: no queries were built from recipe '{recipe.Name}'.", LogTarget.All);
@@ -96,7 +107,8 @@ public sealed class ShowSearchSnapshotService
                     resolved.PluginsForApi,
                     resolved.RequestedNames,
                     cancellationToken),
-                cancellationToken);
+                cancellationToken,
+                new SearchSubject(IsMovie: false, show.TmdbId));
             completedQueries++;
             progressService?.Report(completedQueries, $"Search: Query {completedQueries}/{totalQueries}");
             _logger.Info(

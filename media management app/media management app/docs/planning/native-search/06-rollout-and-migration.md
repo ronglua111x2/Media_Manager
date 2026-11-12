@@ -13,6 +13,13 @@
 
 ## 2. Migration DB (đánh số tiếp từ `008_…`)
 
+> **Thay đổi khi triển khai (12/11/2026):** để tránh migration và không phải đổi interface DB, các mục sau được lưu bằng **file JSON trong state folder** thay cho bảng hoặc cột SQLite. Dữ liệu đều lấy lại được (từ TMDB) hoặc chỉ là trạng thái vận hành:
+> - IMDb id: `imdb-ids.json` (cache `tv:<tmdbId>` / `movie:<tmdbId>` → `tt…`, lấy từ TMDB `external_ids` khi EZTV cần)
+> - Trạng thái governor: `indexer-state.json` (thay cho bảng `IndexerState`)
+> - Tập năm từ TMDB `release_dates` (migration 010) chưa làm. P1 dùng dung sai ±1 năm, đã xử lý được case *Coherence*.
+>
+> Các migration còn lại trong bảng dưới chỉ làm khi thật sự cần.
+
 | Migration | Nội dung | Giai đoạn |
 |---|---|---|
 | `009_tracked_media_imdb_ids.sql` | Thêm `ImdbId TEXT NULL` vào `TrackedShows` và `TrackedMovies`. Backfill dần qua TMDB `external_ids` khi refresh metadata | P3 (cần cho EZTV) |

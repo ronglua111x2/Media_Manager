@@ -9,12 +9,20 @@ namespace media_management_app.Search;
 public static class ChallengeDetector
 {
     private static readonly Regex Markers = new(
-        @"Just a moment\.\.\.|cf-chl|challenge-platform|<title>One moment|Making sure you&#39;re not a bot|Making sure you're not a bot|DDoS-Guard|Checking your browser|captcha",
+        @"Just a moment\.\.\.|cf-chl|<title>One moment|Making sure you&#39;re not a bot|Making sure you're not a bot|DDoS-Guard|Checking your browser|cf-turnstile|g-recaptcha|hcaptcha",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     public static bool LooksLikeChallenge(string? body, string? contentType)
     {
         if (string.IsNullOrEmpty(body))
+        {
+            return false;
+        }
+
+        // RSS/XML documents are never challenge pages, even when served as text/html with Cloudflare's
+        // passive "challenge-platform/scripts/jsd" beacon appended (torrentdownloads does this).
+        var start = body.TrimStart();
+        if (start.StartsWith("<?xml", StringComparison.OrdinalIgnoreCase) || start.StartsWith("<rss", StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }

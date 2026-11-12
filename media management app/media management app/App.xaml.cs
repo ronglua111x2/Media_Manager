@@ -338,6 +338,7 @@ public partial class App : System.Windows.Application
         services.AddSingleton<IMetadataProvider>(provider => provider.GetRequiredService<TmdbMetadataProvider>());
         services.AddSingleton<ITmdbShowCatalogService>(provider => provider.GetRequiredService<TmdbMetadataProvider>());
         services.AddSingleton<ITmdbMovieCatalogService>(provider => provider.GetRequiredService<TmdbMetadataProvider>());
+        services.AddSingleton<ITmdbExternalIdService>(provider => provider.GetRequiredService<TmdbMetadataProvider>());
         services.AddSingleton<GeminiQuotaTracker>();
         services.AddSingleton<IGeminiModelCatalogService, GeminiModelCatalogService>();
         services.AddSingleton<IGeminiApiClient, GeminiApiClient>();

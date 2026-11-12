@@ -101,7 +101,7 @@ public partial class SettingsViewModel
             var policy = NativeIndexerCatalog.PolicyResolver(search)(id);
             SearchIndexers.Add(new IndexerHealthRowViewModel(
                 id,
-                !search.Indexers.TryGetValue(id, out var config) || config.Enabled,
+                NativeIndexerCatalog.IsEnabled(search, id),
                 state is null ? "Not used yet" : DescribeState(state),
                 state is null ? $"0 / {policy.DailyBudget} today" : $"{state.RequestsToday} / {policy.DailyBudget} today",
                 state?.LastError ?? string.Empty));

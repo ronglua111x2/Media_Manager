@@ -18,13 +18,15 @@ public sealed class SearchPlanBuilder : ISearchPlanBuilder
         var titles = ResolveTitles(recipe, show.Title, show.GetSearchableAlternativeTitles());
         var qualities = QueryTokenCatalog.GetQualityValues(queryModule);
         var queries = new List<string>();
+        var padded = new List<string>();
+        var animePadding = RecipeRuntimeSettings.UsesAnimeAbsoluteEpisodeNumbering(recipe) && episode.EpisodeNumber is >= 0 and < 10;
 
         foreach (var template in templates)
         {
             foreach (var title in TitlesFor(template, titles))
             foreach (var quality in QualitiesFor(template, qualities))
             {
-                queries.Add(QueryTemplateRenderer.Render(template, new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
                 {
                     [QueryTokenCatalog.TitleId] = title,
                     [QueryTokenCatalog.YearId] = show.FirstAirYear?.ToString() ?? string.Empty,
@@ -33,12 +35,61 @@ public sealed class SearchPlanBuilder : ISearchPlanBuilder
                     [QueryTokenCatalog.EpisodeId] = episode.EpisodeNumber.ToString(),
                     [QueryTokenCatalog.EpisodePaddedId] = episode.EpisodeNumber.ToString("00"),
                     [QueryTokenCatalog.QualityId] = quality
-                }));
+                };
+                queries.Add(QueryTemplateRenderer.Render(template, values));
+
+                // Fansub releases write anime episodes zero-padded ("Kanata Kara - 06"); token search engines
+                // do not match "6" against "06", so also try the padded number (native-search P4).
+                if (animePadding && UsesToken(template, QueryTokenCatalog.EpisodeId))
+                {
+                    values[QueryTokenCatalog.EpisodeId] = episode.EpisodeNumber.ToString("00");
+                    padded.Add(QueryTemplateRenderer.Render(template, values));
+                }
             }
+        }
+
+        queries.AddRange(padded);
+        return QueryTemplateRenderer.Normalize(queries, RecipeRuntimeSettings.GetSanitizeQuery(queryModule));
+    }
+
+    public IReadOnlyList<string> BuildSeasonPackQueries(SearchRecipe recipe, TrackedShow show, IReadOnlyList<int> seasons)
+    {
+        var queryModule = GetModule(recipe, RecipeBlockType.QueryBuilder);
+        var templates = QueryTemplateSelection.SelectSearchPatterns(recipe, showLevelOnly: false)
+            .Where(template => (UsesToken(template, QueryTokenCatalog.SeasonId) || UsesToken(template, QueryTokenCatalog.SeasonPaddedId)) &&
+                               !UsesToken(template, QueryTokenCatalog.EpisodeId) &&
+                               !UsesToken(template, QueryTokenCatalog.EpisodePaddedId))
+            .ToList();
+        if (templates.Count == 0)
+        {
+            templates = ["{title} S{season:00}", "{title} season {season}"];
+        }
+
+        // Keep the request count reasonable: primary title plus one alternative per season and template.
+        var titles = ResolveTitles(recipe, show.Title, show.GetSearchableAlternativeTitles()).Take(2).ToList();
+        var qualities = QueryTokenCatalog.GetQualityValues(queryModule);
+        var queries = new List<string>();
+        foreach (var season in seasons.Where(season => season > 0).Distinct().Order())
+        foreach (var template in templates)
+        foreach (var title in TitlesFor(template, titles))
+        foreach (var quality in QualitiesFor(template, qualities))
+        {
+            queries.Add(QueryTemplateRenderer.Render(template, new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                [QueryTokenCatalog.TitleId] = title,
+                [QueryTokenCatalog.YearId] = show.FirstAirYear?.ToString() ?? string.Empty,
+                [QueryTokenCatalog.SeasonId] = season.ToString(),
+                [QueryTokenCatalog.SeasonPaddedId] = season.ToString("00"),
+                [QueryTokenCatalog.QualityId] = quality,
+                ["audio"] = string.Empty
+            }));
         }
 
         return QueryTemplateRenderer.Normalize(queries, RecipeRuntimeSettings.GetSanitizeQuery(queryModule));
     }
+
+    private static bool UsesToken(string template, string tokenId) =>
+        QueryTokenCatalog.Parse(template).Any(span => string.Equals(span.Id, tokenId, StringComparison.OrdinalIgnoreCase));
 
     public IReadOnlyList<string> BuildMovieQueries(SearchRecipe recipe, TrackedMovie movie)
     {

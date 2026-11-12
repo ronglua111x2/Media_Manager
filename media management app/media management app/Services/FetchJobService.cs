@@ -296,7 +296,8 @@ public sealed class FetchJobService : IFetchJobService
                 _progressService,
                 cancellationToken,
                 MediaKind.TvSeasonPack,
-                packRecipe.RecipeId);
+                packRecipe.RecipeId,
+                selectedSeasons);
             _progressService.Report(0, "Filtering results...");
             var packSummary = await MapSeasonPackCandidatesAsync(
                 show,
@@ -552,7 +553,59 @@ public sealed class FetchJobService : IFetchJobService
             .Select(RunWorkerAsync)
             .ToList();
         await Task.WhenAll(workers);
+
+        await SearchMissingSnapshotEpisodesAsync(show, targetEpisodes, recipe, results, statusChanged, overrides, cancellationToken);
         return results;
+    }
+
+    /// <summary>
+    /// native-search P4 / SRCH-03: the show-level snapshot query mostly returns recent or popular releases, so
+    /// episodes it did not cover get a targeted per-episode search (their recipe templates, e.g. "Show - 05").
+    /// Bounded so a long backlog cannot turn one hunt into dozens of searches.
+    /// </summary>
+    private async Task SearchMissingSnapshotEpisodesAsync(
+        TrackedShow show,
+        IReadOnlyList<TrackedEpisode> targetEpisodes,
+        SearchRecipe recipe,
+        Dictionary<long, IReadOnlyList<EpisodeFetchCandidate>> results,
+        Action<long, string>? statusChanged,
+        RecipeExecutionOverrides? overrides,
+        CancellationToken cancellationToken)
+    {
+        const int MaxTargetedEpisodes = 6;
+        var missing = targetEpisodes
+            .Where(episode => !results.TryGetValue(episode.Id, out var found) || found.Count == 0)
+            .Take(MaxTargetedEpisodes)
+            .ToList();
+        if (missing.Count == 0)
+        {
+            return;
+        }
+
+        _logger.Info(
+            $"Snapshot left {missing.Count} episode(s) of {show.DisplayTitle} without candidates; running targeted episode searches.",
+            LogTarget.All);
+        foreach (var episode in missing)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var label = $"{show.DisplayTitle} S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00}";
+            statusChanged?.Invoke(episode.Id, $"Targeted search for {label} (not in snapshot).");
+            var queries = _searchPlanBuilder.BuildEpisodeQueries(recipe, show, episode).ToList();
+            var summary = await SearchEpisodeCandidatesSequentialAsync(recipe, episode, show, queries, cancellationToken, overrides);
+            if (summary.Candidates.Count == 0)
+            {
+                continue;
+            }
+
+            results[episode.Id] = summary.Candidates;
+            lock (_gate)
+            {
+                _candidatesByEpisodeId[episode.Id] = summary.Candidates;
+                _searchRowsByEpisodeId[episode.Id] = summary.SearchResults.Count;
+            }
+
+            statusChanged?.Invoke(episode.Id, $"Matched {summary.Candidates.Count} candidate(s) for {label} (targeted search).");
+        }
     }
 
     private async Task<IReadOnlyList<TorrentSearchResult>> SearchManyAsync(IReadOnlyList<string> queries, CancellationToken cancellationToken)
@@ -663,7 +716,11 @@ public sealed class FetchJobService : IFetchJobService
         foreach (var query in plannedQueries)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var queryResults = await SearchSingleQueryAsync(recipe, query, cancellationToken);
+            var queryResults = await SearchSingleQueryAsync(
+                recipe,
+                query,
+                cancellationToken,
+                new SearchSubject(IsMovie: false, show.TmdbId, episode.SeasonNumber, episode.EpisodeNumber));
             completedQueries++;
             _progressService.Report(completedQueries, $"Search: Query {completedQueries}/{totalQueries}");
             _logger.Info(
@@ -760,14 +817,16 @@ public sealed class FetchJobService : IFetchJobService
     private Task<IReadOnlyList<TorrentSearchResult>> SearchSingleQueryAsync(
         SearchRecipe recipe,
         string query,
-        CancellationToken cancellationToken) =>
+        CancellationToken cancellationToken,
+        SearchSubject? subject = null) =>
         // native-search: Search.Backend decides between native indexers and the qBittorrent search.
         _nativeSearch.SearchOrFallbackAsync(
             recipe,
             query,
             MediaKind.TvEpisode,
             () => SearchSingleQueryQbittorrentAsync(recipe, query, cancellationToken),
-            cancellationToken);
+            cancellationToken,
+            subject);
 
     private async Task<IReadOnlyList<TorrentSearchResult>> SearchSingleQueryQbittorrentAsync(
         SearchRecipe recipe,

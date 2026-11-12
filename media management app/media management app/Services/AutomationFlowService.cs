@@ -100,7 +100,11 @@ public sealed class AutomationFlowService : IAutomationFlowService
                 _logger);
             var recipe = termGuard.Recipe;
             var queries = _searchPlanBuilder.BuildEpisodeQueries(recipe, show, episode);
-            var results = await SearchAsync(recipe, queries, cancellationToken);
+            var results = await SearchAsync(
+                recipe,
+                queries,
+                cancellationToken,
+                new SearchSubject(IsMovie: false, show.TmdbId, episode.SeasonNumber, episode.EpisodeNumber));
             _progressService.Report(0, "Filtering results...");
             var evaluated = results
                 .Select(result => _candidateEvaluationService.EvaluateEpisode(recipe, show, episode, result))
@@ -133,7 +137,7 @@ public sealed class AutomationFlowService : IAutomationFlowService
                 _logger);
             var recipe = termGuard.Recipe;
             var queries = _searchPlanBuilder.BuildMovieQueries(recipe, movie);
-            var results = await SearchAsync(recipe, queries, cancellationToken);
+            var results = await SearchAsync(recipe, queries, cancellationToken, new SearchSubject(IsMovie: true, movie.TmdbId));
             _progressService.Report(0, "Filtering results...");
             var evaluated = results
                 .Select(result => _candidateEvaluationService.EvaluateMovie(recipe, movie, result))
@@ -154,7 +158,8 @@ public sealed class AutomationFlowService : IAutomationFlowService
     private async Task<IReadOnlyList<TorrentSearchResult>> SearchAsync(
         SearchRecipe recipe,
         IReadOnlyList<string> queries,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        SearchSubject? subject = null)
     {
         var searchSource = recipe.Modules.FirstOrDefault(module => module.BlockType == RecipeBlockType.SearchSource && module.IsEnabled);
         var requestLimit = searchSource?.ResultLimit is > 0 ? searchSource.ResultLimit : 100;
@@ -235,7 +240,8 @@ public sealed class AutomationFlowService : IAutomationFlowService
                             TimeoutSeconds = timeoutSeconds,
                             RequestedEngineNames = requestedEngineNames
                         }, cancellationToken),
-                        cancellationToken);
+                        cancellationToken,
+                        subject);
                     var completed = Interlocked.Increment(ref completedQueries);
                     _progressService.Report(completed, $"Search: Query {completed}/{totalQueries}");
                     _logger.Info(
