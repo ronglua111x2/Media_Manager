@@ -6,10 +6,14 @@ namespace media_management_app.Services;
 
 public interface ISpecialMappingOrchestrator
 {
+    /// <param name="episodes">
+    /// Every tracked episode of the show. Season 0 is what specials map to; the air dates of the regular seasons
+    /// split it into per-season windows for the deterministic tier.
+    /// </param>
     Task<SpecialMappingResult> ResolveAsync(
         IReadOnlyList<(string RelativePath, string FileName)> files,
         PackFolderTreeAnalysis tree,
-        IReadOnlyList<TrackedEpisode> specialsEpisodes,
+        IReadOnlyList<TrackedEpisode> episodes,
         string showTitle,
         int tmdbId,
         string torrentHash,
@@ -41,7 +45,7 @@ public sealed class SpecialMappingOrchestrator : ISpecialMappingOrchestrator
     public async Task<SpecialMappingResult> ResolveAsync(
         IReadOnlyList<(string RelativePath, string FileName)> files,
         PackFolderTreeAnalysis tree,
-        IReadOnlyList<TrackedEpisode> specialsEpisodes,
+        IReadOnlyList<TrackedEpisode> episodes,
         string showTitle,
         int tmdbId,
         string torrentHash,
@@ -56,7 +60,8 @@ public sealed class SpecialMappingOrchestrator : ISpecialMappingOrchestrator
             PackLinkProgressStatus.Active,
             "Scanning pack for special/OVA candidates...");
 
-        var request = PackSpecialPayloadBuilder.Build(files, tree, specialsEpisodes, showTitle, tmdbId);
+        var (specialsEpisodes, regularEpisodes) = SplitEpisodes(episodes);
+        var request = PackSpecialPayloadBuilder.Build(files, tree, specialsEpisodes, showTitle, tmdbId, regularEpisodes);
         if (request.Context.CandidateCount == 0)
         {
             PackLinkProgressReporter.Report(
@@ -155,12 +160,13 @@ public sealed class SpecialMappingOrchestrator : ISpecialMappingOrchestrator
     public static SpecialMappingResult ResolveOffline(
         IReadOnlyList<(string RelativePath, string FileName)> files,
         PackFolderTreeAnalysis tree,
-        IReadOnlyList<TrackedEpisode> specialsEpisodes,
+        IReadOnlyList<TrackedEpisode> episodes,
         string showTitle,
         int tmdbId,
         string? fallbackReason)
     {
-        var request = PackSpecialPayloadBuilder.Build(files, tree, specialsEpisodes, showTitle, tmdbId);
+        var (specialsEpisodes, regularEpisodes) = SplitEpisodes(episodes);
+        var request = PackSpecialPayloadBuilder.Build(files, tree, specialsEpisodes, showTitle, tmdbId, regularEpisodes);
         if (request.Context.CandidateCount == 0)
         {
             var empty = new SpecialMappingResult();
@@ -182,6 +188,11 @@ public sealed class SpecialMappingOrchestrator : ISpecialMappingOrchestrator
             ? result
             : result.WithReview([FallbackWarning(fallbackReason)], fallbackReason);
     }
+
+    private static (IReadOnlyList<TrackedEpisode> Specials, IReadOnlyList<TrackedEpisode> Regular) SplitEpisodes(
+        IReadOnlyList<TrackedEpisode> episodes) =>
+        (episodes.Where(episode => episode.SeasonNumber == AppConstants.SpecialsSeasonNumber).ToList(),
+         episodes.Where(episode => episode.SeasonNumber > 0).ToList());
 
     private static string FallbackWarning(string fallbackReason) =>
         $"{fallbackReason.TrimEnd('.')}. Special/OVA files use rule mappings instead; check them before linking.";

@@ -11,6 +11,12 @@ public sealed class SpecialMappingItem
     public SpecialMappingProposalReason? ProposalReason { get; init; }
 
     public string Reason { get; init; } = string.Empty;
+
+    /// <summary>The file's own title matches the mapped TMDB title.</summary>
+    public bool TitleConfirmed { get; init; }
+
+    /// <summary>A rule guess for an unmapped file (k-th → k-th of an inexact season window). Shown in review, never linked.</summary>
+    public TrackedEpisode? SuggestedEpisode { get; init; }
 }
 
 public sealed class SpecialMappingResult

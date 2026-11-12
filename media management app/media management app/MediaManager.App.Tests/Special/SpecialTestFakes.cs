@@ -118,7 +118,7 @@ internal sealed class SpecialOrchestratorHost : IDisposable
         return Orchestrator.ResolveAsync(
             pack.Files,
             tree,
-            pack.Specials,
+            pack.Episodes,
             pack.ShowTitle,
             pack.TmdbId,
             "hash-" + pack.Name,

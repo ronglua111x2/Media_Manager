@@ -554,6 +554,9 @@ public static class SpecialMappingCompactJson
         SpecialMappingProposalReason.Flatten => "flatten",
         SpecialMappingProposalReason.Title => "title",
         SpecialMappingProposalReason.Ordinal => "ordinal",
+        SpecialMappingProposalReason.Window => "window",
+        SpecialMappingProposalReason.Inferred => "inferred",
+        SpecialMappingProposalReason.OvaNumber => "ova",
         _ => "none"
     };
 }

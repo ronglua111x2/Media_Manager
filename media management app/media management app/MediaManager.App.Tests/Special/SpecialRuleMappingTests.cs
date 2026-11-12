@@ -10,7 +10,7 @@ namespace MediaManager.App.Tests.Special;
 /// </summary>
 public class SpecialRuleMappingTests
 {
-    [Fact(Skip = "PARSE-09")]
+    [Fact]
     public async Task TwoSeasonPack_RulesOnly_SeasonOneResolvedSeasonTwoLeftForReview()
     {
         var pack = SpecialCases.TwoSeasonBrassPack();
@@ -30,7 +30,7 @@ public class SpecialRuleMappingTests
     }
 
     /// <summary>Report 10.4: the strict tier never auto-applies a wrong pair on any of the eight layouts.</summary>
-    [Theory(Skip = "PARSE-09")]
+    [Theory]
     [MemberData(nameof(SpecialCases.GeneralisationNames), MemberType = typeof(SpecialCases))]
     public async Task Generalisation_RulesOnly_NeverMapsAFileToTheWrongSpecial(string name)
     {
@@ -48,7 +48,7 @@ public class SpecialRuleMappingTests
     }
 
     /// <summary>Layouts the strict tier must resolve completely (report 10.4, column "Tầng 1 chặt").</summary>
-    [Theory(Skip = "PARSE-09")]
+    [Theory]
     [InlineData("archive-s1-ovas")]
     [InlineData("club-ova-per-season")]
     public async Task Generalisation_RulesOnly_ExactCountBlocksResolveCompletely(string name)
@@ -77,7 +77,7 @@ public class SpecialRuleMappingTests
     }
 
     /// <summary>Scenario I: a recap aired before season 1 is not in the pack, so season 1's block is not exact.</summary>
-    [Fact(Skip = "PARSE-09")]
+    [Fact]
     public async Task RecapBeforeSeasonOne_RulesOnly_OnlyTheExactBlockResolves()
     {
         var pack = SpecialCases.RecapBeforeSeasonOne();
@@ -88,7 +88,7 @@ public class SpecialRuleMappingTests
         Assert.Equal(new Dictionary<string, int> { ["Show/Season 2/Show.S02S01.mkv"] = 3 }, Mapped(result));
     }
 
-    [Fact(Skip = "PARSE-09")]
+    [Fact]
     public async Task Prepare_RulesOnlyMapping_RequiresReview()
     {
         var pack = SpecialCases.TwoSeasonBrassPack();
@@ -100,7 +100,7 @@ public class SpecialRuleMappingTests
         Assert.True(preview.RequiresReview);
     }
 
-    [Fact(Skip = "PARSE-09")]
+    [Fact]
     public async Task Prepare_DirectS00EWithoutTitle_RequiresReview()
     {
         var pack = DirectPack("Quiet Club/Specials/Quiet Club - S00E02.mkv");
@@ -127,7 +127,7 @@ public class SpecialRuleMappingTests
     }
 
     /// <summary>SPEC-02: "OVA - 01" is the first OVA, not TMDB S00E01 (here a recap).</summary>
-    [Fact(Skip = "PARSE-18")]
+    [Fact]
     public async Task OvaDash_NumberIsNotTheTmdbEpisode_NotMapped()
     {
         var pack = OvaDashPack(("Recap Special", "Promotional Video"));
@@ -151,7 +151,7 @@ public class SpecialRuleMappingTests
     }
 
     /// <summary>SPEC-03: the only shared tokens are "the" and "of".</summary>
-    [Fact(Skip = "PARSE-19")]
+    [Fact]
     public async Task TitleMatcher_StopwordsOnly_DoesNotMatch()
     {
         var pack = new SpecialShowBuilder("The Rise of the Lantern Knight", 900020)
@@ -168,7 +168,7 @@ public class SpecialRuleMappingTests
         Assert.Empty(Mapped(result));
     }
 
-    [Fact(Skip = "PARSE-19")]
+    [Fact]
     public void TitleMatcher_StopwordsAndShowNameOnly_ReturnsNull()
     {
         var specials = new List<TrackedEpisode>
@@ -182,7 +182,7 @@ public class SpecialRuleMappingTests
         Assert.Null(SpecialEpisodeTitleMatcher.TryMatch(parsed, specials, new HashSet<int>()));
     }
 
-    [Fact(Skip = "PARSE-19")]
+    [Fact]
     public void TitleMatcher_TwoEntriesScoreTheSame_PicksNone()
     {
         var pack = SpecialCases.BrassShow().Build("brass", "titles only");
@@ -193,7 +193,7 @@ public class SpecialRuleMappingTests
     }
 
     /// <summary>A descriptive special in a root Specials folder of a multi-season show: no block, only its title.</summary>
-    [Fact(Skip = "PARSE-19")]
+    [Fact]
     public async Task TitleMatcher_OpaqueFileWithTmdbTitle_Matched()
     {
         var pack = new SpecialShowBuilder("Quiet Club", 900008)

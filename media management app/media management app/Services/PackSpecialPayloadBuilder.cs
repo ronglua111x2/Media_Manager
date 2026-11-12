@@ -10,20 +10,31 @@ public static class PackSpecialPayloadBuilder
         @"\bS00E(?<episode>\d{1,4})\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    private static readonly Regex OvaWordRegex = new(
+        @"\b(?:OVA|OAD)s?\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    /// <param name="regularEpisodes">
+    /// Episodes of the regular seasons. Their air dates split TMDB Season 0 into per-season windows for the
+    /// deterministic tier; without them that tier is skipped.
+    /// </param>
     public static SpecialMappingAIRequest Build(
         IReadOnlyList<(string RelativePath, string FileName)> files,
         PackFolderTreeAnalysis tree,
         IReadOnlyList<TrackedEpisode> specialsEpisodes,
         string showTitle,
-        int tmdbId)
+        int tmdbId,
+        IReadOnlyList<TrackedEpisode>? regularEpisodes = null)
     {
         var context = BuildContext(files, tree, specialsEpisodes, showTitle, tmdbId);
-        var proposals = BuildProposals(context, specialsEpisodes);
+        var tier = BuildProposals(context, specialsEpisodes, regularEpisodes ?? []);
         return new SpecialMappingAIRequest
         {
             Context = context,
-            Proposals = proposals,
-            Task = "finalize"
+            Proposals = tier.Proposals,
+            Task = "finalize",
+            Suggestions = tier.Suggestions,
+            UnresolvedReasons = tier.UnresolvedReasons
         };
     }
 
@@ -63,21 +74,30 @@ public static class PackSpecialPayloadBuilder
             }
 
             claimed.Add(episode.EpisodeNumber);
+            var titleConfirmed = SpecialEpisodeTitleMatcher.Confirms(candidate.FileName, request.Context.ShowTitle, episode);
             items.Add(new SpecialMappingItem
             {
                 RelativePath = candidate.RelativePath,
                 Episode = episode,
                 Source = source,
                 ProposalReason = proposal.Reason,
-                Reason = BuildReason(proposal.Reason, episode, source)
+                Reason = BuildReason(proposal.Reason, episode, source, titleConfirmed),
+                TitleConfirmed = titleConfirmed
             });
         }
 
-        foreach (var candidate in request.Context.Candidates)
+        for (var index = 0; index < request.Context.Candidates.Count; index++)
         {
+            var candidate = request.Context.Candidates[index];
             if (items.Any(item => string.Equals(item.RelativePath, candidate.RelativePath, StringComparison.OrdinalIgnoreCase)))
             {
                 continue;
+            }
+
+            request.Suggestions.TryGetValue(index, out var suggestion);
+            if (suggestion is not null && claimed.Contains(suggestion.EpisodeNumber))
+            {
+                suggestion = null;
             }
 
             items.Add(new SpecialMappingItem
@@ -86,7 +106,8 @@ public static class PackSpecialPayloadBuilder
                 Episode = null,
                 Source = source,
                 ProposalReason = SpecialMappingProposalReason.None,
-                Reason = "No proposal generated for special/OVA file."
+                Reason = BuildUnmappedReason(request.UnresolvedReasons.GetValueOrDefault(index), suggestion),
+                SuggestedEpisode = suggestion
             });
         }
 
@@ -263,23 +284,50 @@ public static class PackSpecialPayloadBuilder
         };
     }
 
-    private static IReadOnlyList<SpecialMappingProposal> BuildProposals(
+    /// <summary>
+    /// The deterministic tier, in order: <c>S00Exx</c> in the file name (Direct), the season air-date window
+    /// (exact-count blocks only), <c>OVA - N</c> when TMDB S00EN is titled OVA N, then the title matcher for any
+    /// file. The old global Flatten and whole-pack Ordinal rules are gone (PARSE-09): what the window mapper cannot
+    /// place exactly is only suggested for review and left for Gemini.
+    /// </summary>
+    private static (
+        IReadOnlyList<SpecialMappingProposal> Proposals,
+        IReadOnlyDictionary<int, TrackedEpisode> Suggestions,
+        IReadOnlyDictionary<int, string> UnresolvedReasons) BuildProposals(
         SpecialMappingContext context,
-        IReadOnlyList<TrackedEpisode> specialsEpisodes)
+        IReadOnlyList<TrackedEpisode> specialsEpisodes,
+        IReadOnlyList<TrackedEpisode> regularEpisodes)
     {
+        var noSuggestions = new Dictionary<int, TrackedEpisode>();
+        var noReasons = new Dictionary<int, string>();
         if (context.Candidates.Count == 0)
         {
-            return [];
+            return ([], noSuggestions, noReasons);
         }
 
+        var specials = specialsEpisodes
+            .Where(episode => episode.SeasonNumber == AppConstants.SpecialsSeasonNumber)
+            .OrderBy(episode => episode.EpisodeNumber)
+            .ToList();
+        var specialsByNumber = specials
+            .GroupBy(episode => episode.EpisodeNumber)
+            .ToDictionary(group => group.Key, group => group.First());
         var proposals = new List<SpecialMappingProposal>();
         var claimed = new HashSet<int>();
-        var tmdbOrdered = specialsEpisodes
-            .Where(episode => episode.SeasonNumber == AppConstants.SpecialsSeasonNumber)
-            .OrderBy(episode => episode.AirDate ?? DateTime.MaxValue)
-            .ThenBy(episode => episode.EpisodeNumber)
-            .ToList();
         var proposedCandidates = new HashSet<int>();
+        var unresolved = new Dictionary<int, string>();
+
+        void Propose(int candidateIndex, int episodeNumber, SpecialMappingProposalReason reason)
+        {
+            claimed.Add(episodeNumber);
+            proposedCandidates.Add(candidateIndex);
+            proposals.Add(new SpecialMappingProposal
+            {
+                CandidateIndex = candidateIndex,
+                ProposedS00E = episodeNumber,
+                Reason = reason
+            });
+        }
 
         for (var index = 0; index < context.Candidates.Count; index++)
         {
@@ -290,51 +338,50 @@ public static class PackSpecialPayloadBuilder
             }
 
             var directEpisode = TryGetDirectS00E(candidate);
-            if (directEpisode is null || claimed.Contains(directEpisode.Value))
+            if (directEpisode is null)
             {
                 continue;
             }
 
-            claimed.Add(directEpisode.Value);
-            proposedCandidates.Add(index);
-            proposals.Add(new SpecialMappingProposal
+            if (!specialsByNumber.ContainsKey(directEpisode.Value))
             {
-                CandidateIndex = index,
-                ProposedS00E = directEpisode.Value,
-                Reason = SpecialMappingProposalReason.Direct
-            });
+                unresolved[index] = $"File name says S00E{directEpisode.Value:00}, which is not in TMDB Season 0.";
+                continue;
+            }
+
+            if (claimed.Contains(directEpisode.Value))
+            {
+                unresolved[index] = $"File name says S00E{directEpisode.Value:00}, which another file already claims.";
+                continue;
+            }
+
+            Propose(index, directEpisode.Value, SpecialMappingProposalReason.Direct);
         }
 
-        var flattenCandidates = context.Candidates
-            .Select((candidate, index) => (candidate, index))
-            .Where(item => item.candidate.NamingPattern == SpecialMappingNamingPattern.SnSnn)
-            .Where(item => !proposedCandidates.Contains(item.index))
-            .OrderBy(item => item.candidate.GlobalSortOrder)
-            .ToList();
-
-        var flattenCursor = 0;
-        foreach (var (_, index) in flattenCandidates)
+        var blocks = SpecialSeasonWindowMapper.BuildBlocks(regularEpisodes, specials);
+        var window = SpecialSeasonWindowMapper.Map(context.Candidates, blocks, proposedCandidates, claimed);
+        foreach (var assignment in window.Assignments)
         {
-            while (flattenCursor < tmdbOrdered.Count && claimed.Contains(tmdbOrdered[flattenCursor].EpisodeNumber))
+            Propose(
+                assignment.CandidateIndex,
+                assignment.Episode.EpisodeNumber,
+                assignment.IsInferred ? SpecialMappingProposalReason.Inferred : SpecialMappingProposalReason.Window);
+        }
+
+        for (var index = 0; index < context.Candidates.Count; index++)
+        {
+            var candidate = context.Candidates[index];
+            if (proposedCandidates.Contains(index) ||
+                candidate.NamingPattern != SpecialMappingNamingPattern.OvaDash ||
+                candidate.LocalIndex <= 0 ||
+                claimed.Contains(candidate.LocalIndex) ||
+                !specialsByNumber.TryGetValue(candidate.LocalIndex, out var ovaEpisode) ||
+                !TitleNamesOva(ovaEpisode.Title, candidate.LocalIndex))
             {
-                flattenCursor++;
+                continue;
             }
 
-            if (flattenCursor >= tmdbOrdered.Count)
-            {
-                break;
-            }
-
-            var episode = tmdbOrdered[flattenCursor];
-            claimed.Add(episode.EpisodeNumber);
-            proposedCandidates.Add(index);
-            proposals.Add(new SpecialMappingProposal
-            {
-                CandidateIndex = index,
-                ProposedS00E = episode.EpisodeNumber,
-                Reason = SpecialMappingProposalReason.Flatten
-            });
-            flattenCursor++;
+            Propose(index, candidate.LocalIndex, SpecialMappingProposalReason.OvaNumber);
         }
 
         for (var index = 0; index < context.Candidates.Count; index++)
@@ -345,103 +392,37 @@ public static class PackSpecialPayloadBuilder
             }
 
             var candidate = context.Candidates[index];
-            if (candidate.NamingPattern != SpecialMappingNamingPattern.OvaDash)
+            var titleMatch = SpecialEpisodeTitleMatcher.TryMatch(candidate.FileName, context.ShowTitle, specials, claimed);
+            if (titleMatch is not null)
             {
-                continue;
+                Propose(index, titleMatch.EpisodeNumber, SpecialMappingProposalReason.Title);
             }
-
-            var localEpisode = candidate.LocalIndex;
-            if (localEpisode <= 0 || claimed.Contains(localEpisode))
-            {
-                continue;
-            }
-
-            if (tmdbOrdered.All(episode => episode.EpisodeNumber != localEpisode))
-            {
-                continue;
-            }
-
-            claimed.Add(localEpisode);
-            proposedCandidates.Add(index);
-            proposals.Add(new SpecialMappingProposal
-            {
-                CandidateIndex = index,
-                ProposedS00E = localEpisode,
-                Reason = SpecialMappingProposalReason.Direct
-            });
         }
 
-        var titleCandidates = specialsEpisodes
-            .Where(episode => episode.SeasonNumber == AppConstants.SpecialsSeasonNumber)
-            .OrderBy(episode => episode.EpisodeNumber)
-            .ToList();
-
-        for (var index = 0; index < context.Candidates.Count; index++)
+        var suggestions = window.Suggestions
+            .Where(pair => !proposedCandidates.Contains(pair.Key) && !claimed.Contains(pair.Value.EpisodeNumber))
+            .ToDictionary(pair => pair.Key, pair => pair.Value);
+        foreach (var (index, reason) in window.UnresolvedReasons)
         {
-            if (proposedCandidates.Contains(index))
+            if (!proposedCandidates.Contains(index))
             {
-                continue;
+                unresolved.TryAdd(index, reason);
             }
-
-            var candidate = context.Candidates[index];
-            if (candidate.NamingPattern is SpecialMappingNamingPattern.SnSnn or SpecialMappingNamingPattern.Opaque)
-            {
-                continue;
-            }
-
-            var parsed = TorrentCandidateParser.Parse(candidate.FileName, candidate.RelativePath);
-            var titleMatch = SpecialEpisodeTitleMatcher.TryMatch(parsed, titleCandidates, claimed);
-            if (titleMatch is null)
-            {
-                continue;
-            }
-
-            claimed.Add(titleMatch.EpisodeNumber);
-            proposedCandidates.Add(index);
-            proposals.Add(new SpecialMappingProposal
-            {
-                CandidateIndex = index,
-                ProposedS00E = titleMatch.EpisodeNumber,
-                Reason = SpecialMappingProposalReason.Title
-            });
         }
 
-        if (context.CandidateCount == context.TmdbSpecialCount)
+        foreach (var index in proposedCandidates)
         {
-            var remaining = context.Candidates
-                .Select((candidate, candidateIndex) => (candidate, candidateIndex))
-                .Where(item => !proposedCandidates.Contains(item.candidateIndex))
-                .OrderBy(item => item.candidate.GlobalSortOrder)
-                .ToList();
-
-            var ordinalCursor = 0;
-            foreach (var (_, candidateIndex) in remaining)
-            {
-                while (ordinalCursor < tmdbOrdered.Count && claimed.Contains(tmdbOrdered[ordinalCursor].EpisodeNumber))
-                {
-                    ordinalCursor++;
-                }
-
-                if (ordinalCursor >= tmdbOrdered.Count)
-                {
-                    break;
-                }
-
-                var episode = tmdbOrdered[ordinalCursor];
-                claimed.Add(episode.EpisodeNumber);
-                proposedCandidates.Add(candidateIndex);
-                proposals.Add(new SpecialMappingProposal
-                {
-                    CandidateIndex = candidateIndex,
-                    ProposedS00E = episode.EpisodeNumber,
-                    Reason = SpecialMappingProposalReason.Ordinal
-                });
-                ordinalCursor++;
-            }
+            unresolved.Remove(index);
         }
 
-        return proposals;
+        return (proposals, suggestions, unresolved);
     }
+
+    /// <summary>TMDB title such as "OVA 2: Beach Day" or "OAD #2" for OVA number <paramref name="ovaNumber"/>.</summary>
+    private static bool TitleNamesOva(string? title, int ovaNumber) =>
+        !string.IsNullOrWhiteSpace(title) &&
+        OvaWordRegex.IsMatch(title) &&
+        Regex.IsMatch(title, $@"(?<!\d)0*{ovaNumber}(?!\d)");
 
     private static (int LocalIndex, int? ParentSeason, SpecialMappingNamingPattern NamingPattern) BuildCandidateMetadata(
         string relativePath,
@@ -451,7 +432,7 @@ public static class PackSpecialPayloadBuilder
     {
         var parsed = TorrentCandidateParser.Parse(fileName, relativePath);
         var stem = Path.GetFileNameWithoutExtension(fileName);
-        var namingPattern = DetectNamingPattern(parsed, pattern);
+        var namingPattern = DetectNamingPattern(parsed, stem, pattern);
         var localIndex = namingPattern switch
         {
             SpecialMappingNamingPattern.SnSnn => parsed.ReleaseSpecialIndex ?? 0,
@@ -466,16 +447,22 @@ public static class PackSpecialPayloadBuilder
         return (localIndex, bucket.ParentSeasonNumber ?? parsed.ReleaseSeasonHint, namingPattern);
     }
 
+    /// <summary>
+    /// Naming style of one file. The bucket style (decided by half of its files) only applies to a file that
+    /// itself has that shape, so one odd file does not inherit "OVA - N" or "S00Exx" from its neighbours (note R8).
+    /// </summary>
     private static SpecialMappingNamingPattern DetectNamingPattern(
         TorrentCandidateParseResult parsed,
+        string stem,
         InferredSpecialPattern pattern)
     {
-        if (pattern.Style == InferredSpecialNamingStyle.StandardS00E)
+        if (pattern.Style == InferredSpecialNamingStyle.StandardS00E && TryGetDirectS00EFromStem(stem) is not null)
         {
             return SpecialMappingNamingPattern.StandardS00E;
         }
 
-        if (pattern.Style == InferredSpecialNamingStyle.OvaDashNumber)
+        if (pattern.Style == InferredSpecialNamingStyle.OvaDashNumber &&
+            PackSpecialPatternInferrer.TryExtractIndex(stem, pattern) is not null)
         {
             return SpecialMappingNamingPattern.OvaDash;
         }
@@ -565,16 +552,31 @@ public static class PackSpecialPayloadBuilder
     private static string BuildReason(
         SpecialMappingProposalReason reason,
         TrackedEpisode episode,
-        SpecialMappingSource source)
+        SpecialMappingSource source,
+        bool titleConfirmed)
     {
         var prefix = source == SpecialMappingSource.Gemini ? "Gemini" : "Rule proposal";
+        var code = $"S00E{episode.EpisodeNumber:00}";
         return reason switch
         {
-            SpecialMappingProposalReason.Direct => $"{prefix}: direct S00E{episode.EpisodeNumber:00}.",
-            SpecialMappingProposalReason.Flatten => $"{prefix}: global flatten to S00E{episode.EpisodeNumber:00}.",
-            SpecialMappingProposalReason.Title => $"{prefix}: title match to S00E{episode.EpisodeNumber:00}.",
-            SpecialMappingProposalReason.Ordinal => $"{prefix}: ordinal to S00E{episode.EpisodeNumber:00}.",
-            _ => $"{prefix}: mapped to S00E{episode.EpisodeNumber:00}."
+            SpecialMappingProposalReason.Direct => titleConfirmed
+                ? $"{prefix}: {code} in the file name, title matches TMDB."
+                : $"{prefix}: {code} in the file name; no title to confirm it (release numbering may differ from TMDB).",
+            SpecialMappingProposalReason.Window => $"{prefix}: special number in its season's air-date window → {code}.",
+            SpecialMappingProposalReason.Inferred => $"{prefix}: the only unnumbered special of its season took the only free slot → {code} (inferred).",
+            SpecialMappingProposalReason.OvaNumber => $"{prefix}: OVA number matches the TMDB title of {code}.",
+            SpecialMappingProposalReason.Flatten => $"{prefix}: global flatten to {code}.",
+            SpecialMappingProposalReason.Title => $"{prefix}: title match to {code}.",
+            SpecialMappingProposalReason.Ordinal => $"{prefix}: ordinal to {code}.",
+            _ => $"{prefix}: mapped to {code}."
         };
+    }
+
+    private static string BuildUnmappedReason(string? unresolvedReason, TrackedEpisode? suggestion)
+    {
+        var reason = unresolvedReason ?? "No rule could place this special/OVA file.";
+        return suggestion is null
+            ? reason
+            : $"{reason} Suggestion (not applied): S00E{suggestion.EpisodeNumber:00} '{suggestion.Title}'.";
     }
 }
