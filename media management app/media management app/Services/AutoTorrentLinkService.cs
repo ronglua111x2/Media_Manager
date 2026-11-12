@@ -784,6 +784,18 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
 
             await Task.Run(() =>
             {
+                var releasedAnyLink = false;
+                var blockedByAnotherFile = new List<(Func<SourceItem> Create, string SkipMessage)>();
+                void LinkPackItem(Func<SourceItem> create)
+                {
+                    var attempt = LinkSourceItem(create(), result, index);
+                    releasedAnyLink |= attempt.ReleasedOldLink;
+                    if (attempt.SkippedAsDuplicate)
+                    {
+                        blockedByAnotherFile.Add((create, attempt.DuplicateSkipMessage!));
+                    }
+                }
+
                 foreach (var entry in inventory.Files.Where(file => file.Classification == PackFileClassification.Movie))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
@@ -820,16 +832,15 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
                                                                         episodesByKey.TryGetValue(
                                                                             (entry.MatchedSeasonNumber.Value, entry.MatchedEpisodeNumber.Value),
                                                                             out var specialEpisode):
-                            LinkSourceItem(
-                                CreateEpisodeSourceItem(
-                                    show,
-                                    specialEpisode,
-                                    torrent,
-                                    sourcePath,
-                                    AutoTorrentLinkKind.SeasonPack,
-                                    ownerSeason.SeasonNumber),
-                                result,
-                                index);
+                            var special = specialEpisode;
+                            var specialPath = sourcePath;
+                            LinkPackItem(() => CreateEpisodeSourceItem(
+                                show,
+                                special,
+                                torrent,
+                                specialPath,
+                                AutoTorrentLinkKind.SeasonPack,
+                                ownerSeason.SeasonNumber));
                             specialsMatched++;
                             break;
                         case PackFileClassification.RegularEpisode when entry.MatchedSeasonNumber is not null &&
@@ -837,17 +848,46 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
                                                                           episodesByKey.TryGetValue(
                                                                               (entry.MatchedSeasonNumber.Value, entry.MatchedEpisodeNumber.Value),
                                                                               out var episode):
-                            var regularItem = CreateEpisodeSourceItem(
-                                show,
-                                episode,
-                                torrent,
-                                sourcePath,
-                                AutoTorrentLinkKind.SeasonPack,
-                                ownerSeason.SeasonNumber);
-                            regularItem.LastEpisodeNumber = entry.MatchedLastEpisodeNumber;
-                            LinkSourceItem(regularItem, result, index);
+                            var regular = episode;
+                            var regularPath = sourcePath;
+                            var lastEpisode = entry.MatchedLastEpisodeNumber;
+                            LinkPackItem(() =>
+                            {
+                                var regularItem = CreateEpisodeSourceItem(
+                                    show,
+                                    regular,
+                                    torrent,
+                                    regularPath,
+                                    AutoTorrentLinkKind.SeasonPack,
+                                    ownerSeason.SeasonNumber);
+                                regularItem.LastEpisodeNumber = lastEpisode;
+                                return regularItem;
+                            });
                             regularLinked++;
                             break;
+                    }
+                }
+
+                // Two files that swap episodes on re-link: the first was skipped because the second still held
+                // its new episode, and the second then moved away. Retry those once the pass is done (audit L3-06).
+                if (releasedAnyLink)
+                {
+                    foreach (var (create, skipMessage) in blockedByAnotherFile)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        var linkedBefore = result.LinkedCount;
+                        var retry = LinkSourceItem(create(), result, index);
+                        if (result.LinkedCount > linkedBefore)
+                        {
+                            result.SkippedCount--;
+                            result.Messages.Remove(skipMessage);
+                        }
+                        else if (retry.SkippedAsDuplicate)
+                        {
+                            // Still provided by another file: keep the first message only.
+                            result.SkippedCount--;
+                            result.Messages.RemoveAt(result.Messages.LastIndexOf(retry.DuplicateSkipMessage!));
+                        }
                     }
                 }
             }, cancellationToken);
@@ -930,7 +970,13 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
         };
     }
 
-    private void LinkSourceItem(
+    /// <summary>What <see cref="LinkSourceItem"/> did; a pack re-link uses it to retry files that a swap blocked.</summary>
+    private readonly record struct LinkAttempt(bool ReleasedOldLink, string? DuplicateSkipMessage)
+    {
+        public bool SkippedAsDuplicate => DuplicateSkipMessage is not null;
+    }
+
+    private LinkAttempt LinkSourceItem(
         SourceItem sourceItem,
         AutoTorrentLinkResult result,
         SourceItemPathIndex? index = null)
@@ -949,14 +995,14 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
                 _databaseService.UpdateSourceItem(existingItem);
                 index?.Replace(existingItem);
                 AddSkip(result, $"{sourceItem.DisplayTitle}: already linked.");
-                return;
+                return default;
             }
 
             // The same file now maps to another episode, or flips between special and orphan
             // extra: replace the old link instead of keeping it (PARSE-12, PARSE-24).
             if (!TryReleaseChangedLink(existingItem, sourceItem, result, index))
             {
-                return;
+                return default;
             }
 
             releasedChangedLink = true;
@@ -971,8 +1017,9 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
                 PersistUnlinkedMapping(sourceItem, index, $"Episode already linked from {otherItem.FileName}.");
             }
 
-            AddSkip(result, $"{sourceItem.DisplayTitle}: already linked from {otherItem.FileName}; skipped {sourceItem.FileName}.");
-            return;
+            var skipMessage = $"{sourceItem.DisplayTitle}: already linked from {otherItem.FileName}; skipped {sourceItem.FileName}.";
+            AddSkip(result, skipMessage);
+            return new LinkAttempt(releasedChangedLink, skipMessage);
         }
 
         if (partialOverlap is not null)
@@ -991,7 +1038,7 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             _eventHub.PublishHardlinkCreated(sourceItem, linkedPath!);
             result.LinkedCount++;
             result.Messages.Add($"Linked {sourceItem.FileName}");
-            return;
+            return new LinkAttempt(releasedChangedLink, null);
         }
 
         if (releasedChangedLink)
@@ -1001,6 +1048,7 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
 
         result.ErrorCount++;
         result.Messages.Add($"{sourceItem.FileName}: {errorMessage}");
+        return new LinkAttempt(releasedChangedLink, null);
     }
 
     /// <summary>

@@ -241,6 +241,30 @@ public sealed class LinkStateScenarioTests : IDisposable
         Assert.Equal(0, relink.ErrorCount);
     }
 
+    // Audit L3-06: a corrected mapping swaps two files' episodes; both must end up linked under the new numbers.
+    [Fact]
+    public async Task PackRelink_TwoFilesSwapEpisodes_BothLinkedUnderTheirNewEpisodes()
+    {
+        _host.FollowHardlinkRemovals();
+        var showId = PackShow("HSWP", 5034, "Pack/Demo.Part.A.mkv", "Pack/Demo.Part.B.mkv");
+        await _host.ApplyPackAsync(showId, 1,
+            ("Pack/Demo.Part.A.mkv", PackFileClassification.RegularEpisode, 1, 1),
+            ("Pack/Demo.Part.B.mkv", PackFileClassification.RegularEpisode, 1, 2));
+
+        var result = await _host.ApplyPackAsync(showId, 1,
+            ("Pack/Demo.Part.A.mkv", PackFileClassification.RegularEpisode, 1, 2),
+            ("Pack/Demo.Part.B.mkv", PackFileClassification.RegularEpisode, 1, 1));
+
+        Assert.Equal(0, result.ErrorCount);
+        Assert.DoesNotContain(result.Messages, message => message.Contains("already linked from", StringComparison.Ordinal));
+        var items = _host.Items().ToDictionary(item => item.FileName, item => item);
+        Assert.Equal(2, items["Demo.Part.A.mkv"].EpisodeNumber);
+        Assert.Equal(1, items["Demo.Part.B.mkv"].EpisodeNumber);
+        Assert.All(items.Values, item => Assert.True(item.State == ItemState.Linked && File.Exists(item.LinkedPath)));
+        Assert.Equal(EpisodeAvailability.Available, _host.Availability(showId, 1, 1));
+        Assert.Equal(EpisodeAvailability.Available, _host.Availability(showId, 1, 2));
+    }
+
     // Audit L3-02: a reset while the library drive is offline must not drop the record of a file that is still there.
     [Fact]
     public void ResetEpisode_WhenLibraryIsOffline_AbortsAndKeepsTheRecord()
