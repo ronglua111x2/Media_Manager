@@ -59,14 +59,15 @@ public static class IndexerResultNormalizer
     public static TorrentSearchResult ToSearchResult(IndexerResult row, string engineName)
     {
         var hash = IsValidInfoHash(row.InfoHash) ? row.InfoHash!.ToLowerInvariant() : CandidateDeduplicator.TryGetInfoHash(row.MagnetUri);
+        var title = MojibakeRepair.Fix(row.Title);
         var url = !string.IsNullOrWhiteSpace(row.MagnetUri)
             ? row.MagnetUri!
             : hash is not null
-                ? BuildMagnet(hash, row.Title)
+                ? BuildMagnet(hash, title)
                 : row.TorrentUrl ?? row.DetailsUrl ?? string.Empty;
         return new TorrentSearchResult
         {
-            FileName = row.Title,
+            FileName = title,
             FileSize = row.SizeBytes,
             FileUrl = url,
             DescriptionUrl = row.DetailsUrl ?? string.Empty,

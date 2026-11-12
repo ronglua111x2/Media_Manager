@@ -60,6 +60,7 @@
 | NS-29 | Thấp | P | TsukiHime không đọc `is_adult` | R | Chưa |
 | NS-30 | Thấp | nhiều | Các lỗi nhỏ khác, xem mục 3 | R | Chưa |
 | NS-31 | TB | đo | Bench chỉ đo movie; TV, anime và pack chưa được đo theo recipe | K | Chưa |
+| NS-32 | TB | P | Tên từ LimeTorrents và TorrentDownloads bị mojibake (UTF-8 bị đọc thành Windows-1252), nên bản Nga/Trung bị loại nhầm | K | Đã sửa |
 
 ---
 
@@ -352,7 +353,7 @@ Hai reviewer mới, không biết kết luận của người sửa, đọc lạ
   - Chữ đứng **sau** tên (tới hết đoạn tên) chỉ được là: tag ngôn ngữ, phiên bản hoặc nguồn; nội dung trong ngoặc; chữ không phải Latin; một tên khác của phim; "Movie 01"; hoặc `v2`/`25th`.
   - Các dấu " - ", "/", "|" và "aka" tách các tên khác nhau.
   - Từ của chính tên phim không kết thúc phần tên, nên "Charlotte's Web" không bị cắt ở chữ "web".
-- **Test:** `MovieReleaseTitleTests` có 60 ca: 51 tên phải nhận và 20 tên phải loại (Call Me by Your Name, The Real Oppenheimer, Extra Scenes, tập lẻ JJK, Dune Part Two, Frozen II/Fever, Catching Fire, Twilight New Moon…). Phần lớn là tên thật lấy từ bench.
+- **Test:** `MovieReleaseTitleTests` có 71 ca: 51 tên phải nhận và 20 tên phải loại (Call Me by Your Name, The Real Oppenheimer, Extra Scenes, tập lẻ JJK, Dune Part Two, Frozen II/Fever, Catching Fire, Twilight New Moon…). Phần lớn là tên thật lấy từ bench.
 - **Vẫn còn:** phần tiếp theo **cùng năm** ("Matrix Revolutions" 2003 cho "Matrix Reloaded" 2003) vẫn đi qua luật khớp lỏng cũ, vì bước kiểm tra này chỉ chạy khi năm lệch hoặc không có năm. Tên có nhóm không ngoặc ở đầu ("AnimeKaizoku Your Name") bị loại.
 
 **Junk filter (NS-10):** giờ đọc được `1920x1080`/`3840x2160`, `FHD` và "1080" đứng riêng. Khi tên ghi nhiều độ phân giải thì lấy độ phân giải **cao nhất**, nên bản giả `2160p 4K 1080p 720p` dung lượng 300 MB vẫn bị loại.
@@ -366,6 +367,17 @@ Hai reviewer mới, không biết kết luận của người sửa, đọc lạ
 - Chờ khóa tra IMDb tối đa 20 s.
 
 Kết quả: 552 test Core và 140 test App đều pass.
+
+**Kiểm chứng trên dữ liệu thật** (bench `movies-compare --native-only 1 --dump`, 15 movie):
+- Your Name: số bản tốt giảm từ 88 xuống 74. Các bản **"Call Me by Your Name" (2017)** trước đây bị nhận nhầm cho "Your Name." (2016, lệch 1 năm), giờ bị loại đúng.
+- Liz tăng từ 13 lên 17, Euphonium từ 14 lên 16, Coherence từ 18 lên 19. Các movie khác giữ nguyên số.
+- Trong 154 dòng còn bị bước kiểm tra tên loại, chỉ có 2 ca nên nhận:
+  - `Chou.Kaguya.hime.GoLTFilm.1080p.mkv` (tên nhóm dính sau tên phim);
+  - `AnimeKaizoku Kimi no Na wa Your Name` (tên nhóm không có ngoặc ở đầu).
+
+  Còn lại là phim khác, tập lẻ hoặc bản tổng hợp, bị loại đúng.
+
+**NS-32 (mới, phát hiện khi kiểm chứng):** 30 dòng từ LimeTorrents và TorrentDownloads có tên bị mojibake. Ví dụ `Ð¡Ð²ÑÐ·ÑŒ Coherence (2013)` thay vì `Связь Coherence (2013)`, và `å½—æ˜Ÿæ¥çš„… Coherence 2013`. Chữ rác trông như chữ Latin đứng trước tên phim, nên bản đúng bị loại. `MojibakeRepair` khôi phục tên khi nó đổi ngược lại được thành UTF-8 hợp lệ; chữ Latin-1 thật như "Amélie" giữ nguyên. Bước này chạy cho mọi indexer, ngay lúc chuẩn hóa kết quả.
 
 **Còn lại, chấp nhận được:** nếu một lượt chạy kết thúc giữa chừng (timeout, lỗi HTTP ở trang sau) thì các trang đã thành công không được báo. Lúc đó breaker đang ở HalfOpen sẽ mở lại sớm hơn. Hướng này an toàn với site, và site không bao giờ bị chặn vĩnh viễn.
 

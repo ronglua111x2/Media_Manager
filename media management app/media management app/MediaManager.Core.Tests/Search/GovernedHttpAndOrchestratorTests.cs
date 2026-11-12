@@ -145,4 +145,17 @@ public class GovernedHttpAndOrchestratorTests
         outcome.Results.Should().ContainSingle();
         outcome.Indexers.Single(run => run.IndexerId == "broken").Status.Should().Be("parse-error");
     }
+
+    // Re-audit of 07c: LimeTorrents/TorrentDownloads names arrive as UTF-8 read as Windows-1252.
+    [Theory]
+    [InlineData("Ð¡Ð²ÑÐ·ÑŒ   Coherence (2013) BDRip 1080p", "Связь   Coherence (2013) BDRip 1080p")]
+    [InlineData("å½—æ˜Ÿæ¥ Coherence 2013", "彗星来 Coherence 2013")]
+    [InlineData("Amélie 2001 1080p", "Amélie 2001 1080p")]
+    [InlineData("Léon The Professional 1994", "Léon The Professional 1994")]
+    [InlineData("Coherence 2013 1080p", "Coherence 2013 1080p")]
+    [InlineData("彗星来的那一夜 Coherence", "彗星来的那一夜 Coherence")]
+    public void Mojibake_IsRepaired_RealTextIsKept(string input, string expected)
+    {
+        MojibakeRepair.Fix(input).Should().Be(expected);
+    }
 }
