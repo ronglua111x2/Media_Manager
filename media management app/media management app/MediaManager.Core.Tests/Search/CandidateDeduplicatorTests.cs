@@ -146,3 +146,27 @@ public class SearchIdentityTests
             .Should().Be(media_management_app.Search.SearchIdentity.Key(native, aliases));
     }
 }
+
+public class SearchIdentityLimeTests
+{
+    [Fact]
+    public void LimeTorrentsDetailPage_MapsToTheNativeInfoHash()
+    {
+        var native = new media_management_app.Models.TorrentSearchResult
+        {
+            FileName = "Schindlers List (Italian) (DVDScr) 720p WBZ",
+            FileUrl = "magnet:?xt=urn:btih:95863294e0c5a182fc358c4c09c9dea26330df71",
+            DescriptionUrl = "https://www.limetorrents.fun/Schindlers-List-(Italian)-(DVDScr)-720p-WBZ-torrent-1580228.html"
+        };
+        var qbittorrent = new media_management_app.Models.TorrentSearchResult
+        {
+            FileName = native.FileName,
+            FileUrl = "https://www.limetorrents.lol/Schindlers-List-%28Italian%29-%28DVDScr%29-720p-WBZ-torrent-1580228.html"
+        };
+
+        var aliases = media_management_app.Search.SearchIdentity.BuildAliases([native]);
+
+        media_management_app.Search.SearchIdentity.Key(qbittorrent, aliases)
+            .Should().Be(media_management_app.Search.SearchIdentity.Key(native, aliases));
+    }
+}

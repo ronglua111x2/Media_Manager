@@ -5,26 +5,37 @@ using media_management_app.Services;
 namespace media_management_app.Search;
 
 /// <summary>
-/// Identity of a search result across backends. The qBittorrent "thepiratebay" plugin returns the TPB
-/// description page (description.php?id=…) instead of a magnet, while the native apibay indexer returns the
-/// info-hash plus that same description page. Comparing by URL counted one torrent twice and reported it as
-/// "only found by qBittorrent". Native rows teach the alias description-id → info-hash.
+/// Identity of a search result across backends. Some qBittorrent plugins return a site page instead of a
+/// magnet: "thepiratebay" returns description.php?id=…, "limetorrents" returns …-torrent-&lt;id&gt;.html. The
+/// native indexers return the info-hash plus that same page. Comparing by URL counted one torrent twice and
+/// reported it as "only found by qBittorrent". Native rows teach the aliases (site page id → info-hash).
 /// </summary>
 public static partial class SearchIdentity
 {
-    public static string? TpbDescriptionId(string? url)
+    /// <summary>Site-page aliases of a URL: "tpb:&lt;id&gt;" and/or "lime:&lt;id&gt;".</summary>
+    public static IEnumerable<string> AliasesOf(string? url)
     {
         if (string.IsNullOrWhiteSpace(url))
         {
-            return null;
+            yield break;
         }
 
         var decoded = Uri.UnescapeDataString(url);
-        var match = TpbDescriptionRegex().Match(decoded);
-        return match.Success ? match.Groups["id"].Value : null;
+        if (TpbDescriptionRegex().Match(decoded) is { Success: true } tpb)
+        {
+            yield return "tpb:" + tpb.Groups["id"].Value;
+        }
+
+        if (LimeDetailRegex().Match(decoded) is { Success: true } lime)
+        {
+            yield return "lime:" + lime.Groups["id"].Value;
+        }
     }
 
-    /// <summary>Alias map (tpb description id → identity key) learned from rows that carry both.</summary>
+    public static string? TpbDescriptionId(string? url) =>
+        AliasesOf(url).FirstOrDefault(alias => alias.StartsWith("tpb:", StringComparison.Ordinal))?[4..];
+
+    /// <summary>Alias map (site page id → identity key) learned from rows that carry both.</summary>
     public static Dictionary<string, string> BuildAliases(IEnumerable<TorrentSearchResult> rows)
     {
         var aliases = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -36,9 +47,9 @@ public static partial class SearchIdentity
                 continue;
             }
 
-            if (TpbDescriptionId(row.DescriptionUrl) is { } id)
+            foreach (var alias in AliasesOf(row.DescriptionUrl))
             {
-                aliases.TryAdd("tpb:" + id, key);
+                aliases.TryAdd(alias, key);
             }
         }
 
@@ -53,11 +64,22 @@ public static partial class SearchIdentity
             return key;
         }
 
-        var id = TpbDescriptionId(row.FileUrl) ?? TpbDescriptionId(row.DescriptionUrl);
-        return id is not null && aliases.TryGetValue("tpb:" + id, out var alias) ? alias : key;
+        foreach (var alias in AliasesOf(row.FileUrl).Concat(AliasesOf(row.DescriptionUrl)))
+        {
+            if (aliases.TryGetValue(alias, out var mapped))
+            {
+                return mapped;
+            }
+        }
+
+        return key;
     }
 
     // thepiratebay.org/description.php?id=… and Knaben's knaben.xyz/thepiratebay/description.php?id=…
     [GeneratedRegex(@"thepiratebay(?:\.[a-z]+)?/description\.php\?id=(?<id>\d+)", RegexOptions.IgnoreCase)]
     private static partial Regex TpbDescriptionRegex();
+
+    // www.limetorrents.lol/Name-torrent-1580228.html (domain changes: .lol, .fun...)
+    [GeneratedRegex(@"limetorrents\.[a-z]+/.*-torrent-(?<id>\d+)\.html", RegexOptions.IgnoreCase)]
+    private static partial Regex LimeDetailRegex();
 }
