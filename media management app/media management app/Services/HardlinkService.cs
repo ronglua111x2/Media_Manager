@@ -151,6 +151,16 @@ public sealed class HardlinkService : IHardlinkService
         }
 
         removedPath = item.LinkedPath;
+        var linkExists = File.Exists(item.LinkedPath);
+        if (!linkExists && !new LinkStorageProbe().IsLinkStorageReachable(item))
+        {
+            // A missing file on an offline drive is not a deleted file: reporting success would let the
+            // caller drop the record and orphan the file when the drive returns (audit L3-02).
+            errorMessage = $"The library folder of '{item.LinkedPath}' is not reachable (drive offline or not mounted). Reconnect it and retry.";
+            _logger.Warning($"Hardlink not removed because its library folder is unreachable: {item.LinkedPath}", LogTarget.All);
+            return false;
+        }
+
         if (!_libraryPathResolver.TryResolveGeneratedLibraryRoot(item, out var libraryRoot, out errorMessage))
         {
             _logger.Warning($"Could not resolve generated library root while removing hardlink: {errorMessage}", LogTarget.All);
@@ -158,20 +168,28 @@ public sealed class HardlinkService : IHardlinkService
         }
 
         var cleanupRoot = ResolveCleanupRoot(item.LinkedPath, libraryRoot);
-        if (cleanupRoot is null)
-        {
-            errorMessage = "Linked path is outside the configured output library. Refusing to delete.";
-            _logger.Error($"Refusing to delete linked path outside output root. LinkedPath={item.LinkedPath}; LibraryRoot={libraryRoot}", targets: LogTarget.All);
-            return false;
-        }
-
         var linkedDirectory = Path.GetDirectoryName(item.LinkedPath);
-        if (!File.Exists(item.LinkedPath))
+        if (!linkExists)
         {
+            // Nothing to delete, wherever it was: clear the state, so a link left in an old library
+            // folder does not block reset or renumbering forever (audit L3-05).
             _logger.Warning($"Linked path no longer exists, clearing state only: {item.LinkedPath}", LogTarget.All);
-            CleanupEmptyLibraryFolders(linkedDirectory, cleanupRoot);
+            if (cleanupRoot is not null)
+            {
+                CleanupEmptyLibraryFolders(linkedDirectory, cleanupRoot);
+            }
+
             _eventHub.PublishHardlinkRemoved(item, removedPath);
             return true;
+        }
+
+        if (cleanupRoot is null)
+        {
+            errorMessage =
+                $"'{item.LinkedPath}' is outside the current library folder ({libraryRoot}), probably because the library folder setting changed. " +
+                "The app does not delete files there: move or delete that file yourself, then retry.";
+            _logger.Error($"Refusing to delete linked path outside output root. LinkedPath={item.LinkedPath}; LibraryRoot={libraryRoot}", targets: LogTarget.All);
+            return false;
         }
 
         try

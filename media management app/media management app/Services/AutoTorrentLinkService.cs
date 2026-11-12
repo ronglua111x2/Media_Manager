@@ -310,7 +310,7 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
                 $"Reset aborted for show id={showId} S{seasonNumber:00}E{episodeNumber:00}: {unlinkResult.ErrorCount} unlink error(s).",
                 LogTarget.File | LogTarget.Console);
             result.Messages.Add(
-                $"Reset aborted: {unlinkResult.ErrorCount} library link(s) could not be removed. Close any player using the file and retry.");
+                $"Reset aborted: {unlinkResult.ErrorCount} library link(s) could not be removed (see the message above). Fix that and retry.");
             return result;
         }
 
@@ -465,7 +465,7 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
                 $"Reset aborted for movie id={movieId}: {unlinkResult.ErrorCount} unlink error(s).",
                 LogTarget.File | LogTarget.Console);
             result.Messages.Add(
-                $"Reset aborted: {unlinkResult.ErrorCount} library link(s) could not be removed. Close any player using the file and retry.");
+                $"Reset aborted: {unlinkResult.ErrorCount} library link(s) could not be removed (see the message above). Fix that and retry.");
             return result;
         }
 

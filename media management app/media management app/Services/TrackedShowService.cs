@@ -135,8 +135,8 @@ public sealed class TrackedShowService : ITrackedShowService
         if (unlink.ErrorCount > 0)
         {
             throw new InvalidOperationException(
-                $"Episode organization was not changed: {unlink.ErrorCount} library link(s) could not be removed. " +
-                "Close any player using them and retry.");
+                $"Episode organization was not changed: {unlink.ErrorCount} library link(s) could not be removed: " +
+                string.Join(" ", unlink.Messages.TakeLast(3)));
         }
 
         // Persist + hard-rebuild so mapping fixes and TMDB group edits are applied cleanly.

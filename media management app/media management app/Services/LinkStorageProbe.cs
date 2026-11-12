@@ -29,8 +29,10 @@ public sealed class LinkStorageProbe
 
     /// <summary>
     /// True when the library location that holds <see cref="SourceItem.LinkedPath"/> is reachable,
-    /// or when the item has no link. The anchor is the generated <c>Shows</c>/<c>Movies</c> folder
-    /// above the link; links outside that layout fall back to their drive root.
+    /// or when the item has no link. The anchor is the library folder that holds the generated
+    /// <c>Shows</c>/<c>Movies</c> folder above the link, not that folder itself: the app's empty-folder
+    /// cleanup deletes an empty <c>Shows</c> folder, and a reachable drive must not look offline then
+    /// (audit L3-04). Links outside that layout fall back to their drive root.
     /// </summary>
     public bool IsLinkStorageReachable(SourceItem item)
     {
@@ -60,7 +62,7 @@ public sealed class LinkStorageProbe
             if (string.Equals(name, AppConstants.ShowsFolderName, StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(name, AppConstants.MoviesFolderName, StringComparison.OrdinalIgnoreCase))
             {
-                return directory;
+                return Path.GetDirectoryName(directory) ?? directory;
             }
 
             directory = Path.GetDirectoryName(directory);

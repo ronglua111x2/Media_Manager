@@ -203,6 +203,7 @@ public sealed class SymlinkSyncService : ISymlinkSyncService
         var linkedGroupsByPath = BuildLinkedGroupsByPath(linkedItems);
 
         var syncedLinkedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var storageProbe = new LinkStorageProbe();
         foreach (var item in linkedItems)
         {
             if (!string.IsNullOrWhiteSpace(item.LinkedPath) && File.Exists(item.LinkedPath))
@@ -218,10 +219,22 @@ public sealed class SymlinkSyncService : ISymlinkSyncService
                 continue;
             }
 
+            if (!storageProbe.IsLinkStorageReachable(item))
+            {
+                // The library drive is not mounted yet (USB, NAS): its links are not gone, so keep their
+                // Jellyfin symlinks instead of tearing them all down (audit L3-03).
+                continue;
+            }
+
             if (!string.IsNullOrWhiteSpace(item.SymlinkPath))
             {
                 Merge(aggregate, RemoveItem(item));
             }
+        }
+
+        foreach (var folder in storageProbe.UnreachableFolders)
+        {
+            _logger.Warning($"Symlink reconcile kept the Jellyfin symlinks of an unreachable library folder: {folder}", LogTarget.All);
         }
 
         _logger.Info($"Symlink startup reconcile finished. {aggregate.Summary}", LogTarget.All);

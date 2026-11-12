@@ -241,6 +241,87 @@ public sealed class LinkStateScenarioTests : IDisposable
         Assert.Equal(0, relink.ErrorCount);
     }
 
+    // Audit L3-02: a reset while the library drive is offline must not drop the record of a file that is still there.
+    [Fact]
+    public void ResetEpisode_WhenLibraryIsOffline_AbortsAndKeepsTheRecord()
+    {
+        var showId = TwoLinkedEpisodes(5030, "HO1", "HO2");
+        Directory.Move(_host.Library, _host.Library + "_offline");
+
+        var result = _host.Link.ResetEpisodeForRedownload(showId, 1, 2);
+
+        Directory.Move(_host.Library + "_offline", _host.Library);
+        Assert.True(result.ErrorCount > 0);
+        Assert.Contains(result.Messages, message => message.Contains("not reachable", StringComparison.Ordinal));
+        var item = Assert.Single(_host.Items(), row => row.EpisodeNumber == 2);
+        Assert.Equal(ItemState.Linked, item.State);
+        Assert.True(File.Exists(item.LinkedPath));
+    }
+
+    // Audit L3-03: startup symlink reconcile with the library drive not mounted keeps the Jellyfin symlinks.
+    [Fact]
+    public void SymlinkReconcile_WhenLibraryIsOffline_KeepsJellyfinSymlinks()
+    {
+        TwoLinkedEpisodes(5031, "HO3", "HO4");
+        _host.Symlinks.ReconcileAll();
+        Assert.Equal(2, _host.JellyfinFiles().Count);
+
+        Directory.Move(_host.Library, _host.Library + "_offline");
+        _host.Symlinks.ReconcileAll();
+        Directory.Move(_host.Library + "_offline", _host.Library);
+
+        Assert.Equal(2, _host.JellyfinFiles().Count);
+        Assert.All(_host.Items(), item => Assert.False(string.IsNullOrWhiteSpace(item.SymlinkPath)));
+    }
+
+    // Audit L3-04: the app's own cleanup deletes the empty "Shows" folder; the drive is still reachable, so an
+    // episode whose library file was deleted outside the app must still become Missing.
+    [Fact]
+    public async Task Reconcile_AfterCleanupRemovedTheShowsFolder_StillSeesTheDeletedFile()
+    {
+        var showId = TwoLinkedEpisodes(5032, "HO5", "HO6");
+        File.Delete(_host.Items().Single(item => item.EpisodeNumber == 1).LinkedPath!);
+        Assert.Equal(0, _host.Link.ResetEpisodeForRedownload(showId, 1, 2).ErrorCount);
+        Assert.False(Directory.Exists(Path.Combine(_host.Library, AppConstants.ShowsFolderName)));
+
+        await _host.Reconciliation.ReconcileAsync(TorrentReconciliationScope.All);
+
+        Assert.Equal(EpisodeAvailability.Missing, _host.Availability(showId, 1, 1));
+    }
+
+    // Audit L3-05: after the library folder setting changes, an old link is refused with a reason that says what
+    // to do, and once the user removed the old file the reset goes through.
+    [Fact]
+    public void ResetEpisode_LinkInOldLibraryFolder_ExplainsAndWorksOnceTheFileIsGone()
+    {
+        var showId = TwoLinkedEpisodes(5033, "HO7", "HO8");
+        var oldLink = _host.Items().Single(item => item.EpisodeNumber == 2).LinkedPath!;
+        _host.Settings.DriveLibraryRoots[Path.GetPathRoot(_host.Root)!] = Path.Combine(_host.Root, "lib-new");
+
+        var refused = _host.Link.ResetEpisodeForRedownload(showId, 1, 2);
+        Assert.True(refused.ErrorCount > 0);
+        Assert.Contains(refused.Messages, message => message.Contains("outside the current library folder", StringComparison.Ordinal));
+        Assert.True(File.Exists(oldLink));
+
+        File.Delete(oldLink);
+        var reset = _host.Link.ResetEpisodeForRedownload(showId, 1, 2);
+
+        Assert.Equal(0, reset.ErrorCount);
+        Assert.DoesNotContain(_host.Items(), item => item.EpisodeNumber == 2);
+    }
+
+    private long TwoLinkedEpisodes(int tmdbId, string firstHash, string secondHash)
+    {
+        _host.AddTorrent(firstHash, $"Demo.{tmdbId}.S01E01.mkv");
+        _host.AddTorrent(secondHash, $"Demo.{tmdbId}.S01E02.mkv");
+        var showId = _host.AddShow(tmdbId, "Demo Show", (1, 1, "One"), (1, 2, "Two"));
+        _host.AssignEpisodeTorrent(showId, 1, 1, firstHash);
+        _host.AssignEpisodeTorrent(showId, 1, 2, secondHash);
+        Assert.Equal(1, _host.Link.LinkEpisodeAsync(showId, 1, 1).GetAwaiter().GetResult().LinkedCount);
+        Assert.Equal(1, _host.Link.LinkEpisodeAsync(showId, 1, 2).GetAwaiter().GetResult().LinkedCount);
+        return showId;
+    }
+
     // PARSE-25 (LINK-02, harness F): "AAC2.0" in a manually added torrent must not adopt it as episode 2.
     [Fact]
     public async Task AdoptManualTorrent_AudioTagNumber_DoesNotMatchAnotherEpisode()
