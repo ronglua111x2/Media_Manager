@@ -592,8 +592,18 @@ public static class RecipeRuntimeSettings
     public static bool GetSanitizeQuery(RecipeModuleConfig? queryModule) =>
         GetBool(queryModule, SanitizeQueryKey, true);
 
-    public static bool GetUseLibraryEnglishTitles(RecipeModuleConfig? identityModule) =>
-        GetBool(identityModule, UseLibraryEnglishTitlesKey, false);
+    public static bool GetUseLibraryEnglishTitles(RecipeModuleConfig? identityModule, bool fallback = false) =>
+        GetBool(identityModule, UseLibraryEnglishTitlesKey, fallback);
+
+    /// <summary>
+    /// Whether library alternative titles are searched for this recipe. Movies default to on when the
+    /// recipe does not say (native-search P1, SRCH-12); other kinds keep the old default (off).
+    /// </summary>
+    public static bool GetUseLibraryEnglishTitles(SearchRecipe recipe)
+    {
+        var identity = recipe.Modules.FirstOrDefault(module => module.BlockType == RecipeBlockType.Identity);
+        return GetUseLibraryEnglishTitles(identity, fallback: recipe.TargetKind == MediaKind.Movie);
+    }
 
     public static int GetMaxLibraryAlternativeTitlesForSearch(RecipeModuleConfig? identityModule) =>
         GetInt(

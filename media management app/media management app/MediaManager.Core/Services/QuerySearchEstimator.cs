@@ -88,7 +88,7 @@ public static class QuerySearchEstimator
 
         var primary = RecipeRuntimeSettings.GetSkipDefaultTitle(query) ? 0 : 1;
         var aliases = identity.Aliases.Count(alias => !string.IsNullOrWhiteSpace(alias));
-        var libraryCap = RecipeRuntimeSettings.GetUseLibraryEnglishTitles(identity)
+        var libraryCap = RecipeRuntimeSettings.GetUseLibraryEnglishTitles(recipe)
             ? RecipeRuntimeSettings.GetMaxLibraryAlternativeTitlesForSearch(identity)
             : 0;
         return Math.Max(1, primary + aliases + libraryCap);

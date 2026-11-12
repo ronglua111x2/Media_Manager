@@ -633,7 +633,8 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
 
     public bool UseLibraryEnglishTitles
     {
-        get => GetExtensionBool(RecipeRuntimeSettings.UseLibraryEnglishTitlesKey, false);
+        // Same default as RecipeRuntimeSettings.GetUseLibraryEnglishTitles(recipe): on for movies.
+        get => GetExtensionBool(RecipeRuntimeSettings.UseLibraryEnglishTitlesKey, _recipeTargetKind == MediaKind.Movie);
         set
         {
             SetExtensionValue(RecipeRuntimeSettings.UseLibraryEnglishTitlesKey, value.ToString());

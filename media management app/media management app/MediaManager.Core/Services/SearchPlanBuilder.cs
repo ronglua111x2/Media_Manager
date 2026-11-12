@@ -47,21 +47,32 @@ public sealed class SearchPlanBuilder : ISearchPlanBuilder
         var titles = ResolveTitles(recipe, movie.Title, movie.GetSearchableAlternativeTitles());
         var qualities = QueryTokenCatalog.GetQualityValues(queryModule);
         var queries = new List<string>();
+        var yearless = new List<string>();
 
         foreach (var template in templates)
         {
             foreach (var title in TitlesFor(template, titles))
             foreach (var quality in QualitiesFor(template, qualities))
             {
-                queries.Add(QueryTemplateRenderer.Render(template, new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
                 {
                     [QueryTokenCatalog.TitleId] = title,
                     [QueryTokenCatalog.YearId] = movie.ReleaseYear?.ToString() ?? string.Empty,
                     [QueryTokenCatalog.QualityId] = quality
-                }));
+                };
+                queries.Add(QueryTemplateRenderer.Render(template, values));
+
+                // SRCH-11: TMDB's year is often not the year in release names ("Coherence 2014"
+                // found 12 rows, "Coherence" 479 — 322 of them tagged 2013). Also search without it.
+                if (movie.ReleaseYear is not null && template.Contains($"{{{QueryTokenCatalog.YearId}}}", StringComparison.OrdinalIgnoreCase))
+                {
+                    values[QueryTokenCatalog.YearId] = string.Empty;
+                    yearless.Add(QueryTemplateRenderer.Render(template, values));
+                }
             }
         }
 
+        queries.AddRange(yearless);
         return QueryTemplateRenderer.Normalize(queries, RecipeRuntimeSettings.GetSanitizeQuery(queryModule));
     }
 

@@ -47,8 +47,7 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
             return Rejected(result, CandidateRejectReason.YearMismatch, $"explicit year mismatch {parsed.ExplicitYear} != {show.FirstAirYear}");
         }
 
-        var titleVariants = _titleResolver.Resolve(
-            _titleResolver.CreateRequest(recipe, show.Title, show.GetSearchableAlternativeTitles()));
+        var titleVariants = _titleResolver.ResolveForMatching(recipe, show.Title, show.GetSearchableAlternativeTitles());
         var titleMatch = EvaluateTitleMatch(titleVariants, parsed.TitleTokens);
         if (!titleMatch.IsMatch)
         {
@@ -81,20 +80,27 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
             return Rejected(result, CandidateRejectReason.WrongReleaseKind, kindReject);
         }
 
-        if (movie.ReleaseYear is not null && !result.FileName.Contains(movie.ReleaseYear.Value.ToString(), StringComparison.OrdinalIgnoreCase))
+        var titleVariants = _titleResolver.ResolveForMatching(recipe, movie.Title, movie.GetSearchableAlternativeTitles());
+        var candidateTokens = parsed.TitleTokens.Count > 0 ? parsed.TitleTokens : TorrentCandidateParser.Tokenize(result.FileName).ToList();
+        var yearMatch = YearMatcher.Match(movie.ReleaseYear, result.FileName, titleVariants);
+        if (yearMatch.IsRejected)
         {
-            return Rejected(result, CandidateRejectReason.YearMismatch, $"does not contain release year {movie.ReleaseYear}");
+            return Rejected(result, CandidateRejectReason.YearMismatch, yearMatch.Detail);
         }
 
-        var titleVariants = _titleResolver.Resolve(
-            _titleResolver.CreateRequest(recipe, movie.Title, movie.GetSearchableAlternativeTitles()));
-        var titleMatch = EvaluateTitleMatch(
-            titleVariants,
-            parsed.TitleTokens.Count > 0 ? parsed.TitleTokens : TorrentCandidateParser.Tokenize(result.FileName).ToList());
+        var titleMatch = EvaluateTitleMatch(titleVariants, candidateTokens);
         if (!titleMatch.IsMatch)
         {
             return Rejected(result, CandidateRejectReason.TitleMismatch, "does not contain enough movie title or alias tokens");
         }
+
+        // A release without any year is only trusted when one title variant matches completely.
+        if (yearMatch.Kind == YearMatchKind.Missing && !IsCompleteTitleMatch(titleVariants, candidateTokens))
+        {
+            return Rejected(result, CandidateRejectReason.YearMismatch, $"no release year and title is not an exact match (expected {movie.ReleaseYear})");
+        }
+
+        titleMatch = (true, titleMatch.Score + YearMatcher.IdentityBonus(yearMatch.Kind));
 
         var audioScore = GetAudioScore(filter, result.FileName);
         var preferTermsScore = GetPreferTermsScore(filter, result.FileName);
@@ -156,18 +162,16 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
         IReadOnlyList<string> titles,
         IReadOnlyList<string> candidateTokens)
     {
+        var normalizedCandidate = TitleNormalizer.NormalizeTokens(candidateTokens);
         foreach (var candidateTitle in titles.Where(title => !string.IsNullOrWhiteSpace(title)))
         {
-            var titleTokens = TorrentCandidateParser.Tokenize(candidateTitle)
-                .Where(token => token.Length > 2)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList();
+            var titleTokens = TitleNormalizer.SignificantTitleTokens(candidateTitle);
             if (titleTokens.Count == 0)
             {
                 return (true, 1);
             }
 
-            var matched = titleTokens.Count(token => candidateTokens.Contains(token, StringComparer.OrdinalIgnoreCase));
+            var matched = titleTokens.Count(normalizedCandidate.Contains);
             var required = Math.Max(1, Math.Min(2, titleTokens.Count));
             if (matched >= required)
             {
@@ -176,6 +180,15 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
         }
 
         return (false, 0);
+    }
+
+    private static bool IsCompleteTitleMatch(IReadOnlyList<string> titles, IReadOnlyList<string> candidateTokens)
+    {
+        var normalizedCandidate = TitleNormalizer.NormalizeTokens(candidateTokens);
+        return titles
+            .Where(title => !string.IsNullOrWhiteSpace(title))
+            .Select(title => TitleNormalizer.SignificantTitleTokens(title))
+            .Any(tokens => tokens.Count > 0 && tokens.All(normalizedCandidate.Contains));
     }
 
     private static int EvaluateEpisodeTitleMatch(string? targetTitle, string? candidateTitle)

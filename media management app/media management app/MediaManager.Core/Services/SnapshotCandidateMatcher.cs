@@ -154,18 +154,16 @@ public sealed class SnapshotCandidateMatcher
         IReadOnlyList<string> titleVariants,
         IReadOnlyList<string> candidateTokens)
     {
+        var normalizedCandidate = TitleNormalizer.NormalizeTokens(candidateTokens);
         foreach (var showTitle in titleVariants.Where(title => !string.IsNullOrWhiteSpace(title)))
         {
-            var showTokens = TorrentCandidateParser.Tokenize(showTitle)
-                .Where(token => token.Length > 2)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList();
+            var showTokens = TitleNormalizer.SignificantTitleTokens(showTitle);
             if (showTokens.Count == 0)
             {
                 return (true, 1);
             }
 
-            var matched = showTokens.Count(token => candidateTokens.Contains(token, StringComparer.OrdinalIgnoreCase));
+            var matched = showTokens.Count(normalizedCandidate.Contains);
             var required = Math.Max(2, (int)Math.Ceiling(showTokens.Count * 0.6));
             if (matched >= required)
             {

@@ -470,8 +470,7 @@ public sealed class FetchJobService : IFetchJobService
             })
             .ToList();
         var matcher = new SnapshotCandidateMatcher();
-        var titleVariants = _titleResolver.Resolve(
-            _titleResolver.CreateRequest(recipe, show.Title, show.GetSearchableAlternativeTitles()));
+        var titleVariants = _titleResolver.ResolveForMatching(recipe, show.Title, show.GetSearchableAlternativeTitles());
         var snapshotQueries = _searchPlanBuilder.BuildShowSnapshotQueries(recipe, show);
         var workerCount = Math.Min(
             RecipeRuntimeSettings.GetLocalMatchWorkers(recipe, _settingsService.Current.AutoTorrent),
@@ -672,14 +671,18 @@ public sealed class FetchJobService : IFetchJobService
             {
                 if (!string.IsNullOrWhiteSpace(result.FileUrl))
                 {
+                    // The same listing can come back from several queries; score it once.
+                    if (resultsByUrl.ContainsKey(result.FileUrl))
+                    {
+                        continue;
+                    }
+
                     resultsByUrl[result.FileUrl] = result;
                 }
 
-                if (!writeDebug && matchedCandidates.Count >= maxCandidates)
-                {
-                    continue;
-                }
-
+                // SRCH-04: every row of the query is evaluated. The old loop stopped at the first
+                // maxCandidates accepted rows (rows arrive sorted by seeders), so a better release by
+                // the recipe's own score but with fewer seeders was never considered.
                 var match = _candidateEvaluationService.EvaluateEpisode(recipe, show, episode, result);
                 if (writeDebug)
                 {
@@ -702,11 +705,6 @@ public sealed class FetchJobService : IFetchJobService
                 }
 
                 if (IsBlacklistedListing(show.Id, result, query))
-                {
-                    continue;
-                }
-
-                if (matchedCandidates.Count >= maxCandidates)
                 {
                     continue;
                 }
@@ -1357,9 +1355,16 @@ public sealed class FetchJobService : IFetchJobService
             });
         }
 
-        var finalCandidates = candidates
-            .GroupBy(candidate => candidate.FileUrl, StringComparer.OrdinalIgnoreCase)
-            .Select(group => group.OrderByDescending(candidate => candidate.TotalScore).First())
+        var autoTorrentSettings = _settingsService.Current.AutoTorrent;
+        var finalCandidates = CandidateDeduplicator.Deduplicate(
+                candidates.OrderByDescending(candidate => candidate.TotalScore),
+                candidate => candidate.FileName,
+                candidate => candidate.FileSize,
+                candidate => candidate.FileUrl,
+                candidate => candidate.Seeders,
+                RecipeRuntimeSettings.GetDeduplicateCandidates(packRecipe, autoTorrentSettings) &&
+                RecipeRuntimeSettings.GetFuzzyDeduplicate(packRecipe, autoTorrentSettings),
+                RecipeRuntimeSettings.GetFuzzyDeduplicateSizeToleranceMb(packRecipe, autoTorrentSettings))
             .OrderByDescending(candidate => candidate.QualityLabel is { Length: > 0 } quality ? TorrentQuality.GetRank(quality) : 0)
             .ThenByDescending(candidate => candidate.Seeders)
             .ThenByDescending(candidate => candidate.TotalScore)
@@ -1425,39 +1430,14 @@ public sealed class FetchJobService : IFetchJobService
         bool fuzzy,
         int sizeToleranceMb)
     {
-        var result = candidates
-            .GroupBy(entry => entry.Candidate.FileUrl, StringComparer.OrdinalIgnoreCase)
-            .Select(group => group.OrderByDescending(entry => entry.Candidate.Seeders).First())
-            .ToList();
-
-        if (!fuzzy)
-        {
-            return result;
-        }
-
-        return result
-            .GroupBy(entry => (
-                NormalizeFileName(entry.Candidate.FileName),
-                SizeBucket(entry.Candidate.FileSize, sizeToleranceMb)))
-            .Select(group => group.OrderByDescending(entry => entry.Candidate.Seeders).First())
-            .ToList();
-    }
-
-    private static string NormalizeFileName(string name)
-    {
-        name = Regex.Replace(name, @"\([^)]*\)|\[[^\]]*\]", " ");
-        return Regex.Replace(name.ToLowerInvariant().Trim(), @"\s+", " ");
-    }
-
-    private static long SizeBucket(long bytes, int toleranceMb)
-    {
-        if (toleranceMb <= 0)
-        {
-            return bytes;
-        }
-
-        var bucketBytes = 1024L * 1024L * toleranceMb;
-        return bytes / bucketBytes;
+        return CandidateDeduplicator.Deduplicate(
+            candidates,
+            entry => entry.Candidate.FileName,
+            entry => entry.Candidate.FileSize,
+            entry => entry.Candidate.FileUrl,
+            entry => entry.Candidate.Seeders,
+            fuzzy,
+            sizeToleranceMb);
     }
 
     private static EpisodeFetchCandidate ToCandidate(

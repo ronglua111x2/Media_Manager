@@ -107,7 +107,7 @@ public sealed class AutomationFlowService : IAutomationFlowService
                 recipe,
                 _settingsService.Current.AutoTorrent,
                 request.Overrides);
-            return BuildDryRunResult(recipe, show.DisplayTitle, queries, evaluated, maxCandidates);
+            return BuildDryRunResult(_settingsService.Current.AutoTorrent, recipe, show.DisplayTitle, queries, evaluated, maxCandidates);
         }
         finally
         {
@@ -140,7 +140,7 @@ public sealed class AutomationFlowService : IAutomationFlowService
                 recipe,
                 _settingsService.Current.AutoTorrent,
                 request.Overrides);
-            return BuildDryRunResult(recipe, movie.DisplayTitle, queries, evaluated, maxCandidates);
+            return BuildDryRunResult(_settingsService.Current.AutoTorrent, recipe, movie.DisplayTitle, queries, evaluated, maxCandidates);
         }
         finally
         {
@@ -468,6 +468,7 @@ public sealed class AutomationFlowService : IAutomationFlowService
     }
 
     private static RecipeDryRunResult BuildDryRunResult(
+        AutoTorrentSettings autoTorrent,
         SearchRecipe recipe,
         string title,
         IReadOnlyList<string> queries,
@@ -479,8 +480,18 @@ public sealed class AutomationFlowService : IAutomationFlowService
             Recipe = recipe,
             TargetTitle = title,
             Queries = queries.ToList(),
-            AcceptedCandidates = evaluated
-                .Where(candidate => candidate.IsAccepted)
+            // Same recipe dedupe as the batch hunt (the movie / retry path used to skip it): one torrent
+            // returned by several engines or queries must not take several of the maxCandidates slots.
+            AcceptedCandidates = (RecipeRuntimeSettings.GetDeduplicateCandidates(recipe, autoTorrent)
+                    ? CandidateDeduplicator.Deduplicate(
+                        evaluated.Where(candidate => candidate.IsAccepted).OrderByDescending(candidate => candidate.TotalScore),
+                        candidate => candidate.SearchResult.FileName,
+                        candidate => candidate.SearchResult.FileSize,
+                        candidate => candidate.SearchResult.FileUrl,
+                        candidate => candidate.SearchResult.Seeders,
+                        RecipeRuntimeSettings.GetFuzzyDeduplicate(recipe, autoTorrent),
+                        RecipeRuntimeSettings.GetFuzzyDeduplicateSizeToleranceMb(recipe, autoTorrent))
+                    : evaluated.Where(candidate => candidate.IsAccepted).ToList())
                 .OrderByDescending(candidate => candidate.TotalScore)
                 .ThenByDescending(candidate => candidate.AudioScore)
                 .ThenByDescending(candidate => candidate.PreferTermsScore)

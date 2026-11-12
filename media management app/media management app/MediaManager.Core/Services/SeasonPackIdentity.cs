@@ -52,8 +52,9 @@ public static class SeasonPackIdentity
                 $"does not cover selected seasons {string.Join(",", selectedSeasons)}");
         }
 
-        var titleTokens = TorrentCandidateParser.Tokenize(show.Title).Where(token => token.Length > 2).ToList();
-        var matched = titleTokens.Count(token => parsed.TitleTokens.Contains(token, StringComparer.OrdinalIgnoreCase));
+        var titleTokens = TitleNormalizer.SignificantTitleTokens(show.Title, distinct: false);
+        var candidateTokens = TitleNormalizer.NormalizeTokens(parsed.TitleTokens);
+        var matched = titleTokens.Count(candidateTokens.Contains);
         if (matched < Math.Min(2, titleTokens.Count))
         {
             return (CandidateRejectReason.TitleMismatch, "does not contain enough show title tokens");
