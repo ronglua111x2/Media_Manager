@@ -8,6 +8,8 @@ namespace media_management_app.ViewModels;
 
 public sealed partial class PackLinkProgressViewModel : ObservableObject
 {
+    private CancellationTokenSource? _cancellation;
+
     public PackLinkProgressViewModel(string showTitle, int seasonNumber)
     {
         WindowTitle = $"AI Pack Link — {showTitle} S{seasonNumber:00}";
@@ -45,6 +47,17 @@ public sealed partial class PackLinkProgressViewModel : ObservableObject
     [ObservableProperty]
     private bool isCancelled;
 
+    /// <summary>True while a cancellable step (Gemini call, link creation) is running.</summary>
+    [ObservableProperty]
+    private bool canCancel;
+
+    /// <summary>Connects the Cancel button to the run's token source.</summary>
+    public void AttachCancellation(CancellationTokenSource cancellation)
+    {
+        _cancellation = cancellation;
+        CanCancel = !cancellation.IsCancellationRequested;
+    }
+
     public void Report(PackLinkProgressUpdate update)
     {
         if (System.Windows.Application.Current?.Dispatcher is { } dispatcher && !dispatcher.CheckAccess())
@@ -68,6 +81,7 @@ public sealed partial class PackLinkProgressViewModel : ObservableObject
 
     public void PrepareForReview(string summary)
     {
+        CanCancel = false;
         IsComplete = true;
         IsFailed = false;
         IsCancelled = false;
@@ -76,6 +90,7 @@ public sealed partial class PackLinkProgressViewModel : ObservableObject
 
     public void MarkCancelled(string message)
     {
+        CanCancel = false;
         IsCancelled = true;
         IsComplete = false;
         IsFailed = false;
@@ -85,6 +100,7 @@ public sealed partial class PackLinkProgressViewModel : ObservableObject
 
     public void ResetForRetry(bool isRetry)
     {
+        CanCancel = _cancellation is { IsCancellationRequested: false };
         CanClose = false;
         IsComplete = false;
         IsFailed = false;
@@ -122,6 +138,19 @@ public sealed partial class PackLinkProgressViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private void Cancel()
+    {
+        if (!CanCancel)
+        {
+            return;
+        }
+
+        CanCancel = false;
+        CurrentMessage = "Cancelling...";
+        _cancellation?.Cancel();
+    }
+
+    [RelayCommand]
     private void Close(Window? window)
     {
         if (CanClose)
@@ -145,6 +174,7 @@ public sealed partial class PackLinkProgressViewModel : ObservableObject
 
         if (update.Step is PackLinkProgressStep.Complete)
         {
+            CanCancel = false;
             IsComplete = true;
             IsFailed = false;
             CanClose = true;
@@ -154,6 +184,7 @@ public sealed partial class PackLinkProgressViewModel : ObservableObject
 
         if (update.Step is PackLinkProgressStep.Failed)
         {
+            CanCancel = false;
             IsFailed = true;
             IsComplete = false;
             CanClose = true;

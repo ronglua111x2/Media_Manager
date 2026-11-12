@@ -260,7 +260,19 @@ public sealed class GeminiSpecialMappingProvider
 
 
 
-        return PackSpecialPayloadBuilder.BuildFromAiResponse(request, parsed, specialsEpisodes);
+        var extraWarnings = new List<string>();
+        if (!string.IsNullOrWhiteSpace(parseError))
+        {
+            extraWarnings.Add(parseError);
+        }
+
+        if (GeminiApiClient.IsEarlyStop(apiResult.FinishReason))
+        {
+            extraWarnings.Add(
+                $"Gemini stopped before finishing (finishReason={apiResult.FinishReason}); some specials may be missing.");
+        }
+
+        return PackSpecialPayloadBuilder.BuildFromAiResponse(request, parsed, specialsEpisodes, extraWarnings);
 
     }
 

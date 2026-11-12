@@ -78,7 +78,7 @@ internal sealed class ScriptedGeminiClient : IGeminiApiClient
     {
         Calls++;
         cancellationToken.ThrowIfCancellationRequested();
-        return Task.FromResult(new GeminiJsonTextResult("fake-model", Respond(userJson)));
+        return Task.FromResult(new GeminiJsonTextResult("fake-model", Respond(userJson), FinishReason));
     }
 
     public Task<T> GenerateJsonAsync<T>(string systemPrompt, string userJson, CancellationToken cancellationToken = default) =>
@@ -88,13 +88,13 @@ internal sealed class ScriptedGeminiClient : IGeminiApiClient
 /// <summary>Real orchestrator, provider and cache on a temporary state folder; only the Gemini HTTP client is fake.</summary>
 internal sealed class SpecialOrchestratorHost : IDisposable
 {
-    public SpecialOrchestratorHost(Func<string, string> respond, bool geminiEnabled = true)
+    public SpecialOrchestratorHost(Func<string, string> respond, bool geminiEnabled = true, string? finishReason = null)
     {
         StateFolder = Path.Combine(Path.GetTempPath(), $"mm-special-{Guid.NewGuid():N}");
         Directory.CreateDirectory(StateFolder);
         Settings.Current.StateFolder = StateFolder;
         Settings.Current.Gemini = new GeminiSettings { Enabled = geminiEnabled, ApiKey = geminiEnabled ? "test-key" : null };
-        Gemini = new ScriptedGeminiClient(respond);
+        Gemini = new ScriptedGeminiClient(respond) { FinishReason = finishReason };
         Orchestrator = new SpecialMappingOrchestrator(
             Settings,
             new GeminiSpecialMappingProvider(Gemini, Settings, Logger),

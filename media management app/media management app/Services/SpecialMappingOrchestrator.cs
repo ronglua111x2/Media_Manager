@@ -80,12 +80,7 @@ public sealed class SpecialMappingOrchestrator : ISpecialMappingOrchestrator
         var gemini = _settingsService.Current.Gemini ?? new GeminiSettings();
         if (!useGemini || !gemini.Enabled || string.IsNullOrWhiteSpace(gemini.ApiKey))
         {
-            var offlineResult = PackSpecialPayloadBuilder.ApplyProposals(
-                request,
-                specialsEpisodes,
-                SpecialMappingSource.Rule);
-            SpecialMappingValidator.Validate(offlineResult, specialsEpisodes);
-            return offlineResult;
+            return ApplyRules(request, specialsEpisodes, fallbackReason: null);
         }
 
         if (bypassCache)
@@ -110,16 +105,84 @@ public sealed class SpecialMappingOrchestrator : ISpecialMappingOrchestrator
                 PackLinkProgressStep.ParsingResponse,
                 PackLinkProgressStatus.Done,
                 $"Using cached mapping ({cached.Items.Count(item => item.Episode is not null)} mapped specials).");
-            return cached;
+            return SpecialMappingValidator.RemoveViolations(cached, specialsEpisodes);
         }
 
-        var aiResult = await _geminiSpecialMappingProvider.FinalizeAsync(
-            request,
-            specialsEpisodes,
-            progress,
-            cancellationToken);
-        SpecialMappingValidator.Validate(aiResult, specialsEpisodes);
-        _cache.Save(torrentHash, tmdbId, aiResult);
-        return aiResult;
+        SpecialMappingResult aiResult;
+        try
+        {
+            aiResult = await _geminiSpecialMappingProvider.FinalizeAsync(
+                request,
+                specialsEpisodes,
+                progress,
+                cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning(
+                $"Gemini special mapping failed; using rule mappings with review: {ex.Message}",
+                LogTarget.All);
+            PackLinkProgressReporter.Report(
+                progress,
+                PackLinkProgressStep.ParsingResponse,
+                PackLinkProgressStatus.Done,
+                "Gemini failed. Using rule mappings; review required.",
+                ex.Message);
+            return ApplyRules(request, specialsEpisodes, $"Gemini special mapping failed: {ex.Message}");
+        }
+
+        var checkedResult = SpecialMappingValidator.RemoveViolations(aiResult, specialsEpisodes);
+        if (checkedResult.RequiresReview)
+        {
+            _logger.Warning(
+                $"Gemini special mapping had {checkedResult.Warnings.Count} warning(s); conflicting pairs were dropped and the result is not cached.",
+                LogTarget.All);
+            return checkedResult;
+        }
+
+        _cache.Save(torrentHash, tmdbId, checkedResult);
+        return checkedResult;
     }
+
+    /// <summary>
+    /// The offline rule path on its own, for callers whose special step failed before or outside
+    /// <see cref="ResolveAsync"/>. Never calls Gemini and never reads or writes the cache.
+    /// </summary>
+    public static SpecialMappingResult ResolveOffline(
+        IReadOnlyList<(string RelativePath, string FileName)> files,
+        PackFolderTreeAnalysis tree,
+        IReadOnlyList<TrackedEpisode> specialsEpisodes,
+        string showTitle,
+        int tmdbId,
+        string? fallbackReason)
+    {
+        var request = PackSpecialPayloadBuilder.Build(files, tree, specialsEpisodes, showTitle, tmdbId);
+        if (request.Context.CandidateCount == 0)
+        {
+            var empty = new SpecialMappingResult();
+            return fallbackReason is null ? empty : empty.WithReview([FallbackWarning(fallbackReason)], fallbackReason);
+        }
+
+        return ApplyRules(request, specialsEpisodes, fallbackReason);
+    }
+
+    private static SpecialMappingResult ApplyRules(
+        SpecialMappingAIRequest request,
+        IReadOnlyList<TrackedEpisode> specialsEpisodes,
+        string? fallbackReason)
+    {
+        var result = SpecialMappingValidator.RemoveViolations(
+            PackSpecialPayloadBuilder.ApplyProposals(request, specialsEpisodes, SpecialMappingSource.Rule),
+            specialsEpisodes);
+        return fallbackReason is null
+            ? result
+            : result.WithReview([FallbackWarning(fallbackReason)], fallbackReason);
+    }
+
+    private static string FallbackWarning(string fallbackReason) =>
+        $"{fallbackReason.TrimEnd('.')}. Special/OVA files use rule mappings instead; check them before linking.";
 }

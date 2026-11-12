@@ -1,3 +1,4 @@
+using System.IO;
 using MediaManager.App.Tests.Special.Fixtures;
 using media_management_app.Models;
 using media_management_app.Services;
@@ -12,7 +13,7 @@ public class SpecialMappingFailureTests
 {
     private static readonly SpecialCase Pack = SpecialCases.TwoSeasonBrassPack();
 
-    [Fact(Skip = "PARSE-10")]
+    [Fact]
     public async Task Resolve_GeminiRequestFails_FallsBackToRulesWithWarning()
     {
         using var host = new SpecialOrchestratorHost(_ =>
@@ -25,7 +26,7 @@ public class SpecialMappingFailureTests
         Assert.Contains(result.Warnings, warning => warning.Contains("Gemini", StringComparison.OrdinalIgnoreCase));
     }
 
-    [Theory(Skip = "PARSE-10")]
+    [Theory]
     [InlineData(FakeGeminiResponses.TruncatedInMappings)]
     [InlineData(FakeGeminiResponses.MissingMappingArray)]
     public async Task Resolve_GeminiResponseUnreadable_FallsBackToRules(string response)
@@ -38,7 +39,7 @@ public class SpecialMappingFailureTests
         Assert.Contains(result.Warnings, warning => warning.Contains("Gemini", StringComparison.OrdinalIgnoreCase));
     }
 
-    [Fact(Skip = "PARSE-10")]
+    [Fact]
     public async Task Resolve_GeminiRepeatsCandidateIndex_LeavesThatFileUnmappedWithWarning()
     {
         using var host = new SpecialOrchestratorHost(FakeGeminiResponses.DuplicateCandidateIndex);
@@ -52,7 +53,7 @@ public class SpecialMappingFailureTests
         Assert.Contains(result.Warnings, warning => warning.Contains("S1S01", StringComparison.OrdinalIgnoreCase));
     }
 
-    [Fact(Skip = "PARSE-10")]
+    [Fact]
     public async Task Resolve_GeminiRepeatsS00Episode_DropsBothPairsWithWarning()
     {
         using var host = new SpecialOrchestratorHost(FakeGeminiResponses.DuplicateS00E);
@@ -64,7 +65,7 @@ public class SpecialMappingFailureTests
         Assert.Equal(3, result.Items.Single(item => item.RelativePath.EndsWith("S1S03.mkv", StringComparison.Ordinal)).Episode?.EpisodeNumber);
     }
 
-    [Fact(Skip = "PARSE-10")]
+    [Fact]
     public void Validator_DuplicateEpisode_ReportsInsteadOfThrowing()
     {
         var specials = Pack.Specials;
@@ -82,7 +83,7 @@ public class SpecialMappingFailureTests
         Assert.Null(error);
     }
 
-    [Fact(Skip = "PARSE-10")]
+    [Fact]
     public async Task Prepare_SpecialStepThrows_RegularEpisodesStayLinkableAndReviewIsRequired()
     {
         var service = SpecialPackPrepareHost.Create(
@@ -122,6 +123,63 @@ public class SpecialMappingFailureTests
 
         Assert.True(preview.RequiresReview);
         Assert.Equal(26, preview.RegularEpisodeCount);
+    }
+
+    [Fact]
+    public async Task Resolve_GeminiRepeatsS00Episode_ResultIsNotCached()
+    {
+        using var host = new SpecialOrchestratorHost(FakeGeminiResponses.DuplicateS00E);
+
+        var result = await host.ResolveAsync(Pack);
+
+        Assert.True(result.RequiresReview);
+        Assert.False(File.Exists(Path.Combine(host.StateFolder, media_management_app.Common.AppConstants.GeminiMappingCacheFileName)));
+    }
+
+    [Fact]
+    public async Task Resolve_GeminiFails_ResultAsksForReviewAndNamesTheReason()
+    {
+        using var host = new SpecialOrchestratorHost(_ => throw new InvalidOperationException("HTTP 429 for all models."));
+
+        var result = await host.ResolveAsync(Pack);
+
+        Assert.True(result.RequiresReview);
+        Assert.Contains("HTTP 429", result.FallbackReason);
+    }
+
+    /// <summary>Note R5: a response cut by the token limit is flagged even when what arrived still parses.</summary>
+    [Fact]
+    public async Task Resolve_GeminiStoppedEarly_WarnsThatSpecialsMayBeMissing()
+    {
+        using var host = new SpecialOrchestratorHost(FakeGeminiResponses.CorrectTwoSeasonPack, finishReason: "MAX_TOKENS");
+
+        var result = await host.ResolveAsync(Pack);
+
+        Assert.True(result.UsedGemini);
+        Assert.Contains(result.Warnings, warning => warning.Contains("MAX_TOKENS", StringComparison.Ordinal));
+    }
+
+    /// <summary>Note R10: a Gemini warning that merely contains "vs" must not hide the count mismatch warning.</summary>
+    [Fact]
+    public async Task Resolve_GeminiWarningContainsVs_CountMismatchWarningKept()
+    {
+        using var host = new SpecialOrchestratorHost(json =>
+            FakeGeminiResponses.CorrectTwoSeasonPack(json).Replace("\"w\":[]", "\"w\":[\"TVs and BDs differ\"]", StringComparison.Ordinal));
+
+        var result = await host.ResolveAsync(Pack);
+
+        Assert.Contains("15 torrent special file(s) vs 32 TMDB S00 episode(s).", result.Warnings);
+    }
+
+    [Fact]
+    public async Task Resolve_GeminiIndexOutOfRange_IsReported()
+    {
+        using var host = new SpecialOrchestratorHost(_ => "{\"m\":[[5000,1],[-1,2]],\"w\":[]}");
+
+        var result = await host.ResolveAsync(Pack);
+
+        Assert.Contains(result.Warnings, warning => warning.Contains("5000", StringComparison.Ordinal));
+        Assert.Contains(result.Warnings, warning => warning.Contains("-1", StringComparison.Ordinal));
     }
 
     /// <summary>

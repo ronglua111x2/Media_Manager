@@ -5,7 +5,7 @@ namespace MediaManager.App.Tests.Special;
 /// <summary>Parsing of the compact Gemini special-mapping response (appendix A, probe A: SPEC-04, SPEC-05).</summary>
 public class SpecialResponseParsingTests
 {
-    [Theory(Skip = "PARSE-20")]
+    [Theory]
     [InlineData("{\"m\":[[\"0\",\"3\"]],\"w\":[]}")]
     [InlineData("{\"m\":[[0,3.0]],\"w\":[]}")]
     [InlineData("{\"m\":[[null,3]],\"w\":[]}")]
@@ -18,7 +18,7 @@ public class SpecialResponseParsingTests
         Assert.Null(error);
     }
 
-    [Theory(Skip = "PARSE-20")]
+    [Theory]
     [InlineData("{}")]
     [InlineData("{\"error\":\"quota\"}")]
     [InlineData("{\"w\":[\"quota exceeded\"]}")]
@@ -32,7 +32,7 @@ public class SpecialResponseParsingTests
         Assert.False(string.IsNullOrWhiteSpace(error));
     }
 
-    [Fact(Skip = "PARSE-20")]
+    [Fact]
     public void TryParseResponse_BadPair_IsDroppedWithWarningAndGoodPairsKept()
     {
         var ok = SpecialMappingCompactJson.TryParseResponse(

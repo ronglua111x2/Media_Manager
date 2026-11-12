@@ -92,8 +92,7 @@ public static class PackSpecialPayloadBuilder
 
         if (request.Context.CountMismatch)
         {
-            warnings.Add(
-                $"{request.Context.CandidateCount} torrent special file(s) vs {request.Context.TmdbSpecialCount} TMDB S00 episode(s).");
+            warnings.Add(CountMismatchWarning(request.Context));
         }
 
         return BuildResult(items, warnings, usedGemini: source == SpecialMappingSource.Gemini);
@@ -102,7 +101,8 @@ public static class PackSpecialPayloadBuilder
     public static SpecialMappingResult BuildFromAiResponse(
         SpecialMappingAIRequest request,
         SpecialMappingAIResponse response,
-        IReadOnlyList<TrackedEpisode> specialsEpisodes)
+        IReadOnlyList<TrackedEpisode> specialsEpisodes,
+        IReadOnlyList<string>? extraWarnings = null)
     {
         var episodesByNumber = specialsEpisodes
             .Where(episode => episode.SeasonNumber == AppConstants.SpecialsSeasonNumber)
@@ -110,11 +110,14 @@ public static class PackSpecialPayloadBuilder
 
         var items = new List<SpecialMappingItem>();
         var mappedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var warnings = response.Warnings.ToList();
 
         foreach (var (candidateIndex, s00e) in response.Mappings)
         {
             if (candidateIndex < 0 || candidateIndex >= request.Context.Candidates.Count)
             {
+                warnings.Add(
+                    $"Gemini returned candidate index {candidateIndex}, outside 0..{request.Context.Candidates.Count - 1}; ignored.");
                 continue;
             }
 
@@ -148,12 +151,18 @@ public static class PackSpecialPayloadBuilder
             });
         }
 
-        var warnings = response.Warnings.ToList();
-        if (request.Context.CountMismatch &&
-            !warnings.Any(warning => warning.Contains("vs", StringComparison.OrdinalIgnoreCase)))
+        if (extraWarnings is not null)
         {
-            warnings.Add(
-                $"{request.Context.CandidateCount} torrent special file(s) vs {request.Context.TmdbSpecialCount} TMDB S00 episode(s).");
+            warnings.AddRange(extraWarnings);
+        }
+
+        if (request.Context.CountMismatch)
+        {
+            var countWarning = CountMismatchWarning(request.Context);
+            if (!warnings.Contains(countWarning, StringComparer.Ordinal))
+            {
+                warnings.Add(countWarning);
+            }
         }
 
         return BuildResult(items, warnings, usedGemini: true);
@@ -498,22 +507,58 @@ public static class PackSpecialPayloadBuilder
             : null;
     }
 
+    private static string CountMismatchWarning(SpecialMappingContext context) =>
+        $"{context.CandidateCount} torrent special file(s) vs {context.TmdbSpecialCount} TMDB S00 episode(s).";
+
+    /// <summary>
+    /// One item per file. A file that came back with two different S00 episodes (Gemini repeated a
+    /// candidateIndex) is left unmapped with a warning instead of throwing.
+    /// </summary>
     private static SpecialMappingResult BuildResult(
         IReadOnlyList<SpecialMappingItem> items,
         IReadOnlyList<string> warnings,
         bool usedGemini)
     {
-        var byPath = items.ToDictionary(
-            item => item.RelativePath,
-            item => item,
-            StringComparer.OrdinalIgnoreCase);
+        var merged = new List<SpecialMappingItem>();
+        var allWarnings = warnings.ToList();
+        var hasConflicts = false;
+
+        foreach (var group in items.GroupBy(item => item.RelativePath, StringComparer.OrdinalIgnoreCase))
+        {
+            var episodes = group
+                .Where(item => item.Episode is not null)
+                .Select(item => item.Episode!.EpisodeNumber)
+                .Distinct()
+                .ToList();
+            if (episodes.Count <= 1)
+            {
+                merged.Add(group.FirstOrDefault(item => item.Episode is not null) ?? group.First());
+                continue;
+            }
+
+            hasConflicts = true;
+            var first = group.First();
+            var fileName = Path.GetFileName(first.RelativePath.Replace('/', Path.DirectorySeparatorChar));
+            var labels = string.Join(", ", episodes.Select(episode => $"S00E{episode:00}"));
+            var message = $"'{fileName}' was mapped more than once ({labels}); left unmapped.";
+            allWarnings.Add(message);
+            merged.Add(new SpecialMappingItem
+            {
+                RelativePath = first.RelativePath,
+                Episode = null,
+                Source = first.Source,
+                ProposalReason = first.ProposalReason,
+                Reason = message
+            });
+        }
 
         return new SpecialMappingResult
         {
-            Items = items,
-            Warnings = warnings,
+            Items = merged,
+            Warnings = allWarnings,
             UsedGemini = usedGemini,
-            ByPath = byPath
+            ByPath = merged.ToDictionary(item => item.RelativePath, item => item, StringComparer.OrdinalIgnoreCase),
+            RequiresReview = hasConflicts
         };
     }
 

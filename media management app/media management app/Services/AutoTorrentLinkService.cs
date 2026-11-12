@@ -607,13 +607,12 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
                 PackLinkRegularEpisodeSummary.FormatSummary(regularEpisodesBySeason));
         }
 
-        var resolvedSpecialMappings = await _specialMappingOrchestrator.ResolveAsync(
+        var resolvedSpecialMappings = await ResolveSpecialMappingsAsync(
+            show,
+            ownerSeason,
             fileTuples,
             tree,
             specialsEpisodes,
-            show.DisplayTitle,
-            show.TmdbId,
-            ownerSeason.PackTorrentHash!,
             progress,
             useGeminiForSpecials,
             bypassCache,
@@ -634,12 +633,83 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             OwnerSeason = ownerSeason,
             Inventory = inventory,
             SpecialMappings = resolvedSpecialMappings,
-            RequiresReview = useGeminiForSpecials && resolvedSpecialMappings.UsedGemini,
+            RequiresReview = (useGeminiForSpecials && resolvedSpecialMappings.UsedGemini) || resolvedSpecialMappings.RequiresReview,
             RegularEpisodeCount = inventory.Files.Count(file => file.Classification == PackFileClassification.RegularEpisode),
             MatchedSpecialCount = inventory.Files.Count(file => file.Classification == PackFileClassification.MatchedSpecial),
             OrphanExtraCount = inventory.Files.Count(file => file.Classification == PackFileClassification.UnmatchedExtra),
             RegularEpisodesBySeason = regularEpisodesBySeason
         };
+    }
+
+    /// <summary>
+    /// Runs the special/OVA step. Any failure there (Gemini, response parsing, a bug in the payload code) falls
+    /// back to the offline rule mappings and asks for review, so the regular episodes of the pack still link.
+    /// Only a user cancellation stops the whole prepare.
+    /// </summary>
+    private async Task<SpecialMappingResult> ResolveSpecialMappingsAsync(
+        TrackedShow show,
+        TrackedSeason ownerSeason,
+        IReadOnlyList<(string RelativePath, string FileName)> fileTuples,
+        PackFolderTreeAnalysis tree,
+        IReadOnlyList<TrackedEpisode> specialsEpisodes,
+        IProgress<PackLinkProgressUpdate>? progress,
+        bool useGeminiForSpecials,
+        bool bypassCache,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _specialMappingOrchestrator.ResolveAsync(
+                       fileTuples,
+                       tree,
+                       specialsEpisodes,
+                       show.DisplayTitle,
+                       show.TmdbId,
+                       ownerSeason.PackTorrentHash!,
+                       progress,
+                       useGeminiForSpecials,
+                       bypassCache,
+                       cancellationToken)
+                   ?? throw new InvalidOperationException("Special mapping returned no result.");
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            var reason = $"Special/OVA mapping failed: {ex.Message}";
+            _logger.Warning(
+                $"Pack link '{show.DisplayTitle}' S{ownerSeason.SeasonNumber:00}: {reason} Regular episodes are not affected.",
+                LogTarget.All);
+            PackLinkProgressReporter.Report(
+                progress,
+                PackLinkProgressStep.BuildingPayload,
+                PackLinkProgressStatus.Done,
+                "Special/OVA mapping failed. Using rule mappings; review required.",
+                ex.Message);
+
+            try
+            {
+                return SpecialMappingOrchestrator.ResolveOffline(
+                    fileTuples,
+                    tree,
+                    specialsEpisodes,
+                    show.DisplayTitle,
+                    show.TmdbId,
+                    reason);
+            }
+            catch (Exception offlineError)
+            {
+                _logger.Error(
+                    $"Pack link '{show.DisplayTitle}' S{ownerSeason.SeasonNumber:00}: rule mappings for specials also failed.",
+                    offlineError,
+                    LogTarget.All);
+                return new SpecialMappingResult().WithReview(
+                    [$"{reason} Rule mappings also failed ({offlineError.Message}); special/OVA files are left out."],
+                    reason);
+            }
+        }
     }
 
     private async Task<AutoTorrentLinkResult> LinkSeasonPackCoreAsync(

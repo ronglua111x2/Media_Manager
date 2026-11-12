@@ -23,4 +23,25 @@ public sealed class SpecialMappingResult
 
     public IReadOnlyDictionary<string, SpecialMappingItem> ByPath { get; init; } =
         new Dictionary<string, SpecialMappingItem>(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Set when the special step itself found a problem (Gemini failed and rules were used instead, or
+    /// conflicting pairs were dropped). The pack link must then be reviewed before anything is linked.
+    /// </summary>
+    public bool RequiresReview { get; init; }
+
+    /// <summary>Why the rule mappings replace the requested Gemini mappings, or null when nothing failed.</summary>
+    public string? FallbackReason { get; init; }
+
+    /// <summary>Copy with extra warnings and the review flag set (items are unchanged).</summary>
+    public SpecialMappingResult WithReview(IEnumerable<string> extraWarnings, string? fallbackReason = null) =>
+        new()
+        {
+            Items = Items,
+            Warnings = Warnings.Concat(extraWarnings).Distinct(StringComparer.Ordinal).ToList(),
+            UsedGemini = UsedGemini,
+            ByPath = ByPath,
+            RequiresReview = true,
+            FallbackReason = fallbackReason ?? FallbackReason
+        };
 }

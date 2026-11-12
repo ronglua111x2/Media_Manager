@@ -926,6 +926,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
             return;
         }
 
+        using var cancellation = new CancellationTokenSource();
         try
         {
             StatusMessage = useGeminiForSpecials
@@ -952,6 +953,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
                 var show = _databaseService.GetTrackedShow(season.ShowId);
                 var showTitle = show?.DisplayTitle ?? "Show";
                 progressViewModel = new PackLinkProgressViewModel(showTitle, season.SeasonNumber);
+                progressViewModel.AttachCancellation(cancellation);
                 progressWindow = new PackLinkProgressWindow(progressViewModel)
                 {
                     Owner = System.Windows.Application.Current.MainWindow
@@ -978,16 +980,13 @@ public sealed partial class LibraryViewModel : ViewModelBase
                             season.SeasonNumber,
                             progress,
                             useGeminiForSpecials,
-                            bypassCache);
-
-                        if (preview.RequiresReview)
-                        {
-                            progressViewModel?.PrepareForReview("AI mapping complete. Opening review...");
-                        }
-                        else if (progressViewModel is not null)
-                        {
-                            progressViewModel.MarkComplete("Pack analysis complete.");
-                        }
+                            bypassCache,
+                            cancellation.Token);
+                    }
+                    catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+                    {
+                        MarkPackLinkCancelled(progressViewModel, progressWindow);
+                        return;
                     }
                     catch (Exception ex)
                     {
@@ -998,10 +997,13 @@ public sealed partial class LibraryViewModel : ViewModelBase
 
                     if (!preview.RequiresReview)
                     {
-                        result = await _autoTorrentLinkService.ApplySeasonPackLinkAsync(preview);
+                        result = await ApplyPackLinkAsync(preview, season, progress, progressViewModel, progressWindow, cancellation.Token);
                         break;
                     }
 
+                    progressViewModel?.PrepareForReview(preview.SpecialMappings.FallbackReason is null
+                        ? "Mapping complete. Opening review..."
+                        : "Special/OVA mapping failed; rule mappings are shown for review...");
                     progressWindow?.Hide();
 
                     var reviewViewModel = new PackLinkReviewViewModel();
@@ -1019,14 +1021,11 @@ public sealed partial class LibraryViewModel : ViewModelBase
                     catch (Exception ex)
                     {
                         StatusMessage = $"Pack review window failed for S{season.SeasonNumber:00}: {ex.Message}";
-                        if (progressViewModel is not null && useGeminiForSpecials)
+                        if (progressViewModel is not null)
                         {
                             progressViewModel.MarkFailed(ex.Message, ex.ToString());
-                            progressWindow = new PackLinkProgressWindow(progressViewModel)
-                            {
-                                Owner = System.Windows.Application.Current.MainWindow
-                            };
-                            progressWindow.Show();
+                            progressWindow?.Show();
+                            progressWindow?.Activate();
                         }
 
                         return;
@@ -1034,10 +1033,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
 
                     if (reviewAccepted != true)
                     {
-                        StatusMessage = "Pack linking cancelled.";
-                        progressViewModel?.MarkCancelled("Pack linking cancelled.");
-                        progressWindow?.Show();
-                        progressWindow?.Activate();
+                        MarkPackLinkCancelled(progressViewModel, progressWindow);
                         return;
                     }
 
@@ -1048,13 +1044,10 @@ public sealed partial class LibraryViewModel : ViewModelBase
                             isRetry = true;
                             continue;
                         case PackLinkReviewDecision.Accept:
-                            result = await _autoTorrentLinkService.ApplySeasonPackLinkAsync(preview);
+                            result = await ApplyPackLinkAsync(preview, season, progress, progressViewModel, progressWindow, cancellation.Token);
                             break;
                         default:
-                            StatusMessage = "Pack linking cancelled.";
-                            progressViewModel?.MarkCancelled("Pack linking cancelled.");
-                            progressWindow?.Show();
-                            progressWindow?.Activate();
+                            MarkPackLinkCancelled(progressViewModel, progressWindow);
                             return;
                     }
 
@@ -1088,6 +1081,51 @@ public sealed partial class LibraryViewModel : ViewModelBase
         {
             StatusMessage = $"Pack link failed for S{season.SeasonNumber:00}: {ex.Message}";
         }
+    }
+
+    /// <summary>
+    /// Creates the links of a prepared (and, when needed, reviewed) pack. A failure or a cancellation is shown in
+    /// the progress window and the status bar instead of leaving the window hidden or reporting "complete".
+    /// </summary>
+    private async Task<AutoTorrentLinkResult?> ApplyPackLinkAsync(
+        SeasonPackLinkPreview preview,
+        LibrarySeasonViewModel season,
+        IProgress<PackLinkProgressUpdate>? progress,
+        PackLinkProgressViewModel? progressViewModel,
+        PackLinkProgressWindow? progressWindow,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await _autoTorrentLinkService.ApplySeasonPackLinkAsync(preview, progress, cancellationToken);
+            progressViewModel?.MarkComplete($"Pack linked: {result.Summary}.");
+            return result;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            MarkPackLinkCancelled(progressViewModel, progressWindow);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Pack link failed for S{season.SeasonNumber:00}: {ex.Message}";
+            if (progressViewModel is not null)
+            {
+                progressViewModel.MarkFailed($"Creating library links failed: {ex.Message}", ex.ToString());
+                progressWindow?.Show();
+                progressWindow?.Activate();
+            }
+
+            return null;
+        }
+    }
+
+    private void MarkPackLinkCancelled(PackLinkProgressViewModel? progressViewModel, PackLinkProgressWindow? progressWindow)
+    {
+        StatusMessage = "Pack linking cancelled.";
+        progressViewModel?.MarkCancelled("Pack linking cancelled.");
+        progressWindow?.Show();
+        progressWindow?.Activate();
     }
 
     [RelayCommand(CanExecute = nameof(CanLinkMovie))]
