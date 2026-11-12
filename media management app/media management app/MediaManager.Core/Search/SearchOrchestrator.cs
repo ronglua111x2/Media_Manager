@@ -172,10 +172,39 @@ public sealed class SearchOrchestrator(IndexerRequestGovernor governor, Func<str
             .SelectMany(result => result.Rows)
             .Where(row => !string.IsNullOrWhiteSpace(row.FileUrl))
             .GroupBy(row => CandidateDeduplicator.IdentityKey(row.FileUrl), StringComparer.Ordinal)
-            .Select(group => group.OrderByDescending(row => row.Seeders).First())
+            .Select(MergeGroup)
             .OrderByDescending(row => row.Seeders)
             .ToList();
         return new OrchestratedSearch(merged, telemetry, total.ElapsedMilliseconds);
+    }
+
+    /// <summary>
+    /// Keeps the best-seeded row of one torrent, but carries over a site page (TPB description, LimeTorrents
+    /// detail) from another source when the winner has none: that page is how results are matched with the
+    /// qBittorrent plugins, which return those pages instead of hashes.
+    /// </summary>
+    private static TorrentSearchResult MergeGroup(IGrouping<string, TorrentSearchResult> group)
+    {
+        var winner = group.OrderByDescending(row => row.Seeders).First();
+        if (SearchIdentity.AliasesOf(winner.DescriptionUrl).Any())
+        {
+            return winner;
+        }
+
+        var withPage = group.FirstOrDefault(row => SearchIdentity.AliasesOf(row.DescriptionUrl).Any());
+        return withPage is null
+            ? winner
+            : new TorrentSearchResult
+            {
+                FileName = winner.FileName,
+                FileSize = winner.FileSize,
+                FileUrl = winner.FileUrl,
+                DescriptionUrl = withPage.DescriptionUrl,
+                Seeders = winner.Seeders,
+                Leechers = winner.Leechers,
+                EngineName = winner.EngineName,
+                SiteUrl = winner.SiteUrl
+            };
     }
 
     private async Task<(IndexerRunTelemetry, List<TorrentSearchResult>)> RunIndexerAsync(

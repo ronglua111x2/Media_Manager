@@ -70,3 +70,40 @@ Mỗi nguồn mới phải có fixture test, chính sách governor và một dò
 | 5 | Đo lại, cập nhật [07](./07-phases.md#số-liệu-sau-từng-giai-đoạn) | Số liệu trước và sau từng bước |
 
 Ràng buộc giữ nguyên: mọi request đi qua governor; không vượt challenge; mặc định backend vẫn là `Qbittorrent` cho tới khi qua cổng P6 (user có thể bật `Both` hoặc `Native` theo recipe để thử).
+
+## 4. Kết quả (12/11/2026)
+
+Đã làm Q1–Q5 (`7ad12ef` và các commit sửa sau đó). Q3 "luôn search tên gốc" bị bỏ: TMDB `original_title` không được lưu riêng, và nó đã nằm trong danh sách tên thay thế, thứ mà movie mặc định search từ P1. Kickass có indexer nhưng **mặc định tắt**, vì trang kết quả không có hash hay magnet (chỉ trang chi tiết mới có).
+
+**Lỗi đo phát hiện trên đường làm.** Plugin `thepiratebay` và `limetorrents` của qBittorrent trả về **link trang** (mô tả hoặc chi tiết) thay vì hash. Vì vậy cùng một torrent bị đếm hai lần và bị coi là "native không có". `SearchIdentity` quy các link trang đó về hash nhờ dữ liệu của indexer native; cách quy này áp dụng cho cả bench lẫn log `Both`.
+
+`SearchBench movies-compare` (15 movie thật, đã đếm đúng cách), số **ứng viên tốt** (đạt, thuộc 2 chất lượng cao nhất của recipe, seed ≥ 5):
+
+| Movie | qBittorrent | Native | Bản #1 |
+|---|---|---|---|
+| Coherence | 25 | 21 | native điểm cao hơn |
+| Predestination | 25 | 24 | giống nhau |
+| Your Name. | 129 | 96 | giống nhau |
+| Liz and the Blue Bird | 20 | 15 | giống nhau |
+| The Lego Movie 2 | 50 | 35 | giống nhau |
+| Euphonium – Our Promise | 16 | 14 | giống nhau |
+| El Camino | 31 | 24 | giống nhau |
+| Spider-Man: No Way Home | 90 | 80 | giống nhau |
+| Jujutsu Kaisen 0 | 1 | 2 | qBittorrent điểm cao hơn |
+| Oppenheimer | 126 | 100 | giống nhau |
+| Euphonium: Ensemble Contest | 0 | 0 | giống nhau |
+| Spider-Man: Across the Spider-Verse | 59 | 51 | native điểm cao hơn |
+| Golam | 0 | 5 | native điểm cao hơn |
+| Cosmic Princess Kaguya! | 0 | 1 | giống nhau |
+| Project Hail Mary | 88 | 70 | giống nhau |
+| **Tổng** | **660** | **538 (82%)** | **Native bằng hoặc cao hơn ở 14/15** |
+
+Thời gian mỗi movie: native 2–26 s, qBittorrent 13–242 s.
+
+**Còn thiếu so với cổng P6.** Cổng yêu cầu số bản tốt của native ≥ 90% của qBittorrent; hiện mới đạt 82% tổng. Các bản tốt native còn thiếu chủ yếu đến từ:
+- query có token chất lượng của recipe (`… 1080p`), mà native đã gộp thành query chỉ có tên;
+- plugin `yts` và `torrentdownloads` trả thêm vài bản.
+
+Bước tiếp theo:
+- cho phép native giữ query `title + quality` với **indexer HTML có phân trang** (LimeTorrents);
+- chạy `Both` thật vài ngày rồi dùng `SearchBench gate`.
