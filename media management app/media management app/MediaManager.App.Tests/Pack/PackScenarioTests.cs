@@ -263,6 +263,19 @@ public class PackScenarioTests
         }
     }
 
+    // Audit L1-L6: TMDB makes "Season 1 Part 2" its own season 2; absolute "- 13".."- 24" map to S02E01..E12,
+    // which is not a restart of season 1 and must be linked.
+    [Fact]
+    public void SeasonPartTwoFolder_AbsoluteNumbersMappedToTheNextSeason_AreLinked()
+    {
+        var inventory = PackScenario.Run(Scenarios["part2-next-season"]);
+
+        for (var absolute = 13; absolute <= 24; absolute++)
+        {
+            PackScenario.AssertRegular(inventory, $"Show/Season 1 Part 2/[Group] Show - {absolute:00} [1080p].mkv", 2, absolute - 12);
+        }
+    }
+
     [Fact]
     public void L_MultiEpisodeFileInMultiSeasonPack_StaysInItsSeason()
     {
@@ -568,6 +581,11 @@ public class PackScenarioTests
             ["year-as-season-20"] = new(
                 Owner: 20, Covered: [20], EpisodesPerSeason: new() { [19] = 20, [20] = 20, [21] = 10 },
                 Files: ["Show.S20/Show.S20E01.mkv", "Show.S20/Show.S20E02.mkv", "Show.S20/Your.Feature.2016.2160p.BluRay.x265.mkv"]),
+            ["part2-next-season"] = new(
+                Owner: 1, Covered: [1, 2], EpisodesPerSeason: new() { [1] = 12, [2] = 12 },
+                Files: Enumerable.Range(1, 12).Select(e => $"Show/Season 1/[Group] Show - {e:00} [1080p].mkv")
+                    .Concat(Enumerable.Range(13, 12).Select(e => $"Show/Season 1 Part 2/[Group] Show - {e:00} [1080p].mkv"))
+                    .ToArray()),
             ["K"] = new(
                 Owner: 1, Covered: [1], EpisodesPerSeason: new() { [1] = 6 },
                 Files: Enumerable.Range(1, 3).Select(e => $"Show/Season 1/Show.S01E{e:00}.mkv")
