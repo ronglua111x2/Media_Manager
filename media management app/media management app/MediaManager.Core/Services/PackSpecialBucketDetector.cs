@@ -45,6 +45,11 @@ public static class PackSpecialBucketDetector
 
     private static (SpecialLayoutKind Kind, int? ParentSeason)? ClassifyLayout(string relativePath, string fileName)
     {
+        if (TorrentFileRules.IsSampleOrProof(relativePath))
+        {
+            return null;
+        }
+
         if (IsUnderMoviesFolder(relativePath) ||
             fileName.Contains("movie", StringComparison.OrdinalIgnoreCase))
         {

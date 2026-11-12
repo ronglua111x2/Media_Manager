@@ -13,7 +13,8 @@ public static class PackTorrentInventoryAnalyzer
         PackAnalyzeMode mode = PackAnalyzeMode.Inspect,
         SpecialMappingResult? resolvedSpecialMappings = null,
         IAppLogger? logger = null,
-        int? ownerSeasonNumber = null)
+        int? ownerSeasonNumber = null,
+        IReadOnlyDictionary<string, long>? fileSizes = null)
     {
         var inventory = new PackTorrentInventory();
         var episodesByKey = episodes.ToDictionary(episode => (episode.SeasonNumber, episode.EpisodeNumber));
@@ -47,7 +48,7 @@ public static class PackTorrentInventoryAnalyzer
                 group => group.Key,
                 group => group.Select(episode => episode.EpisodeNumber).ToHashSet() as IReadOnlySet<int>);
         var fallbackPatterns = BuildFallbackPatternsBySeason(seasonGroups, seasonCountsFromDb);
-        var resolutionsByPath = ResolveRegularEpisodesBySeason(seasonGroups, validEpisodesBySeason, fallbackPatterns);
+        var resolutionsByPath = ResolveRegularEpisodesBySeason(seasonGroups, validEpisodesBySeason, fallbackPatterns, fileSizes);
         var specialMappings = BuildSpecialMappings(files, tree, specialsEpisodes, resolvedSpecialMappings);
 
         foreach (var (relativePath, fileName) in files)
@@ -325,7 +326,8 @@ public static class PackTorrentInventoryAnalyzer
     private static Dictionary<string, PackEpisodeResolution> ResolveRegularEpisodesBySeason(
         IReadOnlyList<PackSeasonFileGrouper.SeasonFileGroup> seasonGroups,
         IReadOnlyDictionary<int, IReadOnlySet<int>> validEpisodesBySeason,
-        IReadOnlyDictionary<int, InferredEpisodePattern> fallbackPatterns)
+        IReadOnlyDictionary<int, InferredEpisodePattern> fallbackPatterns,
+        IReadOnlyDictionary<string, long>? fileSizes)
     {
         var resolutions = new Dictionary<string, PackEpisodeResolution>(StringComparer.OrdinalIgnoreCase);
 
@@ -337,7 +339,8 @@ public static class PackTorrentInventoryAnalyzer
                 group.Files,
                 group.SeasonNumber,
                 validEpisodes,
-                fallbackPattern?.IsValid == true ? fallbackPattern : null);
+                fallbackPattern?.IsValid == true ? fallbackPattern : null,
+                fileSizes);
 
             foreach (var (path, resolution) in seasonResolutions)
             {
@@ -464,6 +467,11 @@ public static class PackTorrentInventoryAnalyzer
         IReadOnlySet<int> coveredSeasons,
         PackAnalyzeMode mode)
     {
+        if (TorrentFileRules.IsSampleOrProof(relativePath))
+        {
+            return Skipped(relativePath, fileName, "Sample or proof file.");
+        }
+
         if (IsMoviePackFile(relativePath, fileName) || IsUnderMoviesFolder(relativePath))
         {
             return new PackFileEntry

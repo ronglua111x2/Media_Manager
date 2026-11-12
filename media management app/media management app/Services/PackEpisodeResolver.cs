@@ -7,17 +7,14 @@ namespace media_management_app.Services;
 
 public static class PackEpisodeResolver
 {
-    private static readonly Regex RevisionRegex = new(
-        @"(?:^|[^a-z0-9])(?:v(?<version>\d+)|proper|repack)(?:$|[^a-z0-9])",
-        RegexOptions.IgnoreCase | RegexOptions.Compiled);
-
     public static IReadOnlyDictionary<string, PackEpisodeResolution> ResolveSeason(
         IReadOnlyList<(string RelativePath, string FileName)> files,
         int seasonNumber,
         IReadOnlySet<int> validEpisodeNumbers,
-        InferredEpisodePattern? fallbackPattern = null)
+        InferredEpisodePattern? fallbackPattern = null,
+        IReadOnlyDictionary<string, long>? fileSizes = null)
     {
-        var candidates = new List<(string RelativePath, string FileName, int Episode, int RevisionScore)>();
+        var candidates = new List<(string RelativePath, string FileName, int Episode)>();
 
         foreach (var (relativePath, fileName) in files)
         {
@@ -35,15 +32,16 @@ public static class PackEpisodeResolver
                 continue;
             }
 
-            candidates.Add((relativePath, fileName, episode.Value, GetRevisionScore(stem)));
+            candidates.Add((relativePath, fileName, episode.Value));
         }
 
         var resolutions = new Dictionary<string, PackEpisodeResolution>(StringComparer.OrdinalIgnoreCase);
         foreach (var group in candidates.GroupBy(item => item.Episode))
         {
-            var winner = group
-                .OrderByDescending(item => item.RevisionScore)
-                .ThenBy(item => item.RelativePath, StringComparer.OrdinalIgnoreCase)
+            var winner = TorrentFileRules.OrderByPreference(
+                    group,
+                    item => item.RelativePath,
+                    item => GetFileSize(fileSizes, item.RelativePath))
                 .First();
 
             resolutions[winner.RelativePath] = PackEpisodeResolution.Linked(seasonNumber, winner.Episode);
@@ -52,7 +50,7 @@ public static class PackEpisodeResolver
             {
                 resolutions[loser.RelativePath] = PackEpisodeResolution.Skipped(
                     seasonNumber,
-                    $"Duplicate of S{seasonNumber:00}E{loser.Episode:00}; preferred revision file.");
+                    $"Duplicate of S{seasonNumber:00}E{loser.Episode:00}; kept '{winner.FileName}' (revision, quality, size).");
             }
         }
 
@@ -193,20 +191,6 @@ public static class PackEpisodeResolver
         return validEpisodeNumbers.Contains(episode);
     }
 
-    private static int GetRevisionScore(string stem)
-    {
-        var match = RevisionRegex.Match(stem);
-        if (!match.Success)
-        {
-            return 0;
-        }
-
-        if (match.Groups["version"].Success &&
-            int.TryParse(match.Groups["version"].Value, out var version))
-        {
-            return 100 + version;
-        }
-
-        return 50;
-    }
+    private static long GetFileSize(IReadOnlyDictionary<string, long>? fileSizes, string relativePath) =>
+        fileSizes is not null && fileSizes.TryGetValue(relativePath, out var size) ? size : 0;
 }

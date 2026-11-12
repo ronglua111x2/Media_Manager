@@ -569,6 +569,7 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
         var seasons = _databaseService.GetTrackedSeasons(show.Id);
         var files = await GetCompletedVideoFilesAsync(torrent, cancellationToken);
         var fileTuples = files.Select(file => (file.Name, Path.GetFileName(file.Name))).ToList();
+        var fileSizes = BuildFileSizes(files);
         var tree = PackFolderTreeAnalyzer.Analyze(fileTuples.Select(file => file.Name).ToList());
         var specialsEpisodes = episodes
             .Where(episode => episode.SeasonNumber == AppConstants.SpecialsSeasonNumber)
@@ -593,7 +594,8 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
                 coveredSeasons,
                 PackAnalyzeMode.Link,
                 regularOnlyMappings,
-                ownerSeasonNumber: ownerSeason.SeasonNumber);
+                ownerSeasonNumber: ownerSeason.SeasonNumber,
+                fileSizes: fileSizes);
 
             regularEpisodesBySeason = PackLinkRegularEpisodeSummary.Build(
                 regularInventory,
@@ -626,7 +628,8 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             coveredSeasons,
             PackAnalyzeMode.Link,
             resolvedSpecialMappings,
-            ownerSeasonNumber: ownerSeason.SeasonNumber);
+            ownerSeasonNumber: ownerSeason.SeasonNumber,
+            fileSizes: fileSizes);
 
         return new SeasonPackLinkPreview
         {
@@ -1096,8 +1099,19 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
     private async Task<IReadOnlyList<TorrentContentFile>> GetCompletedVideoFilesAsync(AddedTorrentResult torrent, CancellationToken cancellationToken)
     {
         return (await _qbittorrentClient.GetTorrentFilesAsync(torrent.Hash, cancellationToken))
-            .Where(file => file.IsVideoFile && file.IsComplete)
+            .Where(file => file.IsVideoFile && file.IsComplete && !TorrentFileRules.IsSampleOrProof(file.Name))
             .ToList();
+    }
+
+    private static IReadOnlyDictionary<string, long> BuildFileSizes(IReadOnlyList<TorrentContentFile> files)
+    {
+        var sizes = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        foreach (var file in files)
+        {
+            sizes[file.Name] = file.Size;
+        }
+
+        return sizes;
     }
 
     private async Task<HashSet<string>> CollectPackSourcePathsAsync(
@@ -1147,11 +1161,7 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             return files[0];
         }
 
-        return files.FirstOrDefault(file =>
-        {
-            var parsed = TorrentCandidateParser.Parse(file.Name);
-            return parsed.SeasonNumber == episode.SeasonNumber && parsed.EpisodeNumber == episode.EpisodeNumber;
-        });
+        return TorrentFileRules.SelectEpisodeFile(files, episode.SeasonNumber, episode.EpisodeNumber);
     }
 
     private static SourceItem CreateEpisodeSourceItem(

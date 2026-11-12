@@ -61,7 +61,7 @@ public class PackScenarioTests
         PackScenario.AssertRegular(inventory, "Show/Season 1/Show.S01E04.Movie.Night.1080p.mkv", 1, 4);
     }
 
-    [Fact(Skip = "PARSE-02")]
+    [Fact]
     public void E_SampleNextToEpisode_SampleIsSkippedAndMainFileWins()
     {
         var inventory = PackScenario.Run(Scenarios["E"]);
@@ -81,7 +81,7 @@ public class PackScenarioTests
         PackScenario.AssertRegular(inventory, "Show/Season 1/Show.S01E05.1080p.mkv", 1, 5);
     }
 
-    [Fact(Skip = "PARSE-07")]
+    [Fact]
     public void F_RevisionGluedToEpisodeNumber_WinsOverOriginal()
     {
         var inventory = PackScenario.Run(Scenarios["F"]);
@@ -159,13 +159,23 @@ public class PackScenarioTests
     }
 
     // Same as J but the lower quality sorts first by path, so only an explicit quality rule picks 1080p.
-    [Fact(Skip = "PARSE-07")]
+    [Fact]
     public void J_TwoQualitiesOfOneEpisode_PicksHigherQualityRegardlessOfPathOrder()
     {
         var inventory = PackScenario.Run(Scenarios["J-reversed"]);
 
         PackScenario.AssertRegular(inventory, "Show/Season 1/Show.S01E01.1080p.mkv", 1, 1);
         Assert.Equal(PackFileClassification.Skipped, PackScenario.Entry(inventory, "Show/Season 1/720p/Show.S01E01.720p.mkv").Classification);
+    }
+
+    // Two copies with the same revision and quality: the larger file wins, whatever the path order.
+    [Fact]
+    public void SameQualityCopies_LargerFileWins()
+    {
+        var inventory = PackScenario.Run(Scenarios["sizes"]);
+
+        PackScenario.AssertRegular(inventory, "Show/Season 1/b/Show.S01E01.1080p.mkv", 1, 1);
+        Assert.Equal(PackFileClassification.Skipped, PackScenario.Entry(inventory, "Show/Season 1/a/Show.S01E01.1080p.mkv").Classification);
     }
 
     [Fact(Skip = "PARSE-04")]
@@ -331,6 +341,10 @@ public class PackScenarioTests
                     "Show/Season 1/Show.S01E01.1080p.mkv",
                     "Show/Season 1/Show.S01E02.1080p.mkv",
                 ]),
+            ["sizes"] = new(
+                Owner: 1, Covered: [1], EpisodesPerSeason: new() { [1] = 1 },
+                Files: ["Show/Season 1/a/Show.S01E01.1080p.mkv", "Show/Season 1/b/Show.S01E01.1080p.mkv"],
+                Sizes: new() { ["Show/Season 1/a/Show.S01E01.1080p.mkv"] = 700_000_000, ["Show/Season 1/b/Show.S01E01.1080p.mkv"] = 1_400_000_000 }),
             ["K"] = new(
                 Owner: 1, Covered: [1], EpisodesPerSeason: new() { [1] = 6 },
                 Files: Enumerable.Range(1, 3).Select(e => $"Show/Season 1/Show.S01E{e:00}.mkv")
@@ -370,7 +384,8 @@ internal sealed record PackScenarioDefinition(
     int[] Covered,
     Dictionary<int, int> EpisodesPerSeason,
     string[] Files,
-    (int Episode, string AirDate, string Title)[]? Specials = null);
+    (int Episode, string AirDate, string Title)[]? Specials = null,
+    Dictionary<string, long>? Sizes = null);
 
 internal static class PackScenario
 {
@@ -390,7 +405,8 @@ internal static class PackScenario
             scenario.Covered.ToHashSet(),
             PackAnalyzeMode.Link,
             ResolveSpecialsOffline(files, specials),
-            ownerSeasonNumber: scenario.Owner);
+            ownerSeasonNumber: scenario.Owner,
+            fileSizes: scenario.Sizes);
     }
 
     // Mirrors the offline branch of SpecialMappingOrchestrator.ResolveAsync (Gemini off or no key).

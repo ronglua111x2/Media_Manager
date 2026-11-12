@@ -67,6 +67,11 @@ public static class PackSeasonFileGrouper
 
     public static string? GetEpisodeGroupExcludeReason(string relativePath, string fileName)
     {
+        if (TorrentFileRules.IsSampleOrProof(relativePath))
+        {
+            return "sample";
+        }
+
         if (IsUnderMoviesFolder(relativePath) ||
             fileName.Contains("movie", StringComparison.OrdinalIgnoreCase))
         {

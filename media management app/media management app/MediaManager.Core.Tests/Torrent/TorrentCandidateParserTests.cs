@@ -225,7 +225,7 @@ public class TorrentCandidateParserTests
     // PackSeasonFileGrouper exclude reason, special-bucket candidate, path season hint.
     [Theory]
     [InlineData(1, "Show.Name.S01E05.1080p.WEB-DL.x264-GRP.mkv", 1, 5, 1, 5, false, false, null, false, null)]
-    [InlineData(2, "Show.Name.S01E05v2.1080p.mkv", 1, 5, 1, 5, false, false, null, false, null, Skip = "PARSE-07")]
+    [InlineData(2, "Show.Name.S01E05v2.1080p.mkv", 1, 5, 1, 5, false, false, null, false, null)]
     [InlineData(3, "Show.Name.S01E01E02.1080p.mkv", 1, 1, 1, 1, false, false, null, false, null, Skip = "PARSE-06")]
     [InlineData(4, "Show.Name.S01E01-E02.1080p.mkv", 1, 1, 1, 1, false, false, null, false, null)]
     [InlineData(5, "Show.Name.S01E01-02.1080p.mkv", 1, 1, 1, 1, false, false, null, false, null)]
@@ -235,7 +235,7 @@ public class TorrentCandidateParserTests
     [InlineData(8, "Show.Name.S01E05.PROPER.1080p.mkv", 1, 5, 1, 5, false, false, null, false, null)]
     [InlineData(9, "Show.Name.S01E05.REPACK.1080p.mkv", 1, 5, 1, 5, false, false, null, false, null)]
     [InlineData(10, "[SubsPlease] Show - 05 (1080p) [ABCD1234].mkv", null, null, null, 5, false, false, null, false, null)]
-    [InlineData(11, "[Group] Show - 05v2 [1080p].mkv", null, null, null, 5, false, false, null, false, null, Skip = "PARSE-07")]
+    [InlineData(11, "[Group] Show - 05v2 [1080p].mkv", null, null, null, 5, false, false, null, false, null)]
     // Rows 12-15: absolute parse used by search/hunt (report section 8), owned by feat/native-search.
     [InlineData(12, "[SubsPlease] Show S2 - 05 (1080p) [ABCD1234].mkv", null, null, null, 5, false, false, null, false, null, Skip = "Report section 8 (search, feat/native-search)")]
     [InlineData(13, "[SubsPlease] Show 100 - 05 (1080p).mkv", null, null, null, 5, false, false, null, false, null, Skip = "Report section 8 (search, feat/native-search)")]
@@ -255,7 +255,7 @@ public class TorrentCandidateParserTests
     [InlineData(27, "Show/Season 1/Show.S01S02.mkv", null, null, null, null, true, false, "special-bucket", true, 1)]
     [InlineData(28, "Show/Season 1/Extras/Show.NCOP.01.mkv", null, null, null, 1, false, true, "extras-folder", false, 1)]
     [InlineData(29, "Show/Show.NCOP01.mkv", null, null, null, null, false, true, "extra-content", false, null, Skip = "Report section 2 #23 (NCOP01), PR-8")]
-    [InlineData(30, "Show.S01E05.1080p/Sample/show.s01e05.1080p-sample.mkv", 1, 5, 1, 5, false, false, "sample", false, null, Skip = "PARSE-02")]
+    [InlineData(30, "Show.S01E05.1080p/Sample/show.s01e05.1080p-sample.mkv", 1, 5, 1, 5, false, false, "sample", false, null)]
     [InlineData(31, "Show/Season 1 Part 2/Show.S01E03.mkv", 1, 3, 1, 3, false, false, null, false, null, Skip = "PARSE-04")]
     [InlineData(32, "Show Season 1-3 1080p/Show.S02E05.1080p.mkv", 2, 5, 2, 5, false, false, null, false, null, Skip = "PARSE-04")]
     // Rows 33-35: the episode is only in a folder name or needs Sonarr; this parser leaves them alone.
