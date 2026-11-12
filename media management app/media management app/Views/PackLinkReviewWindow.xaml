@@ -117,6 +117,7 @@
                     <DataGridTextColumn Header="Maps to"
                                         Binding="{Binding TargetLabel}"
                                         Width="*"
+                                        MinWidth="90"
                                         ElementStyle="{StaticResource ReviewCellTextStyle}" />
                     <DataGridTextColumn Header="TMDB title"
                                         Binding="{Binding TmdbTitle}"
@@ -125,10 +126,12 @@
                     <DataGridTextColumn Header="Air date"
                                         Binding="{Binding AirDateLabel}"
                                         Width="90"
+                                        MinWidth="90"
                                         ElementStyle="{StaticResource ReviewCellTextStyle}" />
                     <DataGridTextColumn Header="Source"
                                         Binding="{Binding SourceLabel}"
                                         Width="110"
+                                        MinWidth="110"
                                         ElementStyle="{StaticResource ReviewCellTextStyle}" />
                     <DataGridTemplateColumn Header="Reason" Width="2*">
                         <DataGridTemplateColumn.CellTemplate>
