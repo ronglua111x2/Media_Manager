@@ -48,6 +48,8 @@ public sealed class AutomationFlowService : IAutomationFlowService
         _logger = logger;
     }
 
+    private const int MovieCandidateListCap = 40;
+
     public async Task<RecipeDryRunResult> DryRunAsync(RecipeRunRequest request, CancellationToken cancellationToken = default)
     {
         return request.TargetKind == MediaKind.Movie
@@ -147,7 +149,9 @@ public sealed class AutomationFlowService : IAutomationFlowService
                 recipe,
                 _settingsService.Current.AutoTorrent,
                 request.Overrides);
-            return BuildDryRunResult(_settingsService.Current.AutoTorrent, recipe, movie.DisplayTitle, queries, evaluated, maxCandidates);
+            // native-search P5 / SRCH-15: movies often have hundreds of encodes; keep up to 40 ranked by the
+            // recipe score so the cart picker can compare them (the recipe's own count still decides the top).
+            return BuildDryRunResult(_settingsService.Current.AutoTorrent, recipe, movie.DisplayTitle, queries, evaluated, Math.Max(maxCandidates, MovieCandidateListCap));
         }
         finally
         {
