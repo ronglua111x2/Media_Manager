@@ -379,6 +379,8 @@ Kết quả: 552 test Core và 140 test App đều pass.
 
 **NS-32 (mới, phát hiện khi kiểm chứng):** 30 dòng từ LimeTorrents và TorrentDownloads có tên bị mojibake. Ví dụ `Ð¡Ð²ÑÐ·ÑŒ Coherence (2013)` thay vì `Связь Coherence (2013)`, và `å½—æ˜Ÿæ¥çš„… Coherence 2013`. Chữ rác trông như chữ Latin đứng trước tên phim, nên bản đúng bị loại. `MojibakeRepair` khôi phục tên khi nó đổi ngược lại được thành UTF-8 hợp lệ; chữ Latin-1 thật như "Amélie" giữ nguyên. Bước này chạy cho mọi indexer, ngay lúc chuẩn hóa kết quả.
 
+Chạy lại bench sau khi sửa: các bản Nga/Trung của Coherence đã được nhận (19 lên 21 bản tốt). Chỉ còn 1 dòng mojibake không khôi phục được; các movie khác giữ nguyên số. Tổng số bản tốt của native là 565 trên 15 movie.
+
 **Còn lại, chấp nhận được:** nếu một lượt chạy kết thúc giữa chừng (timeout, lỗi HTTP ở trang sau) thì các trang đã thành công không được báo. Lúc đó breaker đang ở HalfOpen sẽ mở lại sớm hơn. Hướng này an toàn với site, và site không bao giờ bị chặn vĩnh viễn.
 
 ## 7. Thứ tự sửa đề xuất
