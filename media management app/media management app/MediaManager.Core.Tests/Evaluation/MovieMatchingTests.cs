@@ -118,6 +118,15 @@ public class MovieMatchingTests
     }
 
     [Fact]
+    public void NumberedMovieTitle_DoesNotAcceptYearlessEpisodeOfTheSeries()
+    {
+        var movie = TrackedShowBuilder.Movie("Jujutsu Kaisen 0", 2021);
+
+        Evaluate(movie, "[Kaizoku] Jujutsu Kaisen - 53 (WEB 1080p HEVC EAC-3) [B87CF501]").IsAccepted.Should().BeFalse();
+        Evaluate(movie, "[Group] Jujutsu Kaisen 0 (BD 1080p HEVC)").IsAccepted.Should().BeTrue();
+    }
+
+    [Fact]
     public void UnrelatedTitle_IsStillRejected()
     {
         var result = Evaluate(TrackedShowBuilder.Movie("Coherence", 2014), "Predestination.2014.1080p.BluRay.x264-GROUP");

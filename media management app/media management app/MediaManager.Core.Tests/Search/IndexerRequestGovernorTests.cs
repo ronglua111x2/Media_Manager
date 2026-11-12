@@ -44,14 +44,17 @@ public class IndexerRequestGovernorTests
     }
 
     [Fact]
-    public async Task MaxConcurrent_RefusesWhileALeaseIsHeld()
+    public async Task MaxConcurrent_QueuesWhileALeaseIsHeld_ButSiteStaysAvailable()
     {
         var (governor, _) = Create(Tight with { RequestsPerMinute = 100 });
         using var held = await governor.AcquireAsync("site", SearchLane.Interactive, TimeSpan.Zero, CancellationToken.None);
 
-        governor.GetAvailability("site").CanRun.Should().BeFalse();
-        held.Dispose();
+        // A temporary wait does not make the site unavailable (searches queue instead of skipping it)...
         governor.GetAvailability("site").CanRun.Should().BeTrue();
+        // ...but a request that cannot wait is refused.
+        var now = () => governor.AcquireAsync("site", SearchLane.Interactive, TimeSpan.Zero, CancellationToken.None);
+        await now.Should().ThrowAsync<IndexerUnavailableException>();
+        held.Dispose();
     }
 
     [Fact]

@@ -149,8 +149,10 @@ public sealed class IndexerRequestGovernor
         lock (_gate)
         {
             var now = _time.GetUtcNow();
-            var reason = BlockingReason(indexerId, lane, now, out _);
-            return new IndexerAvailability(reason is null, reason);
+            // Only hard blocks (kill switch, disabled, breaker open, daily budget) make a site unavailable.
+            // A rate-limit wait (retryAt known) is not a reason to skip the site: callers queue for it.
+            var reason = BlockingReason(indexerId, lane, now, out var retryAt);
+            return new IndexerAvailability(reason is null || retryAt is not null, reason);
         }
     }
 

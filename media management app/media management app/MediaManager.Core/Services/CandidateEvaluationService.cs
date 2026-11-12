@@ -187,7 +187,12 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
         var normalizedCandidate = TitleNormalizer.NormalizeTokens(candidateTokens);
         return titles
             .Where(title => !string.IsNullOrWhiteSpace(title))
-            .Select(title => TitleNormalizer.SignificantTitleTokens(title))
+            // Numbers are part of the identity ("Jujutsu Kaisen 0" is not "Jujutsu Kaisen - 53"), so they are
+            // required here even though they are shorter than the usual significant-token threshold.
+            .Select(title => TitleNormalizer.MatchTokens(title)
+                .Where(token => token.Length > 2 || token.All(char.IsDigit))
+                .Distinct(StringComparer.Ordinal)
+                .ToList())
             .Any(tokens => tokens.Count > 0 && tokens.All(normalizedCandidate.Contains));
     }
 
