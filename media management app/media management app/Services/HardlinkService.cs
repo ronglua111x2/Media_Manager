@@ -39,8 +39,11 @@ public sealed class HardlinkService : IHardlinkService
         var seasonFolder = $"Season {seasonNumber:00}";
         if (item.IsOrphanPackSpecial)
         {
-            var orphanFileName = SanitizeFileName(BuildOrphanFileName(item));
-            return Path.Combine(outputRoot, showName, AppConstants.OrphanExtrasFolderName, orphanFileName);
+            var orphanFileName = SanitizeFileName(item.FileName);
+            var orphanSeason = FindOrphanSeasonFolder(item);
+            return orphanSeason is > 0
+                ? Path.Combine(outputRoot, showName, $"Season {orphanSeason.Value:00}", AppConstants.OrphanExtrasFolderName, orphanFileName)
+                : Path.Combine(outputRoot, showName, AppConstants.OrphanExtrasFolderName, orphanFileName);
         }
 
         var episodeNumber = item.MappedEpisodeNumber ?? item.EpisodeNumber.GetValueOrDefault();
@@ -238,18 +241,41 @@ public sealed class HardlinkService : IHardlinkService
     }
 
     /// <summary>
-    /// Orphan extras keep their release file name. When the file sits in a season folder of the pack
-    /// (<c>Season 1/NCOP.mkv</c>, <c>Season 2/NCOP.mkv</c>) the season is prefixed, so same-named extras
-    /// of different seasons no longer collide with "Output already exists" (PARSE-14). Files in other
-    /// folders (for example <c>Extras/</c>) keep their current name.
+    /// Season of the pack folder an orphan extra came from (<c>Pack/Season 2/NCOP.mkv</c> or
+    /// <c>Pack/Season 2/Extras/NCOP.mkv</c> give 2), looking only at folders inside the download
+    /// save path. Null when the file is not under a season folder; it then goes to the show's
+    /// extras folder. Separate season folders also keep same-named extras apart (PARSE-14).
     /// </summary>
-    private static string BuildOrphanFileName(SourceItem item)
+    private static int? FindOrphanSeasonFolder(SourceItem item)
     {
-        var parentFolder = Path.GetFileName(Path.GetDirectoryName(item.FilePath) ?? string.Empty);
-        var season = string.IsNullOrWhiteSpace(parentFolder)
-            ? null
-            : TorrentCandidateParser.TryParseSeasonFolderSegment(parentFolder);
-        return season is > 0 ? $"S{season.Value:00} - {item.FileName}" : item.FileName;
+        var directory = Path.GetDirectoryName(item.FilePath);
+        if (string.IsNullOrWhiteSpace(directory))
+        {
+            return null;
+        }
+
+        IEnumerable<string> segments;
+        if (!string.IsNullOrWhiteSpace(item.SourceRootFolder) &&
+            directory.StartsWith(item.SourceRootFolder.TrimEnd('\\', '/') + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        {
+            segments = Path.GetRelativePath(item.SourceRootFolder, directory)
+                .Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        }
+        else
+        {
+            segments = [Path.GetFileName(directory)];
+        }
+
+        foreach (var segment in segments.Reverse())
+        {
+            if (!string.IsNullOrWhiteSpace(segment) &&
+                TorrentCandidateParser.TryParseSeasonFolderSegment(segment) is > 0 and var season)
+            {
+                return season;
+            }
+        }
+
+        return null;
     }
 
     private static string SanitizeFileName(string fileName)

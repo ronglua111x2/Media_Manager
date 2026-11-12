@@ -370,21 +370,68 @@ public sealed class LinkStateScenarioTests : IDisposable
         Assert.Empty(_host.JellyfinFiles());
     }
 
-    // PARSE-14: same-named extras from different season folders get distinct orphan names;
-    // extras outside season folders keep their release name.
+    // PARSE-14: orphan extras go to Jellyfin extras folders, per season when the pack had a season
+    // folder, so same-named extras of different seasons no longer collide.
     [Fact]
-    public async Task OrphanExtras_SameNameInTwoSeasonFolders_AreBothLinked()
+    public async Task OrphanExtras_GoToSeasonOrShowExtrasFolders()
     {
-        var showId = PackShow("HO", 5018, "Pack/Season 1/NCOP.mkv", "Pack/Season 2/NCOP.mkv", "Pack/Extras/NCED 01.mkv");
+        var showId = PackShow("HO", 5018, "Pack/Season 1/NCOP.mkv", "Pack/Season 2/Extras/NCOP.mkv", "Pack/Extras/NCED 01.mkv");
 
         var result = await _host.ApplyPackAsync(showId, 1,
             ("Pack/Season 1/NCOP.mkv", PackFileClassification.UnmatchedExtra, null, null),
-            ("Pack/Season 2/NCOP.mkv", PackFileClassification.UnmatchedExtra, null, null),
+            ("Pack/Season 2/Extras/NCOP.mkv", PackFileClassification.UnmatchedExtra, null, null),
             ("Pack/Extras/NCED 01.mkv", PackFileClassification.UnmatchedExtra, null, null));
+        _host.Symlinks.ReconcileAll();
 
         Assert.Equal(0, result.ErrorCount);
-        var names = _host.LibraryFiles().Select(Path.GetFileName).OrderBy(name => name).ToList();
-        Assert.Equal(["NCED 01.mkv", "S01 - NCOP.mkv", "S02 - NCOP.mkv"], names);
+        var library = _host.LibraryFiles().Select(path => path.Split(Path.DirectorySeparatorChar, 3)[2]).OrderBy(path => path, StringComparer.Ordinal).ToList();
+        Assert.Equal(
+            [
+                Path.Combine("Season 01", "extras", "NCOP.mkv"),
+                Path.Combine("Season 02", "extras", "NCOP.mkv"),
+                Path.Combine("extras", "NCED 01.mkv")
+            ],
+            library);
+        Assert.Equal(3, _host.JellyfinFiles().Count(path => path.Contains($"{Path.DirectorySeparatorChar}extras{Path.DirectorySeparatorChar}")));
+        Assert.DoesNotContain(_host.JellyfinFiles(), path => path.Contains(AppConstants.LegacyOrphanExtrasFolderName));
+    }
+
+    // PARSE-14: an orphan linked under the former "Season Unknown" folder moves to extras: the Jellyfin
+    // symlink on the next sync, the library hardlink on the next pack link.
+    [Fact]
+    public async Task OrphanExtras_LegacySeasonUnknownLink_MovesToExtras()
+    {
+        _host.FollowHardlinkRemovals();
+        var showId = PackShow("HL", 5019, "Pack/Extras/NCOP.mkv");
+        await _host.ApplyPackAsync(showId, 1, ("Pack/Extras/NCOP.mkv", PackFileClassification.UnmatchedExtra, null, null));
+
+        // Recreate the old layout: hardlink and symlink under "Season Unknown".
+        var item = _host.Items().Single();
+        var legacyLink = Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(item.LinkedPath!)!)!, AppConstants.LegacyOrphanExtrasFolderName, "NCOP.mkv");
+        Directory.CreateDirectory(Path.GetDirectoryName(legacyLink)!);
+        File.Move(item.LinkedPath!, legacyLink);
+        item.LinkedPath = legacyLink;
+        item.State = ItemState.Linked;
+        _host.Db.UpdateSourceItem(item);
+        var legacySymlink = Path.Combine(_host.Jellyfin, "Shows", "Demo Show (2015) [tmdbid-5019]", AppConstants.LegacyOrphanExtrasFolderName, "NCOP.mkv");
+        Directory.CreateDirectory(Path.GetDirectoryName(legacySymlink)!);
+        File.WriteAllText(legacySymlink, "symlink");
+        _host.SymlinkTargets[Path.GetFullPath(legacySymlink)] = legacyLink;
+        _host.Db.UpdateSourceItemSymlinkPath(_host.Items().Single().Id, legacySymlink);
+
+        // Next sync moves the Jellyfin symlink even before the pack is linked again.
+        _host.Symlinks.ReconcileAll();
+        var jellyfin = Assert.Single(_host.JellyfinFiles());
+        Assert.Contains(Path.Combine("extras", "NCOP.mkv"), jellyfin);
+
+        // Next pack link moves the library hardlink.
+        await _host.ApplyPackAsync(showId, 1, ("Pack/Extras/NCOP.mkv", PackFileClassification.UnmatchedExtra, null, null));
+        _host.Symlinks.ReconcileAll();
+        var moved = Assert.Single(_host.Items());
+        Assert.True(File.Exists(moved.LinkedPath));
+        Assert.Contains(Path.Combine("extras", "NCOP.mkv"), moved.LinkedPath);
+        Assert.DoesNotContain(_host.LibraryFiles(), path => path.Contains(AppConstants.LegacyOrphanExtrasFolderName));
+        Assert.DoesNotContain(_host.JellyfinFiles(), path => path.Contains(AppConstants.LegacyOrphanExtrasFolderName));
     }
 
     private long PackShow(string hash, int tmdbId, params string[] files)

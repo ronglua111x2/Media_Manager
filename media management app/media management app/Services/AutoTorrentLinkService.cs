@@ -1116,7 +1116,7 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             existingOrphan.State = ItemState.Parsed;
             _databaseService.UpdateSourceItem(existingOrphan);
             index?.Replace(existingOrphan);
-            result.Messages.Add($"Migrated orphan {existingOrphan.FileName} from Season 00 to extras/.");
+            result.Messages.Add($"Moved orphan {existingOrphan.FileName} to the Jellyfin extras folder.");
             return;
         }
 
@@ -1127,7 +1127,8 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
     {
         var normalized = linkedPath.Replace('\\', '/');
         return normalized.Contains("/Season 00/", StringComparison.OrdinalIgnoreCase) ||
-               normalized.Contains("/Season 0/", StringComparison.OrdinalIgnoreCase);
+               normalized.Contains("/Season 0/", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains($"/{AppConstants.LegacyOrphanExtrasFolderName}/", StringComparison.OrdinalIgnoreCase);
     }
 
     private bool TryGetExistingLinkedItem(

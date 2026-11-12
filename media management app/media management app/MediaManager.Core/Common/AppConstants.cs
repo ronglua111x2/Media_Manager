@@ -49,8 +49,18 @@ public static class AppConstants
     /// <summary>TMDB/Jellyfin specials season (Season 00 / S00Exx).</summary>
     public const int SpecialsSeasonNumber = 0;
 
-    /// <summary>Jellyfin extras folder for unmatched pack orphans.</summary>
-    public const string OrphanExtrasFolderName = "Season Unknown";
+    /// <summary>
+    /// Jellyfin extras folder for unmatched pack orphans (NCOP/NCED, menus, PVs, unmapped OVAs):
+    /// <c>Show/Season NN/extras/</c> when the file sat in a season folder of the pack, otherwise
+    /// <c>Show/extras/</c>. Jellyfin lists these under Extras instead of as episodes.
+    /// </summary>
+    public const string OrphanExtrasFolderName = "extras";
+
+    /// <summary>
+    /// Former orphan folder. Jellyfin read it as an unnumbered season and the files as episodes
+    /// (unplayed counts, Next Up, a CRC read as an episode number). Links found there are moved.
+    /// </summary>
+    public const string LegacyOrphanExtrasFolderName = "Season Unknown";
 
     public static bool IsSpecialsSeason(int seasonNumber) =>
         seasonNumber == SpecialsSeasonNumber;
