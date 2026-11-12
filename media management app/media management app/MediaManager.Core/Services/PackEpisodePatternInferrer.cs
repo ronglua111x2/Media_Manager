@@ -151,16 +151,26 @@ public static class PackEpisodePatternInferrer
 
         if (votes.Count == 0)
         {
-            return TryStandardEpisodeBootstrap(sorted, seasonNumber) ?? InferredEpisodePattern.Invalid;
+            return ValidatedOrInvalid(TryStandardEpisodeBootstrap(sorted, seasonNumber), sorted, expectedEpisodeCount);
         }
 
-        var best = votes.OrderByDescending(pair => pair.Value).First();
-        var pattern = new InferredEpisodePattern
-        {
-            PrefixLength = best.Key.Prefix,
-            SuffixLength = best.Key.Suffix,
-            IsValid = true
-        };
+        // Pairs across a digit-count boundary (09/10) vote for a different prefix than the rest; a
+        // longer prefix then reads only the last digit ("- 11" -> 1). Prefer the voted pattern that
+        // reads the most distinct numbers without zeros or repeats, then the most votes.
+        var pattern = votes
+            .Select(pair => new InferredEpisodePattern
+            {
+                PrefixLength = pair.Key.Prefix,
+                SuffixLength = pair.Key.Suffix,
+                IsValid = true
+            })
+            .Select(candidate => (Pattern: candidate, Score: ScoreExtraction(candidate, sorted), Votes: votes[(candidate.PrefixLength, candidate.SuffixLength)]))
+            .OrderByDescending(item => item.Score.Clean)
+            .ThenByDescending(item => item.Score.Distinct)
+            .ThenByDescending(item => item.Votes)
+            .ThenBy(item => item.Pattern.PrefixLength)
+            .First()
+            .Pattern;
 
         if (expectedEpisodeCount is > 0 && !ValidatePattern(pattern, sorted, expectedEpisodeCount.Value))
         {
@@ -170,10 +180,39 @@ public static class PackEpisodePatternInferrer
                 return fallbackPattern;
             }
 
-            return TryStandardEpisodeBootstrap(sorted, seasonNumber) ?? pattern;
+            // A pattern that failed validation is a guess; callers skip the files instead (PARSE-01).
+            return ValidatedOrInvalid(TryStandardEpisodeBootstrap(sorted, seasonNumber), sorted, expectedEpisodeCount);
         }
 
         return pattern;
+    }
+
+    private static InferredEpisodePattern ValidatedOrInvalid(
+        InferredEpisodePattern? pattern,
+        IReadOnlyList<string> stems,
+        int? expectedEpisodeCount)
+    {
+        if (pattern is null || !pattern.IsValid)
+        {
+            return InferredEpisodePattern.Invalid;
+        }
+
+        return expectedEpisodeCount is > 0 && !ValidatePattern(pattern, stems, expectedEpisodeCount.Value)
+            ? InferredEpisodePattern.Invalid
+            : pattern;
+    }
+
+    private static (bool Clean, int Distinct) ScoreExtraction(InferredEpisodePattern pattern, IReadOnlyList<string> stems)
+    {
+        var extracted = stems
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(stem => TryExtract(stem, pattern))
+            .Where(episode => episode is not null)
+            .Select(episode => episode!.Value)
+            .ToList();
+        var distinct = extracted.Distinct().Count();
+        var clean = extracted.Count > 0 && distinct == extracted.Count && extracted.All(episode => episode > 0);
+        return (clean, distinct);
     }
 
     public static int? TryExtractSeasonEpisodeSuffix(string stem, int seasonNumber)

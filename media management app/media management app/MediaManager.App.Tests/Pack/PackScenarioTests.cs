@@ -90,7 +90,7 @@ public class PackScenarioTests
         Assert.Equal(PackFileClassification.Skipped, PackScenario.Entry(inventory, "Show/Season 1/Show.S01E03.1080p.mkv").Classification);
     }
 
-    [Fact(Skip = "PARSE-01")]
+    [Fact]
     public void G_AbsoluteNumberedSecondSeason_ConvertsToSeasonEpisodes()
     {
         var inventory = PackScenario.Run(Scenarios["G"]);
@@ -102,7 +102,7 @@ public class PackScenarioTests
         }
     }
 
-    [Fact(Skip = "PARSE-01")]
+    [Fact]
     public void H_AbsoluteNumberedBatch_LinksAllTwelveEpisodes()
     {
         var inventory = PackScenario.Run(Scenarios["H"]);
@@ -119,7 +119,7 @@ public class PackScenarioTests
     }
 
     // Same shape as the real BD batch that linked only 9/12 (audit section 4), with a generic name.
-    [Fact(Skip = "PARSE-01")]
+    [Fact]
     public void H_AbsoluteNumberedBdBatchWithoutCrc_LinksAllTwelveEpisodes()
     {
         var inventory = PackScenario.Run(Scenarios["H-bd"]);
@@ -168,14 +168,55 @@ public class PackScenarioTests
         Assert.Equal(PackFileClassification.Skipped, PackScenario.Entry(inventory, "Show/Season 1/720p/Show.S01E01.720p.mkv").Classification);
     }
 
-    // Two copies with the same revision and quality: the larger file wins, whatever the path order.
+    // Two copies with the same revision and quality are a sign of a wrong mapping, not a better
+    // copy: neither is linked and the reason says why (PR-7). Size alone does not pick a winner.
     [Fact]
-    public void SameQualityCopies_LargerFileWins()
+    public void SameRevisionAndQualityCopies_AreBothSkippedWithReason()
     {
         var inventory = PackScenario.Run(Scenarios["sizes"]);
 
-        PackScenario.AssertRegular(inventory, "Show/Season 1/b/Show.S01E01.1080p.mkv", 1, 1);
-        Assert.Equal(PackFileClassification.Skipped, PackScenario.Entry(inventory, "Show/Season 1/a/Show.S01E01.1080p.mkv").Classification);
+        foreach (var path in new[] { "Show/Season 1/a/Show.S01E01.1080p.mkv", "Show/Season 1/b/Show.S01E01.1080p.mkv" })
+        {
+            var entry = PackScenario.Entry(inventory, path);
+            Assert.Equal(PackFileClassification.Skipped, entry.Classification);
+            Assert.Contains("same revision and quality", entry.MatchReason);
+        }
+    }
+
+    [Fact]
+    public void AbsoluteBatchAcrossTwoSeasons_SplitsBySeasonEpisodeCounts()
+    {
+        var inventory = PackScenario.Run(Scenarios["absolute-two-seasons"]);
+
+        Assert.Equal(24, inventory.RegularEpisodeCount);
+        PackScenario.AssertRegular(inventory, "[Grp] Show (01-24)/[Grp] Show - 12 [1080p].mkv", 1, 12);
+        PackScenario.AssertRegular(inventory, "[Grp] Show (01-24)/[Grp] Show - 13 [1080p].mkv", 2, 1);
+        PackScenario.AssertRegular(inventory, "[Grp] Show (01-24)/[Grp] Show - 24 [1080p].mkv", 2, 12);
+    }
+
+    [Fact]
+    public void AbsoluteNumberBeyondShow_IsSkippedWithReason()
+    {
+        var inventory = PackScenario.Run(Scenarios["absolute-beyond"]);
+
+        var entry = PackScenario.Entry(inventory, "[Grp] Show/[Grp] Show - 30 [1080p].mkv");
+        Assert.Equal(PackFileClassification.Skipped, entry.Classification);
+        Assert.Contains("beyond", entry.MatchReason);
+    }
+
+    // Unpadded "- N" names with different CRC tags: no fixed-width pattern, so the order comes from
+    // the file names and must be natural ("- 2" before "- 10").
+    [Fact]
+    public void Specials_UnpaddedDashNumbersWithCrc_AreNeverMappedOutOfOrder()
+    {
+        var inventory = PackScenario.Run(Scenarios["SPEC-01-unpadded"]);
+
+        for (var number = 1; number <= 12; number++)
+        {
+            var entry = PackScenario.Entry(inventory, $"Show [Grp]/Specials/[Grp] Show - {number} [{number:X8}].mkv");
+            Assert.Equal(PackFileClassification.MatchedSpecial, entry.Classification);
+            Assert.Equal(number, entry.MatchedEpisodeNumber);
+        }
     }
 
     [Fact(Skip = "PARSE-04")]
@@ -212,7 +253,7 @@ public class PackScenarioTests
     }
 
     // Appendix A, SPEC-01: twelve "- NN" specials must not be ordered by their last digit.
-    [Fact(Skip = "PARSE-17")]
+    [Fact]
     public void Specials_DashNumberedTwelve_AreNeverMappedOutOfOrder()
     {
         var inventory = PackScenario.Run(Scenarios["SPEC-01"]);
@@ -345,6 +386,20 @@ public class PackScenarioTests
                 Owner: 1, Covered: [1], EpisodesPerSeason: new() { [1] = 1 },
                 Files: ["Show/Season 1/a/Show.S01E01.1080p.mkv", "Show/Season 1/b/Show.S01E01.1080p.mkv"],
                 Sizes: new() { ["Show/Season 1/a/Show.S01E01.1080p.mkv"] = 700_000_000, ["Show/Season 1/b/Show.S01E01.1080p.mkv"] = 1_400_000_000 }),
+            ["absolute-two-seasons"] = new(
+                Owner: 1, Covered: [1, 2], EpisodesPerSeason: new() { [1] = 12, [2] = 12 },
+                Files: Enumerable.Range(1, 24).Select(e => $"[Grp] Show (01-24)/[Grp] Show - {e:00} [1080p].mkv").ToArray()),
+            ["absolute-beyond"] = new(
+                Owner: 1, Covered: [1], EpisodesPerSeason: new() { [1] = 12 },
+                Files: Enumerable.Range(1, 12).Select(e => $"[Grp] Show/[Grp] Show - {e:00} [1080p].mkv")
+                    .Append("[Grp] Show/[Grp] Show - 30 [1080p].mkv")
+                    .ToArray()),
+            ["SPEC-01-unpadded"] = new(
+                Owner: 1, Covered: [1], EpisodesPerSeason: new() { [1] = 12 },
+                Files: Enumerable.Range(1, 12).Select(e => $"Show [Grp]/Specials/[Grp] Show - {e} [{e:X8}].mkv").ToArray(),
+                Specials: Enumerable.Range(1, 12)
+                    .Select(e => (e, new DateTime(2020, 1, 1).AddDays(7 * e).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), $"Special {e}"))
+                    .ToArray()),
             ["K"] = new(
                 Owner: 1, Covered: [1], EpisodesPerSeason: new() { [1] = 6 },
                 Files: Enumerable.Range(1, 3).Select(e => $"Show/Season 1/Show.S01E{e:00}.mkv")

@@ -186,7 +186,7 @@ public static class PackSpecialPayloadBuilder
                     return (file.RelativePath, file.FileName, metadata);
                 })
                 .OrderBy(file => file.metadata.LocalIndex)
-                .ThenBy(file => file.FileName, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(file => file.FileName, NaturalStringComparer.OrdinalIgnoreCase)
                 .ToList();
 
             foreach (var (relativePath, fileName, metadata) in orderedFiles)
@@ -207,7 +207,7 @@ public static class PackSpecialPayloadBuilder
         var orderedCandidates = candidates
             .OrderBy(candidate => candidate.ParentSeason ?? 0)
             .ThenBy(candidate => candidate.LocalIndex)
-            .ThenBy(candidate => candidate.RelativePath, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(candidate => candidate.RelativePath, NaturalStringComparer.OrdinalIgnoreCase)
             .Select((candidate, index) => new SpecialMappingCandidate
             {
                 RelativePath = candidate.RelativePath,
@@ -397,7 +397,9 @@ public static class PackSpecialPayloadBuilder
             });
         }
 
-        if (context.CandidateCount == context.TmdbSpecialCount)
+        // Ordinal relies on the candidate order; two files reading the same index in one season
+        // block mean the index was misread (PARSE-17), so do not hand out episodes by position.
+        if (context.CandidateCount == context.TmdbSpecialCount && !HasRepeatedLocalIndex(context.Candidates))
         {
             var remaining = context.Candidates
                 .Select((candidate, candidateIndex) => (candidate, candidateIndex))
@@ -433,6 +435,12 @@ public static class PackSpecialPayloadBuilder
 
         return proposals;
     }
+
+    private static bool HasRepeatedLocalIndex(IReadOnlyList<SpecialMappingCandidate> candidates) =>
+        candidates
+            .Where(candidate => candidate.LocalIndex > 0)
+            .GroupBy(candidate => (candidate.ParentSeason ?? 0, candidate.LocalIndex))
+            .Any(group => group.Count() > 1);
 
     private static (int LocalIndex, int? ParentSeason, SpecialMappingNamingPattern NamingPattern) BuildCandidateMetadata(
         string relativePath,

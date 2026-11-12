@@ -48,7 +48,8 @@ public static class PackTorrentInventoryAnalyzer
                 group => group.Key,
                 group => group.Select(episode => episode.EpisodeNumber).ToHashSet() as IReadOnlySet<int>);
         var fallbackPatterns = BuildFallbackPatternsBySeason(seasonGroups, seasonCountsFromDb);
-        var resolutionsByPath = ResolveRegularEpisodesBySeason(seasonGroups, validEpisodesBySeason, fallbackPatterns, fileSizes);
+        var absoluteMapper = new AbsoluteEpisodeMapper(BuildSeasonEpisodeCounts(seasonCountsFromDb, episodesBySeason));
+        var resolutionsByPath = ResolveRegularEpisodesBySeason(seasonGroups, validEpisodesBySeason, fallbackPatterns, fileSizes, absoluteMapper);
         var specialMappings = BuildSpecialMappings(files, tree, specialsEpisodes, resolvedSpecialMappings);
 
         foreach (var (relativePath, fileName) in files)
@@ -327,9 +328,11 @@ public static class PackTorrentInventoryAnalyzer
         IReadOnlyList<PackSeasonFileGrouper.SeasonFileGroup> seasonGroups,
         IReadOnlyDictionary<int, IReadOnlySet<int>> validEpisodesBySeason,
         IReadOnlyDictionary<int, InferredEpisodePattern> fallbackPatterns,
-        IReadOnlyDictionary<string, long>? fileSizes)
+        IReadOnlyDictionary<string, long>? fileSizes,
+        AbsoluteEpisodeMapper absoluteMapper)
     {
         var resolutions = new Dictionary<string, PackEpisodeResolution>(StringComparer.OrdinalIgnoreCase);
+        var fileNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var group in seasonGroups.Where(item => item.SeasonNumber > 0))
         {
@@ -340,15 +343,51 @@ public static class PackTorrentInventoryAnalyzer
                 group.SeasonNumber,
                 validEpisodes,
                 fallbackPattern?.IsValid == true ? fallbackPattern : null,
-                fileSizes);
+                fileSizes,
+                absoluteMapper);
 
             foreach (var (path, resolution) in seasonResolutions)
             {
                 resolutions[path] = resolution;
             }
+
+            foreach (var file in group.Files)
+            {
+                fileNames[file.RelativePath] = file.FileName;
+            }
+        }
+
+        // Absolute numbers can resolve to another season than the file's group, so two groups can
+        // claim one episode; apply the same collision rule across groups.
+        var crossGroup = resolutions
+            .Where(pair => pair.Value.Status == PackEpisodeResolutionStatus.RegularEpisode && pair.Value.EpisodeNumber is not null)
+            .Select(pair => new PackEpisodeCandidate(pair.Key, fileNames[pair.Key], pair.Value.SeasonNumber, pair.Value.EpisodeNumber!.Value))
+            .GroupBy(candidate => (candidate.Season, candidate.Episode))
+            .Where(group => group.Count() > 1)
+            .SelectMany(group => group)
+            .ToList();
+        foreach (var (path, resolution) in PackEpisodeResolver.ResolveCollisions(crossGroup, fileSizes))
+        {
+            resolutions[path] = resolution;
         }
 
         return resolutions;
+    }
+
+    private static Dictionary<int, int> BuildSeasonEpisodeCounts(
+        IReadOnlyDictionary<int, int> seasonCountsFromDb,
+        IReadOnlyDictionary<int, int> episodesBySeason)
+    {
+        var counts = new Dictionary<int, int>(episodesBySeason);
+        foreach (var (season, count) in seasonCountsFromDb)
+        {
+            if (season > 0 && count > 0)
+            {
+                counts[season] = count;
+            }
+        }
+
+        return counts;
     }
 
     private static Dictionary<int, InferredEpisodePattern> BuildFallbackPatternsBySeason(
@@ -523,6 +562,13 @@ public static class PackTorrentInventoryAnalyzer
         }
 
         var seasonNumber = ResolveSeason(relativePath, parsed, pathSeasonHint, seasonGroups);
+        resolutionsByPath.TryGetValue(relativePath, out var resolution);
+        if (resolution is { Status: PackEpisodeResolutionStatus.RegularEpisode, SeasonNumber: > 0 })
+        {
+            // Absolute numbering may place the file in another season than its folder or group.
+            seasonNumber = resolution.SeasonNumber;
+        }
+
         if (seasonNumber is null or <= 0)
         {
             return Skipped(relativePath, fileName, "No season folder or episode pattern.");
@@ -542,7 +588,7 @@ public static class PackTorrentInventoryAnalyzer
         int? episodeNumber = null;
         string? resolutionReason = null;
 
-        if (resolutionsByPath.TryGetValue(relativePath, out var resolution))
+        if (resolution is not null)
         {
             if (resolution.Status == PackEpisodeResolutionStatus.Skipped)
             {

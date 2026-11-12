@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using MediaManager.Sonarr.Parser;
 using MediaManager.Sonarr.Parser.Model;
 using media_management_app.Models;
@@ -12,9 +11,11 @@ public static class PackEpisodeResolver
         int seasonNumber,
         IReadOnlySet<int> validEpisodeNumbers,
         InferredEpisodePattern? fallbackPattern = null,
-        IReadOnlyDictionary<string, long>? fileSizes = null)
+        IReadOnlyDictionary<string, long>? fileSizes = null,
+        AbsoluteEpisodeMapper? absoluteMapper = null)
     {
-        var candidates = new List<(string RelativePath, string FileName, int Episode)>();
+        var candidates = new List<PackEpisodeCandidate>();
+        var unresolved = new List<(string RelativePath, string Reason)>();
 
         foreach (var (relativePath, fileName) in files)
         {
@@ -25,58 +26,84 @@ public static class PackEpisodeResolver
 
             var stem = Path.GetFileNameWithoutExtension(fileName);
             var parsed = ParsePackFile(relativePath, fileName);
-            var episode = ExtractEpisodeNumber(parsed, seasonNumber, validEpisodeNumbers, stem, fallbackPattern);
-
-            if (episode is null)
+            var resolved = TryResolve(parsed, seasonNumber, validEpisodeNumbers, stem, fallbackPattern, absoluteMapper, out var failure);
+            if (resolved is { } target)
             {
+                candidates.Add(new PackEpisodeCandidate(relativePath, fileName, target.Season, target.Episode));
                 continue;
             }
 
-            candidates.Add((relativePath, fileName, episode.Value));
+            unresolved.Add((relativePath, failure ?? GetSkipReason(parsed, seasonNumber, validEpisodeNumbers) ?? "No episode pattern matched TMDB season set."));
         }
 
         var resolutions = new Dictionary<string, PackEpisodeResolution>(StringComparer.OrdinalIgnoreCase);
-        foreach (var group in candidates.GroupBy(item => item.Episode))
+        foreach (var (path, resolution) in ResolveCollisions(candidates, fileSizes))
         {
-            var winner = TorrentFileRules.OrderByPreference(
-                    group,
-                    item => item.RelativePath,
-                    item => GetFileSize(fileSizes, item.RelativePath))
-                .First();
-
-            resolutions[winner.RelativePath] = PackEpisodeResolution.Linked(seasonNumber, winner.Episode);
-
-            foreach (var loser in group.Where(item => !string.Equals(item.RelativePath, winner.RelativePath, StringComparison.OrdinalIgnoreCase)))
-            {
-                resolutions[loser.RelativePath] = PackEpisodeResolution.Skipped(
-                    seasonNumber,
-                    $"Duplicate of S{seasonNumber:00}E{loser.Episode:00}; kept '{winner.FileName}' (revision, quality, size).");
-            }
+            resolutions[path] = resolution;
         }
 
-        foreach (var (relativePath, fileName) in files)
+        foreach (var (relativePath, reason) in unresolved)
         {
-            if (resolutions.ContainsKey(relativePath) ||
-                PackSeasonFileGrouper.IsExcludedFromEpisodeGroup(relativePath, fileName))
-            {
-                continue;
-            }
-
-            var stem = Path.GetFileNameWithoutExtension(fileName);
-            var parsed = ParsePackFile(relativePath, fileName);
-            var skipReason = GetSkipReason(parsed, seasonNumber, validEpisodeNumbers, stem, fallbackPattern)
-                ?? "No episode pattern matched TMDB season set.";
-
-            resolutions[relativePath] = PackEpisodeResolution.Skipped(seasonNumber, skipReason);
+            resolutions[relativePath] = PackEpisodeResolution.Skipped(seasonNumber, reason);
         }
 
         return resolutions;
     }
 
+    /// <summary>
+    /// Several files that resolve to one episode: a copy with a higher revision or better quality
+    /// wins. Copies that do not differ in either are a sign the mapping is wrong (for example a
+    /// pattern that read only the last digit), so none of them is linked.
+    /// </summary>
+    public static IReadOnlyDictionary<string, PackEpisodeResolution> ResolveCollisions(
+        IEnumerable<PackEpisodeCandidate> candidates,
+        IReadOnlyDictionary<string, long>? fileSizes = null)
+    {
+        var resolutions = new Dictionary<string, PackEpisodeResolution>(StringComparer.OrdinalIgnoreCase);
+        foreach (var group in candidates.GroupBy(item => (item.Season, item.Episode)))
+        {
+            var ordered = TorrentFileRules.OrderByPreference(
+                    group,
+                    item => item.RelativePath,
+                    item => GetFileSize(fileSizes, item.RelativePath))
+                .ToList();
+            var (season, episode) = group.Key;
+            var winner = ordered[0];
+
+            if (ordered.Count > 1 && !IsBetterCopy(winner, ordered[1]))
+            {
+                var names = string.Join(", ", ordered.Select(item => $"'{item.FileName}'"));
+                foreach (var item in ordered)
+                {
+                    resolutions[item.RelativePath] = PackEpisodeResolution.Skipped(
+                        season,
+                        $"{ordered.Count} files resolve to S{season:00}E{episode:00} with the same revision and quality ({names}); not linking a guess.");
+                }
+
+                continue;
+            }
+
+            resolutions[winner.RelativePath] = PackEpisodeResolution.Linked(season, episode);
+            foreach (var loser in ordered.Skip(1))
+            {
+                resolutions[loser.RelativePath] = PackEpisodeResolution.Skipped(
+                    season,
+                    $"Duplicate of S{season:00}E{episode:00}; kept '{winner.FileName}' (revision, quality).");
+            }
+        }
+
+        return resolutions;
+    }
+
+    private static bool IsBetterCopy(PackEpisodeCandidate winner, PackEpisodeCandidate runnerUp) =>
+        TorrentFileRules.GetRevisionScore(Path.GetFileNameWithoutExtension(winner.FileName)) !=
+        TorrentFileRules.GetRevisionScore(Path.GetFileNameWithoutExtension(runnerUp.FileName)) ||
+        TorrentFileRules.GetQualityRank(winner.FileName) != TorrentFileRules.GetQualityRank(runnerUp.FileName);
+
     private static ParsedEpisodeInfo? ParsePackFile(string relativePath, string fileName)
     {
         var parsed = Parser.ParseTitle(fileName);
-        if (HasSeasonEpisode(parsed))
+        if (HasSeasonEpisode(parsed) || IsAbsoluteOnly(parsed))
         {
             return parsed;
         }
@@ -105,27 +132,48 @@ public static class PackEpisodeResolver
         !parsed.Special &&
         !parsed.FullSeason;
 
-    private static int? ExtractEpisodeNumber(
+    private static bool IsAbsoluteOnly(ParsedEpisodeInfo? parsed) =>
+        parsed is not null &&
+        parsed.EpisodeNumbers.Length == 0 &&
+        parsed.AbsoluteEpisodeNumbers.Length > 0 &&
+        !parsed.IsDaily &&
+        !parsed.Special &&
+        !parsed.FullSeason &&
+        !parsed.IsMultiSeason;
+
+    private static (int Season, int Episode)? TryResolve(
         ParsedEpisodeInfo? parsed,
         int seasonNumber,
         IReadOnlySet<int> validEpisodeNumbers,
         string stem,
-        InferredEpisodePattern? fallbackPattern)
+        InferredEpisodePattern? fallbackPattern,
+        AbsoluteEpisodeMapper? absoluteMapper,
+        out string? failure)
     {
+        failure = null;
         if (TryExtractFromParsed(parsed, seasonNumber, validEpisodeNumbers, out var episode))
         {
-            return episode;
+            return (seasonNumber, episode);
         }
 
-        return PackEpisodePatternInferrer.TryInferEpisode(stem, seasonNumber, validEpisodeNumbers, fallbackPattern);
+        // Absolute numbers come before the pattern inferrer: the inferrer only sees character
+        // positions and cannot tell "- 11" from "- 01" once a two-digit boundary is crossed.
+        if (absoluteMapper is not null && IsAbsoluteOnly(parsed))
+        {
+            var absolute = parsed!.AbsoluteEpisodeNumbers[0];
+            return absoluteMapper.TryMap(absolute, seasonNumber, validEpisodeNumbers, out var mappedSeason, out var mappedEpisode, out failure)
+                ? (mappedSeason, mappedEpisode)
+                : null;
+        }
+
+        var inferred = PackEpisodePatternInferrer.TryInferEpisode(stem, seasonNumber, validEpisodeNumbers, fallbackPattern);
+        return inferred is null ? null : (seasonNumber, inferred.Value);
     }
 
     private static string? GetSkipReason(
         ParsedEpisodeInfo? parsed,
         int seasonNumber,
-        IReadOnlySet<int> validEpisodeNumbers,
-        string stem,
-        InferredEpisodePattern? fallbackPattern)
+        IReadOnlySet<int> validEpisodeNumbers)
     {
         if (parsed?.IsDaily == true)
         {
@@ -144,7 +192,6 @@ public static class PackEpisodeResolver
 
         if (parsed?.EpisodeNumbers.Length > 0)
         {
-            var parsedSeason = parsed.SeasonNumber > 0 ? parsed.SeasonNumber : seasonNumber;
             if (parsed.SeasonNumber > 0 && parsed.SeasonNumber != seasonNumber)
             {
                 return $"Season mismatch (parsed S{parsed.SeasonNumber:00}, folder S{seasonNumber:00}).";
@@ -155,11 +202,6 @@ public static class PackEpisodeResolver
             {
                 return $"Episode {candidate} not in TMDB for S{seasonNumber:00}.";
             }
-        }
-
-        if (PackEpisodePatternInferrer.TryInferEpisode(stem, seasonNumber, validEpisodeNumbers, fallbackPattern) is not null)
-        {
-            return null;
         }
 
         return null;
@@ -194,3 +236,5 @@ public static class PackEpisodeResolver
     private static long GetFileSize(IReadOnlyDictionary<string, long>? fileSizes, string relativePath) =>
         fileSizes is not null && fileSizes.TryGetValue(relativePath, out var size) ? size : 0;
 }
+
+public sealed record PackEpisodeCandidate(string RelativePath, string FileName, int Season, int Episode);
