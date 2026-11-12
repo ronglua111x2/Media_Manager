@@ -8,6 +8,12 @@ Pre-implementation planning for **High priority** technical debt identified in [
 
 ---
 
+## Native Search (feature plan, awaiting confirmation)
+
+**[native-search/](./native-search/README.md)**: replace qBittorrent's search engine with the app's own native indexers (Knaben, TPB, nyaa, EZTV, …), with a request governor (rate limits, bans), new title/year matching, query planning, junk filtering and an encode picker. Phases P1–P6 on branch `feat/native-search`. Built on audit [07b — hunt search](../code-review/2026-11/07b-hunt-search.md).
+
+---
+
 ## Start here
 
 **[00-integrated-roadmap.md](./00-integrated-roadmap.md)** — How the four High-priority items connect, a phased timeline (not big-bang), and whether each item is an industry / desktop-app standard.
