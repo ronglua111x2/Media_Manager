@@ -52,7 +52,11 @@ public sealed class HardlinkService : IHardlinkService
                             !string.IsNullOrWhiteSpace(item.EpisodeTitle)
             ? $" - {Sanitize(item.EpisodeTitle)}"
             : string.Empty;
-        var fileName = $"{fileTitle} - S{seasonNumber:00}E{episodeNumber:00}{episodeSuffix}{Path.GetExtension(item.FilePath)}";
+        // Multi-episode file: "Show - S01E01-E02.ext", the form Jellyfin reads as one item for both episodes.
+        var rangeSuffix = item.MappedEpisodeNumber is null && item.LastEpisodeNumber is { } lastEpisode && lastEpisode > episodeNumber
+            ? $"-E{lastEpisode:00}"
+            : string.Empty;
+        var fileName = $"{fileTitle} - S{seasonNumber:00}E{episodeNumber:00}{rangeSuffix}{episodeSuffix}{Path.GetExtension(item.FilePath)}";
         return Path.Combine(outputRoot, showName, seasonFolder, fileName);
     }
 

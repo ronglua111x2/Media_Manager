@@ -142,6 +142,7 @@ public sealed class DatabaseService : IDatabaseService
         EnsureColumn(connection, "SourceItems", "IsExternalImport", "INTEGER NOT NULL DEFAULT 0");
         EnsureColumn(connection, "SourceItems", "IsOrphanPackSpecial", "INTEGER NOT NULL DEFAULT 0");
         EnsureColumn(connection, "SourceItems", "SymlinkPath", "TEXT NULL");
+        EnsureColumn(connection, "SourceItems", "LastEpisodeNumber", "INTEGER NULL");
         InitializeSeriesMappings(connection);
         InitializeTrackedShows(connection);
         InitializeTrackedMovies(connection);
@@ -167,7 +168,8 @@ public sealed class DatabaseService : IDatabaseService
                    MatchedTitle, MatchedYear, Provider, ProviderId, MatchConfidence, MatchReason,
                    RequiresManualReview, MatchAccepted, UseAbsoluteAnimeMapping,
                    State, Notes, LinkedPath, SymlinkPath, AutoTorrentLinkKind, AutoTorrentTorrentHash,
-                   AutoTorrentPackOwnerSeasonNumber, IsExternalImport, IsOrphanPackSpecial, LastSeenUtc
+                   AutoTorrentPackOwnerSeasonNumber, IsExternalImport, IsOrphanPackSpecial, LastSeenUtc,
+                   LastEpisodeNumber
             FROM SourceItems
             ORDER BY LastSeenUtc DESC;
             """;
@@ -222,8 +224,8 @@ public sealed class DatabaseService : IDatabaseService
             : "IsExternalImport = excluded.IsExternalImport,";
 
         command.CommandText = $"""
-            INSERT INTO SourceItems (SourceRootFolder, ParentFolder, FilePath, FileName, ScanText, MediaKind, ParserPattern, ShowTitle, MovieTitle, MovieYear, SeasonNumber, EpisodeNumber, MappedSeasonNumber, MappedEpisodeNumber, EpisodeMappingSource, EpisodeMappingConfidence, EpisodeMappingReason, EpisodeTitle, MatchedTitle, MatchedYear, Provider, ProviderId, MatchConfidence, MatchReason, RequiresManualReview, MatchAccepted, UseAbsoluteAnimeMapping, State, Notes, LinkedPath, SymlinkPath, AutoTorrentLinkKind, AutoTorrentTorrentHash, AutoTorrentPackOwnerSeasonNumber, IsExternalImport, IsOrphanPackSpecial, LastSeenUtc)
-            VALUES ($SourceRootFolder, $ParentFolder, $FilePath, $FileName, $ScanText, $MediaKind, $ParserPattern, $ShowTitle, $MovieTitle, $MovieYear, $SeasonNumber, $EpisodeNumber, $MappedSeasonNumber, $MappedEpisodeNumber, $EpisodeMappingSource, $EpisodeMappingConfidence, $EpisodeMappingReason, $EpisodeTitle, $MatchedTitle, $MatchedYear, $Provider, $ProviderId, $MatchConfidence, $MatchReason, $RequiresManualReview, $MatchAccepted, $UseAbsoluteAnimeMapping, $State, $Notes, $LinkedPath, $SymlinkPath, $AutoTorrentLinkKind, $AutoTorrentTorrentHash, $AutoTorrentPackOwnerSeasonNumber, $IsExternalImport, $IsOrphanPackSpecial, $LastSeenUtc)
+            INSERT INTO SourceItems (SourceRootFolder, ParentFolder, FilePath, FileName, ScanText, MediaKind, ParserPattern, ShowTitle, MovieTitle, MovieYear, SeasonNumber, EpisodeNumber, MappedSeasonNumber, MappedEpisodeNumber, EpisodeMappingSource, EpisodeMappingConfidence, EpisodeMappingReason, EpisodeTitle, MatchedTitle, MatchedYear, Provider, ProviderId, MatchConfidence, MatchReason, RequiresManualReview, MatchAccepted, UseAbsoluteAnimeMapping, State, Notes, LinkedPath, SymlinkPath, AutoTorrentLinkKind, AutoTorrentTorrentHash, AutoTorrentPackOwnerSeasonNumber, IsExternalImport, IsOrphanPackSpecial, LastSeenUtc, LastEpisodeNumber)
+            VALUES ($SourceRootFolder, $ParentFolder, $FilePath, $FileName, $ScanText, $MediaKind, $ParserPattern, $ShowTitle, $MovieTitle, $MovieYear, $SeasonNumber, $EpisodeNumber, $MappedSeasonNumber, $MappedEpisodeNumber, $EpisodeMappingSource, $EpisodeMappingConfidence, $EpisodeMappingReason, $EpisodeTitle, $MatchedTitle, $MatchedYear, $Provider, $ProviderId, $MatchConfidence, $MatchReason, $RequiresManualReview, $MatchAccepted, $UseAbsoluteAnimeMapping, $State, $Notes, $LinkedPath, $SymlinkPath, $AutoTorrentLinkKind, $AutoTorrentTorrentHash, $AutoTorrentPackOwnerSeasonNumber, $IsExternalImport, $IsOrphanPackSpecial, $LastSeenUtc, $LastEpisodeNumber)
             ON CONFLICT(FilePath) DO UPDATE SET
                 SourceRootFolder = excluded.SourceRootFolder,
                 ParentFolder = excluded.ParentFolder,
@@ -236,6 +238,7 @@ public sealed class DatabaseService : IDatabaseService
                 MovieYear = excluded.MovieYear,
                 SeasonNumber = excluded.SeasonNumber,
                 EpisodeNumber = excluded.EpisodeNumber,
+                LastEpisodeNumber = excluded.LastEpisodeNumber,
                 MappedSeasonNumber = excluded.MappedSeasonNumber,
                 MappedEpisodeNumber = excluded.MappedEpisodeNumber,
                 EpisodeMappingSource = excluded.EpisodeMappingSource,
@@ -399,6 +402,7 @@ public sealed class DatabaseService : IDatabaseService
         command.Parameters.AddWithValue("$IsExternalImport", item.IsExternalImport ? 1 : 0);
         command.Parameters.AddWithValue("$IsOrphanPackSpecial", item.IsOrphanPackSpecial ? 1 : 0);
         command.Parameters.AddWithValue("$LastSeenUtc", item.LastSeenUtc.ToString("O"));
+        command.Parameters.AddWithValue("$LastEpisodeNumber", (object?)item.LastEpisodeNumber ?? DBNull.Value);
     }
 
     private static void EnsureColumn(SqliteConnection connection, string tableName, string columnName, string columnDefinition)
@@ -460,7 +464,8 @@ public sealed class DatabaseService : IDatabaseService
             AutoTorrentPackOwnerSeasonNumber = reader.IsDBNull(34) ? null : reader.GetInt32(34),
             IsExternalImport = reader.GetInt32(35) == 1,
             IsOrphanPackSpecial = reader.GetInt32(36) == 1,
-            LastSeenUtc = DateTime.Parse(reader.GetString(37), null, System.Globalization.DateTimeStyles.RoundtripKind)
+            LastSeenUtc = DateTime.Parse(reader.GetString(37), null, System.Globalization.DateTimeStyles.RoundtripKind),
+            LastEpisodeNumber = reader.FieldCount > 38 && !reader.IsDBNull(38) ? reader.GetInt32(38) : null
         };
     }
 

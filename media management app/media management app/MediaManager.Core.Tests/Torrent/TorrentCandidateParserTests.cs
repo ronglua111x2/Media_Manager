@@ -216,4 +216,112 @@ public class TorrentCandidateParserTests
         result.TitleTokens.Should().Contain("Chainsmoker");
         result.TitleTokens.Should().Contain("Cat");
     }
+
+    // PARSE-06: multi-episode files keep their first episode and report the last one.
+    [Theory]
+    [InlineData("Show.Name.S01E01E02.1080p.mkv", 1, 1, 2)]
+    [InlineData("Show.Name.S01E01-E02.1080p.mkv", 1, 1, 2)]
+    [InlineData("Show.Name.S01E01-02.1080p.mkv", 1, 1, 2)]
+    [InlineData("Show.Name.S02E09-E10.1080p.mkv", 2, 9, 10)]
+    [InlineData("Show.Name.S01E01E02E03.mkv", 1, 1, 3)]
+    [InlineData("Show.Name.S01E01-E02v2.mkv", 1, 1, 2)]
+    [InlineData("Show.Name.S01E05.1080p.mkv", 1, 5, null)]
+    [InlineData("Show.Name.S01E05-1080p.mkv", 1, 5, null)]
+    [InlineData("Show.Name.S01E05-2019.mkv", 1, 5, null)]
+    [InlineData("Show.Name.S01E05-03.mkv", 1, 5, null)]
+    public void Parse_MultiEpisode_ReportsLastEpisode(string fileName, int season, int episode, int? lastEpisode)
+    {
+        var result = TorrentCandidateParser.Parse(fileName);
+
+        result.SeasonNumber.Should().Be(season);
+        result.EpisodeNumber.Should().Be(episode);
+        result.LastEpisodeNumber.Should().Be(lastEpisode);
+    }
+
+    [Fact]
+    public void Parse_MultiEpisode_KeepsEpisodeTitleClean()
+    {
+        var single = TorrentCandidateParser.Parse("Show.Name.S01E01.The.Pilot.1080p.mkv").EpisodeTitle;
+
+        TorrentCandidateParser.Parse("Show.Name.S01E01-E02.The.Pilot.1080p.mkv").EpisodeTitle.Should().Be(single);
+        TorrentCandidateParser.Parse("Show.Name.S01E01-02.The.Pilot.1080p.mkv").EpisodeTitle.Should().Be(single);
+        single.Should().StartWith("The Pilot");
+    }
+
+    // Parser audit 2026-11, report section 2: the 35 hard cases run through the same calls the
+    // pack grouper, special bucket detector and single-episode file picker use. Each row states the
+    // desired result; rows still broken carry Skip = the finding that fixes them.
+    // Columns: case number, relative path in the torrent, Parse(fileName, relativePath) season/episode,
+    // Parse(..., allowAnimeAbsolute: true) season/episode, IsSpecialContent, IsExtraContent,
+    // PackSeasonFileGrouper exclude reason, special-bucket candidate, path season hint.
+    [Theory]
+    [InlineData(1, "Show.Name.S01E05.1080p.WEB-DL.x264-GRP.mkv", 1, 5, 1, 5, false, false, null, false, null)]
+    [InlineData(2, "Show.Name.S01E05v2.1080p.mkv", 1, 5, 1, 5, false, false, null, false, null)]
+    [InlineData(3, "Show.Name.S01E01E02.1080p.mkv", 1, 1, 1, 1, false, false, null, false, null)]
+    [InlineData(4, "Show.Name.S01E01-E02.1080p.mkv", 1, 1, 1, 1, false, false, null, false, null)]
+    [InlineData(5, "Show.Name.S01E01-02.1080p.mkv", 1, 1, 1, 1, false, false, null, false, null)]
+    [InlineData(6, "Show.Name.1x05.HDTV.mkv", 1, 5, 1, 5, false, false, null, false, null)]
+    // Not parsed by this parser; the pack flow reads it through Sonarr (S01E05).
+    [InlineData(7, "Show Name Season 1 Episode 5.mkv", null, null, null, null, false, false, null, false, null)]
+    [InlineData(8, "Show.Name.S01E05.PROPER.1080p.mkv", 1, 5, 1, 5, false, false, null, false, null)]
+    [InlineData(9, "Show.Name.S01E05.REPACK.1080p.mkv", 1, 5, 1, 5, false, false, null, false, null)]
+    [InlineData(10, "[SubsPlease] Show - 05 (1080p) [ABCD1234].mkv", null, null, null, 5, false, false, null, false, null)]
+    [InlineData(11, "[Group] Show - 05v2 [1080p].mkv", null, null, null, 5, false, false, null, false, null)]
+    // Rows 12-15: absolute parse used by search/hunt (report section 8), owned by feat/native-search.
+    [InlineData(12, "[SubsPlease] Show S2 - 05 (1080p) [ABCD1234].mkv", null, null, null, 5, false, false, null, false, null, Skip = "Report section 8 (search, feat/native-search)")]
+    [InlineData(13, "[SubsPlease] Show 100 - 05 (1080p).mkv", null, null, null, 5, false, false, null, false, null, Skip = "Report section 8 (search, feat/native-search)")]
+    [InlineData(14, "[Erai-raws] 86 - Show - 05 [1080p].mkv", null, null, null, 5, false, false, null, false, null, Skip = "Report section 8 (search, feat/native-search)")]
+    [InlineData(15, "[SubsPlease] Show No. 8 - 05 (1080p).mkv", null, null, null, 5, false, false, null, false, null, Skip = "Report section 8 (search, feat/native-search)")]
+    [InlineData(16, "[Group] 番組名 - 05 [1080p].mkv", null, null, null, 5, false, false, null, false, null)]
+    [InlineData(17, "番組名.S01E05.1080p.mkv", 1, 5, 1, 5, false, false, null, false, null)]
+    [InlineData(18, "2049.S01E03.1080p.WEB.mkv", 1, 3, 1, 3, false, false, null, false, null)]
+    [InlineData(19, "Show.2005.S02E05.1080p.mkv", 2, 5, 2, 5, false, false, null, false, null)]
+    [InlineData(20, "Show.2005.S00E05.Christmas.Special.mkv", 0, 5, 0, 5, true, false, null, false, null)]
+    [InlineData(21, "Daily.Show.2026.11.10.Guest.1080p.mkv", null, null, null, null, false, false, null, false, null)]
+    [InlineData(22, "Special Ops Show/Season 1/Special.Ops.Show.S01E03.1080p.mkv", 1, 3, 1, 3, false, false, null, false, 1)]
+    [InlineData(23, "Show/Season 2/Show.S02E07.A.Very.Special.Episode.1080p.mkv", 2, 7, 2, 7, false, false, null, false, 2)]
+    [InlineData(24, "Show/Season 3/Show.S03E04.Movie.Night.1080p.mkv", 3, 4, 3, 4, false, false, null, false, 3)]
+    [InlineData(25, "Moviepass Show/Season 1/Moviepass.Show.S01E02.mkv", 1, 2, 1, 2, false, false, null, false, 1)]
+    [InlineData(26, "Show/Season 1/OVA/Show.OVA.02.mkv", null, null, null, 2, true, false, "special-bucket", true, 1)]
+    [InlineData(27, "Show/Season 1/Show.S01S02.mkv", null, null, null, null, true, false, "special-bucket", true, 1)]
+    [InlineData(28, "Show/Season 1/Extras/Show.NCOP.01.mkv", null, null, null, 1, false, true, "extras-folder", false, 1)]
+    [InlineData(29, "Show/Show.NCOP01.mkv", null, null, null, null, false, true, "extra-content", false, null)]
+    [InlineData(30, "Show.S01E05.1080p/Sample/show.s01e05.1080p-sample.mkv", 1, 5, 1, 5, false, false, "sample", false, null)]
+    [InlineData(31, "Show/Season 1 Part 2/Show.S01E03.mkv", 1, 3, 1, 3, false, false, null, false, null)]
+    [InlineData(32, "Show Season 1-3 1080p/Show.S02E05.1080p.mkv", 2, 5, 2, 5, false, false, null, false, null)]
+    // Rows 33-35: the episode is only in a folder name or needs Sonarr; this parser leaves them alone.
+    [InlineData(33, "Show.S01.1080p.WEB/Show.E05.1080p.mkv", null, null, null, null, false, false, null, false, null)]
+    [InlineData(34, "Show.S01E05.1080p.WEB/abc123.mkv", null, null, null, null, false, false, null, false, null)]
+    [InlineData(35, "Show.Name.S01.720x480.DVDRip/Show.Name.05.mkv", null, null, null, 5, false, false, null, false, null)]
+    public void Parse_AuditHardCase_MatchesDesiredResult(
+        int caseNumber,
+        string relativePath,
+        int? season,
+        int? episode,
+        int? absoluteSeason,
+        int? absoluteEpisode,
+        bool isSpecial,
+        bool isExtra,
+        string? excludeReason,
+        bool isSpecialBucket,
+        int? pathSeasonHint)
+    {
+        var fileName = Path.GetFileName(relativePath);
+
+        var parsed = TorrentCandidateParser.Parse(fileName, relativePath);
+        var parsedAbsolute = TorrentCandidateParser.Parse(fileName, relativePath, allowAnimeAbsolute: true);
+
+        parsed.SeasonNumber.Should().Be(season, $"case {caseNumber} season");
+        parsed.EpisodeNumber.Should().Be(episode, $"case {caseNumber} episode");
+        parsedAbsolute.SeasonNumber.Should().Be(absoluteSeason, $"case {caseNumber} season (absolute allowed)");
+        parsedAbsolute.EpisodeNumber.Should().Be(absoluteEpisode, $"case {caseNumber} episode (absolute allowed)");
+        parsed.IsSpecialContent.Should().Be(isSpecial, $"case {caseNumber} special flag");
+        parsed.IsExtraContent.Should().Be(isExtra, $"case {caseNumber} extra flag");
+        PackSeasonFileGrouper.GetEpisodeGroupExcludeReason(relativePath, fileName)
+            .Should().Be(excludeReason, $"case {caseNumber} exclude reason");
+        PackSpecialBucketDetector.IsSpecialBucketCandidate(relativePath, fileName)
+            .Should().Be(isSpecialBucket, $"case {caseNumber} special bucket");
+        TorrentCandidateParser.TryGetSeasonHintFromPath(relativePath)
+            .Should().Be(pathSeasonHint, $"case {caseNumber} path season hint");
+    }
 }

@@ -547,10 +547,26 @@ public sealed class TrackedShowService : ITrackedShowService
                 item.State == ItemState.Linked &&
                 string.Equals(item.Provider, "tmdb", StringComparison.OrdinalIgnoreCase) &&
                 string.Equals(item.ProviderId, providerId, StringComparison.OrdinalIgnoreCase))
-            .Select(GetOutputEpisodeKey)
-            .Where(key => key is not null)
-            .Select(key => key!.Value)
+            .SelectMany(GetOutputEpisodeKeys)
             .ToHashSet();
+    }
+
+    // A multi-episode file (S01E01-E02) makes every episode of its range available (PARSE-06).
+    private static IEnumerable<(int SeasonNumber, int EpisodeNumber)> GetOutputEpisodeKeys(SourceItem item)
+    {
+        if (GetOutputEpisodeKey(item) is not { } key)
+        {
+            yield break;
+        }
+
+        yield return key;
+        if (item.MappedEpisodeNumber is null && item.LastEpisodeNumber is { } last)
+        {
+            for (var episode = key.EpisodeNumber + 1; episode <= last; episode++)
+            {
+                yield return (key.SeasonNumber, episode);
+            }
+        }
     }
 
     private static (int SeasonNumber, int EpisodeNumber)? GetOutputEpisodeKey(SourceItem item)

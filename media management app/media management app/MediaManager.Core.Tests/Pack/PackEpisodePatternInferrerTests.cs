@@ -130,6 +130,44 @@ public class PackEpisodePatternInferrerTests
         episode.Should().Be(4);
     }
 
+    // PARSE-01: crossing the 09 -> 10 boundary used to pick a prefix that read only the last digit.
+    [Fact]
+    public void Infer_DashNumbersAcrossTwoDigitBoundary_ReadsWholeNumber()
+    {
+        var stems = Enumerable.Range(1, 12).Select(e => $"Show Name - {e:00} (BD 1080p HEVC Opus) [Grp]").ToList();
+
+        var pattern = PackEpisodePatternInferrer.Infer(stems, expectedEpisodeCount: 12, seasonNumber: 1);
+
+        pattern.IsValid.Should().BeTrue();
+        stems.Select(stem => PackEpisodePatternInferrer.TryExtract(stem, pattern, 1))
+            .Should().Equal(Enumerable.Range(1, 12).Select(e => (int?)e));
+    }
+
+    [Fact]
+    public void Infer_PatternFailingValidation_IsInvalid()
+    {
+        // Numbers 13-24 for a 12-episode season: any fixed-width pattern reads numbers outside 1..14.
+        var stems = Enumerable.Range(13, 12).Select(e => $"[Group] Show - {e:00} [1080p]").ToList();
+
+        var pattern = PackEpisodePatternInferrer.Infer(stems, expectedEpisodeCount: 12, seasonNumber: 2);
+
+        pattern.IsValid.Should().BeFalse();
+    }
+
+    // Report section 6: the compact suffix needs a word boundary and splits digits by the season asked for.
+    [Theory]
+    [InlineData("Show S0105", 1, 5)]
+    [InlineData("Show S105", 1, 5)]
+    [InlineData("Show S1012", 10, 12)]
+    [InlineData("Show S1012", 1, 12)]
+    [InlineData("Show S0212", 1, null)]
+    [InlineData("ShowS0105", 1, null)]
+    [InlineData("Show S0100", 1, null)]
+    public void TryExtractSeasonEpisodeSuffix_WordBoundaryAndSeasonAwareSplit(string stem, int season, int? expected)
+    {
+        PackEpisodePatternInferrer.TryExtractSeasonEpisodeSuffix(stem, season).Should().Be(expected);
+    }
+
     private static string[] GoldenStems(string id) =>
         MediaManager.Core.Tests.Fixtures.GoldenFixtureFile.Root("pack-stems.json")
             .GetProperty("cases")
