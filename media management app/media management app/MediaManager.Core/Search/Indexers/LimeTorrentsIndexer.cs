@@ -16,12 +16,13 @@ public sealed partial class LimeTorrentsIndexer(string baseUrl = "https://www.li
 
     public IndexerCapabilities Capabilities { get; } = new(IndexerMediaKinds.All);
 
-    private const int MaxPages = 2;
+    private const int MaxPages = 4;
     private const int FullPageRows = 20;
 
     public async Task<IReadOnlyList<IndexerResult>> SearchAsync(IndexerQuery query, IIndexerHttp http, CancellationToken cancellationToken)
     {
-        // Like the old plugin (4 pages) but bounded at 2 and only while pages are full.
+        // Same depth as the old plugin (4 pages), but only while pages are full and paced by the governor:
+        // LimeTorrents is the main source of good movie encodes (plan 08 measurement).
         var results = new List<IndexerResult>();
         for (var page = 1; page <= MaxPages; page++)
         {

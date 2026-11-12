@@ -132,7 +132,7 @@ public class SearchIdentityTests
         {
             FileName = "Project.Hail.Mary.2026.2160p.iT.WEB-DL-BTM",
             FileUrl = "magnet:?xt=urn:btih:6d586b4534782952644758b6641aea0bdbc373f2",
-            DescriptionUrl = "https://thepiratebay.org/description.php?id=83093224"
+            DescriptionUrl = "https://knaben.xyz/thepiratebay/description.php?id=83093224"
         };
         var qbittorrent = new media_management_app.Models.TorrentSearchResult
         {

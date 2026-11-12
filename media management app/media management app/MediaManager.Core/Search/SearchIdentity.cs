@@ -57,6 +57,7 @@ public static partial class SearchIdentity
         return id is not null && aliases.TryGetValue("tpb:" + id, out var alias) ? alias : key;
     }
 
-    [GeneratedRegex(@"thepiratebay\.[a-z]+/description\.php\?id=(?<id>\d+)", RegexOptions.IgnoreCase)]
+    // thepiratebay.org/description.php?id=… and Knaben's knaben.xyz/thepiratebay/description.php?id=…
+    [GeneratedRegex(@"thepiratebay(?:\.[a-z]+)?/description\.php\?id=(?<id>\d+)", RegexOptions.IgnoreCase)]
     private static partial Regex TpbDescriptionRegex();
 }
