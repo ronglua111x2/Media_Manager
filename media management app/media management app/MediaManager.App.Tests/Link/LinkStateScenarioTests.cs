@@ -322,7 +322,7 @@ public sealed class LinkStateScenarioTests : IDisposable
 
     // PARSE-29 (LINK-06, harness E): a library file deleted outside the app must make the episode Missing
     // and remove its dangling Jellyfin symlink.
-    [Fact(Skip = "PARSE-29")]
+    [Fact]
     public async Task LibraryFileDeletedOutsideApp_EpisodeBecomesMissingAndSymlinkIsRemoved()
     {
         var showId = PackShow("HE", 5009, "Pack/Demo.S01E01.mkv");
@@ -338,7 +338,7 @@ public sealed class LinkStateScenarioTests : IDisposable
     }
 
     // PARSE-30 (LINK-07, harness G): removing a movie must not leave a second record that resurrects its symlink.
-    [Fact(Skip = "PARSE-30")]
+    [Fact]
     public void RemoveMovie_WithLegacyRowSharingLinkedPath_DoesNotResurrectSymlink()
     {
         _host.AddTorrent("HG", "Demo.Movie.2016.2160p.mkv");

@@ -146,7 +146,9 @@ public sealed class SymlinkSyncService : ISymlinkSyncService
 
         foreach (var symlinkPath in symlinkPaths)
         {
-            if (!string.IsNullOrWhiteSpace(symlinkPath) && File.Exists(symlinkPath))
+            // A symlink whose target was deleted must still be removed (PARSE-29).
+            if (!string.IsNullOrWhiteSpace(symlinkPath) &&
+                (File.Exists(symlinkPath) || _symlinkService.IsSymlink(symlinkPath)))
             {
                 if (_symlinkService.TryRemoveSymlink(symlinkPath, out var removeError))
                 {
@@ -180,9 +182,24 @@ public sealed class SymlinkSyncService : ISymlinkSyncService
             return aggregate;
         }
 
-        var linkedItems = _databaseService.GetSourceItems()
+        var allItems = _databaseService.GetSourceItems();
+        var linkedItems = allItems
             .Where(item => item.State == ItemState.Linked)
             .ToList();
+
+        // Records that lost their library link (deleted outside the app) still name a symlink that
+        // now dangles; remove it unless a linked record still uses the same symlink path.
+        var linkedSymlinkPaths = linkedItems
+            .Where(item => !string.IsNullOrWhiteSpace(item.SymlinkPath))
+            .Select(item => Path.GetFullPath(item.SymlinkPath!))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in allItems.Where(item =>
+                     item.State != ItemState.Linked &&
+                     !string.IsNullOrWhiteSpace(item.SymlinkPath) &&
+                     !linkedSymlinkPaths.Contains(Path.GetFullPath(item.SymlinkPath!))))
+        {
+            Merge(aggregate, RemoveItem(item, linkedPath: null, linkedGroup: [item]));
+        }
         var linkedGroupsByPath = BuildLinkedGroupsByPath(linkedItems);
 
         var syncedLinkedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

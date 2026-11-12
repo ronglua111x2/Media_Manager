@@ -329,6 +329,8 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             item.State = File.Exists(item.LinkedPath) ? ItemState.Linked : ItemState.Parsed;
             if (!File.Exists(item.LinkedPath))
             {
+                // The Jellyfin symlink now points at nothing; let the symlink coordinator remove it.
+                _eventHub.PublishHardlinkRemoved(item, item.LinkedPath!);
                 item.LinkedPath = null;
                 item.State = ItemState.Parsed;
                 item.Notes = "Linked path no longer exists.";
@@ -1148,7 +1150,22 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
         IReadOnlyList<SourceItem>? snapshot = null)
     {
         var result = new AutoTorrentLinkResult();
-        foreach (var item in (snapshot ?? _databaseService.GetSourceItems()).Where(predicate).ToList())
+        var source = snapshot ?? _databaseService.GetSourceItems();
+        var matched = source.Where(predicate).ToList();
+        // A legacy record and an import of the generated library file can share one LinkedPath.
+        // Unlinking only one of them left the other "Linked", so the symlink came back on the next
+        // sync. Records that share a LinkedPath with a matched record are handled with it.
+        var matchedIds = matched.Select(item => item.Id).ToHashSet();
+        var matchedLinkedPaths = matched
+            .Where(item => !string.IsNullOrWhiteSpace(item.LinkedPath))
+            .Select(item => Path.GetFullPath(item.LinkedPath!))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var coOwners = source
+            .Where(item => !matchedIds.Contains(item.Id) &&
+                           !string.IsNullOrWhiteSpace(item.LinkedPath) &&
+                           matchedLinkedPaths.Contains(Path.GetFullPath(item.LinkedPath)))
+            .ToList();
+        foreach (var item in coOwners.Concat(matched))
         {
             if (string.IsNullOrWhiteSpace(item.LinkedPath))
             {
