@@ -257,8 +257,8 @@ public static class PackEpisodeResolver
         }
 
         return YearRegex.Matches(stem).Any(match =>
-            int.Parse(match.Groups["century"].Value) == parsed.SeasonNumber &&
-            int.Parse(match.Groups["year"].Value) == parsed.EpisodeNumbers[0]);
+            int.TryParse(match.Groups["century"].Value, out var century) && century == parsed.SeasonNumber &&
+            int.TryParse(match.Groups["year"].Value, out var year) && year == parsed.EpisodeNumbers[0]);
     }
 
     private static (int Season, int Episode, int? LastEpisode)? TryResolveDaily(

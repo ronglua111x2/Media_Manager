@@ -26,6 +26,12 @@ public class PackSignalPrecedenceTests
     [InlineData("Season 2 Cour 2", null)]
     [InlineData("Show Complete Series", null)]
     [InlineData("Show.Complete", null)]
+    // Audit L1-L1: an episode range after the season is not a season range.
+    [InlineData("[Group] Show Season 2 - 13-24 [1080p]", 2)]
+    [InlineData("Show Season 1 - 01~12", 1)]
+    [InlineData("Show Season 2 - 13~24 (BD)", 2)]
+    // Audit L1-L2: non-ASCII digits must not throw.
+    [InlineData("Show Season ２", null)]
     public void TryParseSeasonFolderSegment_OnlyASingleSeason(string segment, int? expected)
     {
         TorrentCandidateParser.TryParseSeasonFolderSegment(segment).Should().Be(expected);

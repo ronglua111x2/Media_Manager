@@ -94,8 +94,10 @@ public static class TorrentCandidateParser
     private static readonly Regex SpecialKeywordWithNumberRegex = new(
         @"\b(?:OVA|OAD|Specials?|SP)\s*\d{1,3}\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    // "Season 1-3", "Season 1 & 2", "S01-S03". A dash or tilde followed by an episode range ("Season 2 - 13-24",
+    // "Season 1 - 01~12") names episodes, not seasons (audit L1-L1).
     private static readonly Regex FolderSeasonRangeRegex = new(
-        @"\bSeasons?\s*\d{1,2}\s*(?:-|~|to|&|\+|,|and)\s*(?:Season\s*)?\d{1,2}\b|\bS\d{1,2}\s*(?:-|~|to|&|\+)\s*S?\d{1,2}\b",
+        @"\bSeasons?\s*\d{1,2}\s*(?:(?:-|~)\s*(?:Season\s*)?\d{1,2}(?!\s*(?:-|~)\s*\d)|(?:to|&|\+|,|and)\s*(?:Season\s*)?\d{1,2})\b|\bS\d{1,2}\s*(?:-|~|to|&|\+)\s*S?\d{1,2}\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex FolderSeasonWordRegex = new(
         @"\b(?<word>Seasons?)\s*(?<season>\d{1,2})\b",
@@ -359,8 +361,11 @@ public static class TorrentCandidateParser
                 return null;
             }
 
+            // TryParse: .NET \d also matches non-ASCII digits, which int.Parse rejects (audit L1-L2).
             var seasons = seasonWords
-                .Select(match => int.Parse(match.Groups["season"].Value))
+                .Select(match => int.TryParse(match.Groups["season"].Value, out var value) ? value : (int?)null)
+                .Where(value => value is not null)
+                .Select(value => value!.Value)
                 .Distinct()
                 .ToList();
             return seasons.Count == 1 ? seasons[0] : null;

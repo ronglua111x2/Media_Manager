@@ -146,7 +146,7 @@ public static class SpecialEpisodeTitleMatcher
 
     private static HashSet<int> StandaloneNumbers(string text) =>
         Words(text)
-            .Where(token => token.Length <= 4 && token.All(char.IsDigit))
+            .Where(token => token.Length <= 4 && token.All(char.IsAsciiDigit))
             .Select(int.Parse)
             .ToHashSet();
 
