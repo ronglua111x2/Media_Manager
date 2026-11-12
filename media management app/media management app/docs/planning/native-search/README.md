@@ -121,3 +121,4 @@ Khác với plan ban đầu: IMDb id và trạng thái governor được lưu b�
 - [05-quality-and-ui.md](./05-quality-and-ui.md): chuẩn hoá kết quả, lọc rác, gộp trùng, chấm điểm, UI chọn bản encode
 - [06-rollout-and-migration.md](./06-rollout-and-migration.md): feature flag, cổng A/B, recipe v2, migration DB, danh sách xoá ở P6
 - [07-phases.md](./07-phases.md): việc, PR và tiêu chí nghiệm thu từng giai đoạn
+- [08-coverage-and-quality.md](./08-coverage-and-quality.md): kế hoạch tiếp theo, gồm độ phủ movie phương Tây, chỉ số ứng viên tốt và backend theo recipe (chờ xác nhận)
