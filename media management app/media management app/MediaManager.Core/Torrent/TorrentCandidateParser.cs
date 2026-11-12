@@ -79,6 +79,10 @@ public static class TorrentCandidateParser
     private static readonly Regex ExtraContentRegex = new(
         @"\b(?:NCED|NCOP)(?:\d{1,2}[a-z]?)?\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    // "2026.11.10" / "2026-11-10" after normalization: a daily episode, not "episode 11".
+    private static readonly Regex AirDateRegex = new(
+        @"\b(?:19|20)\d{2}\s(?:0?[1-9]|1[0-2])\s(?:0?[1-9]|[12]\d|3[01])\b",
+        RegexOptions.Compiled);
     // Multi-episode markers on the raw name, before "-" is normalized away: E01E02, E01-E02, E01-02.
     private static readonly Regex MultiEpisodeRegex = new(
         @"\bS(?<season>\d{1,3})E(?<first>\d{1,4})(?:(?:[-_.]?E|-)(?<next>\d{1,4}))+(?:v\d{1,2})?(?![0-9a-z])",
@@ -136,6 +140,7 @@ public static class TorrentCandidateParser
             }
         }
         else if (allowAnimeAbsolute &&
+                 !AirDateRegex.IsMatch(normalized) &&
                  !TorrentReleaseKind.HasPackSignalsFromTitle(fileName) &&
                  TryParseAbsoluteEpisode(normalized, out var absoluteShowPart, out var absoluteRest, out var absoluteValue))
         {

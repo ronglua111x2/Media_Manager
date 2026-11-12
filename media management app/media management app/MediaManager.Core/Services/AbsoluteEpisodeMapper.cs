@@ -17,6 +17,9 @@ public sealed class AbsoluteEpisodeMapper
             .ToList();
     }
 
+    /// <summary>Highest regular season TMDB lists for the show; 0 when unknown.</summary>
+    public int MaxSeasonNumber => _seasons.Count == 0 ? 0 : _seasons[^1].Season;
+
     /// <summary>
     /// A number that is already an episode of <paramref name="groupSeason"/> stays in that season
     /// (season-relative numbering, or TMDB seasons that continue the numbering). Otherwise the

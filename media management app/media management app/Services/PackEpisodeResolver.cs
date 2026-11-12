@@ -12,7 +12,8 @@ public static class PackEpisodeResolver
         IReadOnlySet<int> validEpisodeNumbers,
         InferredEpisodePattern? fallbackPattern = null,
         IReadOnlyDictionary<string, long>? fileSizes = null,
-        AbsoluteEpisodeMapper? absoluteMapper = null)
+        AbsoluteEpisodeMapper? absoluteMapper = null,
+        IReadOnlyDictionary<DateOnly, IReadOnlyList<(int Season, int Episode)>>? episodesByAirDate = null)
     {
         var candidates = new List<PackEpisodeCandidate>();
         var unresolved = new List<(string RelativePath, string Reason)>();
@@ -26,7 +27,7 @@ public static class PackEpisodeResolver
 
             var stem = Path.GetFileNameWithoutExtension(fileName);
             var parsed = ParsePackFile(relativePath, fileName);
-            var resolved = TryResolve(parsed, seasonNumber, validEpisodeNumbers, stem, fallbackPattern, absoluteMapper, out var failure);
+            var resolved = TryResolve(parsed, seasonNumber, validEpisodeNumbers, stem, fallbackPattern, absoluteMapper, episodesByAirDate, out var failure);
             if (resolved is { } target)
             {
                 candidates.Add(new PackEpisodeCandidate(relativePath, fileName, target.Season, target.Episode, target.LastEpisode));
@@ -148,9 +149,32 @@ public static class PackEpisodeResolver
         string stem,
         InferredEpisodePattern? fallbackPattern,
         AbsoluteEpisodeMapper? absoluteMapper,
+        IReadOnlyDictionary<DateOnly, IReadOnlyList<(int Season, int Episode)>>? episodesByAirDate,
         out string? failure)
     {
         failure = null;
+
+        // Sonarr reads a year in a movie name as a season ("Movie.2019" -> S20E19); a season the show
+        // does not have is not evidence of anything.
+        if (parsed is { EpisodeNumbers.Length: > 0 } &&
+            absoluteMapper is { MaxSeasonNumber: > 0 } &&
+            parsed.SeasonNumber > absoluteMapper.MaxSeasonNumber)
+        {
+            failure = $"Name reads as S{parsed.SeasonNumber:00}E{parsed.EpisodeNumbers[0]:00} but the show has {absoluteMapper.MaxSeasonNumber} season(s); likely a year, not linked.";
+            return null;
+        }
+
+        if (IsYearReadAsSeasonEpisode(parsed, stem))
+        {
+            failure = $"Name reads as S{parsed!.SeasonNumber:00}E{parsed.EpisodeNumbers[0]:00} only because of the year {parsed.SeasonNumber:00}{parsed.EpisodeNumbers[0]:00}; not linked.";
+            return null;
+        }
+
+        // Daily releases ("Show.2026.11.10") are matched by TMDB air date (PARSE-15).
+        if (parsed is { IsDaily: true } && episodesByAirDate is not null)
+        {
+            return TryResolveDaily(parsed, episodesByAirDate, out failure);
+        }
         var explicitSeasonEpisode = HasSeasonEpisode(parsed) && !parsed!.IsMultiSeason;
         if (explicitSeasonEpisode && TorrentCandidateParser.Parse(stem) is { SeasonNumber: 0, EpisodeNumber: not null })
         {
@@ -186,6 +210,51 @@ public static class PackEpisodeResolver
 
         var inferred = PackEpisodePatternInferrer.TryInferEpisode(stem, seasonNumber, validEpisodeNumbers, fallbackPattern);
         return inferred is null ? null : (seasonNumber, inferred.Value, null);
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex YearRegex = new(
+        @"(?<![0-9])(?<century>19|20)(?<year>\d{2})(?![0-9])",
+        System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    // "Your.Feature.2016" -> Sonarr S20E16, while the name has no SxxEyy of its own.
+    private static bool IsYearReadAsSeasonEpisode(ParsedEpisodeInfo? parsed, string stem)
+    {
+        if (parsed is not { EpisodeNumbers.Length: > 0 } ||
+            TorrentCandidateParser.Parse(stem) is { SeasonNumber: not null, EpisodeNumber: not null })
+        {
+            return false;
+        }
+
+        return YearRegex.Matches(stem).Any(match =>
+            int.Parse(match.Groups["century"].Value) == parsed.SeasonNumber &&
+            int.Parse(match.Groups["year"].Value) == parsed.EpisodeNumbers[0]);
+    }
+
+    private static (int Season, int Episode, int? LastEpisode)? TryResolveDaily(
+        ParsedEpisodeInfo parsed,
+        IReadOnlyDictionary<DateOnly, IReadOnlyList<(int Season, int Episode)>> episodesByAirDate,
+        out string? failure)
+    {
+        if (!DateOnly.TryParse(parsed.AirDate, System.Globalization.CultureInfo.InvariantCulture, out var airDate))
+        {
+            failure = $"Daily release with unreadable air date '{parsed.AirDate}'.";
+            return null;
+        }
+
+        if (!episodesByAirDate.TryGetValue(airDate, out var aired) || aired.Count == 0)
+        {
+            failure = $"Daily release {airDate:yyyy-MM-dd}: no TMDB episode aired that day.";
+            return null;
+        }
+
+        if (aired.Count > 1)
+        {
+            failure = $"Daily release {airDate:yyyy-MM-dd}: {aired.Count} TMDB episodes aired that day; not guessing which.";
+            return null;
+        }
+
+        failure = null;
+        return (aired[0].Season, aired[0].Episode, null);
     }
 
     /// <summary>

@@ -323,6 +323,59 @@ public class PackScenarioTests
         Assert.NotEqual(PackFileClassification.RegularEpisode, PackScenario.Entry(inventory, "Show.S01/Show.S00E02.mkv").Classification);
     }
 
+    // PARSE-15: daily releases resolve by TMDB air date; a day with two episodes is not guessed.
+    [Fact]
+    public void DailyReleases_ResolveByAirDate()
+    {
+        var inventory = PackScenario.Run(Scenarios["daily"]);
+
+        PackScenario.AssertRegular(inventory, "Daily Show Week [Grp]/Daily.Show.2026.11.10.Guest.A.1080p.WEB.mkv", 5, 2);
+        PackScenario.AssertRegular(inventory, "Daily Show Week [Grp]/Daily.Show.2026.11.11.Guest.B.1080p.WEB.mkv", 5, 3);
+        var sameDay = PackScenario.Entry(inventory, "Daily Show Week [Grp]/Daily.Show.2026.11.12.Guest.C.1080p.WEB.mkv");
+        Assert.Equal(PackFileClassification.Skipped, sameDay.Classification);
+        Assert.Contains("aired that day", sameDay.MatchReason);
+    }
+
+    // Report section 6: Sonarr reads a year as season 20 ("Feature.2016" -> S20E16).
+    [Fact]
+    public void YearReadAsSeason_BeyondShowSeasons_IsNotLinked()
+    {
+        var inventory = PackScenario.Run(Scenarios["year-as-season"]);
+
+        PackScenario.AssertRegular(inventory, "Show.Complete/Show.S01E02.mkv", 1, 2);
+        Assert.NotEqual(PackFileClassification.RegularEpisode, PackScenario.Entry(inventory, "Show.Complete/Your.Feature.2016.2160p.BluRay.x265.mkv").Classification);
+    }
+
+    // Same, for a show that does have a season 20: the year must not become S20E16.
+    [Fact]
+    public void YearReadAsSeason_ShowWithTwentySeasons_IsNotLinked()
+    {
+        var inventory = PackScenario.Run(Scenarios["year-as-season-20"]);
+
+        PackScenario.AssertRegular(inventory, "Show.S20/Show.S20E01.mkv", 20, 1);
+        var feature = PackScenario.Entry(inventory, "Show.S20/Your.Feature.2016.2160p.BluRay.x265.mkv");
+        Assert.NotEqual(PackFileClassification.RegularEpisode, feature.Classification);
+    }
+
+    // PARSE-15 (Inspect): a file with no episode number is not counted as an episode.
+    [Fact]
+    public void Inspect_FileWithoutEpisodeNumber_IsNotCountedAsEpisode()
+    {
+        var files = new List<(string, string)>
+        {
+            ("Show/Season 1/Show.S01E01.mkv", "Show.S01E01.mkv"),
+            ("Show/Season 1/Show.S01E02.mkv", "Show.S01E02.mkv"),
+            ("Show/Season 1/Behind the scenes footage.mkv", "Behind the scenes footage.mkv"),
+        };
+        var episodes = Enumerable.Range(1, 3).Select(e => new TrackedEpisode { SeasonNumber = 1, EpisodeNumber = e, Title = $"Episode {e}" }).ToList();
+
+        var inventory = PackTorrentInventoryAnalyzer.Analyze(files, episodes, mode: PackAnalyzeMode.Inspect, ownerSeasonNumber: 1);
+
+        Assert.Equal(2, inventory.RegularEpisodeCount);
+        Assert.Equal(PackFileClassification.Skipped, PackScenario.Entry(inventory, "Show/Season 1/Behind the scenes footage.mkv").Classification);
+        Assert.Equal(2, inventory.EpisodeCountsBySeason[1]);
+    }
+
     [Theory]
     [MemberData(nameof(ScenarioNames))]
     public void AnyScenario_ReversedFileOrder_GivesSameResult(string name)
@@ -460,6 +513,21 @@ public class PackScenarioTests
             ["multi-trim"] = new(
                 Owner: 1, Covered: [1], EpisodesPerSeason: new() { [1] = 5 },
                 Files: ["Show/Season 1/Show.S01E01-E02.mkv", "Show/Season 1/Show.S01E03.mkv", "Show/Season 1/Show.S01E04.mkv", "Show/Season 1/Show.S01E05-E06.mkv"]),
+            ["daily"] = new(
+                Owner: 5, Covered: [5], EpisodesPerSeason: new() { [5] = 5 },
+                Files:
+                [
+                    "Daily Show Week [Grp]/Daily.Show.2026.11.10.Guest.A.1080p.WEB.mkv",
+                    "Daily Show Week [Grp]/Daily.Show.2026.11.11.Guest.B.1080p.WEB.mkv",
+                    "Daily Show Week [Grp]/Daily.Show.2026.11.12.Guest.C.1080p.WEB.mkv",
+                ],
+                AirDates: new() { [(5, 1)] = "2026-11-09", [(5, 2)] = "2026-11-10", [(5, 3)] = "2026-11-11", [(5, 4)] = "2026-11-12", [(5, 5)] = "2026-11-12" }),
+            ["year-as-season"] = new(
+                Owner: 1, Covered: [1, 2], EpisodesPerSeason: new() { [1] = 3, [2] = 3 },
+                Files: ["Show.Complete/Show.S01E01.mkv", "Show.Complete/Show.S01E02.mkv", "Show.Complete/Your.Feature.2016.2160p.BluRay.x265.mkv"]),
+            ["year-as-season-20"] = new(
+                Owner: 20, Covered: [20], EpisodesPerSeason: new() { [19] = 20, [20] = 20, [21] = 10 },
+                Files: ["Show.S20/Show.S20E01.mkv", "Show.S20/Show.S20E02.mkv", "Show.S20/Your.Feature.2016.2160p.BluRay.x265.mkv"]),
             ["K"] = new(
                 Owner: 1, Covered: [1], EpisodesPerSeason: new() { [1] = 6 },
                 Files: Enumerable.Range(1, 3).Select(e => $"Show/Season 1/Show.S01E{e:00}.mkv")
@@ -500,7 +568,8 @@ internal sealed record PackScenarioDefinition(
     Dictionary<int, int> EpisodesPerSeason,
     string[] Files,
     (int Episode, string AirDate, string Title)[]? Specials = null,
-    Dictionary<string, long>? Sizes = null);
+    Dictionary<string, long>? Sizes = null,
+    Dictionary<(int Season, int Episode), string>? AirDates = null);
 
 internal static class PackScenario
 {
@@ -562,7 +631,15 @@ internal static class PackScenario
         {
             for (var episode = 1; episode <= count; episode++)
             {
-                episodes.Add(new TrackedEpisode { SeasonNumber = season, EpisodeNumber = episode, Title = $"Episode {episode}" });
+                episodes.Add(new TrackedEpisode
+                {
+                    SeasonNumber = season,
+                    EpisodeNumber = episode,
+                    Title = $"Episode {episode}",
+                    AirDate = scenario.AirDates?.TryGetValue((season, episode), out var airDate) == true
+                        ? DateTime.Parse(airDate, CultureInfo.InvariantCulture)
+                        : null
+                });
             }
         }
 

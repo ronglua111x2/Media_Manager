@@ -21,8 +21,11 @@ public static class PackEpisodePatternInferrer
         @"\bS(?<season>\d{1,3})E(?<episode>\d{1,4})\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    // "S0105" at the end of a stem. The split between season and episode digits depends on the
+    // season asked for ("S1012" is S10E12 for season 10 and S01E012 for season 1), and the "S" must
+    // start a word ("ABCS0105" is not a season marker).
     private static readonly Regex CompactSeasonEpisodeSuffixRegex = new(
-        @"S(?<season>\d{1,2})(?<episode>\d{1,4})\s*$",
+        @"\bS(?<digits>\d{2,6})\s*$",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     public static string NormalizeStem(string stem)
@@ -223,14 +226,25 @@ public static class PackEpisodePatternInferrer
         }
 
         var match = CompactSeasonEpisodeSuffixRegex.Match(stem);
-        if (!match.Success ||
-            !int.TryParse(match.Groups["season"].Value, out var parsedSeason) ||
-            !int.TryParse(match.Groups["episode"].Value, out var parsedEpisode))
+        if (!match.Success || seasonNumber <= 0)
         {
             return null;
         }
 
-        return parsedSeason == seasonNumber ? parsedEpisode : null;
+        var digits = match.Groups["digits"].Value;
+        foreach (var prefix in new[] { seasonNumber.ToString("00"), seasonNumber.ToString() }.Distinct())
+        {
+            var episodeDigits = digits.Length - prefix.Length;
+            if (episodeDigits is >= 1 and <= 4 &&
+                digits.StartsWith(prefix, StringComparison.Ordinal) &&
+                int.TryParse(digits[prefix.Length..], out var episode) &&
+                episode > 0)
+            {
+                return episode;
+            }
+        }
+
+        return null;
     }
 
     public static IReadOnlyDictionary<string, int?> MapEpisodes(

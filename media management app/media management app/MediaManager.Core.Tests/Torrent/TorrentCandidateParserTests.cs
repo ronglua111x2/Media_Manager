@@ -277,7 +277,7 @@ public class TorrentCandidateParserTests
     [InlineData(18, "2049.S01E03.1080p.WEB.mkv", 1, 3, 1, 3, false, false, null, false, null)]
     [InlineData(19, "Show.2005.S02E05.1080p.mkv", 2, 5, 2, 5, false, false, null, false, null)]
     [InlineData(20, "Show.2005.S00E05.Christmas.Special.mkv", 0, 5, 0, 5, true, false, null, false, null)]
-    [InlineData(21, "Daily.Show.2026.11.10.Guest.1080p.mkv", null, null, null, null, false, false, null, false, null, Skip = "PARSE-15")]
+    [InlineData(21, "Daily.Show.2026.11.10.Guest.1080p.mkv", null, null, null, null, false, false, null, false, null)]
     [InlineData(22, "Special Ops Show/Season 1/Special.Ops.Show.S01E03.1080p.mkv", 1, 3, 1, 3, false, false, null, false, 1)]
     [InlineData(23, "Show/Season 2/Show.S02E07.A.Very.Special.Episode.1080p.mkv", 2, 7, 2, 7, false, false, null, false, 2)]
     [InlineData(24, "Show/Season 3/Show.S03E04.Movie.Night.1080p.mkv", 3, 4, 3, 4, false, false, null, false, 3)]

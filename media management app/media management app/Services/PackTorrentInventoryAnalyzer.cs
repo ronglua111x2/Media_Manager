@@ -49,12 +49,19 @@ public static class PackTorrentInventoryAnalyzer
                 group => group.Select(episode => episode.EpisodeNumber).ToHashSet() as IReadOnlySet<int>);
         var fallbackPatterns = BuildFallbackPatternsBySeason(seasonGroups, seasonCountsFromDb);
         var absoluteMapper = new AbsoluteEpisodeMapper(BuildSeasonEpisodeCounts(seasonCountsFromDb, episodesBySeason));
+        var episodesByAirDate = episodes
+            .Where(episode => episode.SeasonNumber > 0 && episode.AirDate is not null)
+            .GroupBy(episode => DateOnly.FromDateTime(episode.AirDate!.Value))
+            .ToDictionary(
+                group => group.Key,
+                group => (IReadOnlyList<(int Season, int Episode)>)group.Select(episode => (episode.SeasonNumber, episode.EpisodeNumber)).ToList());
         var resolutionsByPath = ResolveRegularEpisodesBySeason(
             seasonGroups,
             validEpisodesBySeason,
             fallbackPatterns,
             fileSizes,
             absoluteMapper,
+            episodesByAirDate,
             inventory.Warnings);
         FlagSpecialLikeEpisodes(resolutionsByPath, files, fileSizes, episodes, inventory.Warnings);
         var specialMappings = BuildSpecialMappings(files, tree, specialsEpisodes, resolvedSpecialMappings);
@@ -89,9 +96,18 @@ public static class PackTorrentInventoryAnalyzer
             .Order()
             .ToList();
 
-        foreach (var group in seasonGroups.Where(item => item.SeasonNumber > 0))
+        // Count episodes the files resolve to, not files in a season folder (PARSE-15 note: Inspect
+        // used to count unresolved files as episodes).
+        foreach (var group in inventory.Files
+                     .Where(file => file is { Classification: PackFileClassification.RegularEpisode, MatchedSeasonNumber: > 0, MatchedEpisodeNumber: not null })
+                     .GroupBy(file => file.MatchedSeasonNumber!.Value))
         {
-            inventory.EpisodeCountsBySeason[group.SeasonNumber] = group.Files.Count;
+            inventory.EpisodeCountsBySeason[group.Key] = group
+                .SelectMany(file => Enumerable.Range(
+                    file.MatchedEpisodeNumber!.Value,
+                    (file.MatchedLastEpisodeNumber ?? file.MatchedEpisodeNumber!.Value) - file.MatchedEpisodeNumber!.Value + 1))
+                .Distinct()
+                .Count();
         }
 
         if (mode == PackAnalyzeMode.Inspect && inventory.CoveredSeasons.Count > 1)
@@ -337,6 +353,7 @@ public static class PackTorrentInventoryAnalyzer
         IReadOnlyDictionary<int, InferredEpisodePattern> fallbackPatterns,
         IReadOnlyDictionary<string, long>? fileSizes,
         AbsoluteEpisodeMapper absoluteMapper,
+        IReadOnlyDictionary<DateOnly, IReadOnlyList<(int Season, int Episode)>> episodesByAirDate,
         List<string> warnings)
     {
         var resolutions = new Dictionary<string, PackEpisodeResolution>(StringComparer.OrdinalIgnoreCase);
@@ -364,7 +381,8 @@ public static class PackTorrentInventoryAnalyzer
                 validEpisodes,
                 pattern,
                 fileSizes,
-                absoluteMapper);
+                absoluteMapper,
+                episodesByAirDate);
             foreach (var (path, resolution) in seasonResolutions)
             {
                 resolutions[path] = resolution;
@@ -378,7 +396,8 @@ public static class PackTorrentInventoryAnalyzer
                     validEpisodes,
                     pattern,
                     fileSizes,
-                    absoluteMapper);
+                    absoluteMapper,
+                    episodesByAirDate);
                 var linked = partResolutions.Values
                     .Where(resolution => resolution.Status == PackEpisodeResolutionStatus.RegularEpisode)
                     .Select(resolution => (resolution.SeasonNumber, Episode: resolution.EpisodeNumber!.Value))
@@ -805,9 +824,9 @@ public static class PackTorrentInventoryAnalyzer
             {
                 RelativePath = relativePath,
                 FileName = fileName,
-                Classification = PackFileClassification.RegularEpisode,
+                Classification = PackFileClassification.Skipped,
                 MatchedSeasonNumber = seasonNumber,
-                MatchReason = $"Season folder S{seasonNumber:00} video file."
+                MatchReason = $"No episode number found for S{seasonNumber:00}."
             };
         }
 
