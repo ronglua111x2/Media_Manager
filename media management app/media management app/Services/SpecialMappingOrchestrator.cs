@@ -21,6 +21,12 @@ public interface ISpecialMappingOrchestrator
         bool useGemini = true,
         bool bypassCache = false,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Stores a Gemini result the user accepted (PR-15: nothing is cached before that). Does nothing for rule-only
+    /// results or results that must not be cached.
+    /// </summary>
+    void RememberAccepted(SpecialMappingResult result);
 }
 
 public sealed class SpecialMappingOrchestrator : ISpecialMappingOrchestrator
@@ -100,29 +106,46 @@ public sealed class SpecialMappingOrchestrator : ISpecialMappingOrchestrator
             return ApplyRules(request, specialsEpisodes, fallbackReason: null);
         }
 
+        var shortHash = torrentHash[..Math.Min(8, torrentHash.Length)];
+        var cacheKey = SpecialMappingCache.BuildKey(
+            torrentHash,
+            tmdbId,
+            specialsEpisodes,
+            request.Context.Candidates,
+            GeminiSpecialMappingProvider.SpecialPromptVersion);
+
         if (bypassCache)
         {
             _logger.Info(
-                $"Gemini special mapping cache bypassed for torrent={torrentHash[..Math.Min(8, torrentHash.Length)]} tmdbId={tmdbId}.",
+                $"Gemini special mapping cache bypassed for torrent={shortHash} tmdbId={tmdbId}.",
                 LogTarget.All);
         }
 
-        if (!bypassCache && _cache.TryGet(torrentHash, tmdbId, out var cached) && cached is not null)
+        if (!bypassCache && _cache.TryGet(cacheKey, torrentHash, tmdbId, out var cached, out var isLegacy) && cached is not null)
         {
-            _logger.Info(
-                $"Gemini special mapping cache hit for torrent={torrentHash[..Math.Min(8, torrentHash.Length)]} tmdbId={tmdbId}.",
+            var fromCache = Rehydrate(cached.Result, specialsEpisodes);
+            var problems = CheckCached(fromCache, request, specialsEpisodes, isLegacy);
+            if (problems.Count == 0)
+            {
+                _logger.Info(
+                    $"Gemini special mapping cache hit for torrent={shortHash} tmdbId={tmdbId}{(isLegacy ? " (entry from before PR-15, checked against the rules)" : string.Empty)}.",
+                    LogTarget.All);
+                PackLinkProgressReporter.Report(
+                    progress,
+                    PackLinkProgressStep.WaitingForGemini,
+                    PackLinkProgressStatus.Done,
+                    "Skipped API call (cached mapping).");
+                PackLinkProgressReporter.Report(
+                    progress,
+                    PackLinkProgressStep.ParsingResponse,
+                    PackLinkProgressStatus.Done,
+                    $"Using cached mapping ({fromCache.Items.Count(item => item.Episode is not null)} mapped specials).");
+                return fromCache.WithCacheInfo(cacheKey, cached.Model, fromCache: true);
+            }
+
+            _logger.Warning(
+                $"Cached special mapping for torrent={shortHash} tmdbId={tmdbId} no longer passes the checks ({problems[0]}); asking Gemini again.",
                 LogTarget.All);
-            PackLinkProgressReporter.Report(
-                progress,
-                PackLinkProgressStep.WaitingForGemini,
-                PackLinkProgressStatus.Done,
-                "Skipped API call (cached mapping).");
-            PackLinkProgressReporter.Report(
-                progress,
-                PackLinkProgressStep.ParsingResponse,
-                PackLinkProgressStatus.Done,
-                $"Using cached mapping ({cached.Items.Count(item => item.Episode is not null)} mapped specials).");
-            return SpecialMappingValidator.RemoveViolations(cached, specialsEpisodes, request);
         }
 
         SpecialMappingResult aiResult;
@@ -156,13 +179,105 @@ public sealed class SpecialMappingOrchestrator : ISpecialMappingOrchestrator
         if (checkedResult.RequiresReview)
         {
             _logger.Warning(
-                $"Gemini special mapping had {checkedResult.Warnings.Count} warning(s); conflicting pairs were dropped and the result is not cached.",
+                $"Gemini special mapping had {checkedResult.Warnings.Count} warning(s); conflicting pairs were dropped and the result will not be cached.",
                 LogTarget.All);
-            return checkedResult;
+            return checkedResult.WithCacheInfo(null, aiResult.GeminiModel);
         }
 
-        _cache.Save(torrentHash, tmdbId, checkedResult);
-        return checkedResult;
+        // PR-15: cached only when the user accepts the review (RememberAccepted).
+        return checkedResult.WithCacheInfo(cacheKey, aiResult.GeminiModel);
+    }
+
+    public void RememberAccepted(SpecialMappingResult result)
+    {
+        if (!result.UsedGemini || string.IsNullOrWhiteSpace(result.CacheKey))
+        {
+            return;
+        }
+
+        var parts = result.CacheKey.Split('|');
+        if (parts.Length < 3 || !int.TryParse(parts[2], out var tmdbId))
+        {
+            return;
+        }
+
+        _cache.Save(result.CacheKey, parts[1], tmdbId, result, result.GeminiModel);
+        _logger.Info(
+            $"Accepted special mapping cached for torrent={parts[1][..Math.Min(8, parts[1].Length)]} tmdbId={tmdbId} (model {result.GeminiModel ?? "unknown"}).",
+            LogTarget.All);
+    }
+
+    /// <summary>Points the cached items at the show's current TMDB episodes (the cache keeps only a slim copy).</summary>
+    private static SpecialMappingResult Rehydrate(SpecialMappingResult cached, IReadOnlyList<TrackedEpisode> specialsEpisodes)
+    {
+        var byNumber = specialsEpisodes
+            .GroupBy(episode => episode.EpisodeNumber)
+            .ToDictionary(group => group.Key, group => group.First());
+        TrackedEpisode? Live(TrackedEpisode? episode) =>
+            episode is null ? null : byNumber.GetValueOrDefault(episode.EpisodeNumber) ?? episode;
+
+        var items = cached.Items
+            .Select(item => new SpecialMappingItem
+            {
+                RelativePath = item.RelativePath,
+                Episode = Live(item.Episode),
+                Source = item.Source,
+                ProposalReason = item.ProposalReason,
+                Reason = item.Reason,
+                TitleConfirmed = item.TitleConfirmed,
+                SuggestedEpisode = Live(item.SuggestedEpisode),
+                MatchesSuggestion = item.MatchesSuggestion
+            })
+            .ToList();
+        return new SpecialMappingResult
+        {
+            Items = items,
+            Warnings = cached.Warnings,
+            UsedGemini = cached.UsedGemini,
+            ByPath = items
+                .GroupBy(item => item.RelativePath, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase)
+        };
+    }
+
+    /// <summary>
+    /// A cached result is used only if it still passes every hard check. An entry from before PR-15 must also
+    /// cover the same files and agree with every pair the rules now place.
+    /// </summary>
+    private static IReadOnlyList<string> CheckCached(
+        SpecialMappingResult cached,
+        SpecialMappingAIRequest request,
+        IReadOnlyList<TrackedEpisode> specialsEpisodes,
+        bool isLegacy)
+    {
+        var problems = SpecialMappingValidator.Validate(cached, specialsEpisodes)
+            .Concat(SpecialMappingValidator.ValidateGeminiPairs(cached, request))
+            .Select(violation => violation.Message)
+            .ToList();
+        if (!isLegacy)
+        {
+            return problems;
+        }
+
+        var candidatePaths = request.Context.Candidates
+            .Select(candidate => candidate.RelativePath)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (!candidatePaths.SetEquals(cached.Items.Select(item => item.RelativePath)))
+        {
+            problems.Add("the pack's special files changed");
+        }
+
+        foreach (var proposal in request.Proposals)
+        {
+            var candidate = request.Context.Candidates[proposal.CandidateIndex];
+            var item = cached.ByPath.GetValueOrDefault(candidate.RelativePath);
+            if (item?.Episode?.EpisodeNumber != proposal.ProposedS00E)
+            {
+                problems.Add($"'{candidate.FileName}' is S00E{proposal.ProposedS00E:00} by the rules but S00E{item?.Episode?.EpisodeNumber:00} in the cache");
+            }
+        }
+
+        return problems;
     }
 
     /// <summary>

@@ -113,7 +113,10 @@ public static class SpecialMappingValidator
             UsedGemini = result.UsedGemini,
             ByPath = items.ToDictionary(item => item.RelativePath, item => item, StringComparer.OrdinalIgnoreCase),
             RequiresReview = true,
-            FallbackReason = result.FallbackReason
+            FallbackReason = result.FallbackReason,
+            GeminiModel = result.GeminiModel,
+            CacheKey = result.CacheKey,
+            FromCache = result.FromCache
         };
     }
 

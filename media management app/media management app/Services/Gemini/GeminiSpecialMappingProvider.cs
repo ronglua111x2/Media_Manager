@@ -273,7 +273,9 @@ public sealed class GeminiSpecialMappingProvider
                 $"Gemini stopped before finishing (finishReason={apiResult.FinishReason}); some specials may be missing.");
         }
 
-        return PackSpecialPayloadBuilder.BuildFromAiResponse(request, parsed, specialsEpisodes, extraWarnings);
+        return PackSpecialPayloadBuilder
+            .BuildFromAiResponse(request, parsed, specialsEpisodes, extraWarnings)
+            .WithCacheInfo(cacheKey: null, apiResult.Model);
 
     }
 
