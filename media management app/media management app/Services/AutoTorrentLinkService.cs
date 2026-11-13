@@ -299,6 +299,17 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
     {
         var result = new AutoTorrentLinkResult();
 
+        // A multi-episode file (S01E01-E02) is removed as a whole; its other episodes lose their link too
+        // (audit R2-A-03).
+        var showProviderId = _databaseService.GetTrackedShow(showId)?.TmdbId.ToString();
+        var rangeKeys = string.IsNullOrWhiteSpace(showProviderId)
+            ? []
+            : _databaseService.GetSourceItems()
+                .Where(item => IsShowEpisodeRow(item, showProviderId) && CoversEpisode(item, seasonNumber, episodeNumber))
+                .SelectMany(GetOutputEpisodeKeys)
+                .Where(key => key != (seasonNumber, episodeNumber))
+                .ToHashSet();
+
         // Remove hardlinks and reset SourceItem link fields (handles the case where file still exists)
         var unlinkResult = RemoveEpisodeLinks(showId, seasonNumber, episodeNumber);
         Merge(result, unlinkResult);
@@ -336,23 +347,52 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
                 result);
         }
 
-        // Clear torrent hash and download state so the episode becomes Missing and re-searchable
+        ClearEpisodeDownloadState(showId, episode);
+        result.Messages.Add($"Reset S{seasonNumber:00}E{episodeNumber:00}: download state cleared.");
+
+        // The other episodes of a removed range file are now Missing as well. Clear their download state too, or
+        // the next reconcile re-links the same file from their torrent hash and the reset is undone (R2-A-03).
+        if (rangeKeys.Count > 0 && !string.IsNullOrWhiteSpace(showProviderId))
+        {
+            var stillLinked = _databaseService.GetSourceItems()
+                .Where(item => IsShowEpisodeRow(item, showProviderId) && item.State == ItemState.Linked)
+                .SelectMany(GetOutputEpisodeKeys)
+                .ToHashSet();
+            var trackedEpisodes = _databaseService.GetTrackedEpisodes(showId);
+            foreach (var key in rangeKeys.Where(key => !stillLinked.Contains(key)).OrderBy(key => key))
+            {
+                var other = trackedEpisodes.FirstOrDefault(item => item.SeasonNumber == key.SeasonNumber && item.EpisodeNumber == key.EpisodeNumber);
+                if (other is null)
+                {
+                    continue;
+                }
+
+                ClearEpisodeDownloadState(showId, other);
+                result.Messages.Add(
+                    $"Reset S{key.SeasonNumber:00}E{key.EpisodeNumber:00} too: it was in the same file as S{seasonNumber:00}E{episodeNumber:00}.");
+            }
+        }
+
+        return result;
+    }
+
+    private static bool IsShowEpisodeRow(SourceItem item, string providerId) =>
+        item.MediaKind == MediaKind.TvEpisode &&
+        string.Equals(item.Provider, "tmdb", StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(item.ProviderId, providerId, StringComparison.OrdinalIgnoreCase);
+
+    // Torrent hash, download state, stored search candidate and open cart orders: the episode becomes Missing
+    // and is searched again.
+    private void ClearEpisodeDownloadState(long showId, TrackedEpisode episode)
+    {
         _databaseService.UpdateTrackedEpisodeTorrent(episode.Id, string.Empty, string.Empty, string.Empty, 0);
-
-        // Clear stored search candidate
         _databaseService.ClearTrackedEpisodeSelectedCandidate(episode.Id);
-
-        // Remove any non-terminal cart orders for this episode
-        var episodeOrders = _databaseService.GetTorrentCartOrders(MediaKind.TvEpisode, showId)
-            .Where(order => order.EpisodeId == episode.Id)
-            .ToList();
-        foreach (var order in episodeOrders)
+        foreach (var order in _databaseService.GetTorrentCartOrders(MediaKind.TvEpisode, showId)
+                     .Where(order => order.EpisodeId == episode.Id)
+                     .ToList())
         {
             _databaseService.DeleteTorrentCartOrder(order.Id);
         }
-
-        result.Messages.Add($"Reset S{seasonNumber:00}E{episodeNumber:00}: download state cleared.");
-        return result;
     }
 
     public async Task<AutoTorrentLinkResult> ResetSeasonPackForRedownloadAsync(

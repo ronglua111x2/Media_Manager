@@ -108,6 +108,26 @@ public sealed class MultiEpisodeLinkStateTests : IDisposable
         Assert.Equal(EpisodeAvailability.Available, _host.Availability(showId, 1, 2));
     }
 
+    // Audit R2-A-03: resetting E02 of a single-file S01E01E02 torrent assigned to E01 must not be undone by the next
+    // link pass from E01's torrent hash; both episodes are Missing and searchable, and the user is told.
+    [Fact]
+    public async Task ResetSecondEpisodeOfSingleFileRange_ClearsTheFirstToo_AndIsNotRelinked()
+    {
+        var showId = PackShow("MR6", DoubleFile);
+        _host.AddTorrent("SD2", "Demo.S01E01E02.1080p.WEB.mkv");
+        _host.AssignEpisodeTorrent(showId, 1, 1, "SD2");
+        Assert.Equal(1, (await _host.Link.LinkEpisodeAsync(showId, 1, 1)).LinkedCount);
+
+        var reset = _host.Link.ResetEpisodeForRedownload(showId, 1, 2);
+        var relink = await _host.Link.LinkEpisodeAsync(showId, 1, 1);
+
+        Assert.Contains(reset.Messages, message => message.Contains("S01E01 too", StringComparison.Ordinal));
+        Assert.Equal(0, relink.LinkedCount);
+        Assert.Empty(_host.LibraryFiles());
+        Assert.True(string.IsNullOrEmpty(_host.Db.GetTrackedEpisodes(showId).Single(item => item.SeasonNumber == 1 && item.EpisodeNumber == 1).TorrentHash));
+        Assert.Equal(EpisodeAvailability.Missing, _host.Availability(showId, 1, 2));
+    }
+
     private void LinkSingle(long showId, string hash, string fileName, int episode)
     {
         _host.AddTorrent(hash, fileName);
