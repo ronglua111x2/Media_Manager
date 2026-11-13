@@ -36,7 +36,21 @@ public sealed class MediaImportService : IMediaImportService
 
     public async Task<MediaImportPreviewResult> PreviewAsync(IEnumerable<string> folders, CancellationToken cancellationToken = default)
     {
-        var sourceItems = _scannerService.Scan(folders).ToList();
+        var existing = _databaseService.GetSourceItems();
+        var generatedPaths = AppGeneratedPaths.Collect(existing);
+        var linkedDownloads = AppGeneratedPaths.CollectLinkedDownloads(existing);
+        var scanned = _scannerService.Scan(folders).ToList();
+        var sourceItems = scanned
+            .Where(item => !AppGeneratedPaths.IsGenerated(generatedPaths, item.FilePath) &&
+                           !AppGeneratedPaths.IsGenerated(linkedDownloads, item.FilePath))
+            .ToList();
+        if (sourceItems.Count < scanned.Count)
+        {
+            _logger.Info(
+                $"Import preview skipped {scanned.Count - sourceItems.Count} file(s) the app already manages (library links, Jellyfin symlinks, or downloads already linked from a torrent).",
+                LogTarget.All);
+        }
+
         var groups = new Dictionary<string, MediaImportPreviewGroup>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var item in sourceItems)

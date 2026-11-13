@@ -35,8 +35,9 @@ public sealed class QbittorrentTorrentContentValidationService : ITorrentContent
         IReadOnlyList<TorrentContentFile> files,
         CancellationToken cancellationToken = default,
         string? listingName = null,
-        bool isPack = false) =>
-        _fileListValidator.ValidateFilesAsync(torrentHash, files, cancellationToken, listingName, isPack);
+        bool isPack = false,
+        MediaKind? targetKind = null) =>
+        _fileListValidator.ValidateFilesAsync(torrentHash, files, cancellationToken, listingName, isPack, targetKind);
 
     private sealed class AppLoggerAdapter(IAppLogger logger) : ITorrentContentValidationLogger
     {

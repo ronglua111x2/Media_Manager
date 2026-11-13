@@ -21,8 +21,11 @@ public static class PackEpisodePatternInferrer
         @"\bS(?<season>\d{1,3})E(?<episode>\d{1,4})\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    // "S0105" at the end of a stem. The split between season and episode digits depends on the
+    // season asked for ("S1012" is S10E12 for season 10 and S01E012 for season 1), and the "S" must
+    // start a word ("ABCS0105" is not a season marker).
     private static readonly Regex CompactSeasonEpisodeSuffixRegex = new(
-        @"S(?<season>\d{1,2})(?<episode>\d{1,4})\s*$",
+        @"\bS(?<digits>\d{2,6})\s*$",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     public static string NormalizeStem(string stem)
@@ -151,16 +154,26 @@ public static class PackEpisodePatternInferrer
 
         if (votes.Count == 0)
         {
-            return TryStandardEpisodeBootstrap(sorted, seasonNumber) ?? InferredEpisodePattern.Invalid;
+            return ValidatedOrInvalid(TryStandardEpisodeBootstrap(sorted, seasonNumber), sorted, expectedEpisodeCount);
         }
 
-        var best = votes.OrderByDescending(pair => pair.Value).First();
-        var pattern = new InferredEpisodePattern
-        {
-            PrefixLength = best.Key.Prefix,
-            SuffixLength = best.Key.Suffix,
-            IsValid = true
-        };
+        // Pairs across a digit-count boundary (09/10) vote for a different prefix than the rest; a
+        // longer prefix then reads only the last digit ("- 11" -> 1). Prefer the voted pattern that
+        // reads the most distinct numbers without zeros or repeats, then the most votes.
+        var pattern = votes
+            .Select(pair => new InferredEpisodePattern
+            {
+                PrefixLength = pair.Key.Prefix,
+                SuffixLength = pair.Key.Suffix,
+                IsValid = true
+            })
+            .Select(candidate => (Pattern: candidate, Score: ScoreExtraction(candidate, sorted), Votes: votes[(candidate.PrefixLength, candidate.SuffixLength)]))
+            .OrderByDescending(item => item.Score.Clean)
+            .ThenByDescending(item => item.Score.Distinct)
+            .ThenByDescending(item => item.Votes)
+            .ThenBy(item => item.Pattern.PrefixLength)
+            .First()
+            .Pattern;
 
         if (expectedEpisodeCount is > 0 && !ValidatePattern(pattern, sorted, expectedEpisodeCount.Value))
         {
@@ -170,10 +183,39 @@ public static class PackEpisodePatternInferrer
                 return fallbackPattern;
             }
 
-            return TryStandardEpisodeBootstrap(sorted, seasonNumber) ?? pattern;
+            // A pattern that failed validation is a guess; callers skip the files instead (PARSE-01).
+            return ValidatedOrInvalid(TryStandardEpisodeBootstrap(sorted, seasonNumber), sorted, expectedEpisodeCount);
         }
 
         return pattern;
+    }
+
+    private static InferredEpisodePattern ValidatedOrInvalid(
+        InferredEpisodePattern? pattern,
+        IReadOnlyList<string> stems,
+        int? expectedEpisodeCount)
+    {
+        if (pattern is null || !pattern.IsValid)
+        {
+            return InferredEpisodePattern.Invalid;
+        }
+
+        return expectedEpisodeCount is > 0 && !ValidatePattern(pattern, stems, expectedEpisodeCount.Value)
+            ? InferredEpisodePattern.Invalid
+            : pattern;
+    }
+
+    private static (bool Clean, int Distinct) ScoreExtraction(InferredEpisodePattern pattern, IReadOnlyList<string> stems)
+    {
+        var extracted = stems
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(stem => TryExtract(stem, pattern))
+            .Where(episode => episode is not null)
+            .Select(episode => episode!.Value)
+            .ToList();
+        var distinct = extracted.Distinct().Count();
+        var clean = extracted.Count > 0 && distinct == extracted.Count && extracted.All(episode => episode > 0);
+        return (clean, distinct);
     }
 
     public static int? TryExtractSeasonEpisodeSuffix(string stem, int seasonNumber)
@@ -184,14 +226,25 @@ public static class PackEpisodePatternInferrer
         }
 
         var match = CompactSeasonEpisodeSuffixRegex.Match(stem);
-        if (!match.Success ||
-            !int.TryParse(match.Groups["season"].Value, out var parsedSeason) ||
-            !int.TryParse(match.Groups["episode"].Value, out var parsedEpisode))
+        if (!match.Success || seasonNumber <= 0)
         {
             return null;
         }
 
-        return parsedSeason == seasonNumber ? parsedEpisode : null;
+        var digits = match.Groups["digits"].Value;
+        foreach (var prefix in new[] { seasonNumber.ToString("00"), seasonNumber.ToString() }.Distinct())
+        {
+            var episodeDigits = digits.Length - prefix.Length;
+            if (episodeDigits is >= 1 and <= 4 &&
+                digits.StartsWith(prefix, StringComparison.Ordinal) &&
+                int.TryParse(digits[prefix.Length..], out var episode) &&
+                episode > 0)
+            {
+                return episode;
+            }
+        }
+
+        return null;
     }
 
     public static IReadOnlyDictionary<string, int?> MapEpisodes(

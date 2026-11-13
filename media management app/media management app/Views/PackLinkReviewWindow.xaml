@@ -3,8 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
         Title="{Binding WindowTitle}"
-        Width="820"
-        MinWidth="640"
+        Width="1040"
+        MinWidth="720"
         Height="560"
         MinHeight="420"
         ResizeMode="CanResize"
@@ -15,6 +15,13 @@
         KeyDown="Window_KeyDown">
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
+        <Style x:Key="ReviewCellTextStyle" TargetType="TextBlock" BasedOn="{StaticResource AppDataGridTextCellStyle}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding NeedsAttention}" Value="True">
+                    <Setter Property="Foreground" Value="{StaticResource AppBrushWarning}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
     </Window.Resources>
 
     <DockPanel Margin="16">
@@ -33,6 +40,7 @@
                 <Button Content="Retry AI"
                         Margin="0,0,8,0"
                         MinWidth="110"
+                        Visibility="{Binding CanRetry, Converter={StaticResource BooleanToVisibilityConverter}}"
                         Style="{StaticResource AppOutlinedButtonStyle}"
                         Command="{Binding RetryCommand}"
                         CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}" />
@@ -57,7 +65,7 @@
                            FontWeight="SemiBold"
                            Foreground="{StaticResource AppBrushText}" />
             </StackPanel>
-            <TextBlock Text="Review special/OVA mappings before creating library hardlinks."
+            <TextBlock Text="Review special/OVA mappings before creating library hardlinks. Compare each file with the TMDB title and air date; rows in amber were inferred, not mapped or skipped."
                        Foreground="{StaticResource AppBrushMutedText}"
                        TextWrapping="Wrap"
                        Margin="0,0,0,6" />
@@ -102,22 +110,38 @@
                             <DataTemplate>
                                 <TextBlock Text="{Binding FileName}"
                                            ToolTip="{Binding RelativePath}"
-                                           Style="{StaticResource AppDataGridTextCellStyle}" />
+                                           Style="{StaticResource ReviewCellTextStyle}" />
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
                     <DataGridTextColumn Header="Maps to"
                                         Binding="{Binding TargetLabel}"
                                         Width="*"
-                                        ElementStyle="{StaticResource AppDataGridTextCellStyle}" />
+                                        MinWidth="90"
+                                        ElementStyle="{StaticResource ReviewCellTextStyle}" />
+                    <DataGridTextColumn Header="TMDB title"
+                                        Binding="{Binding TmdbTitle}"
+                                        Width="1.5*"
+                                        ElementStyle="{StaticResource ReviewCellTextStyle}" />
+                    <DataGridTextColumn Header="Air date"
+                                        Binding="{Binding AirDateLabel}"
+                                        Width="90"
+                                        MinWidth="90"
+                                        ElementStyle="{StaticResource ReviewCellTextStyle}" />
                     <DataGridTextColumn Header="Source"
                                         Binding="{Binding SourceLabel}"
-                                        Width="90"
-                                        ElementStyle="{StaticResource AppDataGridTextCellStyle}" />
-                    <DataGridTextColumn Header="Reason"
-                                        Binding="{Binding Reason}"
-                                        Width="2*"
-                                        ElementStyle="{StaticResource AppDataGridTextCellStyle}" />
+                                        Width="110"
+                                        MinWidth="110"
+                                        ElementStyle="{StaticResource ReviewCellTextStyle}" />
+                    <DataGridTemplateColumn Header="Reason" Width="2*">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Reason}"
+                                           ToolTip="{Binding Reason}"
+                                           Style="{StaticResource ReviewCellTextStyle}" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
                 </DataGrid.Columns>
             </DataGrid>
         </Border>

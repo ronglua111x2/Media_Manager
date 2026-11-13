@@ -29,6 +29,9 @@ public interface ITorrentCartService
 
     bool HasActiveManualEpisodeOrder(long episodeId);
 
+    /// <summary>The Auto-Track order of an episode in any status, or null.</summary>
+    TorrentCartOrder? GetAutoTrackEpisodeOrder(long episodeId);
+
     bool TryGetActiveMovieOrder(long movieId, out TorrentCartOrder? order);
 
     bool TryGetActiveSeasonPackOrder(long showId, int seasonNumber, out TorrentCartOrder? order);
@@ -107,6 +110,12 @@ public sealed class TorrentCartService : ITorrentCartService
         if (TryGetActiveEpisodeOrder(episodeId, out _))
         {
             throw new InvalidOperationException($"Episode S{seasonNumber:00}E{episodeNumber:00} is already in the cart.");
+        }
+
+        // An episode TMDB removed is kept only for its history; searching it would hunt a "ghost" (cross-review 2, G2).
+        if (_databaseService.GetTrackedEpisodes(showId).FirstOrDefault(episode => episode.Id == episodeId) is { IsRemovedUpstream: true })
+        {
+            throw new InvalidOperationException($"Episode S{seasonNumber:00}E{episodeNumber:00} is no longer on TMDB and cannot be added to the cart.");
         }
 
         var order = new TorrentCartOrder
@@ -241,6 +250,10 @@ public sealed class TorrentCartService : ITorrentCartService
         NotifyChanged();
         return order;
     }
+
+    public TorrentCartOrder? GetAutoTrackEpisodeOrder(long episodeId) =>
+        _databaseService.GetTorrentCartOrders().FirstOrDefault(item =>
+            item.EpisodeId == episodeId && item.Source == TorrentOrderSource.AutoTrack);
 
     public bool HasActiveManualEpisodeOrder(long episodeId)
     {

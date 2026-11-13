@@ -14,14 +14,18 @@ public sealed class PackEpisodeResolution
 
     public int? EpisodeNumber { get; init; }
 
+    /// <summary>Last episode of a multi-episode file; null for one episode.</summary>
+    public int? LastEpisodeNumber { get; init; }
+
     public string? SkipReason { get; init; }
 
-    public static PackEpisodeResolution Linked(int seasonNumber, int episodeNumber) =>
+    public static PackEpisodeResolution Linked(int seasonNumber, int episodeNumber, int? lastEpisodeNumber = null) =>
         new()
         {
             Status = PackEpisodeResolutionStatus.RegularEpisode,
             SeasonNumber = seasonNumber,
-            EpisodeNumber = episodeNumber
+            EpisodeNumber = episodeNumber,
+            LastEpisodeNumber = lastEpisodeNumber > episodeNumber ? lastEpisodeNumber : null
         };
 
     public static PackEpisodeResolution Skipped(int seasonNumber, string reason) =>

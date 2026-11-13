@@ -21,6 +21,7 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
     private readonly ITorrentCartService _torrentCartService;
     private readonly IAutomationFlowService _automationFlowService;
     private readonly IFetchJobService _fetchJobService;
+    private readonly INativeSearchService _nativeSearch;
     private readonly IDatabaseService _databaseService;
     private readonly IRecipeService _recipeService;
     private readonly ISettingsService _settingsService;
@@ -58,8 +59,10 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         ITorrentAddGateService addGateService,
         ITorrentBlacklistService blacklistService,
         IAppLogger logger,
-        IAppLifecycleService lifecycleService)
+        IAppLifecycleService lifecycleService,
+        INativeSearchService nativeSearch)
     {
+        _nativeSearch = nativeSearch;
         _trackedShowService = trackedShowService;
         _trackedMovieService = trackedMovieService;
         _mediaCardCatalogService = mediaCardCatalogService;
@@ -1351,7 +1354,7 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
             ? "Show snapshot search"
             : "Parallel episode search";
         _logger.Info(
-            $"Run Cart: Media='{show.DisplayTitle}', Recipe='{recipe.Name}', Target='TV episode', Mode='{mode}', Orders={orders.Count}.",
+            $"Run Cart: Media='{show.DisplayTitle}', Recipe='{recipe.Name}', Target='TV episode', Mode='{mode}', Backend='{_nativeSearch.BackendName(MediaKind.TvEpisode, recipe)}', Orders={orders.Count}.",
             LogTarget.All);
 
         var ordersByEpisodeId = orders
@@ -1381,6 +1384,14 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         {
             if (!candidatesByEpisodeId.TryGetValue(episodeId, out var candidates) || candidates.Count == 0)
             {
+                // No native site could be asked: the search did not run, so it is not "no candidates".
+                if (_fetchJobService.GetSearchSourceProblem(episodeId) is { } sourceProblem)
+                {
+                    result.FailedCount++;
+                    _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.Failed, sourceProblem);
+                    continue;
+                }
+
                 result.NoCandidateCount++;
                 _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.NoCandidates, "No candidates found.");
                 continue;
@@ -1401,7 +1412,7 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
                 ?? throw new InvalidOperationException("Tracked movie was not found.");
             var recipe = _recipeService.GetRecipeOrDefault(SelectedMovieRecipeId ?? movie.RecipeId, MediaKind.Movie);
             _logger.Info(
-                $"Run Cart: Media='{movie.DisplayTitle}', Recipe='{recipe.Name}', Target='Movie', Mode='Single movie search'.",
+                $"Run Cart: Media='{movie.DisplayTitle}', Recipe='{recipe.Name}', Target='Movie', Mode='Single movie search', Backend='{_nativeSearch.BackendName(MediaKind.Movie, recipe)}'.",
                 LogTarget.All);
             var result = await _automationFlowService.DryRunAsync(new RecipeRunRequest
             {
@@ -1412,7 +1423,9 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
             }, cancellationToken);
             if (result.BestCandidate is null)
             {
-                return CartSearchResult.NoneFound(order, result.Summary);
+                return result.SearchSourceProblem is { } sourceProblem
+                    ? throw new SearchSourceUnavailableException(sourceProblem)
+                    : CartSearchResult.NoneFound(order, result.Summary);
             }
 
             return CartSearchResult.Found(order, $"Found {result.AcceptedCandidates.Count} movie candidate(s).", ToCartCandidates(result.AcceptedCandidates));
@@ -1434,7 +1447,9 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         }, cancellationToken);
         if (episodeResult.BestCandidate is null)
         {
-            return CartSearchResult.NoneFound(order, episodeResult.Summary);
+            return episodeResult.SearchSourceProblem is { } sourceProblem
+                ? throw new SearchSourceUnavailableException(sourceProblem)
+                : CartSearchResult.NoneFound(order, episodeResult.Summary);
         }
 
         return CartSearchResult.Found(order, $"Found {episodeResult.AcceptedCandidates.Count} episode candidate(s).", ToCartCandidates(episodeResult.AcceptedCandidates));
@@ -1499,7 +1514,7 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
             ?? throw new InvalidOperationException("Tracked show was not found.");
         var recipe = _recipeService.GetRecipeOrDefault(SelectedPackRecipeId ?? show.PackRecipeId, MediaKind.TvSeasonPack);
         _logger.Info(
-            $"Run Cart: Media='{show.DisplayTitle}', Recipe='{recipe.Name}', Target='Season pack', Mode='Pack snapshot search', Season=S{order.SeasonNumber.Value:00}.",
+            $"Run Cart: Media='{show.DisplayTitle}', Recipe='{recipe.Name}', Target='Season pack', Mode='Pack snapshot search', Backend='{_nativeSearch.BackendName(MediaKind.TvSeasonPack, recipe)}', Season=S{order.SeasonNumber.Value:00}.",
             LogTarget.All);
         await _fetchJobService.FetchSeasonPacksAsync(
             order.MediaId,
@@ -1510,7 +1525,9 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         if (!_fetchJobService.TryGetPackCandidates(order.MediaId, order.SeasonNumber.Value, out var candidates) ||
             candidates.Count == 0)
         {
-            return CartSearchResult.NoneFound(order, "No season pack candidates found.");
+            return _fetchJobService.GetPackSearchSourceProblem(order.MediaId, order.SeasonNumber.Value) is { } sourceProblem
+                ? throw new SearchSourceUnavailableException(sourceProblem)
+                : CartSearchResult.NoneFound(order, "No season pack candidates found.");
         }
 
         return CartSearchResult.Found(order, $"Found {candidates.Count} season pack candidate(s).", ToCartCandidates(candidates));
@@ -1588,6 +1605,16 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         var existing = await _addGateService.TryGetExistingByListingUrlAsync(
             order.SelectedCandidateUrl,
             cancellationToken);
+        var isResetHash = ResetTorrentGuard.For(order, _databaseService);
+        if (existing is not null && isResetHash(existing.Hash))
+        {
+            // The copy in qBittorrent is the download this target was reset from (cross-review 2, B).
+            const string message = "This torrent is the one you reset for redownload. Choose another candidate.";
+            _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.CandidatesFound, message);
+            StatusMessage = message;
+            return false;
+        }
+
         if (existing is not null)
         {
             var confirm = AppMessageBox.Show(
@@ -1611,11 +1638,20 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
             StatusMessage = $"Using existing qBittorrent download: {existing.Name}";
         }
 
+        // SEC-A02: persist the hash before the check (up to ~90 s), like Auto-Track, so a crash, a cancel or a failed
+        // add leaves a trace: reconcile never adopts a torrent whose check did not finish.
         var addedTorrent = await _addGateService.AddPausedValidateAndResumeAsync(
             order,
             savePath,
             cancellationToken,
-            existing);
+            existing,
+            onTorrentAdded: torrent =>
+            {
+                order.PendingValidationHash = torrent.Hash;
+                _torrentCartService.SaveOrder(order);
+            },
+            isResetHash: isResetHash);
+        order.PendingValidationHash = string.Empty;
         order.TorrentHash = addedTorrent.Hash;
         order.TorrentName = addedTorrent.Name;
         order.TorrentState = QbittorrentTorrentStateNormalizer.Normalize(addedTorrent.State, addedTorrent.IsComplete);
@@ -1665,6 +1701,13 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
 
     private void HandleManualMalwareReject(TorrentCartOrder order, MaliciousTorrentException ex)
     {
+        // The gate deleted the rejected torrent (or never added it): nothing is pending any more.
+        if (_torrentCartService.GetOrder(order.Id) is { } stored && !string.IsNullOrWhiteSpace(stored.PendingValidationHash))
+        {
+            stored.PendingValidationHash = string.Empty;
+            _torrentCartService.SaveOrder(stored);
+        }
+
         var selected = _torrentCartService.GetCandidates(order.Id)
             .FirstOrDefault(candidate =>
                 string.Equals(candidate.Url, order.SelectedCandidateUrl, StringComparison.OrdinalIgnoreCase));

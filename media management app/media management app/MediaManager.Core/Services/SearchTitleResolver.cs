@@ -1,3 +1,4 @@
+using media_management_app.Common;
 using media_management_app.Models;
 
 namespace media_management_app.Services;
@@ -59,6 +60,27 @@ public sealed class SearchTitleResolver : ISearchTitleResolver
         return EnglishAlternativeTitleFilter.CollapseTitlesForSearch(titles);
     }
 
+    public IReadOnlyList<string> ResolveForMatching(
+        SearchRecipe recipe,
+        string primaryTitle,
+        IReadOnlyList<string> libraryAlternativeTitles)
+    {
+        var identityModule = recipe.Modules.FirstOrDefault(module => module.BlockType == RecipeBlockType.Identity);
+        var titles = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var title in new[] { primaryTitle }
+                     .Concat(identityModule?.Aliases ?? [])
+                     .Concat(libraryAlternativeTitles))
+        {
+            if (!string.IsNullOrWhiteSpace(title) && seen.Add(title.Trim()))
+            {
+                titles.Add(title.Trim());
+            }
+        }
+
+        return titles.Count == 0 ? [string.Empty] : titles;
+    }
+
     public SearchTitleResolveRequest CreateRequest(
         SearchRecipe recipe,
         string primaryTitle,
@@ -74,7 +96,9 @@ public sealed class SearchTitleResolver : ISearchTitleResolver
             ManualAliases = identityEnabled ? identityModule!.Aliases : [],
             LibraryAlternativeTitles = libraryAlternativeTitles,
             SkipDefaultTitle = RecipeRuntimeSettings.GetSkipDefaultTitle(queryModule),
-            UseLibraryEnglishTitles = identityEnabled && RecipeRuntimeSettings.GetUseLibraryEnglishTitles(identityModule),
+            // Movies search alternative titles unless the recipe explicitly turns it off (SRCH-12):
+            // old and foreign films are often released only under their original or romaji title.
+            UseLibraryEnglishTitles = identityEnabled && RecipeRuntimeSettings.GetUseLibraryEnglishTitles(recipe),
             MaxLibraryAlternativeTitlesForSearch = identityEnabled
                 ? RecipeRuntimeSettings.GetMaxLibraryAlternativeTitlesForSearch(identityModule)
                 : 0,

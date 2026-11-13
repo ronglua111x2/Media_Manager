@@ -24,6 +24,12 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
     private readonly IPackLinkCoordinatorService _packLinkCoordinatorService;
     private readonly ISettingsService _settingsService;
     private readonly IAppLogger _logger;
+    private readonly ITorrentContentValidationService _contentValidationService;
+    private readonly ITorrentBlacklistService _blacklistService;
+
+    // Torrents refused for adoption this session (SEC-A01): checked and logged once, still counted in every result.
+    private readonly HashSet<string> _unsafeHashes = new(StringComparer.OrdinalIgnoreCase);
+    private readonly object _unsafeHashesGate = new();
 
     public event EventHandler? Reconciled;
 
@@ -35,7 +41,9 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
         IAutoTorrentLinkService autoTorrentLinkService,
         IPackLinkCoordinatorService packLinkCoordinatorService,
         ISettingsService settingsService,
-        IAppLogger logger)
+        IAppLogger logger,
+        ITorrentContentValidationService contentValidationService,
+        ITorrentBlacklistService blacklistService)
     {
         _qbittorrentClient = qbittorrentClient;
         _databaseService = databaseService;
@@ -45,6 +53,8 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
         _packLinkCoordinatorService = packLinkCoordinatorService;
         _settingsService = settingsService;
         _logger = logger;
+        _contentValidationService = contentValidationService;
+        _blacklistService = blacklistService;
     }
 
     public async Task<TorrentReconciliationResult> ReconcileAsync(
@@ -74,6 +84,9 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
 
         // Torrents still awaiting add-gate validation (live or interrupted by a crash) are never adopted by name.
         var usedHashes = InterruptedOrderRecovery.CollectPendingValidationHashes(_databaseService.GetTorrentCartOrders());
+        // A torrent already tracked by any show, season, movie, order or link is never adopted for
+        // something else, also when this pass is scoped to one show (PARSE-25).
+        usedHashes.UnionWith(CollectTrackedHashes());
         await RefreshSavedEpisodeHashesAsync(episodesById.Values, torrentsByHash, usedHashes, result, cancellationToken);
         await RefreshSavedSeasonPackHashesAsync(seasons, torrentsByHash, usedHashes, result, cancellationToken);
         await RefreshSavedMovieHashesAsync(movies, torrentsByHash, usedHashes, result, cancellationToken);
@@ -90,13 +103,55 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
         // Clear broken LinkedPath values and purge SourceItems where both files are gone.
         // This allows episodes to transition from Available to Missing when files were deleted externally.
         RefreshLinkStatusForScope(scope);
-        PurgeOrphanedSourceItemsForScope(scope);
+        PurgeOrphanedSourceItemsForScope(scope, torrentsByHash);
 
         sourceItems = _databaseService.GetSourceItems();
         RefreshAvailabilityForScope(scope, sourceItems);
         _logger.Info($"Torrent reconciliation complete. {result.Summary}", LogTarget.All);
         Reconciled?.Invoke(this, EventArgs.Empty);
         return result;
+    }
+
+    private HashSet<string> CollectTrackedHashes()
+    {
+        var hashes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        void Add(string? hash)
+        {
+            if (!string.IsNullOrWhiteSpace(hash))
+            {
+                hashes.Add(hash);
+            }
+        }
+
+        foreach (var show in _trackedShowService.GetShows())
+        {
+            foreach (var episode in _trackedShowService.GetEpisodes(show.Id))
+            {
+                Add(episode.TorrentHash);
+            }
+
+            foreach (var season in _trackedShowService.GetSeasons(show.Id))
+            {
+                Add(season.PackTorrentHash);
+            }
+        }
+
+        foreach (var movie in _trackedMovieService.GetMovies())
+        {
+            Add(movie.TorrentHash);
+        }
+
+        foreach (var order in _databaseService.GetTorrentCartOrders())
+        {
+            Add(order.TorrentHash);
+        }
+
+        foreach (var item in _databaseService.GetSourceItems())
+        {
+            Add(item.AutoTorrentTorrentHash);
+        }
+
+        return hashes;
     }
 
     private void RefreshLinkStatusForScope(TorrentReconciliationScope scope)
@@ -117,7 +172,9 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
         _autoTorrentLinkService.RefreshLinkStatus();
     }
 
-    private void PurgeOrphanedSourceItemsForScope(TorrentReconciliationScope scope)
+    private void PurgeOrphanedSourceItemsForScope(
+        TorrentReconciliationScope scope,
+        IReadOnlyDictionary<string, AddedTorrentResult> torrentsByHash)
     {
         var candidates = _databaseService.GetSourceItems().AsEnumerable();
 
@@ -151,21 +208,80 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
         }
 
         var purgedCount = 0;
+        var keptCount = 0;
+        var storage = new LinkStorageProbe();
         foreach (var item in candidates.ToList())
         {
-            if (!File.Exists(item.FilePath) &&
-                (string.IsNullOrWhiteSpace(item.LinkedPath) || !File.Exists(item.LinkedPath)))
+            if (File.Exists(item.FilePath) ||
+                (!string.IsNullOrWhiteSpace(item.LinkedPath) && File.Exists(item.LinkedPath)))
             {
-                _databaseService.DeleteSourceItem(item.Id);
-                purgedCount++;
+                continue;
             }
+
+            // Missing files only mean "deleted" when their storage is reachable and qBittorrent
+            // does not report the torrent's files as temporarily missing (PARSE-27).
+            if (!storage.IsSourceStorageReachable(item) ||
+                !storage.IsLinkStorageReachable(item) ||
+                IsTorrentMissingFiles(item, torrentsByHash))
+            {
+                keptCount++;
+                continue;
+            }
+
+            _databaseService.DeleteSourceItem(item.Id);
+            purgedCount++;
         }
 
         if (purgedCount > 0)
         {
             _logger.Info($"Purged {purgedCount} orphaned source item(s) with missing files.", LogTarget.All);
         }
+
+        if (keptCount > 0)
+        {
+            _logger.Warning(
+                $"Kept {keptCount} source item(s) with missing files because their storage is not reachable " +
+                $"({string.Join(", ", storage.UnreachableFolders)}) or qBittorrent reports missing files.",
+                LogTarget.File | LogTarget.Console);
+        }
     }
+
+    /// <summary>
+    /// True when the item's file belongs to a torrent that qBittorrent reports as "missingFiles".
+    /// Matched by hash when the record still has one, otherwise by the torrent's content path
+    /// (save path + torrent name), because a lost link clears the record's provenance.
+    /// </summary>
+    private static bool IsTorrentMissingFiles(
+        SourceItem item,
+        IReadOnlyDictionary<string, AddedTorrentResult> torrentsByHash)
+    {
+        if (!string.IsNullOrWhiteSpace(item.AutoTorrentTorrentHash) &&
+            torrentsByHash.TryGetValue(item.AutoTorrentTorrentHash, out var byHash) &&
+            IsMissingFilesState(byHash))
+        {
+            return true;
+        }
+
+        foreach (var torrent in torrentsByHash.Values.Where(IsMissingFilesState))
+        {
+            if (string.IsNullOrWhiteSpace(torrent.SavePath) || string.IsNullOrWhiteSpace(torrent.Name))
+            {
+                continue;
+            }
+
+            var contentPath = Path.Combine(torrent.SavePath, torrent.Name);
+            if (string.Equals(item.FilePath, contentPath, StringComparison.OrdinalIgnoreCase) ||
+                item.FilePath.StartsWith(contentPath + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsMissingFilesState(AddedTorrentResult torrent) =>
+        string.Equals(torrent.State, "missingFiles", StringComparison.OrdinalIgnoreCase);
 
     private void RefreshAvailabilityForScope(TorrentReconciliationScope scope, IReadOnlyList<SourceItem> sourceItems)
     {
@@ -323,29 +439,44 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
         TorrentReconciliationResult result,
         CancellationToken cancellationToken)
     {
+        // The episode/season/movie lists are a snapshot taken before adoption; remember what this
+        // pass adopted so a later torrent cannot overwrite it.
+        var adoptedEpisodeIds = new HashSet<long>();
+        var adoptedSeasons = new HashSet<(long ShowId, int SeasonNumber)>();
+        var adoptedMovieIds = new HashSet<long>();
+
         foreach (var torrent in torrents.Where(torrent => !usedHashes.Contains(torrent.Hash)))
         {
-            var matches = new List<Func<Task>>();
+            var matches = new List<AdoptionMatch>();
 
-            foreach (var (show, episode) in episodes.Where(item => string.IsNullOrWhiteSpace(item.Episode.TorrentHash)))
+            // A torrent the user reset an episode, pack or movie from is never adopted for it again (cross-review 2, B).
+            foreach (var (show, episode) in episodes.Where(item =>
+                         string.IsNullOrWhiteSpace(item.Episode.TorrentHash) &&
+                         !item.Episode.WasResetFrom(torrent.Hash) &&
+                         !adoptedEpisodeIds.Contains(item.Episode.Id)))
             {
                 if (MatchesEpisode(torrent.Name, show, episode))
                 {
-                    matches.Add(() =>
+                    matches.Add(new AdoptionMatch(show.Id, MediaKind.TvEpisode, $"{show.DisplayTitle} S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00}", () =>
                     {
+                        adoptedEpisodeIds.Add(episode.Id);
                         _trackedShowService.UpdateTorrentState(episode.Id, torrent);
                         CountMatched(torrent, result);
                         return AutoLinkEpisodeIfConfiguredAsync(show, episode, torrent, result, cancellationToken);
-                    });
+                    }));
                 }
             }
 
-            foreach (var (show, season) in seasons.Where(item => string.IsNullOrWhiteSpace(item.Season.PackTorrentHash)))
+            foreach (var (show, season) in seasons.Where(item =>
+                         string.IsNullOrWhiteSpace(item.Season.PackTorrentHash) &&
+                         !item.Season.WasResetFrom(torrent.Hash) &&
+                         !adoptedSeasons.Contains((item.Show.Id, item.Season.SeasonNumber))))
             {
                 if (MatchesSeasonPack(torrent.Name, show, season))
                 {
-                    matches.Add(async () =>
+                    matches.Add(new AdoptionMatch(show.Id, MediaKind.TvSeasonPack, $"{show.DisplayTitle} season {season.SeasonNumber}", async () =>
                     {
+                        adoptedSeasons.Add((show.Id, season.SeasonNumber));
                         _trackedShowService.UpdateSeasonPackTorrent(show.Id, season.SeasonNumber, torrent);
                         CountMatched(torrent, result);
                         await _packLinkCoordinatorService.TryAutoReconcilePackAsync(
@@ -355,30 +486,121 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
                             previousProgress: 0,
                             result,
                             cancellationToken);
-                    });
+                    }));
                 }
             }
 
-            foreach (var movie in movies.Where(movie => string.IsNullOrWhiteSpace(movie.TorrentHash)))
+            foreach (var movie in movies.Where(movie =>
+                         string.IsNullOrWhiteSpace(movie.TorrentHash) &&
+                         !movie.WasResetFrom(torrent.Hash) &&
+                         !adoptedMovieIds.Contains(movie.Id)))
             {
                 if (MatchesMovie(torrent.Name, movie))
                 {
-                    matches.Add(() =>
+                    matches.Add(new AdoptionMatch(movie.Id, MediaKind.Movie, movie.Title, () =>
                     {
+                        adoptedMovieIds.Add(movie.Id);
                         _trackedMovieService.UpdateTorrentState(movie.Id, torrent);
                         CountMatched(torrent, result);
                         return AutoLinkMovieIfConfiguredAsync(movie, torrent, result, cancellationToken);
-                    });
+                    }));
                 }
             }
 
-            if (matches.Count == 1)
+            if (matches.Count == 1 &&
+                await IsSafeToAdoptAsync(torrent, matches[0], result, cancellationToken))
             {
-                await matches[0]();
+                await matches[0].Adopt();
                 usedHashes.Add(torrent.Hash);
             }
         }
     }
+
+    /// <summary>
+    /// SEC-A01: a torrent matched by name was not validated by the add gate (added by hand, or an add that was
+    /// canceled or failed mid-validation). Run the gate's blacklist and file-list checks before attaching it.
+    /// A refused torrent is never deleted: it may be the user's own download (DEL-02). It stays in qBittorrent,
+    /// unattached and unlinked, and is reported. An empty file list (metadata not ready) waits for a later pass.
+    /// </summary>
+    private async Task<bool> IsSafeToAdoptAsync(
+        AddedTorrentResult torrent,
+        AdoptionMatch match,
+        TorrentReconciliationResult result,
+        CancellationToken cancellationToken)
+    {
+        bool alreadyRefused;
+        lock (_unsafeHashesGate)
+        {
+            alreadyRefused = _unsafeHashes.Contains(torrent.Hash);
+        }
+
+        if (alreadyRefused)
+        {
+            result.UnsafeSkipped.Add(torrent.Name);
+            return false;
+        }
+
+        string? reason = null;
+        if (_blacklistService.IsBlacklisted(match.MediaId, null, torrent.Hash))
+        {
+            reason = "its infohash is blacklisted";
+        }
+        else
+        {
+            IReadOnlyList<TorrentContentFile> files;
+            try
+            {
+                files = await _qbittorrentClient.GetTorrentFilesAsync(torrent.Hash, cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.Debug(
+                    $"Adoption of '{torrent.Name}' (hash={torrent.Hash}) postponed: file list unavailable ({ex.Message}).",
+                    LogTarget.File);
+                return false;
+            }
+
+            if (files.Count == 0)
+            {
+                _logger.Debug(
+                    $"Adoption of '{torrent.Name}' (hash={torrent.Hash}) postponed: metadata not ready.",
+                    LogTarget.File);
+                return false;
+            }
+
+            var validation = await _contentValidationService.ValidateFilesAsync(
+                torrent.Hash,
+                files,
+                cancellationToken,
+                torrent.Name,
+                isPack: match.Kind == MediaKind.TvSeasonPack,
+                targetKind: match.Kind);
+            if (!validation.IsValid)
+            {
+                var suspicious = string.Join(", ", validation.SuspiciousFiles.Select(file => file.FileName).Distinct().Take(5));
+                reason = string.IsNullOrEmpty(suspicious) ? validation.Summary : $"{validation.Summary} ({suspicious})";
+            }
+        }
+
+        if (reason is null)
+        {
+            return true;
+        }
+
+        lock (_unsafeHashesGate)
+        {
+            _unsafeHashes.Add(torrent.Hash);
+        }
+
+        result.UnsafeSkipped.Add(torrent.Name);
+        _logger.Warning(
+            $"Not attaching qBittorrent torrent '{torrent.Name}' (hash={torrent.Hash}) to {match.Target}: {reason}. " +
+            "Media Manager did not add or validate this torrent and left it in qBittorrent. Remove it there if you do not trust it.",
+            LogTarget.All);
+        return false;
+    }
+
+    private sealed record AdoptionMatch(long MediaId, MediaKind Kind, string Target, Func<Task> Adopt);
 
     private void SyncOrdersFromTrackedItems(
         IEnumerable<TorrentCartOrder> orders,
@@ -528,9 +750,27 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
             return true;
         }
 
-        return ContainsNormalized(torrentName, show.Title) &&
-               (ContainsToken(torrentName, $"S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00}") ||
-                ContainsNumberToken(torrentName, episode.EpisodeNumber));
+        if (!ContainsNormalized(torrentName, show.Title))
+        {
+            return false;
+        }
+
+        // Only an explicit SxxEyy or a parsed episode number counts. A bare number anywhere in the
+        // name (AAC2.0, DD 5 1, x265, a CRC) matched unrelated episodes before (PARSE-25).
+        if (ContainsToken(torrentName, $"S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00}"))
+        {
+            return true;
+        }
+
+        var parsed = TorrentCandidateParser.Parse(torrentName, allowAnimeAbsolute: true);
+        if (parsed.EpisodeNumber != episode.EpisodeNumber)
+        {
+            return false;
+        }
+
+        // Absolute anime numbering carries no season; accept it for season 1 only.
+        return parsed.SeasonNumber == episode.SeasonNumber ||
+               (parsed.SeasonNumber is null && episode.SeasonNumber == 1);
     }
 
     private static bool MatchesSeasonPack(string torrentName, TrackedShow show, TrackedSeason season)
@@ -574,10 +814,17 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
                string.Equals(Normalize(left), Normalize(right), StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>Whole-word containment: "Lara" no longer matches inside "Laramie" (PARSE-25).</summary>
     private static bool ContainsNormalized(string source, string value)
     {
-        return !string.IsNullOrWhiteSpace(value) &&
-               Normalize(source).Contains(Normalize(value), StringComparison.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        var normalizedValue = Normalize(value);
+        return normalizedValue.Length > 0 &&
+               $" {Normalize(source)} ".Contains($" {normalizedValue} ", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool ContainsToken(string source, string token)

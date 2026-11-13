@@ -1,4 +1,5 @@
 using media_management_app.Common;
+using media_management_app.Search;
 
 namespace media_management_app.Models;
 
@@ -9,6 +10,9 @@ public sealed class AppSettings
     public AutoTorrentSettings AutoTorrent { get; set; } = new();
 
     public WarpSettings Warp { get; set; } = new();
+
+    /// <summary>Native search (native-search plan): backend flag, per-indexer settings, governor limits.</summary>
+    public NativeSearchSettings Search { get; set; } = new();
 
     public AutoTrackSettings AutoTrack { get; set; } = new();
 

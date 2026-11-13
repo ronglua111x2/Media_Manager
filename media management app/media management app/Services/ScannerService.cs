@@ -58,6 +58,7 @@ public sealed class ScannerService : IScannerService
                     MovieYear = parsed.MovieYear,
                     SeasonNumber = parsed.SeasonNumber,
                     EpisodeNumber = parsed.EpisodeNumber,
+                    LastEpisodeNumber = parsed.LastEpisodeNumber,
                     EpisodeTitle = parsed.EpisodeTitle,
                     State = parsed.ParserPattern == ParserPattern.Ignored
                         ? ItemState.Ignored

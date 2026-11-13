@@ -20,6 +20,15 @@ public static class RecipeCandidateFilter
             return (CandidateRejectReason.PluginError, "search plugin error row");
         }
 
+        // native-search P5: obvious junk is rejected for every recipe, before its own filters.
+        parsed ??= TorrentCandidateParser.Parse(
+            result.FileName,
+            RecipeRuntimeSettings.UsesAnimeAbsoluteEpisodeNumbering(recipe));
+        if (JunkFilter.GetJunkReason(recipe, result) is { } junk)
+        {
+            return (CandidateRejectReason.SuspiciousRelease, junk);
+        }
+
         var filter = recipe.Modules.FirstOrDefault(module =>
             module.BlockType == RecipeBlockType.CandidateFilter && module.IsEnabled);
         if (filter is null)
@@ -27,7 +36,7 @@ public static class RecipeCandidateFilter
             return (CandidateRejectReason.None, string.Empty);
         }
 
-        if (result.Seeders < filter.MinimumSeeders)
+        if (!result.SeedersUnknown && result.Seeders < filter.MinimumSeeders)
         {
             return (CandidateRejectReason.SeedersTooLow, $"seeders below threshold {filter.MinimumSeeders}");
         }

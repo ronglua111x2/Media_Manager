@@ -29,6 +29,12 @@ public sealed class TorrentSearchResult
 
     public int Seeders { get; init; }
 
+    /// <summary>
+    /// The source reports no swarm counts (BT4G, TsukiHime, SubsPlease): <see cref="Seeders"/> is 0 because it is
+    /// unknown, not because nobody seeds. Minimum-seeder filters skip such rows (audit 07c NS-21).
+    /// </summary>
+    public bool SeedersUnknown { get; init; }
+
     public int Leechers { get; init; }
 
     public string EngineName { get; init; } = string.Empty;

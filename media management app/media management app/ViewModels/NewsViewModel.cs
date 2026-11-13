@@ -376,6 +376,7 @@ public sealed partial class NewsViewModel : ViewModelBase
             .Where(episode => episode.AirDate is null || episode.AirDate.Value.Date <= today)
             .Count(episode =>
                 episode.Availability == EpisodeAvailability.Missing &&
+                !episode.IsRemovedUpstream &&
                 string.IsNullOrWhiteSpace(episode.TorrentHash) &&
                 !_torrentCartService.TryGetAutoTrackHuntBlockingEpisodeOrder(episode.Id, out _) &&
                 !_torrentCartService.HasActiveManualEpisodeOrder(episode.Id));

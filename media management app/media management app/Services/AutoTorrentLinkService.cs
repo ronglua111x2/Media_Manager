@@ -45,39 +45,6 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
         return result;
     }
 
-    public async Task<AutoTorrentLinkResult> LinkShowAsync(long showId, CancellationToken cancellationToken = default)
-    {
-        var result = new AutoTorrentLinkResult();
-        var show = _databaseService.GetTrackedShow(showId);
-        if (show is null)
-        {
-            AddSkip(result, "Tracked show was not found.");
-            return result;
-        }
-
-        var episodes = _databaseService.GetTrackedEpisodes(showId);
-        foreach (var season in _databaseService.GetTrackedSeasons(showId)
-                     .Where(season => season.SelectedPackOwnerSeasonNumber == season.SeasonNumber &&
-                                      !string.IsNullOrWhiteSpace(season.PackTorrentHash)))
-        {
-            Merge(result, await LinkSeasonPackCoreAsync(show, season, episodes, progress: null, cancellationToken));
-        }
-
-        var packManagedSeasons = _databaseService.GetTrackedSeasons(showId)
-            .Where(season => season.ManagementMode == SeasonManagementMode.Pack)
-            .Select(season => season.SeasonNumber)
-            .ToHashSet();
-
-        foreach (var episode in episodes.Where(episode =>
-                     !packManagedSeasons.Contains(episode.SeasonNumber) &&
-                     !string.IsNullOrWhiteSpace(episode.TorrentHash)))
-        {
-            await LinkEpisodeCoreAsync(show, episode, result, cancellationToken);
-        }
-
-        return result;
-    }
-
     public async Task<SeasonPackLinkPreview> PrepareSeasonPackLinkAsync(
         long showId,
         int ownerSeasonNumber,
@@ -104,11 +71,12 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             cancellationToken);
     }
 
-    public Task<AutoTorrentLinkResult> ApplySeasonPackLinkAsync(
+    public async Task<AutoTorrentLinkResult> ApplySeasonPackLinkAsync(
         SeasonPackLinkPreview preview,
         IProgress<PackLinkProgressUpdate>? progress = null,
-        CancellationToken cancellationToken = default) =>
-        LinkSeasonPackFromInventoryCoreAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var result = await LinkSeasonPackFromInventoryCoreAsync(
             preview.Show,
             preview.OwnerSeason,
             _databaseService.GetTrackedEpisodes(preview.Show.Id),
@@ -117,42 +85,10 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             progress,
             cancellationToken);
 
-    public async Task<AutoTorrentLinkResult> LinkSeasonPackAsync(
-        long showId,
-        int ownerSeasonNumber,
-        IProgress<PackLinkProgressUpdate>? progress = null,
-        CancellationToken cancellationToken = default)
-    {
-        var preview = await PrepareSeasonPackLinkAsync(showId, ownerSeasonNumber, progress, cancellationToken: cancellationToken);
-        return await ApplySeasonPackLinkAsync(preview, progress, cancellationToken);
-    }
-
-    public async Task<AutoTorrentLinkResult> LinkSeasonPackFromInventoryAsync(
-        long showId,
-        int ownerSeasonNumber,
-        PackTorrentInventory inventory,
-        CancellationToken cancellationToken = default)
-    {
-        var show = _databaseService.GetTrackedShow(showId);
-        var season = _databaseService.GetTrackedSeasons(showId)
-            .FirstOrDefault(item => item.SeasonNumber == ownerSeasonNumber);
-        if (show is null || season is null)
-        {
-            return new AutoTorrentLinkResult
-            {
-                SkippedCount = 1,
-                Messages = { $"Tracked pack owner season S{ownerSeasonNumber:00} was not found." }
-            };
-        }
-
-        return await LinkSeasonPackFromInventoryCoreAsync(
-            show,
-            season,
-            _databaseService.GetTrackedEpisodes(showId),
-            inventory,
-            resolvedSpecialMappings: null,
-            progress: null,
-            cancellationToken);
+        // Applying a prepared pack is the user's accept (Gemini results always go through review): only now is
+        // the special mapping worth caching (PR-15).
+        _specialMappingOrchestrator.RememberAccepted(preview.SpecialMappings);
+        return result;
     }
 
     public async Task<AutoTorrentLinkResult> LinkMovieAsync(long movieId, CancellationToken cancellationToken = default)
@@ -203,6 +139,306 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
                                   string.Equals(item.ProviderId, providerId, StringComparison.OrdinalIgnoreCase));
     }
 
+    public AutoTorrentLinkResult ClearShowLinksForRenumbering(long showId)
+    {
+        var show = _databaseService.GetTrackedShow(showId);
+        var providerId = show?.TmdbId.ToString();
+        if (string.IsNullOrWhiteSpace(providerId))
+        {
+            return new AutoTorrentLinkResult { SkippedCount = 1, Messages = { "Tracked show was not found." } };
+        }
+
+        // Check every link first: one that cannot be removed (open in a player, drive offline, outside the library
+        // folder) must stop the change before any other link, pack provenance or import row is touched (R2-A-05).
+        var blocked = CheckMediaLinksRemovable(MediaKind.TvEpisode, showId);
+        if (blocked.ErrorCount > 0)
+        {
+            return blocked;
+        }
+
+        AutoTorrentLinkResult result;
+        using (_eventHub.BeginBulkMutation())
+        {
+            result = RemoveShowLinks(showId);
+        }
+
+        if (result.ErrorCount > 0)
+        {
+            return result;
+        }
+
+        // Unlinked rows still carry the old season/episode numbers and would mark the wrong
+        // episodes Available under the new numbering (PARSE-26).
+        DeleteAcceptedTvSourceItems(providerId, _ => true, result);
+        return result;
+    }
+
+    public EpisodeLinkMoveResult RenumberEpisodes(
+        long showId,
+        IReadOnlyList<EpisodeRenumber> episodeMoves,
+        IReadOnlyCollection<long> deleteEpisodeIds)
+    {
+        var result = new EpisodeLinkMoveResult();
+        var providerId = _databaseService.GetTrackedShow(showId)?.TmdbId.ToString();
+        if (string.IsNullOrWhiteSpace(providerId) || episodeMoves.Count == 0)
+        {
+            return result;
+        }
+
+        var moves = episodeMoves.ToDictionary(move => move.From, move => move.To);
+
+        var allItems = _databaseService.GetSourceItems();
+        var planned = new List<(SourceItem Previous, SourceItem Moved)>();
+        foreach (var item in allItems.Where(item =>
+                     item.MediaKind == MediaKind.TvEpisode &&
+                     !item.IsOrphanPackSpecial &&
+                     string.Equals(item.Provider, "tmdb", StringComparison.OrdinalIgnoreCase) &&
+                     string.Equals(item.ProviderId, providerId, StringComparison.OrdinalIgnoreCase)))
+        {
+            var keys = GetOutputEpisodeKeys(item).ToList();
+            if (!keys.Any(moves.ContainsKey))
+            {
+                continue;
+            }
+
+            if (TryRenumber(item, keys, moves) is { } moved)
+            {
+                planned.Add((item, moved));
+                continue;
+            }
+
+            // One file cannot name episodes that TMDB moved apart; never guess which one it is.
+            BlockMove(
+                result,
+                keys.Where(moves.ContainsKey),
+                $"{item.FileName}: its episodes {DescribeKeys(keys)} no longer follow each other on TMDB, so the file stays where it is.");
+        }
+
+        var renames = PlanLinkRenames(planned, allItems, result);
+        if (result.BlockedKeys.Count > 0)
+        {
+            return result;
+        }
+
+        if (!_hardlinkService.MoveHardLinks(renames.Values.ToList(), out var moveError))
+        {
+            result.Failed = true;
+            result.Messages.Add($"Library links were not moved, every file is back in place: {moveError}");
+            return result;
+        }
+
+        foreach (var (previous, moved) in planned)
+        {
+            if (!string.IsNullOrWhiteSpace(previous.LinkedPath) &&
+                renames.TryGetValue(Path.GetFullPath(previous.LinkedPath), out var rename))
+            {
+                moved.LinkedPath = rename.ToPath;
+                if (IsSamePath(previous.FilePath, rename.FromPath))
+                {
+                    // An imported library file is its own record's file: the record follows the rename.
+                    moved.FilePath = rename.ToPath;
+                    moved.FileName = Path.GetFileName(rename.ToPath);
+                    moved.ParentFolder = Path.GetDirectoryName(rename.ToPath) ?? moved.ParentFolder;
+                }
+            }
+        }
+
+        try
+        {
+            // Rows and link records in one transaction: a crash or error never leaves links on new numbers with rows
+            // on old ones, which the next refresh would shift a second time.
+            _databaseService.ApplyEpisodeRenumbering(showId, deleteEpisodeIds, episodeMoves, planned.Select(pair => pair.Moved).ToList());
+        }
+        catch
+        {
+            var back = renames.Values.Select(rename => new HardLinkRename(rename.Item, rename.ToPath, rename.FromPath)).ToList();
+            if (!_hardlinkService.MoveHardLinks(back, out var backError))
+            {
+                _logger.Error(
+                    $"Renumbering was not saved and the library files could not all be put back ({backError}). Renamed: " +
+                    string.Join("; ", renames.Values.Select(rename => $"{rename.FromPath} -> {rename.ToPath}")),
+                    targets: LogTarget.All);
+            }
+
+            throw;
+        }
+
+        foreach (var (previous, moved) in planned)
+        {
+            result.MovedCount++;
+            _logger.Info(
+                $"TMDB renumbered {moved.DisplayTitle} {DescribeLinkTarget(previous)}: its link {previous.FileName} now is {DescribeLinkTarget(moved)}.",
+                LogTarget.All);
+        }
+
+        _eventHub.PublishHardlinksMoved(planned.Select(pair => new LibraryLinkMove(pair.Moved, pair.Previous)).ToList());
+        return result;
+    }
+
+    /// <summary>
+    /// The record at its new number, or null when its episodes do not all move, or no longer follow each other
+    /// (a multi-episode file S01E02-E03 whose E03 went elsewhere).
+    /// </summary>
+    private static SourceItem? TryRenumber(
+        SourceItem item,
+        IReadOnlyList<(int SeasonNumber, int EpisodeNumber)> keys,
+        IReadOnlyDictionary<(int SeasonNumber, int EpisodeNumber), (int SeasonNumber, int EpisodeNumber)> moves)
+    {
+        if (!keys.All(moves.ContainsKey))
+        {
+            return null;
+        }
+
+        var first = moves[keys[0]];
+        for (var index = 1; index < keys.Count; index++)
+        {
+            if (moves[keys[index]] != (first.SeasonNumber, first.EpisodeNumber + index))
+            {
+                return null;
+            }
+        }
+
+        var moved = item.Clone();
+        if (item.MappedSeasonNumber is not null && item.MappedEpisodeNumber is not null)
+        {
+            moved.MappedSeasonNumber = first.SeasonNumber;
+            moved.MappedEpisodeNumber = first.EpisodeNumber;
+            return moved;
+        }
+
+        moved.SeasonNumber = first.SeasonNumber;
+        moved.EpisodeNumber = first.EpisodeNumber;
+        moved.LastEpisodeNumber = item.LastEpisodeNumber is { } last
+            ? last - keys[0].EpisodeNumber + first.EpisodeNumber
+            : null;
+        return moved;
+    }
+
+    /// <summary>
+    /// The library files to rename, by their current full path. A file is renamed only when it carries the name the
+    /// app gives it in the current library folder; an imported original or a link in an old library folder keeps its
+    /// name and only its record moves. Adds blocked keys when a file cannot follow.
+    /// </summary>
+    private Dictionary<string, HardLinkRename> PlanLinkRenames(
+        IReadOnlyList<(SourceItem Previous, SourceItem Moved)> planned,
+        IReadOnlyList<SourceItem> allItems,
+        EpisodeLinkMoveResult result)
+    {
+        var renames = new Dictionary<string, HardLinkRename>(StringComparer.OrdinalIgnoreCase);
+        var plannedIds = planned.Select(pair => pair.Previous.Id).ToHashSet();
+        var storage = _hardlinkService.CreateLinkStorageProbe() ?? new LinkStorageProbe();
+        foreach (var (previous, moved) in planned)
+        {
+            if (string.IsNullOrWhiteSpace(previous.LinkedPath))
+            {
+                continue;
+            }
+
+            var fromPath = Path.GetFullPath(previous.LinkedPath);
+            var keys = GetOutputEpisodeKeys(previous).ToList();
+            if (renames.ContainsKey(fromPath) ||
+                !_hardlinkService.TryBuildLibraryPath(previous, out var currentPath, out _) ||
+                !IsSamePath(currentPath, fromPath))
+            {
+                continue;
+            }
+
+            if (!_hardlinkService.TryBuildLibraryPath(moved, out var toPath, out var pathError))
+            {
+                BlockMove(result, keys, $"{previous.FileName}: {pathError}");
+                continue;
+            }
+
+            if (!File.Exists(fromPath))
+            {
+                if (!storage.IsLinkStorageReachable(previous))
+                {
+                    BlockMove(result, keys, $"{previous.FileName}: the library folder of '{fromPath}' is not reachable.");
+                    continue;
+                }
+
+                // Deleted outside the app: the record moves without a link, as the link-status check would leave it.
+                moved.LinkedPath = null;
+                moved.State = ItemState.Parsed;
+                moved.Notes = "Linked path no longer exists.";
+                continue;
+            }
+
+            if (allItems.Any(other => !plannedIds.Contains(other.Id) &&
+                                      !string.IsNullOrWhiteSpace(other.LinkedPath) &&
+                                      IsSamePath(other.LinkedPath, fromPath)))
+            {
+                BlockMove(result, keys, $"{previous.FileName}: another record that keeps its number uses the same library file.");
+                continue;
+            }
+
+            renames[fromPath] = new HardLinkRename(previous, fromPath, toPath);
+        }
+
+        // A file already at a new path that is not itself moving away (a leftover in the library) must not be hit.
+        var movingAway = renames.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var group in renames.Values.GroupBy(rename => Path.GetFullPath(rename.ToPath), StringComparer.OrdinalIgnoreCase))
+        {
+            if (group.Count() == 1 && (!File.Exists(group.Key) || movingAway.Contains(group.Key)))
+            {
+                continue;
+            }
+
+            foreach (var rename in group)
+            {
+                BlockMove(
+                    result,
+                    GetOutputEpisodeKeys(rename.Item),
+                    $"{rename.Item.FileName}: '{Path.GetFileName(rename.ToPath)}' is already taken in the library, so the file stays where it is.");
+            }
+        }
+
+        return renames;
+    }
+
+    private static void BlockMove(
+        EpisodeLinkMoveResult result,
+        IEnumerable<(int SeasonNumber, int EpisodeNumber)> keys,
+        string message)
+    {
+        result.BlockedKeys.UnionWith(keys);
+        result.Messages.Add(message);
+    }
+
+    private static string DescribeKeys(IEnumerable<(int SeasonNumber, int EpisodeNumber)> keys) =>
+        string.Join(", ", keys.Select(key => $"S{key.SeasonNumber:00}E{key.EpisodeNumber:00}"));
+
+    private static bool IsSamePath(string? left, string? right) =>
+        !string.IsNullOrWhiteSpace(left) &&
+        !string.IsNullOrWhiteSpace(right) &&
+        string.Equals(Path.GetFullPath(left), Path.GetFullPath(right), StringComparison.OrdinalIgnoreCase);
+
+    public AutoTorrentLinkResult CheckMediaLinksRemovable(MediaKind mediaKind, long mediaId)
+    {
+        var result = new AutoTorrentLinkResult();
+        var providerId = mediaKind == MediaKind.Movie
+            ? _databaseService.GetTrackedMovie(mediaId)?.TmdbId.ToString()
+            : _databaseService.GetTrackedShow(mediaId)?.TmdbId.ToString();
+        if (string.IsNullOrWhiteSpace(providerId))
+        {
+            return result;
+        }
+
+        foreach (var item in _databaseService.GetSourceItems().Where(item =>
+                     item.MediaKind == mediaKind &&
+                     string.Equals(item.Provider, "tmdb", StringComparison.OrdinalIgnoreCase) &&
+                     string.Equals(item.ProviderId, providerId, StringComparison.OrdinalIgnoreCase)))
+        {
+            if (!_hardlinkService.CanRemoveHardLink(item, out var reason))
+            {
+                result.ErrorCount++;
+                result.Messages.Add($"{item.FileName}: {reason}");
+            }
+        }
+
+        return result;
+    }
+
     public AutoTorrentLinkResult RemoveEpisodeLinks(long showId, int seasonNumber, int episodeNumber)
     {
         var show = _databaseService.GetTrackedShow(showId);
@@ -211,9 +447,9 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             ? new AutoTorrentLinkResult { SkippedCount = 1, Messages = { "Tracked show was not found." } }
             : RemoveLinks(item =>
             {
-                var key = GetOutputEpisodeKey(item);
+                // A multi-episode file (S01E01-E02) is the link of each episode in its range (audit L3-08).
                 return item.MediaKind == MediaKind.TvEpisode &&
-                       key == (seasonNumber, episodeNumber) &&
+                       CoversEpisode(item, seasonNumber, episodeNumber) &&
                        string.Equals(item.Provider, "tmdb", StringComparison.OrdinalIgnoreCase) &&
                        string.Equals(item.ProviderId, providerId, StringComparison.OrdinalIgnoreCase);
             });
@@ -289,11 +525,22 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             items = items.Where(item => item.MediaKind == MediaKind.Movie && item.ProviderId == movieProviderId);
         }
 
+        var storage = _hardlinkService.CreateLinkStorageProbe() ?? new LinkStorageProbe();
         foreach (var item in items.ToList())
         {
+            if (!storage.IsLinkStorageReachable(item))
+            {
+                // The library drive or folder is offline: keep the record as it is instead of
+                // treating every link on it as deleted (PARSE-27).
+                result.SkippedCount++;
+                continue;
+            }
+
             item.State = File.Exists(item.LinkedPath) ? ItemState.Linked : ItemState.Parsed;
             if (!File.Exists(item.LinkedPath))
             {
+                // The Jellyfin symlink now points at nothing; let the symlink coordinator remove it.
+                _eventHub.PublishHardlinkRemoved(item, item.LinkedPath!);
                 item.LinkedPath = null;
                 item.State = ItemState.Parsed;
                 item.Notes = "Linked path no longer exists.";
@@ -310,6 +557,14 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             _databaseService.UpdateSourceItem(item);
         }
 
+        foreach (var folder in storage.UnreachableFolders)
+        {
+            _logger.Warning(
+                $"Library folder is not reachable, link status left unchanged: {folder}",
+                LogTarget.File | LogTarget.Console);
+            result.Messages.Add($"Library folder is not reachable, link status left unchanged: {folder}");
+        }
+
         result.Messages.Add("Refreshed link status.");
         return result;
     }
@@ -318,11 +573,31 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
     {
         var result = new AutoTorrentLinkResult();
 
+        // A multi-episode file (S01E01-E02) is removed as a whole; its other episodes lose their link too
+        // (audit R2-A-03).
+        var showProviderId = _databaseService.GetTrackedShow(showId)?.TmdbId.ToString();
+        var rangeKeys = string.IsNullOrWhiteSpace(showProviderId)
+            ? []
+            : _databaseService.GetSourceItems()
+                .Where(item => IsShowEpisodeRow(item, showProviderId) && CoversEpisode(item, seasonNumber, episodeNumber))
+                .SelectMany(GetOutputEpisodeKeys)
+                .Where(key => key != (seasonNumber, episodeNumber))
+                .ToHashSet();
+
         // Remove hardlinks and reset SourceItem link fields (handles the case where file still exists)
         var unlinkResult = RemoveEpisodeLinks(showId, seasonNumber, episodeNumber);
-        result.LinkedCount += unlinkResult.LinkedCount;
-        result.SkippedCount += unlinkResult.SkippedCount;
-        result.Messages.AddRange(unlinkResult.Messages);
+        Merge(result, unlinkResult);
+        if (unlinkResult.ErrorCount > 0)
+        {
+            // Deleting the records now would orphan the library file and its Jellyfin symlink,
+            // and the re-download could never be linked ("Output already exists") (PARSE-28).
+            _logger.Warning(
+                $"Reset aborted for show id={showId} S{seasonNumber:00}E{episodeNumber:00}: {unlinkResult.ErrorCount} unlink error(s).",
+                LogTarget.File | LogTarget.Console);
+            result.Messages.Add(
+                $"Reset aborted: {unlinkResult.ErrorCount} library link(s) could not be removed (see the message above). Fix that and retry.");
+            return result;
+        }
 
         // Find the episode record
         var episode = _databaseService.GetTrackedEpisodes(showId)
@@ -342,27 +617,66 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
         {
             DeleteAcceptedTvSourceItems(
                 providerId,
-                item => GetOutputEpisodeKey(item) == (seasonNumber, episodeNumber),
+                item => CoversEpisode(item, seasonNumber, episodeNumber),
                 result);
         }
 
-        // Clear torrent hash and download state so the episode becomes Missing and re-searchable
-        _databaseService.UpdateTrackedEpisodeTorrent(episode.Id, string.Empty, string.Empty, string.Empty, 0);
+        ClearEpisodeDownloadState(showId, episode);
+        result.Messages.Add($"Reset S{seasonNumber:00}E{episodeNumber:00}: download state cleared.");
 
-        // Clear stored search candidate
-        _databaseService.ClearTrackedEpisodeSelectedCandidate(episode.Id);
+        // The other episodes of a removed range file are now Missing as well. Clear their download state too, or
+        // the next reconcile re-links the same file from their torrent hash and the reset is undone (R2-A-03).
+        if (rangeKeys.Count > 0 && !string.IsNullOrWhiteSpace(showProviderId))
+        {
+            var stillLinked = _databaseService.GetSourceItems()
+                .Where(item => IsShowEpisodeRow(item, showProviderId) && item.State == ItemState.Linked)
+                .SelectMany(GetOutputEpisodeKeys)
+                .ToHashSet();
+            var trackedEpisodes = _databaseService.GetTrackedEpisodes(showId);
+            foreach (var key in rangeKeys.Where(key => !stillLinked.Contains(key)).OrderBy(key => key))
+            {
+                var other = trackedEpisodes.FirstOrDefault(item => item.SeasonNumber == key.SeasonNumber && item.EpisodeNumber == key.EpisodeNumber);
+                if (other is null)
+                {
+                    continue;
+                }
 
-        // Remove any non-terminal cart orders for this episode
-        var episodeOrders = _databaseService.GetTorrentCartOrders(MediaKind.TvEpisode, showId)
+                ClearEpisodeDownloadState(showId, other);
+                result.Messages.Add(
+                    $"Reset S{key.SeasonNumber:00}E{key.EpisodeNumber:00} too: it was in the same file as S{seasonNumber:00}E{episodeNumber:00}.");
+            }
+        }
+
+        return result;
+    }
+
+    private static bool IsShowEpisodeRow(SourceItem item, string providerId) =>
+        item.MediaKind == MediaKind.TvEpisode &&
+        string.Equals(item.Provider, "tmdb", StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(item.ProviderId, providerId, StringComparison.OrdinalIgnoreCase);
+
+    // Torrent hash, download state, stored search candidate and open cart orders: the episode becomes Missing
+    // and is searched again. The torrent stays in qBittorrent; its hash is remembered on the episode so reconcile
+    // does not adopt it again and undo the reset (cross-review 2, B).
+    private void ClearEpisodeDownloadState(long showId, TrackedEpisode episode)
+    {
+        var orders = _databaseService.GetTorrentCartOrders(MediaKind.TvEpisode, showId)
             .Where(order => order.EpisodeId == episode.Id)
             .ToList();
-        foreach (var order in episodeOrders)
+        foreach (var hash in orders.Select(order => order.TorrentHash).Append(episode.TorrentHash))
+        {
+            if (!string.IsNullOrWhiteSpace(hash))
+            {
+                _databaseService.AddTrackedEpisodeResetTorrentHash(episode.Id, hash);
+            }
+        }
+
+        _databaseService.UpdateTrackedEpisodeTorrent(episode.Id, string.Empty, string.Empty, string.Empty, 0);
+        _databaseService.ClearTrackedEpisodeSelectedCandidate(episode.Id);
+        foreach (var order in orders)
         {
             _databaseService.DeleteTorrentCartOrder(order.Id);
         }
-
-        result.Messages.Add($"Reset S{seasonNumber:00}E{episodeNumber:00}: download state cleared.");
-        return result;
     }
 
     public async Task<AutoTorrentLinkResult> ResetSeasonPackForRedownloadAsync(
@@ -444,11 +758,29 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             deletedCount++;
         }
 
-        _databaseService.ClearTrackedSeasonSelectedPack(showId, ownerSeasonNumber);
-
+        // The pack torrent stays in qBittorrent: remember its hash on every season it was selected for, so reconcile
+        // does not adopt it again and undo the reset (cross-review 2, B).
         var packOrders = _databaseService.GetTorrentCartOrders(MediaKind.TvEpisode, showId)
             .Where(order => order.EpisodeId is null && order.SeasonNumber == ownerSeasonNumber)
             .ToList();
+        var resetHashes = scope.TorrentHashes
+            .Concat(packOrders.Select(order => order.TorrentHash))
+            .Where(hash => !string.IsNullOrWhiteSpace(hash))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var packSeasons = _databaseService.GetTrackedSeasons(showId)
+            .Where(season => season.SeasonNumber == ownerSeasonNumber || season.SelectedPackOwnerSeasonNumber == ownerSeasonNumber)
+            .ToList();
+        foreach (var season in packSeasons)
+        {
+            foreach (var hash in resetHashes.Append(season.PackTorrentHash).Where(hash => !string.IsNullOrWhiteSpace(hash)))
+            {
+                _databaseService.AddTrackedSeasonResetTorrentHash(showId, season.SeasonNumber, hash!);
+            }
+        }
+
+        _databaseService.ClearTrackedSeasonSelectedPack(showId, ownerSeasonNumber);
+
         foreach (var order in packOrders)
         {
             _databaseService.DeleteTorrentCartOrder(order.Id);
@@ -468,9 +800,16 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
         var result = new AutoTorrentLinkResult();
 
         var unlinkResult = RemoveMovieLinks(movieId);
-        result.LinkedCount += unlinkResult.LinkedCount;
-        result.SkippedCount += unlinkResult.SkippedCount;
-        result.Messages.AddRange(unlinkResult.Messages);
+        Merge(result, unlinkResult);
+        if (unlinkResult.ErrorCount > 0)
+        {
+            _logger.Warning(
+                $"Reset aborted for movie id={movieId}: {unlinkResult.ErrorCount} unlink error(s).",
+                LogTarget.File | LogTarget.Console);
+            result.Messages.Add(
+                $"Reset aborted: {unlinkResult.ErrorCount} library link(s) could not be removed (see the message above). Fix that and retry.");
+            return result;
+        }
 
         var movie = _databaseService.GetTrackedMovie(movieId);
         if (movie is null)
@@ -493,10 +832,19 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             result.Messages.Add($"Removed source item: {item.FileName}");
         }
 
+        // The torrent stays in qBittorrent: remember its hash so reconcile does not adopt it again (cross-review 2, B).
+        var movieOrders = _databaseService.GetTorrentCartOrders(MediaKind.Movie, movieId).ToList();
+        foreach (var hash in movieOrders.Select(order => order.TorrentHash).Append(movie.TorrentHash))
+        {
+            if (!string.IsNullOrWhiteSpace(hash))
+            {
+                _databaseService.AddTrackedMovieResetTorrentHash(movieId, hash);
+            }
+        }
+
         _databaseService.UpdateTrackedMovieTorrent(movieId, string.Empty, string.Empty, string.Empty, 0);
         _databaseService.ClearTrackedMovieSelectedCandidate(movieId);
 
-        var movieOrders = _databaseService.GetTorrentCartOrders(MediaKind.Movie, movieId).ToList();
         foreach (var order in movieOrders)
         {
             _databaseService.DeleteTorrentCartOrder(order.Id);
@@ -521,23 +869,59 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             return;
         }
 
+        // After TMDB renumbered the episode its download is still named with the number it had (audit L3-09).
+        var namedSeason = episode.DownloadSeasonNumber ?? episode.SeasonNumber;
+        var namedEpisode = episode.DownloadEpisodeNumber ?? episode.EpisodeNumber;
         var videoFiles = await GetCompletedVideoFilesAsync(torrent, cancellationToken);
-        var selectedFile = SelectEpisodeFile(videoFiles, episode);
+        var selectedFile = SelectEpisodeFile(videoFiles, namedSeason, namedEpisode);
         if (selectedFile is null)
         {
             AddSkip(result, $"{show.DisplayTitle} S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00}: no unambiguous completed video file.");
             return;
         }
 
-        LinkSourceItem(
-            CreateEpisodeSourceItem(
-                show,
-                episode,
-                torrent,
-                BuildSourcePath(torrent, selectedFile),
-                AutoTorrentLinkKind.Episode,
-                packOwnerSeasonNumber: null),
-            result);
+        var trackedEpisodes = _databaseService.GetTrackedEpisodes(show.Id)
+            .Select(row => (row.SeasonNumber, row.EpisodeNumber))
+            .ToHashSet();
+        if (NamesAnotherEpisode(selectedFile, namedSeason, namedEpisode, trackedEpisodes, out var fileEpisode, out var fileRange))
+        {
+            // A single-file torrent is taken as-is; refuse it when its name says it is another
+            // episode (for example a torrent adopted under the wrong episode) (PARSE-25).
+            AddSkip(
+                result,
+                $"{show.DisplayTitle} S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00}: file '{Path.GetFileName(selectedFile.Name)}' is {fileEpisode}, not linked.");
+            return;
+        }
+
+        var episodeItem = CreateEpisodeSourceItem(
+            show,
+            episode,
+            torrent,
+            BuildSourcePath(torrent, selectedFile),
+            AutoTorrentLinkKind.Episode,
+            packOwnerSeasonNumber: null);
+        if (fileRange is { } range)
+        {
+            // One file holding several episodes is linked once as "S01E01-E02", whichever of its
+            // episodes the torrent was assigned to (audit L1-M2); shifted like its episode when TMDB renumbered.
+            var offset = episode.EpisodeNumber - namedEpisode;
+            if (RangeIsInTmdb(show.Id, episode.SeasonNumber, range.First + offset, range.Last + offset))
+            {
+                episodeItem.EpisodeNumber = range.First + offset;
+                episodeItem.LastEpisodeNumber = range.Last + offset;
+            }
+        }
+
+        LinkSourceItem(episodeItem, result);
+    }
+
+    private bool RangeIsInTmdb(long showId, int seasonNumber, int firstEpisode, int lastEpisode)
+    {
+        var episodes = _databaseService.GetTrackedEpisodes(showId)
+            .Where(item => item.SeasonNumber == seasonNumber)
+            .Select(item => item.EpisodeNumber)
+            .ToHashSet();
+        return Enumerable.Range(firstEpisode, lastEpisode - firstEpisode + 1).All(episodes.Contains);
     }
 
     private async Task<SeasonPackLinkPreview> PrepareSeasonPackLinkCoreAsync(
@@ -569,10 +953,8 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
         var seasons = _databaseService.GetTrackedSeasons(show.Id);
         var files = await GetCompletedVideoFilesAsync(torrent, cancellationToken);
         var fileTuples = files.Select(file => (file.Name, Path.GetFileName(file.Name))).ToList();
+        var fileSizes = BuildFileSizes(files);
         var tree = PackFolderTreeAnalyzer.Analyze(fileTuples.Select(file => file.Name).ToList());
-        var specialsEpisodes = episodes
-            .Where(episode => episode.SeasonNumber == AppConstants.SpecialsSeasonNumber)
-            .ToList();
 
         IReadOnlyDictionary<int, SeasonRegularEpisodeStats> regularEpisodesBySeason =
             new Dictionary<int, SeasonRegularEpisodeStats>();
@@ -593,7 +975,8 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
                 coveredSeasons,
                 PackAnalyzeMode.Link,
                 regularOnlyMappings,
-                ownerSeasonNumber: ownerSeason.SeasonNumber);
+                ownerSeasonNumber: ownerSeason.SeasonNumber,
+                fileSizes: fileSizes);
 
             regularEpisodesBySeason = PackLinkRegularEpisodeSummary.Build(
                 regularInventory,
@@ -607,13 +990,12 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
                 PackLinkRegularEpisodeSummary.FormatSummary(regularEpisodesBySeason));
         }
 
-        var resolvedSpecialMappings = await _specialMappingOrchestrator.ResolveAsync(
+        var resolvedSpecialMappings = await ResolveSpecialMappingsAsync(
+            show,
+            ownerSeason,
             fileTuples,
             tree,
-            specialsEpisodes,
-            show.DisplayTitle,
-            show.TmdbId,
-            ownerSeason.PackTorrentHash!,
+            episodes,
             progress,
             useGeminiForSpecials,
             bypassCache,
@@ -626,7 +1008,8 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             coveredSeasons,
             PackAnalyzeMode.Link,
             resolvedSpecialMappings,
-            ownerSeasonNumber: ownerSeason.SeasonNumber);
+            ownerSeasonNumber: ownerSeason.SeasonNumber,
+            fileSizes: fileSizes);
 
         return new SeasonPackLinkPreview
         {
@@ -634,7 +1017,8 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             OwnerSeason = ownerSeason,
             Inventory = inventory,
             SpecialMappings = resolvedSpecialMappings,
-            RequiresReview = useGeminiForSpecials && resolvedSpecialMappings.UsedGemini,
+            RequiresReview = SpecialMappingReviewPolicy.RequiresReview(resolvedSpecialMappings),
+            UsedGeminiForSpecials = useGeminiForSpecials,
             RegularEpisodeCount = inventory.Files.Count(file => file.Classification == PackFileClassification.RegularEpisode),
             MatchedSpecialCount = inventory.Files.Count(file => file.Classification == PackFileClassification.MatchedSpecial),
             OrphanExtraCount = inventory.Files.Count(file => file.Classification == PackFileClassification.UnmatchedExtra),
@@ -642,22 +1026,75 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
         };
     }
 
-    private async Task<AutoTorrentLinkResult> LinkSeasonPackCoreAsync(
+    /// <summary>
+    /// Runs the special/OVA step. Any failure there (Gemini, response parsing, a bug in the payload code) falls
+    /// back to the offline rule mappings and asks for review, so the regular episodes of the pack still link.
+    /// Only a user cancellation stops the whole prepare.
+    /// </summary>
+    private async Task<SpecialMappingResult> ResolveSpecialMappingsAsync(
         TrackedShow show,
         TrackedSeason ownerSeason,
+        IReadOnlyList<(string RelativePath, string FileName)> fileTuples,
+        PackFolderTreeAnalysis tree,
         IReadOnlyList<TrackedEpisode> episodes,
         IProgress<PackLinkProgressUpdate>? progress,
+        bool useGeminiForSpecials,
+        bool bypassCache,
         CancellationToken cancellationToken)
     {
-        var preview = await PrepareSeasonPackLinkCoreAsync(
-            show,
-            ownerSeason,
-            episodes,
-            progress,
-            useGeminiForSpecials: true,
-            bypassCache: false,
-            cancellationToken);
-        return await ApplySeasonPackLinkAsync(preview, progress, cancellationToken);
+        try
+        {
+            return await _specialMappingOrchestrator.ResolveAsync(
+                       fileTuples,
+                       tree,
+                       episodes,
+                       show.DisplayTitle,
+                       show.TmdbId,
+                       ownerSeason.PackTorrentHash!,
+                       progress,
+                       useGeminiForSpecials,
+                       bypassCache,
+                       cancellationToken)
+                   ?? throw new InvalidOperationException("Special mapping returned no result.");
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            var reason = $"Special/OVA mapping failed: {ex.Message}";
+            _logger.Warning(
+                $"Pack link '{show.DisplayTitle}' S{ownerSeason.SeasonNumber:00}: {reason} Regular episodes are not affected.",
+                LogTarget.All);
+            PackLinkProgressReporter.Report(
+                progress,
+                PackLinkProgressStep.BuildingPayload,
+                PackLinkProgressStatus.Done,
+                "Special/OVA mapping failed. Using rule mappings; review required.",
+                ex.Message);
+
+            try
+            {
+                return SpecialMappingOrchestrator.ResolveOffline(
+                    fileTuples,
+                    tree,
+                    episodes,
+                    show.DisplayTitle,
+                    show.TmdbId,
+                    reason);
+            }
+            catch (Exception offlineError)
+            {
+                _logger.Error(
+                    $"Pack link '{show.DisplayTitle}' S{ownerSeason.SeasonNumber:00}: rule mappings for specials also failed.",
+                    offlineError,
+                    LogTarget.All);
+                return new SpecialMappingResult().WithReview(
+                    [$"{reason} Rule mappings also failed ({offlineError.Message}); special/OVA files are left out."],
+                    reason);
+            }
+        }
     }
 
     private async Task<AutoTorrentLinkResult> LinkSeasonPackFromInventoryCoreAsync(
@@ -708,6 +1145,18 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
 
             await Task.Run(() =>
             {
+                var releasedAnyLink = false;
+                var blockedByAnotherFile = new List<(Func<SourceItem> Create, string SkipMessage)>();
+                void LinkPackItem(Func<SourceItem> create)
+                {
+                    var attempt = LinkSourceItem(create(), result, index);
+                    releasedAnyLink |= attempt.ReleasedOldLink;
+                    if (attempt.SkippedAsDuplicate)
+                    {
+                        blockedByAnotherFile.Add((create, attempt.DuplicateSkipMessage!));
+                    }
+                }
+
                 foreach (var entry in inventory.Files.Where(file => file.Classification == PackFileClassification.Movie))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
@@ -744,16 +1193,15 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
                                                                         episodesByKey.TryGetValue(
                                                                             (entry.MatchedSeasonNumber.Value, entry.MatchedEpisodeNumber.Value),
                                                                             out var specialEpisode):
-                            LinkSourceItem(
-                                CreateEpisodeSourceItem(
-                                    show,
-                                    specialEpisode,
-                                    torrent,
-                                    sourcePath,
-                                    AutoTorrentLinkKind.SeasonPack,
-                                    ownerSeason.SeasonNumber),
-                                result,
-                                index);
+                            var special = specialEpisode;
+                            var specialPath = sourcePath;
+                            LinkPackItem(() => CreateEpisodeSourceItem(
+                                show,
+                                special,
+                                torrent,
+                                specialPath,
+                                AutoTorrentLinkKind.SeasonPack,
+                                ownerSeason.SeasonNumber));
                             specialsMatched++;
                             break;
                         case PackFileClassification.RegularEpisode when entry.MatchedSeasonNumber is not null &&
@@ -761,18 +1209,46 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
                                                                           episodesByKey.TryGetValue(
                                                                               (entry.MatchedSeasonNumber.Value, entry.MatchedEpisodeNumber.Value),
                                                                               out var episode):
-                            LinkSourceItem(
-                                CreateEpisodeSourceItem(
+                            var regular = episode;
+                            var regularPath = sourcePath;
+                            var lastEpisode = entry.MatchedLastEpisodeNumber;
+                            LinkPackItem(() =>
+                            {
+                                var regularItem = CreateEpisodeSourceItem(
                                     show,
-                                    episode,
+                                    regular,
                                     torrent,
-                                    sourcePath,
+                                    regularPath,
                                     AutoTorrentLinkKind.SeasonPack,
-                                    ownerSeason.SeasonNumber),
-                                result,
-                                index);
+                                    ownerSeason.SeasonNumber);
+                                regularItem.LastEpisodeNumber = lastEpisode;
+                                return regularItem;
+                            });
                             regularLinked++;
                             break;
+                    }
+                }
+
+                // Two files that swap episodes on re-link: the first was skipped because the second still held
+                // its new episode, and the second then moved away. Retry those once the pass is done (audit L3-06).
+                if (releasedAnyLink)
+                {
+                    foreach (var (create, skipMessage) in blockedByAnotherFile)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        var linkedBefore = result.LinkedCount;
+                        var retry = LinkSourceItem(create(), result, index);
+                        if (result.LinkedCount > linkedBefore)
+                        {
+                            result.SkippedCount--;
+                            result.Messages.Remove(skipMessage);
+                        }
+                        else if (retry.SkippedAsDuplicate)
+                        {
+                            // Still provided by another file: keep the first message only.
+                            result.SkippedCount--;
+                            result.Messages.RemoveAt(result.Messages.LastIndexOf(retry.DuplicateSkipMessage!));
+                        }
                     }
                 }
             }, cancellationToken);
@@ -855,24 +1331,62 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
         };
     }
 
-    private void LinkSourceItem(
+    /// <summary>What <see cref="LinkSourceItem"/> did; a pack re-link uses it to retry files that a swap blocked.</summary>
+    private readonly record struct LinkAttempt(bool ReleasedOldLink, string? DuplicateSkipMessage)
+    {
+        public bool SkippedAsDuplicate => DuplicateSkipMessage is not null;
+    }
+
+    private LinkAttempt LinkSourceItem(
         SourceItem sourceItem,
         AutoTorrentLinkResult result,
         SourceItemPathIndex? index = null)
     {
         TryMigrateLegacyOrphanPath(sourceItem, result, index);
 
+        var releasedChangedLink = false;
         if (TryGetExistingLinkedItem(sourceItem, index, out var existingItem) && existingItem is not null)
         {
-            existingItem.AutoTorrentLinkKind = sourceItem.AutoTorrentLinkKind;
-            existingItem.AutoTorrentTorrentHash = sourceItem.AutoTorrentTorrentHash;
-            existingItem.AutoTorrentPackOwnerSeasonNumber = sourceItem.AutoTorrentPackOwnerSeasonNumber;
-            existingItem.IsOrphanPackSpecial = sourceItem.IsOrphanPackSpecial;
-            existingItem.LastSeenUtc = DateTime.UtcNow;
-            _databaseService.UpdateSourceItem(existingItem);
-            index?.Replace(existingItem);
-            AddSkip(result, $"{sourceItem.DisplayTitle}: already linked.");
-            return;
+            if (HasSameLinkTarget(existingItem, sourceItem))
+            {
+                existingItem.AutoTorrentLinkKind = sourceItem.AutoTorrentLinkKind;
+                existingItem.AutoTorrentTorrentHash = sourceItem.AutoTorrentTorrentHash;
+                existingItem.AutoTorrentPackOwnerSeasonNumber = sourceItem.AutoTorrentPackOwnerSeasonNumber;
+                existingItem.LastSeenUtc = DateTime.UtcNow;
+                _databaseService.UpdateSourceItem(existingItem);
+                index?.Replace(existingItem);
+                AddSkip(result, $"{sourceItem.DisplayTitle}: already linked.");
+                return default;
+            }
+
+            // The same file now maps to another episode, or flips between special and orphan
+            // extra: replace the old link instead of keeping it (PARSE-12, PARSE-24).
+            if (!TryReleaseChangedLink(existingItem, sourceItem, result, index))
+            {
+                return default;
+            }
+
+            releasedChangedLink = true;
+        }
+
+        if (TryGetOtherLinkedItemForEpisode(sourceItem, index, out var otherItem, out var partialOverlap) && otherItem is not null)
+        {
+            // Another file already provides this episode; a second link (often with another
+            // extension) would duplicate it in Jellyfin (PARSE-32).
+            if (releasedChangedLink)
+            {
+                PersistUnlinkedMapping(sourceItem, index, $"Episode already linked from {otherItem.FileName}.");
+            }
+
+            var skipMessage = $"{sourceItem.DisplayTitle}: already linked from {otherItem.FileName}; skipped {sourceItem.FileName}.";
+            AddSkip(result, skipMessage);
+            return new LinkAttempt(releasedChangedLink, skipMessage);
+        }
+
+        if (partialOverlap is not null)
+        {
+            result.Messages.Add(
+                $"{sourceItem.FileName}: some of its episodes are already linked from {partialOverlap.FileName}; linked for the rest.");
         }
 
         if (_hardlinkService.CreateHardLink(sourceItem, out var linkedPath, out var errorMessage))
@@ -885,11 +1399,157 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             _eventHub.PublishHardlinkCreated(sourceItem, linkedPath!);
             result.LinkedCount++;
             result.Messages.Add($"Linked {sourceItem.FileName}");
-            return;
+            return new LinkAttempt(releasedChangedLink, null);
+        }
+
+        if (releasedChangedLink)
+        {
+            PersistUnlinkedMapping(sourceItem, index, errorMessage);
         }
 
         result.ErrorCount++;
         result.Messages.Add($"{sourceItem.FileName}: {errorMessage}");
+        return new LinkAttempt(releasedChangedLink, null);
+    }
+
+    /// <summary>
+    /// True when an existing link already gives the new item the same library identity:
+    /// same media, same episode key and same special/orphan role. A missing provider id on a
+    /// legacy record is treated as unknown rather than as a change.
+    /// </summary>
+    private static bool HasSameLinkTarget(SourceItem existing, SourceItem candidate)
+    {
+        if (existing.MediaKind != candidate.MediaKind ||
+            existing.IsOrphanPackSpecial != candidate.IsOrphanPackSpecial ||
+            GetOutputEpisodeKey(existing) != GetOutputEpisodeKey(candidate) ||
+            !GetOutputEpisodeKeys(existing).SequenceEqual(GetOutputEpisodeKeys(candidate)))
+        {
+            // A file linked as S01E01 before multi-episode support now resolves to S01E01-E02: re-link it
+            // under the range name (audit L1-M2, L3-08).
+            return false;
+        }
+
+        return string.IsNullOrWhiteSpace(existing.ProviderId) ||
+               string.IsNullOrWhiteSpace(candidate.ProviderId) ||
+               string.Equals(existing.ProviderId, candidate.ProviderId, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool TryReleaseChangedLink(
+        SourceItem existingItem,
+        SourceItem sourceItem,
+        AutoTorrentLinkResult result,
+        SourceItemPathIndex? index)
+    {
+        var change = $"{DescribeLinkTarget(existingItem)} -> {DescribeLinkTarget(sourceItem)}";
+        if (!_hardlinkService.RemoveHardLink(existingItem, out _, out var removeError))
+        {
+            result.ErrorCount++;
+            result.Messages.Add(
+                $"{sourceItem.FileName}: mapping changed ({change}) but the old library link could not be removed: {removeError}");
+            return false;
+        }
+
+        existingItem.LinkedPath = null;
+        existingItem.State = ItemState.Parsed;
+        _databaseService.UpdateSourceItem(existingItem);
+        index?.Replace(existingItem);
+        result.Messages.Add($"{sourceItem.FileName}: mapping changed ({change}); old library link removed.");
+        _logger.Info($"Link mapping changed for {sourceItem.FilePath}: {change}.", LogTarget.File | LogTarget.Console);
+        return true;
+    }
+
+    /// <summary>Records the new mapping of a file whose old link was removed but whose new link was not created.</summary>
+    private void PersistUnlinkedMapping(SourceItem sourceItem, SourceItemPathIndex? index, string? reason)
+    {
+        sourceItem.State = ItemState.Parsed;
+        sourceItem.LinkedPath = null;
+        sourceItem.Notes = reason;
+        _databaseService.UpdateSourceItem(sourceItem);
+        index?.Replace(sourceItem);
+    }
+
+    /// <summary>
+    /// True when other linked files already provide every episode of <paramref name="sourceItem"/> (its whole
+    /// range for a multi-episode file), so a new link would only duplicate them in Jellyfin (PARSE-32).
+    /// <paramref name="partialOverlap"/> names a file that provides only some of them: the new file is still
+    /// linked, because it is the only source of the rest (audit L3-08).
+    /// </summary>
+    private bool TryGetOtherLinkedItemForEpisode(
+        SourceItem sourceItem,
+        SourceItemPathIndex? index,
+        out SourceItem? otherItem,
+        out SourceItem? partialOverlap)
+    {
+        otherItem = null;
+        partialOverlap = null;
+        var keys = GetOutputEpisodeKeys(sourceItem).ToHashSet();
+        if (sourceItem.MediaKind != MediaKind.TvEpisode ||
+            sourceItem.IsOrphanPackSpecial ||
+            keys.Count == 0 ||
+            string.IsNullOrWhiteSpace(sourceItem.ProviderId))
+        {
+            return false;
+        }
+
+        IEnumerable<SourceItem> candidates = index is not null ? index.All() : _databaseService.GetSourceItems();
+        var overlapping = candidates
+            .Where(item =>
+                item.MediaKind == MediaKind.TvEpisode &&
+                !item.IsOrphanPackSpecial &&
+                !string.Equals(item.FilePath, sourceItem.FilePath, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(item.ProviderId, sourceItem.ProviderId, StringComparison.OrdinalIgnoreCase) &&
+                GetOutputEpisodeKeys(item).Any(keys.Contains) &&
+                !string.IsNullOrWhiteSpace(item.LinkedPath) &&
+                File.Exists(item.LinkedPath))
+            .ToList();
+        if (overlapping.Count == 0)
+        {
+            return false;
+        }
+
+        var covered = overlapping.SelectMany(GetOutputEpisodeKeys).ToHashSet();
+        if (keys.All(covered.Contains))
+        {
+            otherItem = overlapping[0];
+            return true;
+        }
+
+        partialOverlap = overlapping[0];
+        return false;
+    }
+
+    private static bool CoversEpisode(SourceItem item, int seasonNumber, int episodeNumber) =>
+        GetOutputEpisodeKeys(item).Contains((seasonNumber, episodeNumber));
+
+    // The episodes a link provides: one key, or the whole range of a multi-episode file (PARSE-06).
+    private static IEnumerable<(int SeasonNumber, int EpisodeNumber)> GetOutputEpisodeKeys(SourceItem item)
+    {
+        if (GetOutputEpisodeKey(item) is not { } key)
+        {
+            yield break;
+        }
+
+        yield return key;
+        if (item.MappedEpisodeNumber is null && item.LastEpisodeNumber is { } last)
+        {
+            for (var episode = key.EpisodeNumber + 1; episode <= last; episode++)
+            {
+                yield return (key.SeasonNumber, episode);
+            }
+        }
+    }
+
+    private static string DescribeLinkTarget(SourceItem item)
+    {
+        if (item.IsOrphanPackSpecial)
+        {
+            return "orphan extra";
+        }
+
+        var key = GetOutputEpisodeKey(item);
+        return key is null
+            ? item.MediaKind.ToString()
+            : $"S{key.Value.SeasonNumber:00}E{key.Value.EpisodeNumber:00}";
     }
 
     private void TryMigrateLegacyOrphanPath(
@@ -922,7 +1582,7 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             existingOrphan.State = ItemState.Parsed;
             _databaseService.UpdateSourceItem(existingOrphan);
             index?.Replace(existingOrphan);
-            result.Messages.Add($"Migrated orphan {existingOrphan.FileName} from Season 00 to extras/.");
+            result.Messages.Add($"Moved orphan {existingOrphan.FileName} to the Jellyfin extras folder.");
             return;
         }
 
@@ -933,7 +1593,8 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
     {
         var normalized = linkedPath.Replace('\\', '/');
         return normalized.Contains("/Season 00/", StringComparison.OrdinalIgnoreCase) ||
-               normalized.Contains("/Season 0/", StringComparison.OrdinalIgnoreCase);
+               normalized.Contains("/Season 0/", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains($"/{AppConstants.LegacyOrphanExtrasFolderName}/", StringComparison.OrdinalIgnoreCase);
     }
 
     private bool TryGetExistingLinkedItem(
@@ -956,10 +1617,41 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
         IReadOnlyList<SourceItem>? snapshot = null)
     {
         var result = new AutoTorrentLinkResult();
-        foreach (var item in (snapshot ?? _databaseService.GetSourceItems()).Where(predicate).ToList())
+        var source = snapshot ?? _databaseService.GetSourceItems();
+        var matched = source.Where(predicate).ToList();
+        // A legacy record and an import of the generated library file can share one LinkedPath.
+        // Unlinking only one of them left the other "Linked", so the symlink came back on the next
+        // sync. Records that share a LinkedPath with a matched record are handled with it.
+        // Only records of the same media count: an old import matched to another show or a movie must not take
+        // this show's library file down with it (audit L3-07).
+        var matchedIds = matched.Select(item => item.Id).ToHashSet();
+        var matchedByLinkedPath = matched
+            .Where(item => !string.IsNullOrWhiteSpace(item.LinkedPath))
+            .GroupBy(item => Path.GetFullPath(item.LinkedPath!), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.ToList(), StringComparer.OrdinalIgnoreCase);
+        var coOwners = source
+            .Where(item => !matchedIds.Contains(item.Id) &&
+                           !string.IsNullOrWhiteSpace(item.LinkedPath) &&
+                           matchedByLinkedPath.TryGetValue(Path.GetFullPath(item.LinkedPath), out var owners) &&
+                           owners.Any(owner => IsSameMedia(owner, item)))
+            .ToList();
+        foreach (var item in coOwners.Concat(matched))
         {
             if (string.IsNullOrWhiteSpace(item.LinkedPath))
             {
+                continue;
+            }
+
+            if (preservePackProvenance &&
+                item.IsExternalImport &&
+                string.Equals(Path.GetFullPath(item.LinkedPath), Path.GetFullPath(item.FilePath), StringComparison.OrdinalIgnoreCase))
+            {
+                // An import of the generated library file (PARSE-30 duplicate): the file goes with the pack's
+                // own record, so only this record is dropped. RemoveHardLink would refuse it as "source path"
+                // and abort the pack reset (audit L3-07).
+                _databaseService.DeleteSourceItem(item.Id);
+                result.RemovedCount++;
+                result.Messages.Add($"Removed duplicate import record for {item.FileName}.");
                 continue;
             }
 
@@ -1024,6 +1716,12 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
 
         return result;
     }
+
+    private static bool IsSameMedia(SourceItem first, SourceItem second) =>
+        first.MediaKind == second.MediaKind &&
+        (string.IsNullOrWhiteSpace(first.ProviderId) ||
+         string.IsNullOrWhiteSpace(second.ProviderId) ||
+         string.Equals(first.ProviderId, second.ProviderId, StringComparison.OrdinalIgnoreCase));
 
     private AutoTorrentLinkResult RemoveOrphanItem(SourceItem item)
     {
@@ -1096,8 +1794,19 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
     private async Task<IReadOnlyList<TorrentContentFile>> GetCompletedVideoFilesAsync(AddedTorrentResult torrent, CancellationToken cancellationToken)
     {
         return (await _qbittorrentClient.GetTorrentFilesAsync(torrent.Hash, cancellationToken))
-            .Where(file => file.IsVideoFile && file.IsComplete)
+            .Where(file => file.IsVideoFile && file.IsComplete && !TorrentFileRules.IsSampleOrProof(file.Name))
             .ToList();
+    }
+
+    private static IReadOnlyDictionary<string, long> BuildFileSizes(IReadOnlyList<TorrentContentFile> files)
+    {
+        var sizes = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        foreach (var file in files)
+        {
+            sizes[file.Name] = file.Size;
+        }
+
+        return sizes;
     }
 
     private async Task<HashSet<string>> CollectPackSourcePathsAsync(
@@ -1140,18 +1849,60 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
         item.AutoTorrentPackOwnerSeasonNumber is not null ||
         item.IsOrphanPackSpecial;
 
-    private static TorrentContentFile? SelectEpisodeFile(IReadOnlyList<TorrentContentFile> files, TrackedEpisode episode)
+    private static TorrentContentFile? SelectEpisodeFile(IReadOnlyList<TorrentContentFile> files, int seasonNumber, int episodeNumber)
     {
         if (files.Count == 1)
         {
             return files[0];
         }
 
-        return files.FirstOrDefault(file =>
+        return TorrentFileRules.SelectEpisodeFile(files, seasonNumber, episodeNumber);
+    }
+
+    /// <summary>
+    /// True when the file's name says it is another episode than (<paramref name="seasonNumber"/>,
+    /// <paramref name="episodeNumber"/>). Within one season a number always means the same episode. A name in another
+    /// season counts only when the show has that episode: TMDB may keep two cours in one season (S01E13..E24) while the
+    /// release names the second cour "S2 - 01".."S2 - 12", and such a file is the episode it was assigned to.
+    /// </summary>
+    private static bool NamesAnotherEpisode(
+        TorrentContentFile file,
+        int seasonNumber,
+        int episodeNumber,
+        IReadOnlySet<(int SeasonNumber, int EpisodeNumber)> trackedEpisodes,
+        out string namedEpisode,
+        out (int First, int Last)? fileRange)
+    {
+        var parsed = TorrentCandidateParser.Parse(Path.GetFileName(file.Name));
+        fileRange = null;
+        namedEpisode = parsed.SeasonNumber is not null && parsed.EpisodeNumber is not null
+            ? parsed.LastEpisodeNumber is { } last
+                ? $"S{parsed.SeasonNumber:00}E{parsed.EpisodeNumber:00}-E{last:00}"
+                : $"S{parsed.SeasonNumber:00}E{parsed.EpisodeNumber:00}"
+            : string.Empty;
+        if (parsed.SeasonNumber is null || parsed.EpisodeNumber is null)
         {
-            var parsed = TorrentCandidateParser.Parse(file.Name);
-            return parsed.SeasonNumber == episode.SeasonNumber && parsed.EpisodeNumber == episode.EpisodeNumber;
-        });
+            return false;
+        }
+
+        // A multi-episode file names each episode of its range (audit L1-M2).
+        var first = parsed.EpisodeNumber.Value;
+        var lastEpisode = parsed.LastEpisodeNumber ?? first;
+        var fileSeason = parsed.SeasonNumber.Value;
+        if (fileSeason == seasonNumber)
+        {
+            if (episodeNumber < first || episodeNumber > lastEpisode)
+            {
+                return true;
+            }
+
+            fileRange = lastEpisode > first ? (first, lastEpisode) : null;
+            return false;
+        }
+
+        // Another season: refused only when it names an episode the show has (cross-review 2, N1/N2).
+        return Enumerable.Range(first, lastEpisode - first + 1)
+            .Any(number => trackedEpisodes.Contains((fileSeason, number)));
     }
 
     private static SourceItem CreateEpisodeSourceItem(
@@ -1276,6 +2027,8 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
                 !string.IsNullOrWhiteSpace(item.LinkedPath) &&
                 File.Exists(item.LinkedPath));
         }
+
+        public IEnumerable<SourceItem> All() => _byFilePath.Values.SelectMany(items => items);
 
         public SourceItem? FindLegacyOrphan(string filePath)
         {

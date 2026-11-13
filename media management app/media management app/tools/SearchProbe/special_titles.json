@@ -1,0 +1,12 @@
+[
+  { "id": "apos_joined",    "query": "Schindlers List",         "note": "movie 1993; apostrophe removed (proposed fix for SRCH-13)" },
+  { "id": "apos_sanitized", "query": "Schindler s List",        "note": "movie 1993; what QueryTemplateRenderer.Sanitize sends today" },
+  { "id": "accent_plain",   "query": "Leon The Professional",   "note": "movie 1994; accent stripped" },
+  { "id": "accent_raw",     "query": "Léon The Professional",   "note": "movie 1994; accented, as TMDB spells it" },
+  { "id": "year_mismatch",  "query": "Coherence",               "note": "movie; TMDB 2014, release names often 2013 (SRCH-11)" },
+  { "id": "romaji_alt",     "query": "Liz to Aoi Tori",         "note": "anime movie 2018; romaji alt title (SRCH-12)" },
+  { "id": "number_title",   "query": "2001 A Space Odyssey",    "note": "movie 1968; year-like number inside the title" },
+  { "id": "tv_season",      "query": "Rick and Morty S03",      "note": "TV season pack query (SRCH-03)" },
+  { "id": "anime_ep",       "query": "Kanata Kara 06",          "note": "airing anime; zero-padded episode" },
+  { "id": "many_encodes",   "query": "Spider-Man No Way Home",  "note": "movie 2021; many encodes; hyphen in title" }
+]

@@ -13,6 +13,7 @@ public sealed class ShowSearchSnapshotService
     private readonly IQbittorrentClient _qbittorrentClient;
     private readonly IQbittorrentSearchPluginService _searchPluginService;
     private readonly IAppLogger _logger;
+    private readonly INativeSearchService _nativeSearch;
 
     public ShowSearchSnapshotService(
         ISettingsService settingsService,
@@ -20,8 +21,10 @@ public sealed class ShowSearchSnapshotService
         ISearchPlanBuilder searchPlanBuilder,
         IQbittorrentClient qbittorrentClient,
         IQbittorrentSearchPluginService searchPluginService,
-        IAppLogger logger)
+        IAppLogger logger,
+        INativeSearchService nativeSearch)
     {
+        _nativeSearch = nativeSearch;
         _settingsService = settingsService;
         _recipeService = recipeService;
         _searchPlanBuilder = searchPlanBuilder;
@@ -35,7 +38,8 @@ public sealed class ShowSearchSnapshotService
         IOperationProgressService? progressService,
         CancellationToken cancellationToken,
         MediaKind recipeKind = MediaKind.TvEpisode,
-        string? recipeId = null)
+        string? recipeId = null,
+        IReadOnlyList<int>? packSeasons = null)
     {
         if (progressService is null)
         {
@@ -50,6 +54,16 @@ public sealed class ShowSearchSnapshotService
         var timeoutSeconds = RecipeRuntimeSettings.GetSnapshotTimeoutSeconds(recipe, fallback);
         var idleTimeoutSeconds = RecipeRuntimeSettings.GetSnapshotIdleTimeoutSeconds(recipe, fallback);
         var queries = _searchPlanBuilder.BuildShowSnapshotQueries(recipe, show);
+        if (recipeKind == MediaKind.TvSeasonPack && packSeasons is { Count: > 0 })
+        {
+            // native-search P4 / SRCH-03: targeted season queries first (the show-only query found 7 S03 packs
+            // for Rick and Morty, "Rick and Morty S03 1080p" found 111), then the show-level snapshot queries.
+            var seasonQueries = _searchPlanBuilder.BuildSeasonPackQueries(recipe, show, packSeasons);
+            queries = seasonQueries
+                .Concat(queries)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
         if (queries.Count == 0)
         {
             _logger.Info($"Snapshot search skipped for {show.DisplayTitle}: no queries were built from recipe '{recipe.Name}'.", LogTarget.All);
@@ -65,8 +79,29 @@ public sealed class ShowSearchSnapshotService
 
         var searchSource = recipe.Modules.FirstOrDefault(module => module.BlockType == RecipeBlockType.SearchSource && module.IsEnabled);
         var savedPlugins = string.IsNullOrWhiteSpace(searchSource?.Plugins) ? "enabled" : searchSource!.Plugins;
-        var livePlugins = await _searchPluginService.GetPluginsAsync(cancellationToken);
-        var resolved = _searchPluginService.ResolveForSearch(savedPlugins, livePlugins, _logger);
+        // Native-only search needs nothing from qBittorrent's plugin list (it may even be offline). In Both mode a
+        // stopped qBittorrent only costs the comparison, not the search (audit 07c NS-17).
+        var usesNative = _nativeSearch.UsesNative(recipeKind, recipe);
+        var nativeOnly = usesNative && !_nativeSearch.ComparesWithQbittorrent(recipeKind, recipe);
+        var nativePlaceholder = new SearchPluginResolveResult { PluginsForApi = "enabled", RequestedNames = [] };
+        SearchPluginResolveResult resolved;
+        try
+        {
+            resolved = nativeOnly
+                ? nativePlaceholder
+                : _searchPluginService.ResolveForSearch(savedPlugins, await _searchPluginService.GetPluginsAsync(cancellationToken), _logger);
+        }
+        catch (Exception ex) when (usesNative && ex is not OperationCanceledException)
+        {
+            _logger.Warning($"qBittorrent plugin list unavailable ({ex.Message}); searching native indexers only.", LogTarget.All);
+            resolved = nativePlaceholder;
+        }
+
+        if (resolved.SkipSearch && usesNative)
+        {
+            resolved = nativePlaceholder;
+        }
+
         if (resolved.SkipSearch)
         {
             _logger.Warning($"Snapshot search skipped for {show.DisplayTitle}: no valid enabled plugins remain.", LogTarget.All);
@@ -78,14 +113,20 @@ public sealed class ShowSearchSnapshotService
         foreach (var query in queries)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var snapshot = await CaptureSnapshotAsync(
+            var snapshot = await _nativeSearch.SearchOrFallbackAsync(
+                recipe,
                 query,
-                targetResults,
-                timeoutSeconds,
-                idleTimeoutSeconds,
-                resolved.PluginsForApi,
-                resolved.RequestedNames,
-                cancellationToken);
+                recipeKind,
+                () => CaptureSnapshotAsync(
+                    query,
+                    targetResults,
+                    timeoutSeconds,
+                    idleTimeoutSeconds,
+                    resolved.PluginsForApi,
+                    resolved.RequestedNames,
+                    cancellationToken),
+                cancellationToken,
+                new SearchSubject(IsMovie: false, show.TmdbId));
             completedQueries++;
             progressService?.Report(completedQueries, $"Search: Query {completedQueries}/{totalQueries}");
             _logger.Info(

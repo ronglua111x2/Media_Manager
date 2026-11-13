@@ -12,6 +12,9 @@ public sealed class PackFileEntry
 
     public int? MatchedEpisodeNumber { get; init; }
 
+    /// <summary>Last episode of a multi-episode file (S01E01-E02); null for one episode.</summary>
+    public int? MatchedLastEpisodeNumber { get; init; }
+
     public string MatchReason { get; init; } = string.Empty;
 
     public SpecialMappingSource? MappingSource { get; init; }

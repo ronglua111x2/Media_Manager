@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    SearchBench: runs the app's real Core search pipeline (query planning, matching, scoring,
+    dedupe) against tracked media in a state folder and live search backends, to measure search
+    changes end-to-end without the UI. Read-only: never adds torrents, opens the DB read-only.
+    Not part of the solution build (tools/** is excluded from the app project).
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Platforms>AnyCPU;x64</Platforms>
+    <RootNamespace>SearchBench</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\MediaManager.Core\MediaManager.Core.csproj" />
+  </ItemGroup>
+
+</Project>

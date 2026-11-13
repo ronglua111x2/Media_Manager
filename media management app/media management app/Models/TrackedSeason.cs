@@ -48,5 +48,14 @@ public sealed class TrackedSeason
 
     public DateTime? LastPackLinkUtc { get; set; }
 
+    /// <summary>
+    /// Comma-separated, lower-case hashes of the torrents this season (the pack it was owned by or covered by) was reset from ("Reset for redownload", migration 013).
+    /// Reconcile never adopts them for it again; read with <see cref="WasResetFrom"/> or
+    /// <see cref="media_management_app.Services.ResetTorrentHashList"/>.
+    /// </summary>
+    public string ResetTorrentHashes { get; set; } = string.Empty;
+
+    public bool WasResetFrom(string? hash) => media_management_app.Services.ResetTorrentHashList.Contains(ResetTorrentHashes, hash);
+
     public bool IsHidden { get; set; }
 }

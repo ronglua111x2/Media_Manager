@@ -18,6 +18,7 @@ public sealed class AutomationFlowService : IAutomationFlowService
     private readonly ISettingsService _settingsService;
     private readonly IOperationProgressService _progressService;
     private readonly IAppLogger _logger;
+    private readonly INativeSearchService _nativeSearch;
 
     public AutomationFlowService(
         IDatabaseService databaseService,
@@ -30,8 +31,10 @@ public sealed class AutomationFlowService : IAutomationFlowService
         ITrackedMovieService trackedMovieService,
         ISettingsService settingsService,
         IOperationProgressService progressService,
-        IAppLogger logger)
+        IAppLogger logger,
+        INativeSearchService nativeSearch)
     {
+        _nativeSearch = nativeSearch;
         _databaseService = databaseService;
         _recipeService = recipeService;
         _searchPlanBuilder = searchPlanBuilder;
@@ -44,6 +47,8 @@ public sealed class AutomationFlowService : IAutomationFlowService
         _progressService = progressService;
         _logger = logger;
     }
+
+    private const int MovieCandidateListCap = 40;
 
     public async Task<RecipeDryRunResult> DryRunAsync(RecipeRunRequest request, CancellationToken cancellationToken = default)
     {
@@ -97,7 +102,17 @@ public sealed class AutomationFlowService : IAutomationFlowService
                 _logger);
             var recipe = termGuard.Recipe;
             var queries = _searchPlanBuilder.BuildEpisodeQueries(recipe, show, episode);
-            var results = await SearchAsync(recipe, queries, cancellationToken);
+            using var session = NativeSearchService.BeginSession();
+            var results = await SearchAsync(
+                recipe,
+                queries,
+                cancellationToken,
+                new SearchSubject(
+                    IsMovie: false,
+                    show.TmdbId,
+                    episode.SeasonNumber,
+                    episode.EpisodeNumber,
+                    row => _candidateEvaluationService.EvaluateEpisode(recipe, show, episode, row)));
             _progressService.Report(0, "Filtering results...");
             var evaluated = results
                 .Select(result => _candidateEvaluationService.EvaluateEpisode(recipe, show, episode, result))
@@ -107,7 +122,7 @@ public sealed class AutomationFlowService : IAutomationFlowService
                 recipe,
                 _settingsService.Current.AutoTorrent,
                 request.Overrides);
-            return BuildDryRunResult(recipe, show.DisplayTitle, queries, evaluated, maxCandidates);
+            return BuildDryRunResult(_settingsService.Current.AutoTorrent, recipe, show.DisplayTitle, queries, evaluated, maxCandidates, session.Session.NoSourceReason);
         }
         finally
         {
@@ -130,7 +145,12 @@ public sealed class AutomationFlowService : IAutomationFlowService
                 _logger);
             var recipe = termGuard.Recipe;
             var queries = _searchPlanBuilder.BuildMovieQueries(recipe, movie);
-            var results = await SearchAsync(recipe, queries, cancellationToken);
+            using var session = NativeSearchService.BeginSession();
+            var results = await SearchAsync(
+                recipe,
+                queries,
+                cancellationToken,
+                new SearchSubject(IsMovie: true, movie.TmdbId, Evaluate: row => _candidateEvaluationService.EvaluateMovie(recipe, movie, row), Year: movie.ReleaseYear));
             _progressService.Report(0, "Filtering results...");
             var evaluated = results
                 .Select(result => _candidateEvaluationService.EvaluateMovie(recipe, movie, result))
@@ -140,7 +160,9 @@ public sealed class AutomationFlowService : IAutomationFlowService
                 recipe,
                 _settingsService.Current.AutoTorrent,
                 request.Overrides);
-            return BuildDryRunResult(recipe, movie.DisplayTitle, queries, evaluated, maxCandidates);
+            // native-search P5 / SRCH-15: movies often have hundreds of encodes; keep up to 40 ranked by the
+            // recipe score so the cart picker can compare them (the recipe's own count still decides the top).
+            return BuildDryRunResult(_settingsService.Current.AutoTorrent, recipe, movie.DisplayTitle, queries, evaluated, Math.Max(maxCandidates, MovieCandidateListCap), session.Session.NoSourceReason);
         }
         finally
         {
@@ -151,14 +173,36 @@ public sealed class AutomationFlowService : IAutomationFlowService
     private async Task<IReadOnlyList<TorrentSearchResult>> SearchAsync(
         SearchRecipe recipe,
         IReadOnlyList<string> queries,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        SearchSubject? subject = null)
     {
         var searchSource = recipe.Modules.FirstOrDefault(module => module.BlockType == RecipeBlockType.SearchSource && module.IsEnabled);
         var requestLimit = searchSource?.ResultLimit is > 0 ? searchSource.ResultLimit : 100;
         var savedPlugins = string.IsNullOrWhiteSpace(searchSource?.Plugins) ? "enabled" : searchSource!.Plugins;
         var category = string.IsNullOrWhiteSpace(searchSource?.Category) ? "all" : searchSource!.Category;
-        var livePlugins = await _searchPluginService.GetPluginsAsync(cancellationToken);
-        var resolved = _searchPluginService.ResolveForSearch(savedPlugins, livePlugins, _logger);
+        // Native-only search needs nothing from qBittorrent's plugin list (it may even be offline). In Both mode a
+        // stopped qBittorrent only costs the comparison, not the search (audit 07c NS-17).
+        var usesNative = _nativeSearch.UsesNative(recipe.TargetKind, recipe);
+        var nativeOnly = usesNative && !_nativeSearch.ComparesWithQbittorrent(recipe.TargetKind, recipe);
+        var nativePlaceholder = new SearchPluginResolveResult { PluginsForApi = "enabled", RequestedNames = [] };
+        SearchPluginResolveResult resolved;
+        try
+        {
+            resolved = nativeOnly
+                ? nativePlaceholder
+                : _searchPluginService.ResolveForSearch(savedPlugins, await _searchPluginService.GetPluginsAsync(cancellationToken), _logger);
+        }
+        catch (Exception ex) when (usesNative && ex is not OperationCanceledException)
+        {
+            _logger.Warning($"qBittorrent plugin list unavailable ({ex.Message}); searching native indexers only.", LogTarget.All);
+            resolved = nativePlaceholder;
+        }
+
+        if (resolved.SkipSearch && usesNative)
+        {
+            resolved = nativePlaceholder;
+        }
+
         if (resolved.SkipSearch)
         {
             _logger.Warning($"Recipe search skipped: no valid enabled plugins remain for recipe '{recipe.Name}'.", LogTarget.All);
@@ -202,7 +246,11 @@ public sealed class AutomationFlowService : IAutomationFlowService
                 await throttler.WaitAsync(cancellationToken);
                 try
                 {
-                    var queryResults = paginationEnabled
+                    var queryResults = await _nativeSearch.SearchOrFallbackAsync(
+                        recipe,
+                        query,
+                        recipe.TargetKind,
+                        async () => paginationEnabled
                         ? await SearchQueryWithPaginationAsync(
                             query,
                             plugins,
@@ -224,7 +272,9 @@ public sealed class AutomationFlowService : IAutomationFlowService
                             IdleTimeoutSeconds = searchIdleTimeoutSeconds,
                             TimeoutSeconds = timeoutSeconds,
                             RequestedEngineNames = requestedEngineNames
-                        }, cancellationToken);
+                        }, cancellationToken),
+                        cancellationToken,
+                        subject);
                     var completed = Interlocked.Increment(ref completedQueries);
                     _progressService.Report(completed, $"Search: Query {completed}/{totalQueries}");
                     _logger.Info(
@@ -468,19 +518,33 @@ public sealed class AutomationFlowService : IAutomationFlowService
     }
 
     private static RecipeDryRunResult BuildDryRunResult(
+        AutoTorrentSettings autoTorrent,
         SearchRecipe recipe,
         string title,
         IReadOnlyList<string> queries,
         IReadOnlyList<RecipeCandidateResult> evaluated,
-        int maxCandidates)
+        int maxCandidates,
+        string? searchSourceProblem = null)
     {
         return new RecipeDryRunResult
         {
             Recipe = recipe,
             TargetTitle = title,
             Queries = queries.ToList(),
-            AcceptedCandidates = evaluated
-                .Where(candidate => candidate.IsAccepted)
+            // Only meaningful when nothing came back at all (some sites answering is a normal search).
+            SearchSourceProblem = evaluated.Count == 0 ? searchSourceProblem : null,
+            // Same recipe dedupe as the batch hunt (the movie / retry path used to skip it): one torrent
+            // returned by several engines or queries must not take several of the maxCandidates slots.
+            AcceptedCandidates = (RecipeRuntimeSettings.GetDeduplicateCandidates(recipe, autoTorrent)
+                    ? CandidateDeduplicator.Deduplicate(
+                        evaluated.Where(candidate => candidate.IsAccepted).OrderByDescending(candidate => candidate.TotalScore),
+                        candidate => candidate.SearchResult.FileName,
+                        candidate => candidate.SearchResult.FileSize,
+                        candidate => candidate.SearchResult.FileUrl,
+                        candidate => candidate.SearchResult.Seeders,
+                        RecipeRuntimeSettings.GetFuzzyDeduplicate(recipe, autoTorrent),
+                        RecipeRuntimeSettings.GetFuzzyDeduplicateSizeToleranceMb(recipe, autoTorrent))
+                    : evaluated.Where(candidate => candidate.IsAccepted).ToList())
                 .OrderByDescending(candidate => candidate.TotalScore)
                 .ThenByDescending(candidate => candidate.AudioScore)
                 .ThenByDescending(candidate => candidate.PreferTermsScore)

@@ -55,9 +55,9 @@ qBittorrent **5.0** already renamed pause/resume. The client is **partially** ad
 | Area | 4.x | 5.0+ | App today |
 |------|-----|------|-----------|
 | Pause endpoint | `torrents/pause` | `torrents/stop` | Tries **`stop` then `pause`** |
-| Resume endpoint | `torrents/resume` | `torrents/start` | **`start` only** (no `/resume` fallback) |
+| Resume endpoint | `torrents/resume` | `torrents/start` | Tries **`start` then `resume`** |
 | List states | `pausedDL` / `pausedUP` | `stoppedDL` / `stoppedUP` | Normalizer maps **paused*** only |
-| Add form | `paused` | `stopped` preferred | Sends **`paused` only** |
+| Add form | `paused` | `stopped` preferred | Sends **both**; S0 adds `stopCondition` / `filePriorities` (see 02) |
 
 These do **not** explain the current disconnect. They matter **after** login works (UI labels, pause-on-add).
 

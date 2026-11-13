@@ -20,6 +20,9 @@ public sealed class ParsedCandidate
 
     public int? EpisodeNumber { get; set; }
 
+    /// <summary>Last episode of a multi-episode file (S01E01E02, S01E01-E02, S01E01-02); null for one episode.</summary>
+    public int? LastEpisodeNumber { get; set; }
+
     public string? EpisodeTitle { get; set; }
 
     public bool NeedsReview { get; set; }

@@ -39,8 +39,8 @@ This PC’s live library stays at `D:\MediaManagerState` via the pointer after t
 | `posters/` | Cached TMDB poster/still images (keyed by provider id) |
 | `Recipes/` | Torrent search recipe files (`*.rcp`, JSON) |
 | `GoogleDrive/` | Google Drive OAuth storage (see [Google Drive OAuth](#google-drive-oauth)) |
-| `gemini-models.json` | Cached Gemini model catalog |
-| `gemini-quota.json` | Daily Gemini API quota counters |
+| `gemini-models.json` | Gemini model catalog (built-in list merged by `seedVersion`, plus models found by Refresh models) |
+| `gemini-router-state.json` | Per-model Gemini request counts (Pacific-time day), learned daily limits and locks used by the model router |
 | `gemini-mapping-cache.json` | Cached AI special-episode mapping results |
 | `Library/` | Optional output library path when `OutputLibraryFolder` points here |
 | `WebView2/` | Embedded browser user-data folder for qBittorrent/Jellyfin viewers |
@@ -238,7 +238,7 @@ One-time migration **`003_torrentblacklist_rebuild`** (Sprint 3):
 | File | Contents |
 |------|----------|
 | `gemini-models.json` | Available models, refreshed on startup |
-| `gemini-quota.json` | Daily usage counter for quota-limited calls |
+| `gemini-router-state.json` | Per-model request counts, learned free-tier limits and locks (quota, 503, no free tier) |
 | `gemini-mapping-cache.json` | Cached pack special-episode AI mappings (large; keyed by show/file hash) |
 
 ---

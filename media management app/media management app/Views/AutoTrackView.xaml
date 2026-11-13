@@ -2,7 +2,8 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
-             xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes">
+             xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+             xmlns:controls="clr-namespace:media_management_app.Views.Controls">
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
 
@@ -387,6 +388,7 @@
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
                         <TextBlock Text="Status" Style="{StaticResource SummaryLabelStyle}" />
                         <TextBlock Grid.Column="1"
@@ -416,6 +418,16 @@
                                    Grid.Column="1"
                                    Text="{Binding TmdbRefreshesRemainingLabel, Mode=OneWay}"
                                    Style="{StaticResource SummaryValueStyle}" />
+                        <TextBlock Grid.Row="4"
+                                   Text="Search"
+                                   Style="{StaticResource SummaryLabelStyle}"
+                                   VerticalAlignment="Center"
+                                   Margin="0,4,8,0" />
+                        <controls:SearchQuotaPill Grid.Row="4"
+                                                  Grid.Column="1"
+                                                  HorizontalAlignment="Left"
+                                                  VerticalAlignment="Center"
+                                                  Margin="0,4,0,0" />
                     </Grid>
                 </StackPanel>
             </materialDesign:Card>

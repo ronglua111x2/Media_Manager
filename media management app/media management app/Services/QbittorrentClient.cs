@@ -22,6 +22,10 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
     private readonly CookieContainer _cookies = new();
     private readonly HttpClient _httpClient;
     private readonly SemaphoreSlim _loginGate = new(1, 1);
+    private static readonly TimeSpan WebApiVersionCacheTime = TimeSpan.FromMinutes(10);
+    private Version? _webApiVersion;
+    private Uri? _webApiVersionBaseUri;
+    private DateTime _webApiVersionReadUtc;
     private bool _isLoggedIn;
     private string? _loginSessionKey;
 
@@ -297,13 +301,36 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
             .Select(torrent => torrent.Hash)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        if (!string.IsNullOrWhiteSpace(request.PluginName) && !ShouldSkipSearchPluginDownload(torrentUrl))
+        // S0: a torrent whose file list the gate already checked is added exactly as checked: the same .torrent bytes,
+        // or the magnet whose metadata qBittorrent fetched (with file priorities). No plugin, no second resolve.
+        if (request.TorrentBytes is not null || request.FilePriorities is not null)
+        {
+            var checkedSource = request.TorrentBytes is not null
+                ? TorrentAddSource.FromTorrentBytes(request.TorrentBytes, request.TorrentFileName, "checked .torrent payload")
+                : TorrentAddSource.FromUrl(torrentUrl, "magnet with fetched metadata");
+            _logger.Info($"Adding checked torrent: {checkedSource.Description}. Url='{torrentUrl}'.", LogTarget.All);
+            var checkedResult = await PostAddTorrentAsync(checkedSource, request, savePath, category, cancellationToken);
+            var checkedTorrent = await TryResolveAddedTorrentAsync(checkedResult, existingHashes, category, cancellationToken);
+            return checkedTorrent
+                   ?? throw new InvalidOperationException("qBittorrent accepted the checked torrent, but it did not appear.");
+        }
+
+        // Magnets never need a search plugin to download (and native-search results carry indexer names that
+        // are not qBittorrent plugins), so they go straight to torrents/add.
+        var isMagnet = torrentUrl.StartsWith("magnet:?", StringComparison.OrdinalIgnoreCase);
+        if (!isMagnet && !string.IsNullOrWhiteSpace(request.PluginName) && !ShouldSkipSearchPluginDownload(torrentUrl))
         {
             _logger.Info($"Trying qBittorrent search plugin download. Plugin='{request.PluginName}', Url='{torrentUrl}'", LogTarget.All);
             await PostSearchDownloadTorrentAsync(torrentUrl, request.PluginName, cancellationToken);
             var pluginAddedTorrent = await WaitForAddedTorrentAsync(existingHashes, null, cancellationToken);
             if (pluginAddedTorrent is not null)
             {
+                if (request.StopAfterMetadata)
+                {
+                    // S0: search/downloadTorrent cannot take a stop condition; stop the new torrent at once.
+                    await PauseTorrentsAsync([pluginAddedTorrent.Hash], cancellationToken);
+                }
+
                 await ApplyTorrentPostAddSettingsAsync(pluginAddedTorrent.Hash, savePath, category, request.Tags, cancellationToken);
                 pluginAddedTorrent = await GetTorrentAsync(pluginAddedTorrent.Hash, cancellationToken) ?? pluginAddedTorrent;
                 _logger.Info(
@@ -315,7 +342,7 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
 
             _logger.Warning("qBittorrent search plugin download did not create a torrent. Falling back to URL resolver.", LogTarget.All);
         }
-        else if (!string.IsNullOrWhiteSpace(request.PluginName) && ShouldSkipSearchPluginDownload(torrentUrl))
+        else if (!isMagnet && !string.IsNullOrWhiteSpace(request.PluginName) && ShouldSkipSearchPluginDownload(torrentUrl))
         {
             _logger.Info(
                 $"Skipping qBittorrent search plugin for details-page URL. Resolving magnet or .torrent directly. Url='{torrentUrl}'.",
@@ -963,6 +990,17 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
         var pausedValue = request.Paused ? "true" : "false";
         AddStringContent(content, "paused", pausedValue);
         AddStringContent(content, "stopped", pausedValue);
+        if (request.StopAfterMetadata && !request.Paused)
+        {
+            // S0: fetch the file list, then stop before downloading (a .torrent is added stopped).
+            AddStringContent(content, "stopCondition", "MetadataReceived");
+        }
+
+        if (request.FilePriorities is { Count: > 0 } priorities && source.TorrentBytes is null)
+        {
+            AddStringContent(content, "filePriorities", string.Join(",", priorities));
+        }
+
         return content;
     }
 
@@ -1226,6 +1264,204 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
         {
             throw new InvalidOperationException(
                 $"Failed to delete torrents from qBittorrent: {(int)response.StatusCode} {response.ReasonPhrase}");
+        }
+    }
+
+    public async Task<Version> GetWebApiVersionAsync(CancellationToken cancellationToken = default)
+    {
+        var baseUri = GetBaseUri();
+        if (_webApiVersion is not null &&
+            _webApiVersionBaseUri == baseUri &&
+            DateTime.UtcNow - _webApiVersionReadUtc < WebApiVersionCacheTime)
+        {
+            return _webApiVersion;
+        }
+
+        try
+        {
+            using var response = await GetWithAuthRetryAsync("api/v2/app/webapiVersion", cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                return new Version(0, 0);
+            }
+
+            var version = QbittorrentWebApiCompatibility.ParseWebApiVersion(await response.Content.ReadAsStringAsync(cancellationToken));
+            _webApiVersion = version;
+            _webApiVersionBaseUri = baseUri;
+            _webApiVersionReadUtc = DateTime.UtcNow;
+            _logger.Debug($"qBittorrent WebAPI version {version}.", LogTarget.File);
+            return version;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException ||
+                                   (ex is TaskCanceledException && !cancellationToken.IsCancellationRequested))
+        {
+            _logger.Warning($"Could not read the qBittorrent WebAPI version: {ex.Message}", LogTarget.File | LogTarget.Console);
+            return new Version(0, 0);
+        }
+    }
+
+    public async Task<PreAddInspection?> InspectBeforeAddAsync(
+        string url,
+        bool useFetchMetadata,
+        TimeSpan metadataTimeout,
+        CancellationToken cancellationToken = default)
+    {
+        var torrentUrl = TorrentSearchResult.NormalizeUrl(url);
+        if (string.IsNullOrWhiteSpace(torrentUrl))
+        {
+            return null;
+        }
+
+        if (torrentUrl.StartsWith("magnet:?", StringComparison.OrdinalIgnoreCase))
+        {
+            return useFetchMetadata ? await FetchMetadataAsync(torrentUrl, metadataTimeout, cancellationToken) : null;
+        }
+
+        if (!Uri.TryCreate(torrentUrl, UriKind.Absolute, out var listingUri) || listingUri.Scheme is not ("http" or "https"))
+        {
+            return null;
+        }
+
+        // Only the first source a details page offers is used (SEC-A06): the add then takes exactly what was checked.
+        var source = (await ResolveAddSourcesAsync(torrentUrl, cancellationToken)).FirstOrDefault();
+        if (source is null)
+        {
+            return null;
+        }
+
+        if (source.TorrentBytes is not null)
+        {
+            return InspectTorrentBytes(source.TorrentBytes, source.FileName, torrentUrl);
+        }
+
+        if (source.Url is { } sourceUrl && sourceUrl.StartsWith("magnet:?", StringComparison.OrdinalIgnoreCase))
+        {
+            return useFetchMetadata ? await FetchMetadataAsync(sourceUrl, metadataTimeout, cancellationToken) : null;
+        }
+
+        if (source.Url is { } linkUrl &&
+            !string.Equals(linkUrl, torrentUrl, StringComparison.OrdinalIgnoreCase) &&
+            Uri.TryCreate(linkUrl, UriKind.Absolute, out var linkUri) &&
+            linkUri.Scheme is "http" or "https")
+        {
+            try
+            {
+                var bytes = await TryDownloadTorrentPayloadAsync(linkUri, cancellationToken);
+                return bytes is null ? null : InspectTorrentBytes(bytes, GetTorrentFileName(linkUri), linkUrl);
+            }
+            catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException ||
+                                       (ex is TaskCanceledException && !cancellationToken.IsCancellationRequested))
+            {
+                _logger.Warning($"Could not download '{linkUrl}' to check it before adding: {ex.Message}", LogTarget.File | LogTarget.Console);
+                return null;
+            }
+        }
+
+        return null;
+    }
+
+    private PreAddInspection? InspectTorrentBytes(byte[] bytes, string fileName, string addUrl)
+    {
+        TorrentMetadataProbeResult metadata;
+        try
+        {
+            metadata = TorrentMetadataReader.Read(bytes);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or FormatException or OverflowException)
+        {
+            _logger.Warning($"Could not read the .torrent from '{addUrl}' before adding: {ex.Message}", LogTarget.File | LogTarget.Console);
+            return null;
+        }
+
+        if (!metadata.IsAvailable || metadata.Files.Count == 0)
+        {
+            return null;
+        }
+
+        return new PreAddInspection
+        {
+            AddUrl = addUrl,
+            TorrentBytes = bytes,
+            TorrentFileName = fileName,
+            InfoHash = metadata.InfoHashV1,
+            Name = metadata.TorrentName,
+            Files = metadata.Files
+                .Select(file => new TorrentContentFile { Name = file.Path.Replace('\\', '/'), Size = file.Length })
+                .ToList()
+        };
+    }
+
+    /// <summary>
+    /// S0: <c>torrents/fetchMetadata</c> (WebAPI ≥ 2.11.9) downloads a magnet's metadata into qBittorrent's cache
+    /// without adding the torrent (202 while fetching, 200 with the file list). A later <c>torrents/add</c> of the same
+    /// magnet reuses that metadata.
+    /// </summary>
+    private async Task<PreAddInspection?> FetchMetadataAsync(string magnet, TimeSpan timeout, CancellationToken cancellationToken)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            using (var response = await PostFormWithAuthRetryAsync(
+                       "api/v2/torrents/fetchMetadata",
+                       new Dictionary<string, string> { ["source"] = magnet },
+                       cancellationToken))
+            {
+                if (response.StatusCode == HttpStatusCode.OK)
+                {
+                    var parsed = QbittorrentFetchedMetadata.Parse(magnet, await response.Content.ReadAsStringAsync(cancellationToken));
+                    if (parsed is not null)
+                    {
+                        _logger.Info(
+                            $"Fetched metadata before add: '{parsed.Name}' hash={parsed.InfoHash}, {parsed.Files.Count} file(s).",
+                            LogTarget.File | LogTarget.Console);
+                        return parsed;
+                    }
+                }
+                else if (response.StatusCode != HttpStatusCode.Accepted)
+                {
+                    _logger.Warning(
+                        $"qBittorrent fetchMetadata answered {(int)response.StatusCode} {response.ReasonPhrase}; checking after the add instead.",
+                        LogTarget.File | LogTarget.Console);
+                    return null;
+                }
+            }
+
+            if (DateTime.UtcNow >= deadline)
+            {
+                return new PreAddInspection
+                {
+                    AddUrl = magnet,
+                    InfoHash = TorrentListingIdentity.TryParseInfoHashFromUrl(magnet),
+                    MetadataTimedOut = true
+                };
+            }
+
+            await Task.Delay(1000, cancellationToken);
+        }
+    }
+
+    public async Task SetFilePrioritiesAsync(
+        string hash,
+        IReadOnlyCollection<int> fileIndexes,
+        int priority,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(hash) || fileIndexes.Count == 0)
+        {
+            return;
+        }
+
+        using var response = await PostFormWithAuthRetryAsync("api/v2/torrents/filePrio", new Dictionary<string, string>
+        {
+            ["hash"] = hash,
+            ["id"] = string.Join("|", fileIndexes),
+            ["priority"] = priority.ToString(System.Globalization.CultureInfo.InvariantCulture)
+        }, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException(
+                $"Failed to set file priorities in qBittorrent: {(int)response.StatusCode} {response.ReasonPhrase}");
         }
     }
 

@@ -9,8 +9,9 @@ public static class PackSpecialPatternInferrer
         @"\bOVA\s*-\s*(?<index>\d{1,3})\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    // S00E05, S0E5, S00E05v2, and "_S00E05_" (a .NET \b finds no boundary between "_" and "S") (audit L2-02).
     private static readonly Regex StandardS00ERegex = new(
-        @"\bS00E(?<episode>\d{1,4})\b",
+        @"(?<![A-Za-z0-9])S0{1,3}E(?<episode>\d{1,4})(?:v\d{1,2})?(?!\d)",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     public static InferredSpecialPattern Infer(
@@ -140,7 +141,8 @@ public static class PackSpecialPatternInferrer
             : null;
     }
 
-    private static int? TryExtractStandardS00Index(string stem)
+    /// <summary>The Season 0 episode a <c>S00Exx</c> file name states, or null.</summary>
+    public static int? TryExtractStandardS00Index(string stem)
     {
         var match = StandardS00ERegex.Match(stem);
         return match.Success && int.TryParse(match.Groups["episode"].Value, out var episode)

@@ -67,15 +67,19 @@ internal sealed class FakeBlacklistService : ITorrentBlacklistService
 
     public int AddCount { get; private set; }
 
+    public List<bool> GlobalFlags { get; } = [];
+
     public Task AddToBlacklistAsync(
         long showId,
         string listingUrl,
         string? infoHash,
         string reason,
         List<SuspiciousFile>? suspiciousFiles = null,
-        string? notes = null)
+        string? notes = null,
+        bool global = false)
     {
         AddCount++;
+        GlobalFlags.Add(global);
         return Task.CompletedTask;
     }
 
@@ -112,7 +116,8 @@ internal sealed class FakeValidationService : ITorrentContentValidationService
         IReadOnlyList<TorrentContentFile> files,
         CancellationToken cancellationToken = default,
         string? listingName = null,
-        bool isPack = false)
+        bool isPack = false,
+        MediaKind? targetKind = null)
     {
         OnValidateFiles?.Invoke();
         return Task.FromResult(Result);
@@ -175,8 +180,26 @@ internal sealed class FakeQbittorrentClient : IQbittorrentClient
 
     public List<TorrentContentFile> Files { get; set; } =
     [
-        new() { Name = "Show.S01E01.mkv", Size = 1_000_000 }
+        new() { Name = "Show.S01E01.mkv", Size = 900_000_000 }
     ];
+
+    /// <summary>What <c>app/webapiVersion</c> reports; 0.0 = unknown (the pre-S0 running add).</summary>
+    public Version WebApiVersion { get; set; } = new(0, 0);
+
+    public PreAddInspection? Inspection { get; set; }
+
+    public int InspectCalls { get; private set; }
+
+    public bool LastInspectFetchMetadata { get; private set; }
+
+    public List<(string Hash, int[] Indexes, int Priority)> PriorityCalls { get; } = [];
+
+    public int ResumeCalls { get; private set; }
+
+    public Exception? FilesException { get; set; }
+
+    /// <summary>"add", "files", "priority", "pause", "resume" in call order.</summary>
+    public Action<string>? OnEvent { get; set; }
 
     private readonly HashSet<string> _hashes = new(StringComparer.OrdinalIgnoreCase) { "abc123" };
 
@@ -220,7 +243,33 @@ internal sealed class FakeQbittorrentClient : IQbittorrentClient
         AddCount++;
         LastAdd = request;
         _hashes.Add(Added.Hash);
+        OnEvent?.Invoke("add");
         return Task.FromResult(Added);
+    }
+
+    public Task<Version> GetWebApiVersionAsync(CancellationToken cancellationToken = default)
+        => Task.FromResult(WebApiVersion);
+
+    public Task<PreAddInspection?> InspectBeforeAddAsync(
+        string url,
+        bool useFetchMetadata,
+        TimeSpan metadataTimeout,
+        CancellationToken cancellationToken = default)
+    {
+        InspectCalls++;
+        LastInspectFetchMetadata = useFetchMetadata;
+        return Task.FromResult(Inspection);
+    }
+
+    public Task SetFilePrioritiesAsync(
+        string hash,
+        IReadOnlyCollection<int> fileIndexes,
+        int priority,
+        CancellationToken cancellationToken = default)
+    {
+        PriorityCalls.Add((hash, fileIndexes.ToArray(), priority));
+        OnEvent?.Invoke("priority");
+        return Task.CompletedTask;
     }
 
     public Task ApplyManagedTorrentSettingsAsync(
@@ -248,7 +297,15 @@ internal sealed class FakeQbittorrentClient : IQbittorrentClient
     public Task<IReadOnlyList<TorrentContentFile>> GetTorrentFilesAsync(
         string hash,
         CancellationToken cancellationToken = default)
-        => Task.FromResult<IReadOnlyList<TorrentContentFile>>(Files);
+    {
+        OnEvent?.Invoke("files");
+        if (FilesException is not null)
+        {
+            throw FilesException;
+        }
+
+        return Task.FromResult<IReadOnlyList<TorrentContentFile>>(Files);
+    }
 
     public Task DeleteTorrentsAsync(
         IEnumerable<string> hashes,
@@ -282,11 +339,16 @@ internal sealed class FakeQbittorrentClient : IQbittorrentClient
     public Task PauseTorrentsAsync(IEnumerable<string> hashes, CancellationToken cancellationToken = default)
     {
         PauseCalls++;
+        OnEvent?.Invoke("pause");
         return Task.CompletedTask;
     }
 
     public Task ResumeTorrentsAsync(IEnumerable<string> hashes, CancellationToken cancellationToken = default)
-        => Task.CompletedTask;
+    {
+        ResumeCalls++;
+        OnEvent?.Invoke("resume");
+        return Task.CompletedTask;
+    }
 
     public Task<TorrentMetadataProbeResult> ProbeTorrentMetadataAsync(
         TorrentSearchResult result,

@@ -4,15 +4,20 @@ namespace media_management_app.Services;
 
 public static class PackSpecialBucketDetector
 {
+    /// <param name="isRegularEpisode">
+    /// TMDB's regular episodes (season, episode), when known. With it, a "S01E13.OVA" file whose SxxEyy is not a
+    /// TMDB regular episode is a special too (audit L1-L4); without it, SxxEyy always means a regular episode.
+    /// </param>
     public static IReadOnlyList<PackSpecialBucket> Detect(
         IReadOnlyList<(string RelativePath, string FileName)> files,
-        PackFolderTreeAnalysis? tree)
+        PackFolderTreeAnalysis? tree,
+        Func<int, int, bool>? isRegularEpisode = null)
     {
         var buckets = new Dictionary<(SpecialLayoutKind Kind, int? ParentSeason), PackSpecialBucket>();
 
         foreach (var file in files)
         {
-            var layout = ClassifyLayout(file.RelativePath, file.FileName);
+            var layout = ClassifyLayout(file.RelativePath, file.FileName, isRegularEpisode);
             if (layout is null)
             {
                 continue;
@@ -43,10 +48,17 @@ public static class PackSpecialBucketDetector
     public static bool IsMixedInSeasonSpecial(string relativePath, string fileName) =>
         ClassifyLayout(relativePath, fileName)?.Kind == SpecialLayoutKind.MixedInSeason;
 
-    private static (SpecialLayoutKind Kind, int? ParentSeason)? ClassifyLayout(string relativePath, string fileName)
+    private static (SpecialLayoutKind Kind, int? ParentSeason)? ClassifyLayout(
+        string relativePath,
+        string fileName,
+        Func<int, int, bool>? isRegularEpisode = null)
     {
-        if (IsUnderMoviesFolder(relativePath) ||
-            fileName.Contains("movie", StringComparison.OrdinalIgnoreCase))
+        if (TorrentFileRules.IsSampleOrProof(relativePath))
+        {
+            return null;
+        }
+
+        if (PackMovieRules.IsMovieFile(relativePath, fileName))
         {
             return null;
         }
@@ -72,7 +84,7 @@ public static class PackSpecialBucketDetector
             return (SpecialLayoutKind.RootOvaFolder, null);
         }
 
-        if (TryGetMixedInSeasonSpecial(relativePath, fileName, parsed, out var mixedSeason))
+        if (TryGetMixedInSeasonSpecial(relativePath, fileName, parsed, isRegularEpisode, out var mixedSeason))
         {
             return (SpecialLayoutKind.MixedInSeason, mixedSeason);
         }
@@ -140,6 +152,7 @@ public static class PackSpecialBucketDetector
         string relativePath,
         string fileName,
         TorrentCandidateParseResult parsed,
+        Func<int, int, bool>? isRegularEpisode,
         out int parentSeason)
     {
         parentSeason = 0;
@@ -155,7 +168,7 @@ public static class PackSpecialBucketDetector
             return false;
         }
 
-        if (!HasMixedInSeasonSignals(fileName, relativePath, parsed, seasonHint.Value))
+        if (!HasMixedInSeasonSignals(fileName, relativePath, parsed, seasonHint.Value, isRegularEpisode))
         {
             return false;
         }
@@ -168,9 +181,16 @@ public static class PackSpecialBucketDetector
         string fileName,
         string relativePath,
         TorrentCandidateParseResult parsed,
-        int seasonHint)
+        int seasonHint,
+        Func<int, int, bool>? isRegularEpisode)
     {
         if (parsed.IsSpecialContent)
+        {
+            return true;
+        }
+
+        // "Show.S00E05.mkv" inside "Season 1/": the name already says Season 0 (audit L1-L4).
+        if (parsed.SeasonNumber == 0 && parsed.EpisodeNumber is > 0)
         {
             return true;
         }
@@ -180,18 +200,27 @@ public static class PackSpecialBucketDetector
             return true;
         }
 
-        if (parsed.SeasonNumber == seasonHint &&
-            parsed.EpisodeNumber is null &&
-            (fileName.Contains("OVA", StringComparison.OrdinalIgnoreCase) ||
-             fileName.Contains("special", StringComparison.OrdinalIgnoreCase)))
+        // A regular SxxEyy file is not a special because "special"/"OVA" appears in its title (PARSE-03), unless
+        // TMDB has no such regular episode: "S01E13.OVA" when season 1 has 12 episodes (audit L1-L4).
+        if (parsed.SeasonNumber is > 0 && parsed.EpisodeNumber is not null)
         {
-            return true;
+            return isRegularEpisode is not null &&
+                   SpecialWordRegex.IsMatch(fileName) &&
+                   !isRegularEpisode(parsed.SeasonNumber.Value, parsed.EpisodeNumber.Value);
         }
 
-        return TorrentCandidateParser.TryParseBareEpisodeIndex(fileName) is not null &&
-               (fileName.Contains("OVA", StringComparison.OrdinalIgnoreCase) ||
-                fileName.Contains("special", StringComparison.OrdinalIgnoreCase));
+        if (!SpecialWordRegex.IsMatch(fileName))
+        {
+            return false;
+        }
+
+        return (parsed.SeasonNumber == seasonHint && parsed.EpisodeNumber is null) ||
+               TorrentCandidateParser.TryParseBareEpisodeIndex(fileName) is not null;
     }
+
+    private static readonly System.Text.RegularExpressions.Regex SpecialWordRegex = new(
+        @"(?:^|[^a-z0-9])(?:ova|oad|specials?)(?:$|[^a-z0-9])",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Compiled);
 
     private static string[] NormalizeSegments(string relativePath) =>
         relativePath
@@ -204,9 +233,6 @@ public static class PackSpecialBucketDetector
         segment.Equals("special", StringComparison.OrdinalIgnoreCase) ||
         segment.Equals("season 00", StringComparison.OrdinalIgnoreCase) ||
         segment.Equals("season00", StringComparison.OrdinalIgnoreCase);
-
-    private static bool IsUnderMoviesFolder(string relativePath) =>
-        PathContainsFolder(relativePath, "movies") || PathContainsFolder(relativePath, "films");
 
     private static bool IsUnderTorrentExtrasFolder(string relativePath) =>
         PathContainsFolder(relativePath, "extras") || PathContainsFolder(relativePath, "extra");

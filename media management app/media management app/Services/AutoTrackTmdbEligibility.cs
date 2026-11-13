@@ -83,8 +83,10 @@ public static class AutoTrackTmdbEligibility
         var fromSeason = show.AutoTrackFromSeason!.Value;
         var fromEpisode = show.AutoTrackFromEpisode!.Value;
 
+        // A row TMDB no longer lists is kept only because it is in use (audit L3-09); it is never waited for.
         return episodes
             .Where(episode => IsAtOrAfterCheckpoint(episode, fromSeason, fromEpisode))
+            .Where(episode => !episode.IsRemovedUpstream)
             .All(episode => episode.Availability == EpisodeAvailability.Available);
     }
 
@@ -130,6 +132,7 @@ public static class AutoTrackTmdbEligibility
             .Where(episode => IsAtOrAfterCheckpoint(episode, fromSeason, fromEpisode))
             .Where(episode => episode.AirDate is null || episode.AirDate.Value.AddHours(delayHours) <= now)
             .Where(episode => episode.Availability == EpisodeAvailability.Missing)
+            .Where(episode => !episode.IsRemovedUpstream)
             .Where(episode => string.IsNullOrWhiteSpace(episode.TorrentHash))
             .Where(episode => !hasActiveCartOrder(episode.Id))
             .OrderBy(episode => episode.SeasonNumber)

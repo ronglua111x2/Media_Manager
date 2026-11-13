@@ -107,7 +107,7 @@ public sealed class TrackedMovieService : ITrackedMovieService
         var isAvailable = sourceItems.Any(item =>
             item.MediaKind == MediaKind.Movie &&
             item.MatchAccepted &&
-            item.State is not ItemState.Deleted and not ItemState.Ignored &&
+            item.State == ItemState.Linked &&
             string.Equals(item.Provider, "tmdb", StringComparison.OrdinalIgnoreCase) &&
             string.Equals(item.ProviderId, providerId, StringComparison.OrdinalIgnoreCase));
 

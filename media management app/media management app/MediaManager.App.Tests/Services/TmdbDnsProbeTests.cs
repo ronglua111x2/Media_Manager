@@ -33,8 +33,11 @@ public class TmdbDnsProbeTests
             return Task.FromResult(calls < 3 ? BlockedAnswer : RealAnswer);
         }
 
+        // The deadline is wall-clock time. On a busy CI runner the thread pool can stall the
+        // 10 ms delays for many seconds, so give the probe a generous deadline: it returns as
+        // soon as the third answer is usable, so a passing run is still fast.
         var result = await TmdbDnsProbe.WaitUntilUsableAsync(
-            TimeSpan.FromSeconds(5),
+            TimeSpan.FromMinutes(2),
             TimeSpan.FromMilliseconds(10),
             CancellationToken.None,
             Resolve);

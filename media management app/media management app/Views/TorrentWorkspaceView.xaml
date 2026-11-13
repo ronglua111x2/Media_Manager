@@ -3,7 +3,8 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
              xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
-             xmlns:views="clr-namespace:media_management_app.Views">
+             xmlns:views="clr-namespace:media_management_app.Views"
+             xmlns:controls="clr-namespace:media_management_app.Views.Controls">
     <!-- #region Local resources and templates -->
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
@@ -490,18 +491,27 @@
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
-                <StackPanel Grid.Row="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,0,8">
-                    <iconPacks:PackIconLucide Kind="ShoppingCart"
-                                               Width="18"
-                                               Height="18"
-                                               Margin="0,0,8,0"
-                                               Foreground="{StaticResource AppBrushAccent}"
-                                               VerticalAlignment="Center" />
-                    <TextBlock Text="{Binding CartTitle}"
-                               Style="{StaticResource SectionTitleStyle}"
-                               VerticalAlignment="Center"
-                               TextTrimming="CharacterEllipsis" />
-                </StackPanel>
+                <Grid Grid.Row="0" Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" MinWidth="0" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <DockPanel VerticalAlignment="Center" LastChildFill="True">
+                        <iconPacks:PackIconLucide DockPanel.Dock="Left"
+                                                   Kind="ShoppingCart"
+                                                   Width="18"
+                                                   Height="18"
+                                                   Margin="0,0,8,0"
+                                                   Foreground="{StaticResource AppBrushAccent}"
+                                                   VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding CartTitle}"
+                                   Style="{StaticResource SectionTitleStyle}"
+                                   VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis"
+                                   ToolTip="{Binding CartTitle}" />
+                    </DockPanel>
+                    <controls:SearchQuotaPill Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Center" />
+                </Grid>
                 <WrapPanel Grid.Row="1">
                     <Button Style="{StaticResource AppOutlinedButtonStyle}"
                             Command="{Binding ClearCartCommand}"

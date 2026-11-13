@@ -112,10 +112,15 @@ public sealed class PackLinkCoordinatorService : IPackLinkCoordinatorService
             var episodes = _databaseService.GetTrackedEpisodes(show.Id);
             var seasons = _databaseService.GetTrackedSeasons(show.Id);
             var torrentFiles = await _qbittorrentClient.GetTorrentFilesAsync(torrent.Hash, cancellationToken);
-            var files = torrentFiles
-                .Where(file => file.IsVideoFile && file.IsComplete)
+            var videoFiles = torrentFiles
+                .Where(file => file.IsVideoFile && file.IsComplete && !TorrentFileRules.IsSampleOrProof(file.Name))
+                .ToList();
+            var files = videoFiles
                 .Select(file => (file.Name, Path.GetFileName(file.Name)))
                 .ToList();
+            var fileSizes = videoFiles
+                .GroupBy(file => file.Name, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(group => group.Key, group => group.First().Size, StringComparer.OrdinalIgnoreCase);
 
             LogInspectInputs(show, season, torrent, trigger, torrentFiles, files, seasons);
 
@@ -125,7 +130,8 @@ public sealed class PackLinkCoordinatorService : IPackLinkCoordinatorService
                 seasons,
                 mode: PackAnalyzeMode.Inspect,
                 logger: _logger,
-                ownerSeasonNumber: season.SeasonNumber);
+                ownerSeasonNumber: season.SeasonNumber,
+                fileSizes: fileSizes);
 
             _databaseService.UpdateTrackedSeasonPackInspection(show.Id, season.SeasonNumber, inventory);
             _databaseService.UpdateTrackedSeasonLastPackLink(show.Id, season.SeasonNumber, torrent.Hash, DateTime.UtcNow);
@@ -168,10 +174,10 @@ public sealed class PackLinkCoordinatorService : IPackLinkCoordinatorService
             $"Pack inspect inputs ({trigger}): show='{show.DisplayTitle}' owner=S{season.SeasonNumber:00} torrent='{torrent.Name}' hash={torrent.Hash} qbitFiles={torrentFiles.Count} videoComplete={files.Count} trackedSeasons=[{trackedSeasons}]",
             LogTarget.File);
 
-        foreach (var file in torrentFiles.Where(item => !item.IsVideoFile || !item.IsComplete))
+        foreach (var file in torrentFiles.Where(item => !item.IsVideoFile || !item.IsComplete || TorrentFileRules.IsSampleOrProof(item.Name)))
         {
             _logger.Info(
-                $"Pack inspect skipped qBittorrent file '{file.Name}' video={file.IsVideoFile} complete={file.IsComplete} progress={file.Progress:0.###}",
+                $"Pack inspect skipped qBittorrent file '{file.Name}' video={file.IsVideoFile} complete={file.IsComplete} sample={TorrentFileRules.IsSampleOrProof(file.Name)} progress={file.Progress:0.###}",
                 LogTarget.File);
         }
     }

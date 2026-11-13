@@ -27,6 +27,8 @@ public sealed class LibraryLinkEventHub : ILibraryLinkEventHub
 
     public event EventHandler<LibraryLinkBatchEventArgs>? HardlinksRemoved;
 
+    public event EventHandler<LibraryLinkMoveBatchEventArgs>? HardlinksMoved;
+
     public event EventHandler? SymlinkStateChanged;
 
     public IDisposable BeginBulkMutation()
@@ -64,6 +66,14 @@ public sealed class LibraryLinkEventHub : ILibraryLinkEventHub
         }
 
         HardlinkRemoved?.Invoke(this, args);
+    }
+
+    public void PublishHardlinksMoved(IReadOnlyList<LibraryLinkMove> moves)
+    {
+        if (moves.Count > 0)
+        {
+            HardlinksMoved?.Invoke(this, new LibraryLinkMoveBatchEventArgs(moves));
+        }
     }
 
     public void PublishSymlinkStateChanged()

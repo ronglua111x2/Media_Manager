@@ -11,7 +11,7 @@ using media_management_app.Services.Net;
 
 namespace media_management_app.Services;
 
-public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogService, ITmdbMovieCatalogService
+public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogService, ITmdbMovieCatalogService, ITmdbExternalIdService
 {
     private const double HighConfidenceThreshold = 75;
     private int _invalidHostWarned;
@@ -258,6 +258,32 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
             .ToList();
 
         return searchResults;
+    }
+
+    /// <summary>IMDb id ("tt1234567") of a TMDB show or movie, or null (native-search: EZTV searches by IMDb id).</summary>
+    public async Task<string?> GetImdbIdAsync(bool isMovie, int tmdbId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(_settingsService.Current.TmdbReadAccessToken))
+        {
+            return null;
+        }
+
+        using var response = await GetAsyncWithRetryAsync($"{(isMovie ? "movie" : "tv")}/{tmdbId}/external_ids", cancellationToken);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            // 401/429/5xx: a TMDB problem, not "no IMDb id" (the caller retries it sooner).
+            throw new HttpRequestException($"TMDb external_ids returned {(int)response.StatusCode}.", null, response.StatusCode);
+        }
+
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+        var imdbId = GetString(document.RootElement, "imdb_id");
+        return string.IsNullOrWhiteSpace(imdbId) ? null : imdbId.Trim();
     }
 
     public async Task<TmdbShowDetails> GetTvShowSummaryAsync(int tmdbId, CancellationToken cancellationToken = default)
@@ -939,6 +965,7 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
 
             details.Episodes.Add(new TmdbEpisodeDetails
             {
+                TmdbEpisodeId = GetEpisodeId(episodeElement),
                 SeasonNumber = seasonNumber,
                 EpisodeNumber = episodeNumber,
                 Title = GetString(episodeElement, "name") ?? $"Episode {episodeNumber}",
@@ -952,6 +979,10 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
         details.EpisodeCount = details.Episodes.Count;
         return details;
     }
+
+    // Season details and episode groups both list the base episode object, whose "id" is the TMDB episode id.
+    private static int? GetEpisodeId(JsonElement episodeElement) =>
+        GetInt(episodeElement, "id") is > 0 and var id ? id : null;
 
     private static bool IsSpecialsGroupName(string name)
     {
@@ -987,6 +1018,7 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
 
             details.Episodes.Add(new TmdbEpisodeDetails
             {
+                TmdbEpisodeId = GetEpisodeId(episodeElement),
                 SeasonNumber = seasonNumber,
                 EpisodeNumber = episodeNumber,
                 Title = GetString(episodeElement, "name") ?? $"Episode {episodeNumber}",
@@ -1174,15 +1206,6 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
         return (penalty, $"TMDb season {seasonNumber:00} does not contain episode {episodeNumber:00}; max episode is {maxEpisode:00}");
     }
 
-    // The HttpClient is shared with other services: credentials go on each request, never on client defaults.
-    private HttpRequestMessage CreateGetRequest(string requestUri)
-    {
-        var request = new HttpRequestMessage(HttpMethod.Get, new Uri(NetworkEndpoints.TmdbApiBase(CurrentApiHost()), requestUri));
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _settingsService.Current.TmdbReadAccessToken);
-        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-        return request;
-    }
-
     private string CurrentApiHost()
     {
         // WARP recovery goes through the tunnel, where the original host is known to work.
@@ -1231,7 +1254,12 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
             var started = Stopwatch.GetTimestamp();
             try
             {
-                using var request = CreateGetRequest(requestUri);
+                // Headers per request: the HttpClient is shared, and native search looks up IMDb ids from search
+                // threads while other TMDB calls run (mutating DefaultRequestHeaders is not thread-safe, 07c NS-30).
+                // The host is resolved per request too (NetworkEndpoints): api.tmdb.org, or the legacy host on the WARP tunnel.
+                using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(NetworkEndpoints.TmdbApiBase(CurrentApiHost()), requestUri));
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _settingsService.Current.TmdbReadAccessToken);
+                request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
                 var response = await _httpClient.SendAsync(request, cancellationToken);
                 EnsureApiResponse(response);
                 if (!ShouldRetry(response.StatusCode) || attempt == maxAttempts)

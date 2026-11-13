@@ -17,7 +17,8 @@ public sealed partial class LibraryEpisodeRowViewModel : ObservableObject
         ShowId = episode.ShowId;
         SeasonNumber = episode.SeasonNumber;
         EpisodeNumber = episode.EpisodeNumber;
-        Title = episode.Title;
+        Title = episode.IsRemovedUpstream ? $"{episode.Title} (no longer on TMDB)" : episode.Title;
+        IsRemovedUpstream = episode.IsRemovedUpstream;
         AirDateDisplay = episode.AirDateDisplay;
         Availability = episode.Availability;
         TorrentHash = episode.TorrentHash ?? string.Empty;
@@ -30,6 +31,9 @@ public sealed partial class LibraryEpisodeRowViewModel : ObservableObject
     }
 
     public long Id { get; }
+
+    /// <summary>TMDB no longer lists this episode (kept for its order, rating or thought): never added to the cart.</summary>
+    public bool IsRemovedUpstream { get; }
 
     public long ShowId { get; private init; }
 
@@ -119,7 +123,7 @@ public sealed partial class LibraryEpisodeRowViewModel : ObservableObject
 
     public bool IsTorrentComplete => HasTorrent && TorrentProgress >= 0.999;
 
-    public bool CanAddToCart => IsTrackedEpisode && !IsSeasonPackMode && !IsAvailable && !IsInCart && !HasTorrent;
+    public bool CanAddToCart => IsTrackedEpisode && !IsRemovedUpstream && !IsSeasonPackMode && !IsAvailable && !IsInCart && !HasTorrent;
 
     public bool IsLinked => !string.Equals(LibraryLinkStatus, "Not linked", StringComparison.OrdinalIgnoreCase);
 

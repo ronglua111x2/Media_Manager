@@ -1,3 +1,5 @@
+using media_management_app.Services;
+
 namespace media_management_app.Models;
 
 public sealed class TorrentMetadataProbeResult
@@ -10,6 +12,9 @@ public sealed class TorrentMetadataProbeResult
 
     public long TotalSize { get; init; }
 
+    /// <summary>SHA-1 of the bencoded info dictionary (lower-case hex), when the bytes were a v1 or hybrid torrent.</summary>
+    public string? InfoHashV1 { get; init; }
+
     public IReadOnlyList<TorrentMetadataFile> Files { get; init; } = [];
 
     public IReadOnlyList<TorrentMetadataFile> VideoFiles => Files
@@ -18,15 +23,7 @@ public sealed class TorrentMetadataProbeResult
 
     public int VideoFileCount => VideoFiles.Count;
 
-    private static bool IsVideoFile(string path)
-    {
-        var extension = Path.GetExtension(path);
-        return extension.Equals(".mkv", StringComparison.OrdinalIgnoreCase) ||
-               extension.Equals(".mp4", StringComparison.OrdinalIgnoreCase) ||
-               extension.Equals(".avi", StringComparison.OrdinalIgnoreCase) ||
-               extension.Equals(".m4v", StringComparison.OrdinalIgnoreCase) ||
-               extension.Equals(".mov", StringComparison.OrdinalIgnoreCase);
-    }
+    private static bool IsVideoFile(string path) => TorrentFileRules.IsVideoFile(path);
 }
 
 public sealed class TorrentMetadataFile

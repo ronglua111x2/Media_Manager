@@ -9,6 +9,7 @@ using media_management_app.Models;
 using media_management_app.Services;
 using media_management_app.Services.Backup;
 using media_management_app.Services.Gemini;
+using media_management_app.Services.Gemini.Routing;
 using media_management_app.Services.Symlink;
 using WinForms = System.Windows.Forms;
 
@@ -31,7 +32,7 @@ public partial class SettingsViewModel : ViewModelBase
     private readonly HttpClient _httpClient;
     private readonly IGeminiApiClient _geminiApiClient;
     private readonly IGeminiModelCatalogService _geminiModelCatalog;
-    private readonly GeminiQuotaTracker _geminiQuotaTracker;
+    private readonly GeminiModelRouter _geminiRouter;
     private readonly IGoogleDriveClient _googleDriveClient;
     private readonly IBackupService _backupService;
     private readonly IAppLogger _logger;
@@ -80,6 +81,12 @@ public partial class SettingsViewModel : ViewModelBase
     private string? geminiApiKey;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsGeminiManualModelEnabled))]
+    private bool geminiAutoSelectModel = true;
+
+    public bool IsGeminiManualModelEnabled => !GeminiAutoSelectModel;
+
+    [ObservableProperty]
     private bool isGeminiApiKeyVisible;
 
     [ObservableProperty]
@@ -110,7 +117,7 @@ public partial class SettingsViewModel : ViewModelBase
     private string geminiModelsFilePath = string.Empty;
 
     [ObservableProperty]
-    private string geminiDailyUsageLabel = "0/1500 today";
+    private string geminiDailyUsageLabel = string.Empty;
 
     [ObservableProperty]
     private string qbittorrentWebUiUrl = "http://localhost:8080";
@@ -378,10 +385,11 @@ public partial class SettingsViewModel : ViewModelBase
         HttpClient httpClient,
         IGeminiApiClient geminiApiClient,
         IGeminiModelCatalogService geminiModelCatalog,
-        GeminiQuotaTracker geminiQuotaTracker,
+        GeminiModelRouter geminiRouter,
         IGoogleDriveClient googleDriveClient,
         IBackupService backupService,
-        IAppLogger logger)
+        IAppLogger logger,
+        INativeSearchService nativeSearch)
     {
         _settingsService = settingsService;
         _databaseService = databaseService;
@@ -398,7 +406,7 @@ public partial class SettingsViewModel : ViewModelBase
         _httpClient = httpClient;
         _geminiApiClient = geminiApiClient;
         _geminiModelCatalog = geminiModelCatalog;
-        _geminiQuotaTracker = geminiQuotaTracker;
+        _geminiRouter = geminiRouter;
         _googleDriveClient = googleDriveClient;
         _backupService = backupService;
         _logger = logger;
@@ -406,6 +414,7 @@ public partial class SettingsViewModel : ViewModelBase
         AutoTorrentDownloadFolders = [];
         LibraryRootPreview = [];
         LoadFromSettings();
+        AttachNativeSearch(nativeSearch);
     }
 
     public override void OnNavigatedTo()
@@ -505,6 +514,7 @@ public partial class SettingsViewModel : ViewModelBase
         ApplyGeminiSettings();
         ApplyAutoTorrentSettings();
         ApplyWarpSettings();
+        ApplySearchSettings();
         ApplyLogSettings();
         ApplyStartupSettings();
         ApplyAutoTrackSettings();
@@ -662,6 +672,8 @@ public partial class SettingsViewModel : ViewModelBase
         {
             StatusMessage = "Refreshing Gemini model catalog from API...";
             var result = await _geminiModelCatalog.RefreshFromApiAsync();
+            _geminiRouter.ClearPermanentLocks();
+            RefreshGeminiUsageLabel();
             ReloadGeminiModelOptions();
             ReloadGeminiFallbackModels();
             GeminiModel = NormalizeGeminiModel(GeminiModel);
@@ -1211,6 +1223,7 @@ public partial class SettingsViewModel : ViewModelBase
             TmdbReadAccessToken = _settingsService.Current.TmdbReadAccessToken;
             GeminiEnabled = _settingsService.Current.Gemini?.Enabled ?? false;
             GeminiApiKey = _settingsService.Current.Gemini?.ApiKey;
+            GeminiAutoSelectModel = _settingsService.Current.Gemini?.AutoSelectModel ?? true;
             GeminiModel = NormalizeGeminiModel(_settingsService.Current.Gemini?.Model);
             ReloadGeminiModelOptions();
             ReloadGeminiFallbackModels();
@@ -1307,6 +1320,7 @@ public partial class SettingsViewModel : ViewModelBase
             }
 
             SelectedSourceFolder = SourceFolders.FirstOrDefault();
+            LoadSearchSettings();
         }
         finally
         {
@@ -1538,6 +1552,7 @@ public partial class SettingsViewModel : ViewModelBase
         _settingsService.Current.Gemini ??= new GeminiSettings();
         _settingsService.Current.Gemini.Enabled = GeminiEnabled;
         _settingsService.Current.Gemini.ApiKey = string.IsNullOrWhiteSpace(GeminiApiKey) ? null : GeminiApiKey.Trim();
+        _settingsService.Current.Gemini.AutoSelectModel = GeminiAutoSelectModel;
         _settingsService.Current.Gemini.Model = NormalizeGeminiModel(GeminiModel);
         var primaryModel = _settingsService.Current.Gemini.Model;
         _settingsService.Current.Gemini.FallbackModels = GeminiFallbackModels
@@ -1640,7 +1655,22 @@ public partial class SettingsViewModel : ViewModelBase
 
     private void RefreshGeminiUsageLabel()
     {
-        GeminiDailyUsageLabel = $"{_geminiQuotaTracker.RequestsToday}/{_geminiQuotaTracker.DailyLimit} today";
+        var statuses = _geminiRouter.GetStatuses();
+        var header = _geminiRouter.IsAutomatic ? "Automatic model order (free quota today):" : "Model order (free quota today):";
+        var lines = statuses.Select(status =>
+        {
+            var snapshot = status.Snapshot;
+            var usage = snapshot.DailyLimit is { } limit
+                ? $"{snapshot.RequestsToday}/{limit}"
+                : $"{snapshot.RequestsToday} used";
+            var state = snapshot.LockReason == GeminiModelLockReason.None
+                ? string.Empty
+                : $" - {GeminiModelRouter.DescribeLock(snapshot)}";
+            return $"  {status.DisplayName}: {usage}{state}";
+        });
+        GeminiDailyUsageLabel = statuses.Count == 0
+            ? "No Gemini model is configured."
+            : header + Environment.NewLine + string.Join(Environment.NewLine, lines);
     }
 
     private void ApplyAutoTorrentSettings()
@@ -1882,6 +1912,11 @@ public partial class SettingsViewModel : ViewModelBase
 
     private static string FormatGeminiTestError(Exception ex)
     {
+        if (ex is GeminiRequestBlockedException blocked)
+        {
+            return $"Gemini refused the request: {blocked.Message}";
+        }
+
         if (ex.Message.Contains("404", StringComparison.OrdinalIgnoreCase) ||
             ex.Message.Contains("not found", StringComparison.OrdinalIgnoreCase))
         {

@@ -6,11 +6,12 @@ namespace media_management_app.Services;
 
 public sealed class ParserService : IParserService
 {
-    private static readonly Regex EpisodeRegex = new(@"(?<show>.*?)(?:\bS(?<season>\d{1,3})E(?<episode>\d{1,4})\b|\b(?<season2>\d{1,3})x(?<episode2>\d{1,4})\b)\s*(?<rest>.*)$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex EpisodeRegex = new(@"(?<show>.*?)(?:\bS(?<season>\d{1,3})E(?<episode>\d{1,4})(?:E\d{1,4})*(?:v\d{1,2})?\b|\b(?<season2>\d{1,2})x(?<episode2>\d{1,3})\b)\s*(?<rest>.*)$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex AnimeAbsoluteRegex = new(@"^\[(?<group>[^\]]+)\]\s*(?<show>.+?)\s*-\s*(?<episode>\d{1,4})(?:\s*(?<rest>.*))?$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex BracketedHashRegex = new(@"\[[0-9a-f]{6,10}\]", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex MovieYearRegex = new(@"^(?<title>.*?)(?:\s|\(|\[)(?<year>(?:19|20)\d{2})(?:\)|\])?(?:\s|$)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex ReleaseTokenRegex = new(@"\b(?:2160p|1440p|1080p|720p|480p|bluray|brrip|webrip|web-dl|webdl|hdtv|x264|x265|h264|h265|hevc|aac|dts|hdr|dv|proper|repack|extended|remux|yify|rarbg)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex LeadingEpisodeContinuationRegex = new(@"^(?:\s*E?\d{1,4}\b)+", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex IgnoredReleaseFileRegex = new(@"\b(?:sample|proof)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private readonly IAppLogger _logger;
@@ -45,7 +46,7 @@ public sealed class ParserService : IParserService
         if (fileOnly is { NeedsReview: false })
         {
             _logger.Debug($"Standard TV parser matched '{fileName}' as {fileOnly.ShowTitle} S{fileOnly.SeasonNumber:00}E{fileOnly.EpisodeNumber:00}", LogTarget.File);
-            return fileOnly;
+            return WithEpisodeRange(fileOnly, fileName);
         }
 
         var combined = string.IsNullOrWhiteSpace(folderBase) ? candidateText : $"{folderBase} {candidateText}";
@@ -54,7 +55,7 @@ public sealed class ParserService : IParserService
         if (combinedResult.SeasonNumber is not null && combinedResult.EpisodeNumber is not null)
         {
             _logger.Debug($"Folder-combined TV parser matched '{fileName}' as {combinedResult.ShowTitle} S{combinedResult.SeasonNumber:00}E{combinedResult.EpisodeNumber:00}", LogTarget.File);
-            return combinedResult;
+            return WithEpisodeRange(combinedResult, fileName);
         }
 
         _logger.Debug($"Trying anime absolute episode parser for raw file text '{fileBase}'", LogTarget.File);
@@ -82,6 +83,33 @@ public sealed class ParserService : IParserService
             NeedsReview = true,
             Reason = "No confident TV, anime, or movie pattern found"
         };
+    }
+
+    // A file holding several episodes (S01E01E02, S01E01-E02, S01E01-02) keeps the range, read from the raw
+    // file name with the same rule the torrent pack path uses, so both paths name and count it the same way.
+    private static ParsedCandidate WithEpisodeRange(ParsedCandidate candidate, string fileName)
+    {
+        if (candidate.SeasonNumber is null || candidate.EpisodeNumber is null)
+        {
+            return candidate;
+        }
+
+        var torrentParse = TorrentCandidateParser.Parse(fileName);
+        if (torrentParse.SeasonNumber != candidate.SeasonNumber ||
+            torrentParse.EpisodeNumber != candidate.EpisodeNumber ||
+            torrentParse.LastEpisodeNumber is not { } lastEpisode)
+        {
+            return candidate;
+        }
+
+        candidate.LastEpisodeNumber = lastEpisode;
+        if (candidate.EpisodeTitle is { } title)
+        {
+            var trimmed = LeadingEpisodeContinuationRegex.Replace(title, string.Empty).Trim();
+            candidate.EpisodeTitle = string.IsNullOrWhiteSpace(trimmed) ? null : trimmed;
+        }
+
+        return candidate;
     }
 
     private static ParsedCandidate TryParseText(string sourceText)

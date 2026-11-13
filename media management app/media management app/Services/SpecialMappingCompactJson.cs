@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using media_management_app.Models;
@@ -11,31 +12,123 @@ public static class SpecialMappingCompactJson
         @"^```(?:json)?\s*|\s*```$",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    private static readonly JsonWriterOptions RequestWriterOptions = new()
+    {
+        // Show and episode titles are sent as they are (note R4): escaping every non-ASCII character as \uXXXX
+        // made Japanese titles unreadable for the model and tripled their size.
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+    };
+
+    /// <summary>
+    /// Payload v2 (PR-14): only the files the rules left open, with the season air-date windows, the TMDB S00 list,
+    /// the episodes the rules already fixed and the episodes still free. Rule proposals and review suggestions are
+    /// never sent (Gemini copied them). Each file is sent as its file name plus the name of its own folder only.
+    /// </summary>
     public static string SerializeRequest(SpecialMappingAIRequest request)
     {
         using var stream = new MemoryStream();
-        using (var writer = new Utf8JsonWriter(stream))
+        using (var writer = new Utf8JsonWriter(stream, RequestWriterOptions))
         {
+            var context = request.Context;
+            var fixedPairs = request.Proposals
+                .Where(proposal => proposal.CandidateIndex >= 0 && proposal.CandidateIndex < context.Candidates.Count)
+                .Select(proposal => (Episode: proposal.ProposedS00E, Candidate: context.Candidates[proposal.CandidateIndex]))
+                .ToList();
+            var fixedEpisodes = fixedPairs.Select(pair => pair.Episode).ToHashSet();
+
             writer.WriteStartObject();
+            writer.WriteNumber("v", 3);
             writer.WritePropertyName("ctx");
-            WriteContext(writer, request.Context);
-            writer.WritePropertyName("p");
+            writer.WriteStartObject();
+            writer.WriteString("t", context.ShowTitle);
+            writer.WriteNumber("id", context.TmdbId);
+
+            writer.WritePropertyName("sw");
             writer.WriteStartArray();
-            foreach (var proposal in request.Proposals)
+            foreach (var block in request.SeasonBlocks)
             {
                 writer.WriteStartArray();
-                writer.WriteNumberValue(proposal.CandidateIndex);
-                writer.WriteNumberValue(proposal.ProposedS00E);
-                writer.WriteStringValue(ToReasonCode(proposal.Reason));
+                writer.WriteNumberValue(block.SeasonNumber);
+                writer.WriteStringValue(block.SeasonStart.ToString("yyyy-MM-dd"));
+                writer.WriteStartArray();
+                foreach (var entry in block.Entries)
+                {
+                    writer.WriteNumberValue(entry.EpisodeNumber);
+                }
+
+                writer.WriteEndArray();
                 writer.WriteEndArray();
             }
 
             writer.WriteEndArray();
+
+            writer.WritePropertyName("c");
+            writer.WriteStartArray();
+            foreach (var index in request.GeminiCandidateIndices)
+            {
+                var candidate = context.Candidates[index];
+                writer.WriteStartArray();
+                writer.WriteStringValue(ParentFolderName(candidate.RelativePath));
+                writer.WriteStringValue(candidate.FileName);
+                writer.WriteNumberValue(candidate.ParentSeason ?? 0);
+                writer.WriteNumberValue(candidate.LocalIndex);
+                writer.WriteStringValue(ToPatternCode(candidate.NamingPattern));
+                writer.WriteStringValue(string.Join(' ', SpecialEpisodeTitleMatcher.FileTitleTokens(candidate.FileName, context.ShowTitle)));
+                writer.WriteEndArray();
+            }
+
+            writer.WriteEndArray();
+
+            writer.WritePropertyName("e");
+            writer.WriteStartArray();
+            foreach (var episode in context.TmdbSpecials)
+            {
+                writer.WriteStartArray();
+                writer.WriteNumberValue(episode.Episode);
+                writer.WriteStringValue(episode.AirDate);
+                writer.WriteStringValue(episode.Title);
+                writer.WriteEndArray();
+            }
+
+            writer.WriteEndArray();
+
+            writer.WritePropertyName("fx");
+            writer.WriteStartArray();
+            // v3: a fixed pair carries parentSeason, localIndex and patternCode too, so the order rule can be kept
+            // against the files the rules already placed (audit L2-03).
+            foreach (var (episode, candidate) in fixedPairs.OrderBy(pair => pair.Episode))
+            {
+                writer.WriteStartArray();
+                writer.WriteNumberValue(episode);
+                writer.WriteStringValue(candidate.FileName);
+                writer.WriteNumberValue(candidate.ParentSeason ?? 0);
+                writer.WriteNumberValue(candidate.LocalIndex);
+                writer.WriteStringValue(ToPatternCode(candidate.NamingPattern));
+                writer.WriteEndArray();
+            }
+
+            writer.WriteEndArray();
+
+            writer.WritePropertyName("free");
+            writer.WriteStartArray();
+            foreach (var episode in context.TmdbSpecials.Select(item => item.Episode).Where(number => !fixedEpisodes.Contains(number)).Order())
+            {
+                writer.WriteNumberValue(episode);
+            }
+
+            writer.WriteEndArray();
+            writer.WriteEndObject();
             writer.WriteString("task", request.Task);
             writer.WriteEndObject();
         }
 
         return Encoding.UTF8.GetString(stream.ToArray());
+    }
+
+    private static string ParentFolderName(string relativePath)
+    {
+        var parts = relativePath.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length >= 2 ? parts[^2] : string.Empty;
     }
 
     public static SpecialMappingAIResponse ParseResponse(string json)
@@ -48,7 +141,28 @@ public static class SpecialMappingCompactJson
         return response!;
     }
 
+    /// <summary>
+    /// Reads <c>{"m":[[candidateIndex,s00e],...],"w":[...]}</c>. Never throws: a response without an
+    /// <c>m</c> array is a failure, and a pair that is not two 32-bit integers is skipped with a warning.
+    /// </summary>
     public static bool TryParseResponse(string raw, out SpecialMappingAIResponse? response, out string? error)
+    {
+        response = null;
+        error = null;
+
+        try
+        {
+            return TryParseResponseCore(raw, out response, out error);
+        }
+        catch (Exception ex)
+        {
+            response = null;
+            error = $"Gemini response could not be parsed: {ex.Message}";
+            return false;
+        }
+    }
+
+    private static bool TryParseResponseCore(string raw, out SpecialMappingAIResponse? response, out string? error)
     {
         response = null;
         error = null;
@@ -60,29 +174,32 @@ public static class SpecialMappingCompactJson
             return false;
         }
 
-        JsonException? lastException = null;
+        Exception? lastException = null;
         string? lastCandidate = null;
+        string? shapeError = null;
         foreach (var candidate in candidates)
         {
             lastCandidate = candidate;
             try
             {
-                if (TryParseResponseDocument(candidate, out response))
+                if (TryParseResponseDocument(candidate, out response, out var candidateShapeError))
                 {
                     return true;
                 }
+
+                shapeError ??= candidateShapeError;
             }
-            catch (JsonException ex)
+            catch (Exception ex)
             {
                 lastException = ex;
             }
         }
 
-        if (lastException is null && lastCandidate is not null)
+        if (lastException is null && shapeError is null && lastCandidate is not null)
         {
             try
             {
-                JsonDocument.Parse(lastCandidate);
+                using var _ = JsonDocument.Parse(lastCandidate);
             }
             catch (JsonException ex)
             {
@@ -97,51 +214,82 @@ public static class SpecialMappingCompactJson
             return true;
         }
 
-        error = lastException is not null && lastCandidate is not null
-            ? BuildParseErrorMessage(lastException, lastCandidate)
-            : "Gemini response could not be parsed as JSON.";
+        response = null;
+        error = shapeError
+            ?? (lastException is not null && lastCandidate is not null
+                ? BuildParseErrorMessage(lastException, lastCandidate)
+                : "Gemini response could not be parsed as JSON.");
         return false;
     }
 
-    private static bool TryParseResponseDocument(string normalized, out SpecialMappingAIResponse? response)
+    private static bool TryParseResponseDocument(string normalized, out SpecialMappingAIResponse? response, out string? shapeError)
     {
         response = null;
+        shapeError = null;
         using var document = JsonDocument.Parse(normalized);
-            var root = document.RootElement;
-            var mappings = new List<(int CandidateIndex, int S00E)>();
-            var warnings = new List<string>();
+        var root = document.RootElement;
+        if (root.ValueKind != JsonValueKind.Object)
+        {
+            shapeError = $"Gemini response root is a JSON {root.ValueKind}, not an object.";
+            return false;
+        }
 
-            if (root.TryGetProperty("m", out var mappingElement) && mappingElement.ValueKind == JsonValueKind.Array)
+        if (!root.TryGetProperty("m", out var mappingElement) || mappingElement.ValueKind != JsonValueKind.Array)
+        {
+            shapeError = "Gemini response has no 'm' mapping array.";
+            return false;
+        }
+
+        var mappings = new List<(int CandidateIndex, int S00E)>();
+        var warnings = new List<string>();
+        var position = 0;
+        foreach (var item in mappingElement.EnumerateArray())
+        {
+            if (TryReadPair(item, out var candidateIndex, out var s00e))
             {
-                foreach (var item in mappingElement.EnumerateArray())
-                {
-                    if (item.ValueKind != JsonValueKind.Array || item.GetArrayLength() < 2)
-                    {
-                        continue;
-                    }
-
-                    mappings.Add((item[0].GetInt32(), item[1].GetInt32()));
-                }
+                mappings.Add((candidateIndex, s00e));
+            }
+            else
+            {
+                warnings.Add($"Ignored malformed Gemini mapping #{position + 1}: {Shorten(item.GetRawText())}.");
             }
 
-            if (root.TryGetProperty("w", out var warningElement) && warningElement.ValueKind == JsonValueKind.Array)
+            position++;
+        }
+
+        if (root.TryGetProperty("w", out var warningElement) && warningElement.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in warningElement.EnumerateArray())
             {
-                foreach (var item in warningElement.EnumerateArray())
+                if (item.ValueKind == JsonValueKind.String)
                 {
-                    if (item.ValueKind == JsonValueKind.String)
-                    {
-                        warnings.Add(item.GetString() ?? string.Empty);
-                    }
+                    warnings.Add(item.GetString() ?? string.Empty);
                 }
             }
+        }
 
-            response = new SpecialMappingAIResponse
-            {
-                Mappings = mappings,
-                Warnings = warnings
-            };
-            return true;
+        response = new SpecialMappingAIResponse
+        {
+            Mappings = mappings,
+            Warnings = warnings
+        };
+        return true;
     }
+
+    private static bool TryReadPair(JsonElement item, out int candidateIndex, out int s00e)
+    {
+        candidateIndex = 0;
+        s00e = 0;
+        return item.ValueKind == JsonValueKind.Array &&
+               item.GetArrayLength() >= 2 &&
+               item[0].ValueKind == JsonValueKind.Number &&
+               item[1].ValueKind == JsonValueKind.Number &&
+               item[0].TryGetInt32(out candidateIndex) &&
+               item[1].TryGetInt32(out s00e);
+    }
+
+    private static string Shorten(string value) =>
+        value.Length <= 40 ? value : value[..40] + "...";
 
     private static List<string> GetResponseJsonCandidates(string raw)
     {
@@ -329,7 +477,15 @@ public static class SpecialMappingCompactJson
         }
 
         var synthetic = $"{{\"m\":{mappingsJson},\"w\":[]}}";
-        return TryParseResponseDocument(synthetic, out response) && response!.Mappings.Count > 0;
+        try
+        {
+            return TryParseResponseDocument(synthetic, out response, out _) && response!.Mappings.Count > 0;
+        }
+        catch (JsonException)
+        {
+            response = null;
+            return false;
+        }
     }
 
     private static string? ExtractPropertyArrayJson(string json, string propertyName)
@@ -411,68 +567,13 @@ public static class SpecialMappingCompactJson
         return null;
     }
 
-    private static string BuildParseErrorMessage(JsonException ex, string normalized)
+    private static string BuildParseErrorMessage(Exception ex, string normalized)
     {
-        var position = ex.BytePositionInLine >= 0 ? (int)ex.BytePositionInLine : 0;
+        var position = ex is JsonException { BytePositionInLine: >= 0 } jsonException
+            ? (int)jsonException.BytePositionInLine!.Value
+            : 0;
         var excerpt = BuildResponseExcerpt(normalized, position);
         return $"Gemini JSON parse failed at byte {position}: {ex.Message}. Excerpt: {excerpt}";
-    }
-
-    private static void WriteContext(Utf8JsonWriter writer, SpecialMappingContext context)
-    {
-        writer.WriteStartObject();
-        writer.WriteString("t", context.ShowTitle);
-        writer.WriteNumber("id", context.TmdbId);
-
-        writer.WritePropertyName("blk");
-        writer.WriteStartArray();
-        foreach (var block in context.Blocks)
-        {
-            writer.WriteStartArray();
-            writer.WriteNumberValue(block.ParentSeason);
-            writer.WriteNumberValue(block.FileCount);
-            writer.WriteEndArray();
-        }
-
-        writer.WriteEndArray();
-
-        writer.WritePropertyName("c");
-        writer.WriteStartArray();
-        foreach (var candidate in context.Candidates)
-        {
-            writer.WriteStartArray();
-            writer.WriteStringValue(candidate.RelativePath);
-            writer.WriteStringValue(candidate.FileName);
-            writer.WriteNumberValue(candidate.ParentSeason ?? 0);
-            writer.WriteNumberValue(candidate.LocalIndex);
-            writer.WriteNumberValue(candidate.GlobalSortOrder);
-            writer.WriteStringValue(ToPatternCode(candidate.NamingPattern));
-            writer.WriteEndArray();
-        }
-
-        writer.WriteEndArray();
-
-        writer.WritePropertyName("e");
-        writer.WriteStartArray();
-        foreach (var episode in context.TmdbSpecials)
-        {
-            writer.WriteStartArray();
-            writer.WriteNumberValue(episode.Episode);
-            writer.WriteStringValue(episode.AirDate);
-            writer.WriteStringValue(episode.Title);
-            writer.WriteEndArray();
-        }
-
-        writer.WriteEndArray();
-
-        writer.WriteStartObject("x");
-        writer.WriteNumber("nc", context.CandidateCount);
-        writer.WriteNumber("nt", context.TmdbSpecialCount);
-        writer.WriteBoolean("mm", context.CountMismatch);
-        writer.WriteBoolean("op", context.HasOpaqueNames);
-        writer.WriteEndObject();
-
-        writer.WriteEndObject();
     }
 
     private static string ToPatternCode(SpecialMappingNamingPattern pattern) => pattern switch
@@ -481,14 +582,5 @@ public static class SpecialMappingCompactJson
         SpecialMappingNamingPattern.OvaDash => "o",
         SpecialMappingNamingPattern.StandardS00E => "0",
         _ => "?"
-    };
-
-    private static string ToReasonCode(SpecialMappingProposalReason reason) => reason switch
-    {
-        SpecialMappingProposalReason.Direct => "direct",
-        SpecialMappingProposalReason.Flatten => "flatten",
-        SpecialMappingProposalReason.Title => "title",
-        SpecialMappingProposalReason.Ordinal => "ordinal",
-        _ => "none"
     };
 }
