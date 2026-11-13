@@ -499,10 +499,39 @@ User duyệt đợt S1 và S2 (mục 10). Đợt S0 (`stopCondition`, `Paused`, 
 | SEC-A05 | `5c5aa24` | Byte không phải media (không phải video hay file đi kèm quen thuộc: phụ đề, ảnh, nfo, audio rời, font, cấu trúc đĩa) > 50 MB, hoặc > 5 MB mà > 10 % torrent, thì từ chối. Khi biết loại đích (gate, reconcile): video lớn nhất phải ≥ 10 MB (tập, pack) hoặc ≥ 100 MB (movie). | `DecoyPayloadTests` (10) |
 | SEC-A12 | `5a379cf` | Trước khi lấy đuôi: bỏ ký tự điều khiển hướng, NFC, cắt dấu chấm và khoảng trắng cuối. Tên có override `U+202D`/`U+202E` bị từ chối. | `FileNameNormalizationTests` (8) |
 
-Còn mở hoặc hoãn:
+### Đợt S0 (SEC-A03, SEC-A02, phần `filePrio` của SEC-A04)
 
-- **`.url`:** vẫn là file phụ bỏ qua, theo quyết định user đã duyệt ở `9db1e5e`. Đang chờ user chọn giữa chặn luôn (dễ báo nhầm với file quảng cáo của site upload) hoặc xử lý bằng `filePrio` khi làm S0.
-- **`filePrio` (không tải file phụ):** hoãn cùng S0. Đến lúc đó, archive nhỏ dưới ngưỡng SEC-A05 vẫn nằm lại thư mục tải.
+User duyệt S0 kèm thử thật. Lần thử cũ (`9efbf03`, gỡ ở `631c3d7`, 20/08) add magnet ở trạng thái dừng nên magnet không bao giờ lấy được metadata, còn plugin bỏ qua cờ dừng. Bản sửa tránh cả hai:
+
+| qBittorrent | Magnet | `.torrent` qua HTTP(S) | Search plugin |
+|---|---|---|---|
+| 5.2+ (WebAPI ≥ 2.11.9) | `torrents/fetchMetadata` → kiểm → add kèm `filePriorities` (chạy luôn) | app tải và parse → kiểm → add **đúng những bytes đó** ở trạng thái dừng → `filePrio` → start | add rồi stop ngay khi torrent xuất hiện → kiểm → `filePrio` → start |
+| 4.5 – 5.1 | add với `stopCondition=MetadataReceived` → kiểm → `filePrio` → start | như trên | như trên |
+| < 4.5 | add đang chạy (như trước) | như trên | add đang chạy |
+
+- **Allow-list tải:** video, phụ đề (`.srt .ass .ssa .sub .idx .sup .vtt`), `.mka`, `.mks`. Mọi file khác, kể cả `.url`, có priority 0 nên không bao giờ được ghi xuống đĩa. User chọn không chặn `.url` mà xử lý theo cách này.
+- **SEC-A02:** gate có `finally` để stop torrent do gate add khi thoát giữa chừng (cancel, exception). Cart lưu `PendingValidationHash` trước khi kiểm và xóa khi xong hoặc khi bị từ chối. Nhánh `catch` chung của Auto-Track giữ hash khi torrent còn trong qBittorrent.
+- Reader `.torrent` tính infohash v1 (SHA-1 của info), bỏ file đệm BEP 47, và trả "không đọc được" với torrent chỉ có v2.
+- `docs/qbittorrent-webapi/` đã cập nhật; AUD-001 đổi sang "Fixed" trong `03-findings-register.md`.
+
+**Thử thật** (13/11/2026) trên qBittorrent 5.2.3 (WebAPI 2.15.1) của user, localhost, không đăng nhập. Harness trong scratchpad gọi đúng `TorrentAddGateService`, `QbittorrentClient` và bộ kiểm của app, với category `mm-s0-test` và thư mục save tạm. Không đổi preference nào. Torrent dùng là các torrent thử chính thức của dự án WebTorrent (webtorrent.io/free-torrents): phim mở của Blender Foundation, giấy phép Creative Commons.
+
+| Bước | Torrent | Kết quả |
+|---|---|---|
+| (a) `fetchMetadata` | Sintel, magnet `btih:08ada5a7a6183aae1e09d831df6748d566095a10` | Có danh sách 11 file sau khoảng 3 s. Lúc đó torrent **chưa có** trong qBittorrent, thư mục save trống, không có thư mục metadata tạm. |
+| (b) `stopCondition=MetadataReceived` (giả lập 5.1 bằng cách báo WebAPI 2.11.4) | Big Buck Bunny, magnet `btih:dd8255ecdc7ca55fb0bbf81323d87062db1f6d1c` | Khi có danh sách file: `downloaded = 0 B`. 5 s sau: `stoppedDL`, vẫn 0 B, đĩa trống. |
+| (c) add kèm metadata và priority, rồi start | Sintel | Request `filePriorities=[1×10, 0]` (`poster.jpg` = 0). Tải xong 129 MB trong khoảng 10 s. Trên đĩa có `.mp4` và 9 `.srt`, **không có `poster.jpg`**; chỉ có một file `.parts` 69 KB của libtorrent (phần piece chung với file bị bỏ). |
+| (d) đường từ chối | Big Buck Bunny, ép `.jpg` thành đuôi nguy hiểm | Gate từ chối sau add, xóa kèm file đã xác minh. Blacklist ghi global. Sau đó torrent không còn trong qBittorrent, thư mục save trống. |
+| (e) `.torrent` qua HTTP | Tears of Steel, `https://webtorrent.io/torrents/tears-of-steel.torrent` | App parse bytes; infohash tự tính `209c8226…13ec` khớp hash chính thức. Add đúng bytes đó ở trạng thái dừng (0 B), `filePrio` cho file ảnh, start; 15 s sau đạt 69 %. Xóa thủ công kèm file. |
+| Dọn dẹp | | Xóa cả 3 torrent kèm file, gỡ category `mm-s0-test` (qBittorrent về lại 2 category ban đầu), xóa thư mục tạm. Đã kiểm lại: không còn torrent hay category thử. |
+
+Còn mở hoặc ghi nhận:
+
+- **`stopCondition` với magnet:** về lý thuyết vẫn có một cửa sổ bất đồng bộ ngắn giữa lúc có metadata và lúc torrent dừng. Lần thử đo được 0 B. Với 5.2+ thì không có cửa sổ này, vì kiểm xong mới add.
+- **`fetchMetadata` hết giờ:** nếu metadata không về kịp, gate không add gì. qBittorrent 5.2 vẫn tự tải metadata ngầm ở `upload_mode` (không ghi payload); endpoint hủy `cancelFetchMetadata` chỉ có từ WebAPI 2.17.
+- **File `.parts` của libtorrent** có thể chứa vài KB của file bị bỏ (phần chung piece), nhưng không ở dạng file chạy được.
+- **Nhãn trạng thái:** `QbittorrentTorrentStateNormalizer` chưa map `stoppedDL`/`stoppedUP` (P1 trong `docs/qbittorrent-webapi/03-breaking-changes.md`). Torrent bị gate stop vẫn hiện là "Downloading" trong UI.
 - **Fail-open khi DB lỗi (AUD-006):** chưa đổi; kiểm blacklist (cả global) vẫn trả "không bị chặn" khi lỗi.
 - **Ngưỡng SEC-A05** chọn thấp để tránh báo nhầm (anime tập ngắn, movie encode nhỏ). Nên đo lại trên bench TV và anime trước khi nâng.
-- Chưa test tay trên sandbox.
+- **Nhận diện torrent mới (SEC-A06):** đường plugin và phản hồi 5.1 vẫn lấy "hash mới đầu tiên"; chưa sửa.
+- Chưa test tay app thật trên sandbox.

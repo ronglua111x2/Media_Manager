@@ -62,11 +62,11 @@ Effect: paused/stopped torrents can show as downloading in reconcile/UI. Hunt ad
 
 ### Add form `paused` vs `stopped` (from **5.0**)
 
-Client sends `paused` only. Gate/automation set `Paused = false`. Pause-on-add is an accepted AUD-001 trade-off and is unused. `PauseTorrentsAsync` is used as the AUD-002 fail-safe after unverified delete.
+Client sends both `paused` and `stopped`. Since S0 (2026-11, AUD-001 fixed) the gate no longer adds a magnet stopped (a stopped magnet never fetches metadata, the reason the 2026-08 attempt was reverted). It uses `stopCondition=MetadataReceived` (4.5+) or `torrents/fetchMetadata` (5.2+); only a `.torrent` whose bytes were checked is added stopped. See [02-app-endpoint-inventory.md](./02-app-endpoint-inventory.md).
 
 ### Resume on **4.x**
 
-`ResumeTorrentsAsync` has no `/resume` fallback. Fine while the machine runs 5.x.
+`ResumeTorrentsAsync` tries `torrents/start` (5.x) then `torrents/resume` (4.x).
 
 ## Unused by this app (do not block upgrade)
 
