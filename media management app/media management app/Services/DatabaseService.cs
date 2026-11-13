@@ -1413,15 +1413,56 @@ public sealed class DatabaseService : IDatabaseService
                         ELSE DownloadEpisodeNumber END,
                     UpdatedUtc = $UpdatedUtc
                 WHERE Id = $Id AND ShowId = $ShowId;
-                UPDATE TorrentCartOrders
-                SET SeasonNumber = $SeasonNumber, EpisodeNumber = $EpisodeNumber, UpdatedUtc = $UpdatedUtc
-                WHERE EpisodeId = $Id;
                 """,
                 ("$SeasonNumber", move.To.SeasonNumber),
                 ("$EpisodeNumber", move.To.EpisodeNumber),
                 ("$UpdatedUtc", now),
                 ("$Id", move.EpisodeId),
                 ("$ShowId", showId));
+
+            // The episode's cart orders follow it. Candidates found for the old number name another episode now: an
+            // order holding them without a torrent goes back to Draft, so the next search uses the new number. A
+            // torrent added or being added stays. UpdatedUtc is kept: the hunt back-off and the interrupted-order
+            // recovery read it as the last attempt.
+            Execute(
+                """
+                DELETE FROM TorrentCartOrderCandidates
+                WHERE OrderId IN (
+                    SELECT Id FROM TorrentCartOrders
+                    WHERE EpisodeId = $Id AND TorrentHash = '' AND PendingValidationHash = ''
+                      AND Status IN ($CandidatesFound, $Approved));
+                UPDATE TorrentCartOrders
+                SET Status = $Draft,
+                    StatusDetail = $StatusDetail,
+                    SelectedCandidateName = '',
+                    SelectedCandidateUrl = '',
+                    SelectedCandidatePlugin = '',
+                    SelectedCandidateFileSize = 0,
+                    SelectedCandidateSeeders = 0,
+                    SelectedCandidateLeechers = 0,
+                    SelectedCandidateQuality = '',
+                    SelectedCandidateAudioCodec = '',
+                    SelectedCandidateCoveredSeasons = '',
+                    SelectedCandidateTotalScore = 0,
+                    SelectedCandidateContentProfile = ''
+                WHERE EpisodeId = $Id AND TorrentHash = '' AND PendingValidationHash = ''
+                  AND Status IN ($CandidatesFound, $Approved);
+                UPDATE TorrentCartOrders
+                SET SeasonNumber = $SeasonNumber,
+                    EpisodeNumber = $EpisodeNumber,
+                    Title = CASE WHEN Title GLOB 'S[0-9][0-9]E[0-9][0-9] - *' THEN $TitlePrefix || substr(Title, 7) ELSE Title END
+                WHERE EpisodeId = $Id;
+                """,
+                ("$SeasonNumber", move.To.SeasonNumber),
+                ("$EpisodeNumber", move.To.EpisodeNumber),
+                ("$TitlePrefix", $"S{move.To.SeasonNumber:00}E{move.To.EpisodeNumber:00}"),
+                ("$Draft", (int)TorrentOrderStatus.Draft),
+                ("$CandidatesFound", (int)TorrentOrderStatus.CandidatesFound),
+                ("$Approved", (int)TorrentOrderStatus.Approved),
+                ("$StatusDetail",
+                    $"TMDB renumbered this episode S{move.From.SeasonNumber:00}E{move.From.EpisodeNumber:00} -> " +
+                    $"S{move.To.SeasonNumber:00}E{move.To.EpisodeNumber:00}; the results found for the old number were dropped."),
+                ("$Id", move.EpisodeId));
         }
 
         // FilePath is unique and two imported library files can swap names: park every changing path first.

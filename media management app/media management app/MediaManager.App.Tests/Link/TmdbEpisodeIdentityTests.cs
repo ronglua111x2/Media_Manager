@@ -179,6 +179,49 @@ public sealed class TmdbEpisodeIdentityTests : IDisposable
         Assert.Contains(_host.Db.GetTorrentCartOrders(MediaKind.TvEpisode, showId), order => order.Id == orderId);
     }
 
+    // Review of L3-09 (R1/C): candidates found for the old number name another episode now. An order with candidates
+    // but no torrent goes back to Draft without them, so the next search uses the new number. A torrent being added
+    // stays as it is. (A) Moving an order keeps its UpdatedUtc: the hunt back-off and the interrupted-order recovery
+    // read it as the time of the last attempt.
+    [Fact]
+    public async Task RenumberedEpisode_OrderCandidatesDroppedAndUpdatedUtcKept()
+    {
+        var showId = await LinkedShowAsync(6115, Ep(1, 1, 1501));
+        _host.TmdbDetails = Details(6115, Ep(1, 1, 1501), Ep(1, 2, 1502), Ep(1, 3, 1503), Ep(1, 4, 1504), Ep(1, 5, 1505));
+        await RefreshAsync(showId);
+        var found = AddOrder(showId, 1, 2, TorrentOrderStatus.CandidatesFound, selectedUrl: "magnet:?xt=urn:btih:OLD2");
+        _host.Db.ReplaceTorrentCartOrderCandidates(found,
+        [
+            new TorrentCartOrderCandidate { Rank = 1, IsSelected = true, Name = "Demo.S01E02.1080p", Url = "magnet:?xt=urn:btih:OLD2" },
+            new TorrentCartOrderCandidate { Rank = 2, Name = "Demo.S01E02.720p", Url = "magnet:?xt=urn:btih:OLD2B" }
+        ]);
+        var approved = AddOrder(showId, 1, 3, TorrentOrderStatus.Approved, selectedUrl: "magnet:?xt=urn:btih:OLD3");
+        var waiting = AddOrder(showId, 1, 4, TorrentOrderStatus.NoCandidates, source: TorrentOrderSource.AutoTrack);
+        var adding = AddOrder(showId, 1, 5, TorrentOrderStatus.Approved, selectedUrl: "magnet:?xt=urn:btih:OLD5", pendingValidationHash: "HADDING");
+        var before = Orders(showId);
+
+        _host.TmdbDetails = Details(6115, Ep(1, 1, 1501), Ep(1, 2, 1599), Ep(1, 3, 1502), Ep(1, 4, 1503), Ep(1, 5, 1504), Ep(1, 6, 1505));
+        await RefreshAsync(showId);
+
+        var after = Orders(showId);
+        Assert.Equal([(1, 3), (1, 4), (1, 5), (1, 6)], new[] { found, approved, waiting, adding }.Select(id => (after[id].SeasonNumber!.Value, after[id].EpisodeNumber!.Value)));
+        foreach (var id in new[] { found, approved })
+        {
+            Assert.Equal(TorrentOrderStatus.Draft, after[id].Status);
+            Assert.False(after[id].HasSelectedCandidate);
+            Assert.Equal(string.Empty, after[id].SelectedCandidateName);
+            Assert.Equal(0, after[id].SelectedCandidateTotalScore);
+            Assert.Empty(_host.Db.GetTorrentCartOrderCandidates(id));
+        }
+
+        Assert.Equal("S01E03 - Episode 1502", after[found].Title);
+        Assert.Equal(TorrentOrderStatus.NoCandidates, after[waiting].Status);
+        Assert.Equal(TorrentOrderStatus.Approved, after[adding].Status);
+        Assert.Equal("magnet:?xt=urn:btih:OLD5", after[adding].SelectedCandidateUrl);
+        Assert.Equal("HADDING", after[adding].PendingValidationHash);
+        Assert.All(after.Values, order => Assert.Equal(before[order.Id].UpdatedUtc, order.UpdatedUtc));
+    }
+
     // Protection starts with the first refresh that reads ids: rows saved before have none, so nothing moves then.
     [Fact]
     public async Task FirstRefreshWithoutStoredIds_FillsIdsAndMovesNothing()
@@ -556,7 +599,15 @@ public sealed class TmdbEpisodeIdentityTests : IDisposable
 
     private Task RefreshAsync(long showId) => _host.Shows.RefreshShowAsync(_host.Db.GetTrackedShow(showId)!);
 
-    private long AddOrder(long showId, int season, int episode, TorrentOrderStatus status, string torrentHash = "") =>
+    private long AddOrder(
+        long showId,
+        int season,
+        int episode,
+        TorrentOrderStatus status,
+        string torrentHash = "",
+        string selectedUrl = "",
+        string pendingValidationHash = "",
+        TorrentOrderSource source = TorrentOrderSource.Manual) =>
         _host.Db.UpsertTorrentCartOrder(new TorrentCartOrder
         {
             TargetKind = MediaKind.TvEpisode,
@@ -564,10 +615,19 @@ public sealed class TmdbEpisodeIdentityTests : IDisposable
             EpisodeId = Episode(showId, season, episode).Id,
             SeasonNumber = season,
             EpisodeNumber = episode,
-            Title = $"Demo Show S{season:00}E{episode:00}",
+            Title = $"S{season:00}E{episode:00} - {Episode(showId, season, episode).Title}",
+            Summary = "Episode order",
             Status = status,
-            TorrentHash = torrentHash
+            Source = source,
+            TorrentHash = torrentHash,
+            PendingValidationHash = pendingValidationHash,
+            SelectedCandidateName = selectedUrl.Length == 0 ? "" : $"Demo.S{season:00}E{episode:00}.1080p",
+            SelectedCandidateUrl = selectedUrl,
+            SelectedCandidateTotalScore = selectedUrl.Length == 0 ? 0 : 90
         });
+
+    private Dictionary<long, TorrentCartOrder> Orders(long showId) =>
+        _host.Db.GetTorrentCartOrders(MediaKind.TvEpisode, showId).ToDictionary(order => order.Id);
 
     private IReadOnlyList<TrackedEpisode> Episodes(long showId) => _host.Db.GetTrackedEpisodes(showId);
 
