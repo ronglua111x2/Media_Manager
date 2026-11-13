@@ -183,6 +183,30 @@ public class SpecialRuleMappingTests
     }
 
     /// <summary>
+    /// Audit R2-C-01: release tags ("DDP5.1", "H.264") must not supply the numbers a TMDB title needs, and a
+    /// number in the file's own title must be in the TMDB title too.
+    /// </summary>
+    [Theory]
+    [InlineData("Show.S00E01.Inside.the.Episode.Part.2.1080p.WEB-DL.DDP5.1.H.264.mkv", 1, false)]
+    [InlineData("Show.S00E02.Inside.the.Episode.Part.2.Extended.1080p.WEB-DL.DDP5.1.H.264.mkv", 2, true)]
+    [InlineData("Show.S00E01.Inside.the.Episode.Part.1.1080p.WEB-DL.AAC2.0.H.264.mkv", 1, true)]
+    [InlineData("Show.S00E03.Behind.the.Music.Part.2.1080p.mkv", 3, false)]
+    [InlineData("Show.S00E03.Behind.the.Music.1080p.WEB-DL.DDP5.1.mkv", 3, true)]
+    public void TitleMatcher_Confirms_IgnoresReleaseTagNumbersAndComparesBothWays(string fileName, int episode, bool confirmed)
+    {
+        var specials = new List<TrackedEpisode>
+        {
+            SpecialShowBuilder.Episode(0, 1, "Inside the Episode: Part 1", new DateTime(2019, 1, 1)),
+            SpecialShowBuilder.Episode(0, 2, "Inside the Episode: Part 2 (Extended)", new DateTime(2019, 1, 8)),
+            SpecialShowBuilder.Episode(0, 3, "Behind the Music", new DateTime(2019, 2, 1))
+        };
+
+        var result = SpecialEpisodeTitleMatcher.Confirms(fileName, "Show", specials.Single(item => item.EpisodeNumber == episode), specials);
+
+        Assert.Equal(confirmed, result);
+    }
+
+    /// <summary>
     /// Audit L2-02: <c>_S00E02_</c>, <c>S00E02v2</c> and <c>S0E2</c> still name S00E02, so the Direct rule places them
     /// (and the Gemini guard sees the number).
     /// </summary>

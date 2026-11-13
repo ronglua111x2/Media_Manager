@@ -17,6 +17,17 @@ public static class SpecialEpisodeTitleMatcher
 
     private static readonly Regex BracketGroupRegex = new(@"\[[^\]]*\]|\{[^}]*\}", RegexOptions.Compiled);
 
+    // The file's own title starts after its SxxEyy token...
+    private static readonly Regex SeasonEpisodeTokenRegex = new(
+        @"(?<![A-Za-z0-9])S\d{1,3}E\d{1,4}(?:-?E\d{1,4})*(?:v\d{1,2})?(?![0-9])",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    // ...and ends at the first release tag, so "DDP5.1", "AAC2.0", "H.264" or "1080p" never count as title
+    // numbers (audit R2-C-01).
+    private static readonly Regex ReleaseTagRegex = new(
+        @"(?<![A-Za-z0-9])(?:\d{3,4}[pi]|4k|web-?dl|webrip|bdrip|blu-?ray|hdtv|dvdrip|remux|uhd|[xh]\.?26[45]|hevc|avc|av1|xvid|ddp?\+?\d?|e?ac-?3|aac\d?|dts(?:-?hd)?|flac|opus|truehd|atmos|10-?bit|8-?bit|hdr\d{0,2})(?![A-Za-z])",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     private static readonly HashSet<string> StopWords = new(StringComparer.OrdinalIgnoreCase)
     {
         "a", "an", "the", "of", "and", "or", "to", "in", "on", "at", "for", "with", "from", "by", "as", "into",
@@ -49,7 +60,7 @@ public static class SpecialEpisodeTitleMatcher
             return null;
         }
 
-        var best = BestMatch(fileName, fileTokens, showTitle, specialsEpisodes);
+        var best = BestMatch(fileName, fileTokens, showTitle, specialsEpisodes, exactNumbers: false);
         return best is null || (claimedEpisodeNumbers is not null && claimedEpisodeNumbers.Contains(best.EpisodeNumber))
             ? null
             : best;
@@ -93,8 +104,8 @@ public static class SpecialEpisodeTitleMatcher
 
     /// <summary>
     /// True when the file's own title names this TMDB entry and no other one (used to trust a <c>S00Exx</c> file
-    /// name). Numbers in the TMDB title ("Part 2", "2019") must also be in the file name, because the words alone
-    /// cannot tell "Part 1" from "Part 2" (audit L2-01).
+    /// name). The words alone cannot tell "Part 1" from "Part 2" (audit L2-01), so the numbers of the file's own
+    /// title and of the TMDB title must be the same, both ways (audit R2-C-01).
     /// </summary>
     public static bool Confirms(
         string fileName,
@@ -104,25 +115,29 @@ public static class SpecialEpisodeTitleMatcher
     {
         var fileTokens = FileTitleTokens(fileName, showTitle);
         return fileTokens.Count > 0 &&
-               BestMatch(fileName, fileTokens, showTitle, specialsEpisodes.Append(episode).ToList()) is { } best &&
+               BestMatch(fileName, fileTokens, showTitle, specialsEpisodes.Append(episode).ToList(), exactNumbers: true) is { } best &&
                best.SeasonNumber == episode.SeasonNumber &&
                best.EpisodeNumber == episode.EpisodeNumber;
     }
 
-    // The single best entry over the threshold whose numbers the file name carries; null when none, or when the
-    // best score is shared (SPEC-03).
+    // The single best entry over the threshold whose title numbers agree with the file's own title: present in it
+    // (title match), or exactly the same (trusting a S00Exx name). Null when none, or when the best score is shared
+    // (SPEC-03).
     private static TrackedEpisode? BestMatch(
         string fileName,
         IReadOnlySet<string> fileTokens,
         string? showTitle,
-        IReadOnlyList<TrackedEpisode> specialsEpisodes)
+        IReadOnlyList<TrackedEpisode> specialsEpisodes,
+        bool exactNumbers)
     {
-        var fileNumbers = FileNumbers(fileName);
+        var fileNumbers = FileTitleNumbers(fileName, showTitle);
         var scored = specialsEpisodes
             .Where(episode => episode.SeasonNumber == AppConstants.SpecialsSeasonNumber)
             .GroupBy(episode => episode.EpisodeNumber)
             .Select(group => group.First())
-            .Where(episode => TitleNumbers(episode.Title).IsSubsetOf(fileNumbers))
+            .Where(episode => exactNumbers
+                ? TitleNumbers(episode.Title).SetEquals(fileNumbers)
+                : TitleNumbers(episode.Title).IsSubsetOf(fileNumbers))
             .Select(episode => (Episode: episode, Score: Score(fileTokens, EpisodeTitleTokens(episode.Title, showTitle))))
             .Where(item => item.Score.Share >= MinimumShare)
             .OrderByDescending(item => item.Score.Share)
@@ -136,10 +151,27 @@ public static class SpecialEpisodeTitleMatcher
         return scored[0].Episode;
     }
 
-    private static HashSet<int> FileNumbers(string fileName)
+    // Numbers of the file's own title: after its SxxEyy token when it has one, before the first release tag,
+    // without the numbers of the show's own name.
+    private static HashSet<int> FileTitleNumbers(string fileName, string? showTitle)
     {
         var stem = Path.GetFileNameWithoutExtension(fileName.Replace('\\', '/').Split('/').Last());
-        return StandaloneNumbers(BracketGroupRegex.Replace(stem, " "));
+        var text = BracketGroupRegex.Replace(stem, " ");
+        var seasonEpisode = SeasonEpisodeTokenRegex.Match(text);
+        if (seasonEpisode.Success)
+        {
+            text = text[(seasonEpisode.Index + seasonEpisode.Length)..];
+        }
+
+        var releaseTag = ReleaseTagRegex.Match(text);
+        if (releaseTag.Success)
+        {
+            text = text[..releaseTag.Index];
+        }
+
+        var numbers = StandaloneNumbers(text);
+        numbers.ExceptWith(StandaloneNumbers(showTitle ?? string.Empty));
+        return numbers;
     }
 
     private static HashSet<int> TitleNumbers(string? title) => StandaloneNumbers(title ?? string.Empty);
