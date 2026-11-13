@@ -157,6 +157,35 @@ public sealed class EpisodeRenumberingTests : IDisposable
         Assert.False(_host.Db.GetTrackedEpisodes(showId).Single(item => item.EpisodeNumber == 13 && item.SeasonNumber == 1).IsRemovedUpstream);
     }
 
+    // Review of L3-09 (D): a cart order that never got a torrent (no candidates, failed) holds no download, so it does
+    // not keep a row TMDB dropped. The row goes, and its order with it.
+    [Fact]
+    public async Task RefreshShow_EpisodeRemovedUpstream_HashlessOrderDoesNotKeepTheRow()
+    {
+        var showId = LinkedShow(5028, "HRO");
+        var orderId = AddOrder(showId, 1, 2, TorrentOrderStatus.Failed);
+        _host.TmdbDetails = Details(5028, (1, 1), (1, 13));
+
+        await _host.Shows.RefreshShowAsync(_host.Db.GetTrackedShow(showId)!);
+
+        Assert.DoesNotContain(_host.Db.GetTrackedEpisodes(showId), item => item.SeasonNumber == 1 && item.EpisodeNumber == 2);
+        Assert.DoesNotContain(_host.Db.GetTorrentCartOrders(MediaKind.TvEpisode, showId), order => order.Id == orderId);
+    }
+
+    // A torrent being added (hash known, not yet validated) is a download: the row stays, flagged.
+    [Fact]
+    public async Task RefreshShow_EpisodeRemovedUpstream_OrderBeingAddedKeepsTheRow()
+    {
+        var showId = LinkedShow(5029, "HRP");
+        var orderId = AddOrder(showId, 1, 2, TorrentOrderStatus.Approved, pendingValidationHash: "HPENDING");
+        _host.TmdbDetails = Details(5029, (1, 1), (1, 13));
+
+        await _host.Shows.RefreshShowAsync(_host.Db.GetTrackedShow(showId)!);
+
+        Assert.True(_host.Db.GetTrackedEpisodes(showId).Single(item => item.SeasonNumber == 1 && item.EpisodeNumber == 2).IsRemovedUpstream);
+        Assert.Contains(_host.Db.GetTorrentCartOrders(MediaKind.TvEpisode, showId), order => order.Id == orderId);
+    }
+
     [Fact]
     public async Task RefreshShow_SeasonMissingFromResponse_KeepsItsEpisodes()
     {
@@ -185,6 +214,22 @@ public sealed class EpisodeRenumberingTests : IDisposable
             0);
         Assert.Single(_host.Items());
         return showId;
+    }
+
+    private long AddOrder(long showId, int season, int episode, TorrentOrderStatus status, string pendingValidationHash = "")
+    {
+        var row = _host.Db.GetTrackedEpisodes(showId).Single(item => item.SeasonNumber == season && item.EpisodeNumber == episode);
+        return _host.Db.UpsertTorrentCartOrder(new TorrentCartOrder
+        {
+            TargetKind = MediaKind.TvEpisode,
+            MediaId = showId,
+            EpisodeId = row.Id,
+            SeasonNumber = season,
+            EpisodeNumber = episode,
+            Title = $"Demo Show S{season:00}E{episode:00}",
+            Status = status,
+            PendingValidationHash = pendingValidationHash
+        });
     }
 
     private static TmdbShowDetails TitledDetails(int tmdbId, params (int Season, int Episode, string Title)[] episodes)

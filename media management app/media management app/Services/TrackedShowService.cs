@@ -530,10 +530,7 @@ public sealed class TrackedShowService : ITrackedShowService
     {
         var rows = _databaseService.GetTrackedEpisodes(show.Id);
         var linkedKeys = GetLinkedEpisodeKeys(show.TmdbId.ToString());
-        var orderedEpisodeIds = _databaseService.GetTorrentCartOrders(MediaKind.TvEpisode, show.Id)
-            .Where(order => order.EpisodeId is not null)
-            .Select(order => order.EpisodeId!.Value)
-            .ToHashSet();
+        var orderedEpisodeIds = GetEpisodeIdsWithOrderedDownload(show.Id);
         bool HoldsDownload(TrackedEpisode row) =>
             linkedKeys.Contains((row.SeasonNumber, row.EpisodeNumber)) ||
             !string.IsNullOrWhiteSpace(row.TorrentHash) ||
@@ -645,10 +642,7 @@ public sealed class TrackedShowService : ITrackedShowService
 
         var show = _databaseService.GetTrackedShow(showId);
         var linkedKeys = GetLinkedEpisodeKeys(show?.TmdbId.ToString());
-        var orderedEpisodeIds = _databaseService.GetTorrentCartOrders(MediaKind.TvEpisode, showId)
-            .Where(order => order.EpisodeId is not null)
-            .Select(order => order.EpisodeId!.Value)
-            .ToHashSet();
+        var orderedEpisodeIds = GetEpisodeIdsWithOrderedDownload(showId);
         var now = DateTime.UtcNow;
         foreach (var episode in stale.Where(episode => !alreadyFlagged.Contains(episode.Id)))
         {
@@ -672,6 +666,19 @@ public sealed class TrackedShowService : ITrackedShowService
                 LogTarget.File | LogTarget.Console);
         }
     }
+
+    /// <summary>
+    /// Episodes with a cart order whose torrent was added or is being added. An order that never got a torrent
+    /// (searching, no candidates, failed) holds no download, so it does not keep a row TMDB dropped; the row is
+    /// deleted with that order.
+    /// </summary>
+    private HashSet<long> GetEpisodeIdsWithOrderedDownload(long showId) =>
+        _databaseService.GetTorrentCartOrders(MediaKind.TvEpisode, showId)
+            .Where(order => order.EpisodeId is not null &&
+                            (!string.IsNullOrWhiteSpace(order.TorrentHash) ||
+                             !string.IsNullOrWhiteSpace(order.PendingValidationHash)))
+            .Select(order => order.EpisodeId!.Value)
+            .ToHashSet();
 
     private HashSet<(int SeasonNumber, int EpisodeNumber)> GetLinkedEpisodeKeys(string? providerId)
     {

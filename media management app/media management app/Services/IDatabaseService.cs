@@ -121,6 +121,7 @@ public interface IDatabaseService
     /// <summary>Flags an episode TMDB no longer lists; keeps the first timestamp.</summary>
     void MarkTrackedEpisodeRemovedUpstream(long episodeId, DateTime removedUtc);
 
+    /// <summary>Deletes an episode row with its cart orders that never got a torrent.</summary>
     void DeleteTrackedEpisode(long episodeId);
 
     /// <summary>

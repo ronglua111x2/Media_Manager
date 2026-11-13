@@ -1370,6 +1370,7 @@ public sealed class DatabaseService : IDatabaseService
 
         foreach (var episodeId in deleteEpisodeIds)
         {
+            Execute(DeleteEpisodeOrdersWithoutTorrentSql, ("$Id", episodeId));
             Execute("DELETE FROM TrackedEpisodes WHERE Id = $Id AND ShowId = $ShowId;", ("$Id", episodeId), ("$ShowId", showId));
         }
 
@@ -1467,14 +1468,38 @@ public sealed class DatabaseService : IDatabaseService
         transaction.Commit();
     }
 
+    /// <summary>
+    /// Cart orders of an episode row that never got a torrent go with the row; otherwise they would point at a row
+    /// that no longer exists. An order with a torrent keeps the row (it is never deleted then).
+    /// </summary>
+    private const string DeleteEpisodeOrdersWithoutTorrentSql = """
+        DELETE FROM TorrentCartOrderCandidates
+        WHERE OrderId IN (
+            SELECT Id FROM TorrentCartOrders
+            WHERE EpisodeId = $Id AND TorrentHash = '' AND PendingValidationHash = '');
+        DELETE FROM TorrentCartOrders
+        WHERE EpisodeId = $Id AND TorrentHash = '' AND PendingValidationHash = '';
+        """;
+
     public void DeleteTrackedEpisode(long episodeId)
     {
         using var connection = new SqliteConnection(_connectionString);
         connection.Open();
+        using var transaction = connection.BeginTransaction();
+        using (var orders = connection.CreateCommand())
+        {
+            orders.Transaction = transaction;
+            orders.CommandText = DeleteEpisodeOrdersWithoutTorrentSql;
+            orders.Parameters.AddWithValue("$Id", episodeId);
+            orders.ExecuteNonQuery();
+        }
+
         using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = "DELETE FROM TrackedEpisodes WHERE Id = $Id;";
         command.Parameters.AddWithValue("$Id", episodeId);
         command.ExecuteNonQuery();
+        transaction.Commit();
     }
 
     public IReadOnlyList<TrackedEpisode> GetTrackedEpisodes(long showId)

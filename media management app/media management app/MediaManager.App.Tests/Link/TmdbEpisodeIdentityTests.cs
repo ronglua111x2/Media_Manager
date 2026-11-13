@@ -128,6 +128,57 @@ public sealed class TmdbEpisodeIdentityTests : IDisposable
         Assert.Contains(_host.Warnings, warning => warning.Contains("S01E03"));
     }
 
+    // Review of L3-09 (D): a search that found nothing left a cart order without a torrent. It holds no download, so the
+    // row whose id TMDB dropped is deleted with its order instead of staying as a flagged "ghost" episode.
+    [Fact]
+    public async Task VanishedEpisodeId_HashlessOrderDoesNotKeepTheRow()
+    {
+        var showId = await LinkedShowAsync(6112, Ep(1, 1, 1201));
+        _host.TmdbDetails = Details(6112, Ep(1, 1, 1201), Ep(1, 2, 1202));
+        await RefreshAsync(showId);
+        var orderId = AddOrder(showId, 1, 2, TorrentOrderStatus.NoCandidates);
+
+        _host.TmdbDetails = Details(6112, Ep(1, 1, 1201));
+        await RefreshAsync(showId);
+
+        Assert.DoesNotContain(Episodes(showId), item => item.EpisodeNumber == 2);
+        Assert.DoesNotContain(_host.Db.GetTorrentCartOrders(MediaKind.TvEpisode, showId), order => order.Id == orderId);
+    }
+
+    // Same, when the dropped row is deleted in the transaction that moves another row onto its number.
+    [Fact]
+    public async Task VanishedEpisodeId_HashlessOrder_DeletedWhileAnotherRowMovesIn()
+    {
+        var showId = await LinkedShowAsync(6113, Ep(1, 1, 1301));
+        _host.TmdbDetails = Details(6113, Ep(1, 1, 1301), Ep(1, 2, 1302));
+        await RefreshAsync(showId);
+        var orderId = AddOrder(showId, 1, 2, TorrentOrderStatus.Failed);
+
+        _host.TmdbDetails = Details(6113, Ep(1, 1, 1399), Ep(1, 2, 1301));
+        await RefreshAsync(showId);
+
+        AssertLibrary(("S01E02", "S01E01"));
+        Assert.Equal(1301, Episode(showId, 1, 2).TmdbEpisodeId);
+        Assert.DoesNotContain(Episodes(showId), item => item.TmdbEpisodeId == 1302);
+        Assert.DoesNotContain(_host.Db.GetTorrentCartOrders(MediaKind.TvEpisode, showId), order => order.Id == orderId);
+    }
+
+    // An order whose torrent was added holds a download: the row stays and is flagged.
+    [Fact]
+    public async Task VanishedEpisodeId_OrderWithTorrentKeepsTheRow()
+    {
+        var showId = await LinkedShowAsync(6114, Ep(1, 1, 1401));
+        _host.TmdbDetails = Details(6114, Ep(1, 1, 1401), Ep(1, 2, 1402));
+        await RefreshAsync(showId);
+        var orderId = AddOrder(showId, 1, 2, TorrentOrderStatus.Downloading, torrentHash: "HORDER");
+
+        _host.TmdbDetails = Details(6114, Ep(1, 1, 1401));
+        await RefreshAsync(showId);
+
+        Assert.True(Episode(showId, 1, 2).IsRemovedUpstream);
+        Assert.Contains(_host.Db.GetTorrentCartOrders(MediaKind.TvEpisode, showId), order => order.Id == orderId);
+    }
+
     // Protection starts with the first refresh that reads ids: rows saved before have none, so nothing moves then.
     [Fact]
     public async Task FirstRefreshWithoutStoredIds_FillsIdsAndMovesNothing()
@@ -504,6 +555,19 @@ public sealed class TmdbEpisodeIdentityTests : IDisposable
     }
 
     private Task RefreshAsync(long showId) => _host.Shows.RefreshShowAsync(_host.Db.GetTrackedShow(showId)!);
+
+    private long AddOrder(long showId, int season, int episode, TorrentOrderStatus status, string torrentHash = "") =>
+        _host.Db.UpsertTorrentCartOrder(new TorrentCartOrder
+        {
+            TargetKind = MediaKind.TvEpisode,
+            MediaId = showId,
+            EpisodeId = Episode(showId, season, episode).Id,
+            SeasonNumber = season,
+            EpisodeNumber = episode,
+            Title = $"Demo Show S{season:00}E{episode:00}",
+            Status = status,
+            TorrentHash = torrentHash
+        });
 
     private IReadOnlyList<TrackedEpisode> Episodes(long showId) => _host.Db.GetTrackedEpisodes(showId);
 
