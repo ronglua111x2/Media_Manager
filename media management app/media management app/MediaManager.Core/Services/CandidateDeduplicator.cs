@@ -117,7 +117,8 @@ public static class CandidateDeduplicator
 
             if (seeders(entry.Item) > seeders(kept[duplicateIndex].Item))
             {
-                kept[duplicateIndex] = (entry.Item, kept[duplicateIndex].Index, key, itemSize);
+                // Keep the group's original size: replacing it let 1000 → 1004 → 1008 MB chain into one (NS-28).
+                kept[duplicateIndex] = (entry.Item, kept[duplicateIndex].Index, key, kept[duplicateIndex].Size);
             }
         }
 

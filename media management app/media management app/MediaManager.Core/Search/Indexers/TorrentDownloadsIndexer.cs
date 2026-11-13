@@ -76,6 +76,7 @@ public sealed partial class TorrentDownloadsIndexer(string baseUrl = "https://ww
 
         var root = siteRoot.TrimEnd('/');
         var results = new List<IndexerResult>();
+        var unreadable = 0;
         foreach (Match item in ItemRegex().Matches(rss))
         {
             var body = item.Groups["body"].Value;
@@ -83,6 +84,7 @@ public sealed partial class TorrentDownloadsIndexer(string baseUrl = "https://ww
             var title = CleanTitle(Field(body, "title"));
             if (!IndexerResultNormalizer.IsValidInfoHash(hash) || string.IsNullOrEmpty(title))
             {
+                unreadable++;
                 continue;
             }
 
@@ -100,6 +102,7 @@ public sealed partial class TorrentDownloadsIndexer(string baseUrl = "https://ww
                 IndexerId: "torrentdownloads"));
         }
 
+        IndexerParsing.ThrowIfUnreadable(results.Count, unreadable, "torrentdownloads");
         return results;
     }
 

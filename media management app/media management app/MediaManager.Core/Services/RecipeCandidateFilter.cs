@@ -36,7 +36,7 @@ public static class RecipeCandidateFilter
             return (CandidateRejectReason.None, string.Empty);
         }
 
-        if (result.Seeders < filter.MinimumSeeders)
+        if (!result.SeedersUnknown && result.Seeders < filter.MinimumSeeders)
         {
             return (CandidateRejectReason.SeedersTooLow, $"seeders below threshold {filter.MinimumSeeders}");
         }

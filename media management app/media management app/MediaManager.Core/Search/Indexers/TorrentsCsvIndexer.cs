@@ -35,12 +35,14 @@ public sealed class TorrentsCsvIndexer(string baseUrl = "https://torrents-csv.co
         }
 
         var results = new List<IndexerResult>();
+        var unreadable = 0;
         foreach (var row in torrents.EnumerateArray())
         {
             var hash = Str(row, "infohash");
             var name = Str(row, "name");
             if (!IndexerResultNormalizer.IsValidInfoHash(hash) || string.IsNullOrWhiteSpace(name))
             {
+                unreadable++;
                 continue;
             }
 
@@ -59,6 +61,7 @@ public sealed class TorrentsCsvIndexer(string baseUrl = "https://torrents-csv.co
                 Source: "torrents-csv"));
         }
 
+        IndexerParsing.ThrowIfUnreadable(results.Count, unreadable, "torrents-csv");
         return results;
     }
 

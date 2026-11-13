@@ -73,6 +73,7 @@ public static class IndexerResultNormalizer
             DescriptionUrl = row.DetailsUrl ?? string.Empty,
             Seeders = Math.Max(0, row.Seeders),
             Leechers = Math.Max(0, row.Leechers),
+            SeedersUnknown = row.SeedersUnknown,
             EngineName = engineName,
             SiteUrl = row.Source ?? row.IndexerId
         };
@@ -186,26 +187,30 @@ public sealed class SearchOrchestrator(IndexerRequestGovernor governor, Func<str
     /// </summary>
     private static TorrentSearchResult MergeGroup(IGrouping<string, TorrentSearchResult> group)
     {
-        var winner = group.OrderByDescending(row => row.Seeders).First();
-        if (SearchIdentity.AliasesOf(winner.DescriptionUrl).Any())
+        // A row with real swarm counts beats one whose source reports none (NS-21).
+        var winner = group.OrderBy(row => row.SeedersUnknown).ThenByDescending(row => row.Seeders).First();
+        var withPage = SearchIdentity.AliasesOf(winner.DescriptionUrl).Any()
+            ? winner
+            : group.FirstOrDefault(row => SearchIdentity.AliasesOf(row.DescriptionUrl).Any()) ?? winner;
+        // Some sources report size 0: keep the size another source knows (audit 07c NS-28).
+        var size = winner.FileSize > 0 ? winner.FileSize : group.Max(row => row.FileSize);
+        if (ReferenceEquals(withPage, winner) && size == winner.FileSize)
         {
             return winner;
         }
 
-        var withPage = group.FirstOrDefault(row => SearchIdentity.AliasesOf(row.DescriptionUrl).Any());
-        return withPage is null
-            ? winner
-            : new TorrentSearchResult
-            {
-                FileName = winner.FileName,
-                FileSize = winner.FileSize,
-                FileUrl = winner.FileUrl,
-                DescriptionUrl = withPage.DescriptionUrl,
-                Seeders = winner.Seeders,
-                Leechers = winner.Leechers,
-                EngineName = winner.EngineName,
-                SiteUrl = winner.SiteUrl
-            };
+        return new TorrentSearchResult
+        {
+            FileName = winner.FileName,
+            FileSize = size,
+            FileUrl = winner.FileUrl,
+            DescriptionUrl = withPage.DescriptionUrl,
+            Seeders = winner.Seeders,
+            Leechers = winner.Leechers,
+            SeedersUnknown = winner.SeedersUnknown,
+            EngineName = winner.EngineName,
+            SiteUrl = winner.SiteUrl
+        };
     }
 
     private async Task<(IndexerRunTelemetry, List<TorrentSearchResult>)> RunIndexerAsync(

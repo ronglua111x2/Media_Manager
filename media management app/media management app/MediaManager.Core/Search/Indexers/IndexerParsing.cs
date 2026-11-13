@@ -5,6 +5,18 @@ namespace media_management_app.Search.Indexers;
 
 internal static class IndexerParsing
 {
+    /// <summary>
+    /// The response had result items but none could be read (a field was renamed, the layout changed): that is a
+    /// parse error for the breaker, not "no results" (audit 07c NS-13).
+    /// </summary>
+    public static void ThrowIfUnreadable(int parsed, int unreadable, string indexerId)
+    {
+        if (parsed == 0 && unreadable > 0)
+        {
+            throw new FormatException($"{indexerId}: {unreadable} result item(s) but none could be read (format change?).");
+        }
+    }
+
     private const long MaxUnixSeconds = 253_402_300_799;
 
     /// <summary>Unix seconds (or milliseconds, when the value is too large for seconds) as a date; null when out of range.</summary>

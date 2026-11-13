@@ -53,7 +53,8 @@ public sealed record IndexerResult(
     DateTimeOffset? PublishedUtc,
     string IndexerId,
     string? Source = null,
-    double? VirusProbability = null);
+    double? VirusProbability = null,
+    bool SeedersUnknown = false);
 
 public enum IndexerFailureKind
 {

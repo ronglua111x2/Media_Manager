@@ -18,7 +18,8 @@ public sealed partial class LimeTorrentsIndexer(string baseUrl = "https://www.li
     public IndexerCapabilities Capabilities { get; } = new(IndexerMediaKinds.All, PrefersSpecificQueries: true);
 
     private const int MaxPages = 4;
-    private const int FullPageRows = 20;
+    // A full results page has 40 rows (fixture coherence.html); fewer means the last page (audit 07c NS-26).
+    private const int FullPageRows = 40;
 
     public async Task<IReadOnlyList<IndexerResult>> SearchAsync(IndexerQuery query, IIndexerHttp http, CancellationToken cancellationToken)
     {
@@ -66,6 +67,13 @@ public sealed partial class LimeTorrentsIndexer(string baseUrl = "https://www.li
             throw new FormatException("LimeTorrents page has no result table.");
         }
 
+        // Every page has "tt-name" (sponsored rows), so also check for torrent links that no row pattern read:
+        // a small markup change must not look like "no results" (audit 07c NS-13).
+        if (results.Count == 0 && TorrentLink().IsMatch(html))
+        {
+            throw new FormatException("LimeTorrents page has torrent links but no readable result row.");
+        }
+
         return results;
     }
 
@@ -73,4 +81,7 @@ public sealed partial class LimeTorrentsIndexer(string baseUrl = "https://www.li
         @"<a href=""https?://itorrents\.[a-z]+/torrent/(?<hash>[0-9A-Fa-f]{40})\.torrent[^""]*""[^>]*></a><a href=""(?<detail>/[^""]+)"">(?<name>[^<]+)</a>.*?<td class=""tdnormal"">(?<size>[^<]+)</td><td class=""tdseed"">(?<seed>[\d,]+)</td><td class=""tdleech"">(?<leech>[\d,]+)</td>",
         RegexOptions.Singleline | RegexOptions.IgnoreCase)]
     private static partial Regex RowRegex();
+
+    [GeneratedRegex(@"itorrents\.[a-z]+/torrent/[0-9A-Fa-f]{40}", RegexOptions.IgnoreCase)]
+    private static partial Regex TorrentLink();
 }

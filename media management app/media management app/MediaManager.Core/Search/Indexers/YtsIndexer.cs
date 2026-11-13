@@ -52,6 +52,7 @@ public sealed partial class YtsIndexer(string baseUrl = "https://yts.gg") : ITor
             return results;
         }
 
+        var unreadable = 0;
         foreach (var movie in movies.EnumerateArray())
         {
             var titleLong = Str(movie, "title_long") ?? Str(movie, "title");
@@ -59,6 +60,7 @@ public sealed partial class YtsIndexer(string baseUrl = "https://yts.gg") : ITor
                 !movie.TryGetProperty("torrents", out var torrents) ||
                 torrents.ValueKind != JsonValueKind.Array)
             {
+                unreadable++;
                 continue;
             }
 
@@ -67,6 +69,7 @@ public sealed partial class YtsIndexer(string baseUrl = "https://yts.gg") : ITor
                 var hash = Str(torrent, "hash");
                 if (!IndexerResultNormalizer.IsValidInfoHash(hash))
                 {
+                    unreadable++;
                     continue;
                 }
 
@@ -93,6 +96,7 @@ public sealed partial class YtsIndexer(string baseUrl = "https://yts.gg") : ITor
             }
         }
 
+        IndexerParsing.ThrowIfUnreadable(results.Count, unreadable, "yts");
         return results;
     }
 

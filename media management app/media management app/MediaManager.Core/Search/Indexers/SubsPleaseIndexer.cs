@@ -12,7 +12,7 @@ namespace media_management_app.Search.Indexers;
 /// "No results" is a bare <c>[]</c>. The API only matches show names (not episode numbers) and reports no
 /// swarm counts, so Seeders/Leechers are 0. Captured 12/11/2026: 7 releases × 3 resolutions for "Kanata Kara".
 /// </summary>
-public sealed class SubsPleaseIndexer(string baseUrl = "https://subsplease.org") : ITorrentIndexer
+public sealed partial class SubsPleaseIndexer(string baseUrl = "https://subsplease.org") : ITorrentIndexer
 {
     private static readonly Regex MagnetSize = new(@"[?&]xl=(?<size>\d+)", RegexOptions.Compiled);
 
@@ -24,10 +24,46 @@ public sealed class SubsPleaseIndexer(string baseUrl = "https://subsplease.org")
 
     public async Task<IReadOnlyList<IndexerResult>> SearchAsync(IndexerQuery query, IIndexerHttp http, CancellationToken cancellationToken)
     {
-        var uri = new Uri($"{baseUrl.TrimEnd('/')}/api/?f=search&tz=UTC&s={Uri.EscapeDataString(query.Text)}");
+        var show = ShowQuery(query.Text, query.Kind == media_management_app.Common.MediaKind.TvEpisode);
+        if (show.Length == 0)
+        {
+            return [];
+        }
+
+        var uri = new Uri($"{baseUrl.TrimEnd('/')}/api/?f=search&tz=UTC&s={Uri.EscapeDataString(show)}");
         var response = await http.GetAsync(uri, cancellationToken);
         return Parse(response.Body);
     }
+
+    /// <summary>
+    /// The API only matches show names: "Kanata Kara S01E06", "Kanata Kara 06" and "Kanata Kara S01 complete" all
+    /// return nothing. Episode/season markers, pack words, quality tokens and a trailing episode number are removed;
+    /// every episode of the show comes back and the evaluator picks the right one (audit 07c NS-14).
+    /// </summary>
+    public static string ShowQuery(string text, bool episodeQuery = true)
+    {
+        var hadEpisodeMarker = SeasonEpisodeMarker().IsMatch(text ?? string.Empty);
+        var show = EpisodeMarkers().Replace(text ?? string.Empty, " ");
+        show = Regex.Replace(show, @"\s+", " ").Trim();
+        // "Kanata Kara 06": the number is the episode. Not for packs or "S01E06" queries, where a trailing number
+        // belongs to the title ("Mob Psycho 100 S01 complete").
+        if (episodeQuery && !hadEpisodeMarker)
+        {
+            show = TrailingNumber().Replace(show, string.Empty).Trim();
+        }
+
+        return show;
+    }
+
+    [GeneratedRegex(@"\bS\d{1,3}E\d{1,4}\b|\b\d{1,3}x\d{1,4}\b", RegexOptions.IgnoreCase)]
+    private static partial Regex SeasonEpisodeMarker();
+
+    [GeneratedRegex(@"\bseasons?\s*\d{1,3}(?:\s*-\s*\d{1,3})?\b|\bS\d{1,3}(?:E\d{1,4})?\b|\b\d{1,3}x\d{1,4}\b|\b(?:season|seasons|complete|batch|pack|episode|ep)\b|\b(?:2160p|1440p|1080p|720p|576p|480p|4k|hevc|x264|x265)\b|\b(?:19|20)\d{2}\b", RegexOptions.IgnoreCase)]
+    private static partial Regex EpisodeMarkers();
+
+    // A trailing episode number ("- 06", "06", "1-12"), but never the whole query.
+    [GeneratedRegex(@"(?<=\S)\s*-?\s*\d{1,4}(?:\s*-\s*\d{1,4})?$")]
+    private static partial Regex TrailingNumber();
 
     public static IReadOnlyList<IndexerResult> Parse(string json)
     {
@@ -110,7 +146,8 @@ public sealed class SubsPleaseIndexer(string baseUrl = "https://subsplease.org")
                         DetailsUrl: detailsUrl,
                         PublishedUtc: published,
                         IndexerId: "subsplease",
-                        Source: "subsplease"));
+                        Source: "subsplease",
+                        SeedersUnknown: true));
                 }
             }
 

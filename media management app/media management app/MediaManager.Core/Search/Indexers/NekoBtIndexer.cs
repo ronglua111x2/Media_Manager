@@ -59,6 +59,7 @@ public sealed class NekoBtIndexer(string baseUrl = "https://nekobt.to") : ITorre
 
             var site = siteUrl.TrimEnd('/');
             var results = new List<IndexerResult>();
+            var unreadable = 0;
             foreach (var item in items.EnumerateArray())
             {
                 if (item.ValueKind != JsonValueKind.Object ||
@@ -75,6 +76,7 @@ public sealed class NekoBtIndexer(string baseUrl = "https://nekobt.to") : ITorre
 
                 if (string.IsNullOrWhiteSpace(title))
                 {
+                    unreadable++;
                     continue;
                 }
 
@@ -88,6 +90,7 @@ public sealed class NekoBtIndexer(string baseUrl = "https://nekobt.to") : ITorre
                 hash = IndexerResultNormalizer.IsValidInfoHash(hash) ? hash!.ToLowerInvariant() : CandidateDeduplicator.TryGetInfoHash(magnet);
                 if (hash is null && magnet is null)
                 {
+                    unreadable++;
                     continue;
                 }
 
@@ -107,6 +110,7 @@ public sealed class NekoBtIndexer(string baseUrl = "https://nekobt.to") : ITorre
                     Source: "nekobt"));
             }
 
+            IndexerParsing.ThrowIfUnreadable(results.Count, unreadable, "nekobt");
             return results;
         }
     }

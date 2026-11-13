@@ -88,7 +88,8 @@ public sealed partial class Bt4gIndexer(string baseUrl = "https://bt4gprx.com") 
                 DetailsUrl: item.SelectSingleNode("guid")?.InnerText?.Trim(),
                 PublishedUtc: ParseDate(item.SelectSingleNode("pubDate")?.InnerText),
                 IndexerId: "bt4g",
-                Source: string.IsNullOrWhiteSpace(category) ? "bt4g" : $"bt4g:{category}"));
+                Source: string.IsNullOrWhiteSpace(category) ? "bt4g" : $"bt4g:{category}",
+                SeedersUnknown: true));
         }
 
         return results;

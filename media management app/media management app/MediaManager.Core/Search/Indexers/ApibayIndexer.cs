@@ -30,11 +30,19 @@ public sealed class ApibayIndexer(string baseUrl = "https://apibay.org") : ITorr
         }
 
         var results = new List<IndexerResult>();
+        var unreadable = 0;
         foreach (var row in document.RootElement.EnumerateArray())
         {
-            var hash = Str(row, "info_hash");
-            if (!IndexerResultNormalizer.IsValidInfoHash(hash) || Str(row, "id") == "0")
+            // The "No results returned" row has id 0 and an all-zero hash.
+            if (Str(row, "id") == "0")
             {
+                continue;
+            }
+
+            var hash = Str(row, "info_hash");
+            if (!IndexerResultNormalizer.IsValidInfoHash(hash))
+            {
+                unreadable++;
                 continue;
             }
 
@@ -53,6 +61,7 @@ public sealed class ApibayIndexer(string baseUrl = "https://apibay.org") : ITorr
                 Source: Str(row, "status") is { Length: > 0 } status ? $"tpb:{status}" : "tpb"));
         }
 
+        IndexerParsing.ThrowIfUnreadable(results.Count, unreadable, "apibay");
         return results;
     }
 

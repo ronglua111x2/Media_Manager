@@ -100,6 +100,7 @@ public sealed class EztvIndexer(string baseUrl = "https://eztvx.to") : ITorrentI
         }
 
         var results = new List<IndexerResult>();
+        var unreadable = 0;
         foreach (var row in torrents.EnumerateArray())
         {
             if (row.ValueKind != JsonValueKind.Object)
@@ -126,12 +127,14 @@ public sealed class EztvIndexer(string baseUrl = "https://eztvx.to") : ITorrentI
             var hasHash = IndexerResultNormalizer.IsValidInfoHash(hash);
             if (!hasMagnet && !hasHash)
             {
+                unreadable++;
                 continue;
             }
 
             var title = CleanTitle(Str(row, "title")) ?? Str(row, "filename");
             if (string.IsNullOrWhiteSpace(title))
             {
+                unreadable++;
                 continue;
             }
 
@@ -150,6 +153,7 @@ public sealed class EztvIndexer(string baseUrl = "https://eztvx.to") : ITorrentI
                 Source: "eztv"));
         }
 
+        IndexerParsing.ThrowIfUnreadable(results.Count, unreadable, "eztv");
         return new EztvPage(results, totalCount);
     }
 

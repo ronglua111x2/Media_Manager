@@ -54,6 +54,7 @@ public sealed class TsukiHimeIndexer(string baseUrl = "https://api.tsukihime.org
             }
 
             var results = new List<IndexerResult>();
+            var unreadable = 0;
             foreach (var item in items.EnumerateArray())
             {
                 if (item.ValueKind != JsonValueKind.Object)
@@ -64,6 +65,13 @@ public sealed class TsukiHimeIndexer(string baseUrl = "https://api.tsukihime.org
                 var title = Str(item, "name");
                 var hash = Str(item, "btih");
                 if (string.IsNullOrWhiteSpace(title) || !IndexerResultNormalizer.IsValidInfoHash(hash))
+                {
+                    unreadable++;
+                    continue;
+                }
+
+                // Adult (Sukebei) releases never belong in anime candidates (audit 07c NS-29).
+                if (Long(item, "is_adult") > 0 || Long(item, "sukebei_id") > 0)
                 {
                     continue;
                 }
@@ -81,9 +89,11 @@ public sealed class TsukiHimeIndexer(string baseUrl = "https://api.tsukihime.org
                     DetailsUrl: nyaaId > 0 ? $"https://nyaa.si/view/{nyaaId}" : null,
                     PublishedUtc: IndexerParsing.FromUnix(sourceDate),
                     IndexerId: "tsukihime",
-                    Source: "tsukihime"));
+                    Source: "tsukihime",
+                    SeedersUnknown: true));
             }
 
+            IndexerParsing.ThrowIfUnreadable(results.Count, unreadable, "tsukihime");
             return results;
         }
     }
