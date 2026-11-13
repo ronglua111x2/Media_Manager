@@ -48,6 +48,7 @@ internal sealed class QuotaLedger
 
     public static QuotaClass Classify(string model)
     {
+        model = Running.ModelSpec.IdOf(model);
         var entry = GeminiModelCatalogDefaults.CreateSeed().Models
             .FirstOrDefault(item => string.Equals(item.Id, model, StringComparison.OrdinalIgnoreCase));
         return entry?.FreeRequestsPerDay switch
@@ -61,6 +62,7 @@ internal sealed class QuotaLedger
     /// <summary>Requests this model may still send today under the eval's caps (and this run's cap).</summary>
     public int Remaining(string model)
     {
+        model = Running.ModelSpec.IdOf(model);
         var file = Load();
         var day = PacificDay;
         var remaining = Classify(model) switch
@@ -98,6 +100,7 @@ internal sealed class QuotaLedger
     /// <summary>Counts one request before it is sent. False (nothing sent) when a cap would be exceeded.</summary>
     public bool TryReserve(string model, string label, out string entryId)
     {
+        model = Running.ModelSpec.IdOf(model);
         entryId = string.Empty;
         if (Remaining(model) < 1)
         {

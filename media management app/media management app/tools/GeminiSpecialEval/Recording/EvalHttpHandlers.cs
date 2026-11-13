@@ -31,7 +31,7 @@ internal sealed class LiveGuardHandler : DelegatingHandler
         : base(inner ?? new HttpClientHandler())
     {
         _ledger = ledger;
-        _model = model;
+        _model = Running.ModelSpec.IdOf(model);
     }
 
     /// <summary>Where the exchanges of the current sample go.</summary>
@@ -50,7 +50,7 @@ internal sealed class LiveGuardHandler : DelegatingHandler
                 $"Eval guard: only POST …{expected} may be sent from this stack (got {request.Method} {request.RequestUri?.AbsolutePath}).");
         }
 
-        var exchange = new RecordedExchange { StartedUtc = DateTimeOffset.UtcNow };
+        var exchange = new RecordedExchange { StartedUtc = DateTimeOffset.UtcNow, ThinkingConfig = await RequestInspection.ThinkingConfigOf(request, cancellationToken) };
         if (!_ledger.TryReserve(_model, Label, out var entryId))
         {
             exchange.ErrorKind = "budget";
@@ -89,6 +89,20 @@ internal sealed class LiveGuardHandler : DelegatingHandler
             _ledger.Complete(entryId, null, exchange.ErrorKind);
             throw;
         }
+    }
+}
+
+internal static class RequestInspection
+{
+    public static async Task<string?> ThinkingConfigOf(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        if (request.Content is null)
+        {
+            return null;
+        }
+
+        var body = await request.Content.ReadAsStringAsync(cancellationToken);
+        return JsonNode.Parse(body)?["generationConfig"]?["thinkingConfig"]?.ToJsonString();
     }
 }
 
@@ -144,7 +158,8 @@ internal sealed class ResponderHandler : HttpMessageHandler
         var body = request.Content is null ? "{}" : await request.Content.ReadAsStringAsync(cancellationToken);
         var payload = JsonNode.Parse(body)?["contents"]?[0]?["parts"]?[0]?["text"]?.GetValue<string>() ?? "{}";
         var responseBody = GeminiEnvelope(_answer(payload));
-        Exchanges.Add(new RecordedExchange { StartedUtc = DateTimeOffset.UtcNow, Status = 200, Body = responseBody });
+        var thinking = JsonNode.Parse(body)?["generationConfig"]?["thinkingConfig"]?.ToJsonString();
+        Exchanges.Add(new RecordedExchange { StartedUtc = DateTimeOffset.UtcNow, Status = 200, ThinkingConfig = thinking, Body = responseBody });
         return new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = new StringContent(responseBody, Encoding.UTF8, "application/json"),

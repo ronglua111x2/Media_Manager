@@ -18,6 +18,9 @@ internal sealed class RecordedExchange
 
     public string? Error { get; set; }
 
+    /// <summary>The thinkingConfig of the request as sent (null = none), to check what the model was asked for.</summary>
+    public string? ThinkingConfig { get; set; }
+
     /// <summary>The raw response body, exactly as Gemini sent it.</summary>
     public string? Body { get; set; }
 }

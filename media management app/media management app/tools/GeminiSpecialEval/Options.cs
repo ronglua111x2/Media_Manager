@@ -91,7 +91,8 @@ internal sealed class Options
           quota     --data-dir …                         today's eval requests per model and what is left
 
         Options:
-          --models     catalog ids, e.g. gemini-3.5-flash-lite,gemini-3.1-flash-lite
+          --models     catalog ids, e.g. gemini-3.5-flash-lite,gemini-3.1-flash-lite; add @minimal|@low|@medium|@high
+                       to replace the catalog's thinking level (gemini-3.5-flash-lite@medium)
           --prompts    prompt variants, e.g. v2,v3 (default: the app's live version)
           --cases      all | name,… | tag:<tag> | source:<fixtures|eval|private>  (default: all)
           --key-from-settings  read Gemini.ApiKey (read-only) from an app settings.json when no

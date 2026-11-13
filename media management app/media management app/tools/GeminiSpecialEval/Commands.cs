@@ -669,7 +669,7 @@ internal static class Commands
 
     private static List<PlannedSample> BuildPlan(Options options, string dataDir, List<string> notes, out IReadOnlyList<CaseProbeResult> probes)
     {
-        var models = options.GetList("models");
+        var models = options.GetList("models").Select(label => ModelSpec.Parse(label).Label).ToList();
         if (models.Count == 0)
         {
             throw new ArgumentException("Pass --models <id>[,<id>…] (catalog ids, e.g. gemini-3.5-flash-lite).");
@@ -685,7 +685,9 @@ internal static class Commands
         probes = LoadCases(options, dataDir, notes).Select(CaseProbe.Probe).ToList();
         foreach (var probe in probes.Where(probe => !probe.CallsGemini))
         {
-            notes.Add($"{probe.Case.Name}: the rules place every special; the app sends no request (rules tier only).");
+            notes.Add(probe.Request.Context.CandidateCount == 0
+                ? $"{probe.Case.Name}: the builder finds no special candidate; the app sends no request (rules tier only)."
+                : $"{probe.Case.Name}: the rules place every special; the app sends no request (rules tier only).");
         }
 
         var plan = new List<PlannedSample>();
@@ -706,7 +708,7 @@ internal static class Commands
     private static void PrintPlan(IReadOnlyList<PlannedSample> plan, QuotaLedger ledger)
     {
         Console.WriteLine($"Plan: {plan.Count} request(s) (one per sample; a transient failure may add one retry each), Pacific day {ledger.PacificDay}.");
-        foreach (var group in plan.GroupBy(item => item.Model, StringComparer.OrdinalIgnoreCase))
+        foreach (var group in plan.GroupBy(item => ModelSpec.IdOf(item.Model), StringComparer.OrdinalIgnoreCase))
         {
             Console.WriteLine($"  {group.Key,-26} {group.Count(),3} planned, {ledger.Remaining(group.Key),3} left today ({QuotaLedger.Classify(group.Key)})");
         }
@@ -720,7 +722,7 @@ internal static class Commands
             return $"The plan needs {large} requests on 500/day models, but only {ledger.LargeRemaining()} are left of the eval's {QuotaLedger.LargeSharedCap}/day.";
         }
 
-        foreach (var group in plan.GroupBy(item => item.Model, StringComparer.OrdinalIgnoreCase))
+        foreach (var group in plan.GroupBy(item => ModelSpec.IdOf(item.Model), StringComparer.OrdinalIgnoreCase))
         {
             if (group.Count() > ledger.Remaining(group.Key))
             {

@@ -23,9 +23,11 @@ internal sealed class GeminiStack : IDisposable
     private readonly HttpClient _httpClient;
     private readonly string? _temporaryFolder;
 
-    private GeminiStack(string stateFolder, string model, string apiKey, HttpMessageHandler handler, bool temporary)
+    private GeminiStack(string stateFolder, string modelLabel, string apiKey, HttpMessageHandler handler, bool temporary)
     {
-        Model = model;
+        var spec = ModelSpec.Parse(modelLabel);
+        var model = spec.Id;
+        Model = spec.Label;
         _temporaryFolder = temporary ? stateFolder : null;
         Directory.CreateDirectory(stateFolder);
         Settings.Current.StateFolder = stateFolder;
@@ -42,6 +44,15 @@ internal sealed class GeminiStack : IDisposable
 
         _httpClient = new HttpClient(handler, disposeHandler: false) { Timeout = TimeSpan.FromSeconds(200) };
         var catalog = new GeminiModelCatalogService(Settings, _httpClient, Logger);
+        if (spec.ThinkingLevel is not null)
+        {
+            // In memory only: the router reads the entry on every request, and the catalog file is not saved.
+            var entry = catalog.Current.Models.FirstOrDefault(item => string.Equals(item.Id, model, StringComparison.OrdinalIgnoreCase))
+                        ?? throw new InvalidOperationException($"'{model}' is not in the catalog; a thinking override needs a catalog entry.");
+            entry.ThinkingLevel = spec.ThinkingLevel;
+            entry.ThinkingBudget = null;
+        }
+
         Router = new GeminiModelRouter(Settings, catalog, new GeminiModelAvailabilityStore(Settings, TimeProvider.System), Logger);
         var chain = Router.GetCandidateModels();
         if (chain.Count != 1 || !string.Equals(chain[0], model, StringComparison.OrdinalIgnoreCase))
@@ -53,6 +64,7 @@ internal sealed class GeminiStack : IDisposable
         Client = new GeminiApiClient(Settings, _httpClient, Router, Logger);
     }
 
+    /// <summary>The model label (catalog id, plus "@level" when the thinking level is overridden).</summary>
     public string Model { get; }
 
     public EvalSettingsService Settings { get; } = new();
