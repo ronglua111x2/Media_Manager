@@ -265,6 +265,35 @@ public sealed class LinkStateScenarioTests : IDisposable
         Assert.Equal(EpisodeAvailability.Available, _host.Availability(showId, 1, 2));
     }
 
+    // Audit R2-A-02: the symlink coordinator handles created links before removed ones. The removal of F1's old
+    // link (E05's library path, now F2's) must not delete the Jellyfin symlink F2 now owns.
+    [Fact]
+    public async Task PackRelink_SwapWithCreatedEventsFirst_KeepsBothJellyfinSymlinks()
+    {
+        var showId = PackShow("HSW2", 5035, "Pack/Demo.Part.A.mkv", "Pack/Demo.Part.B.mkv");
+        await _host.ApplyPackAsync(showId, 1,
+            ("Pack/Demo.Part.A.mkv", PackFileClassification.RegularEpisode, 1, 1),
+            ("Pack/Demo.Part.B.mkv", PackFileClassification.RegularEpisode, 1, 2));
+        _host.Symlinks.ReconcileAll();
+        Assert.Equal(2, _host.JellyfinFiles().Count);
+        var removals = new List<(SourceItem Item, string LinkedPath)>();
+        _host.Hub.HardlinkRemoved += (_, args) => removals.Add((args.Item, args.LinkedPath));
+        _host.Hub.HardlinksRemoved += (_, batch) => removals.AddRange(batch.Items.Select(args => (args.Item, args.LinkedPath)));
+
+        await _host.ApplyPackAsync(showId, 1,
+            ("Pack/Demo.Part.A.mkv", PackFileClassification.RegularEpisode, 1, 2),
+            ("Pack/Demo.Part.B.mkv", PackFileClassification.RegularEpisode, 1, 1));
+        _host.Symlinks.ReconcileAll();
+        Assert.NotEmpty(removals);
+        foreach (var (item, linkedPath) in removals)
+        {
+            _host.Symlinks.RemoveItem(item, linkedPath);
+        }
+
+        Assert.Equal(2, _host.JellyfinFiles().Count);
+        Assert.All(_host.Items(), item => Assert.False(string.IsNullOrWhiteSpace(item.SymlinkPath)));
+    }
+
     // Audit L3-02: a reset while the library drive is offline must not drop the record of a file that is still there.
     [Fact]
     public void ResetEpisode_WhenLibraryIsOffline_AbortsAndKeepsTheRecord()
@@ -511,6 +540,27 @@ public sealed class LinkStateScenarioTests : IDisposable
         var torrentRow = Assert.Single(_host.Items(), item => !item.IsExternalImport);
         Assert.Equal(ItemState.Linked, torrentRow.State);
         Assert.Equal(EpisodeAvailability.Available, _host.Availability(showA, 1, 1));
+    }
+
+    // Audit R2-A-08: the same case keeps show A's Jellyfin symlink too, not only its library file.
+    [Fact]
+    public void RemoveShowLinks_ImportMatchedToAnotherShow_KeepsTheFirstShowsSymlink()
+    {
+        _host.AddTorrent("HXS", "Demo.S01E01.mkv");
+        var showA = _host.AddShow(5044, "Demo Show", (1, 1, "One"));
+        _host.AssignEpisodeTorrent(showA, 1, 1, "HXS");
+        Assert.Equal(1, _host.Link.LinkEpisodeAsync(showA, 1, 1).GetAwaiter().GetResult().LinkedCount);
+        var libraryFile = _host.Items().Single().LinkedPath!;
+        _host.Symlinks.ReconcileAll();
+        Assert.Single(_host.JellyfinFiles());
+        var showB = _host.AddShow(5045, "Other Show", (1, 1, "One"));
+        _host.Db.UpdateSourceItem(ImportRow(libraryFile, "5045"));
+        _host.FollowHardlinkRemovals();
+
+        _host.Link.RemoveShowLinks(showB);
+
+        Assert.Single(_host.JellyfinFiles());
+        Assert.False(string.IsNullOrWhiteSpace(Assert.Single(_host.Items()).SymlinkPath));
     }
 
     // Audit L3-07: a pack reset whose library file was also imported must not abort on the import record.

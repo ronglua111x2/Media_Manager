@@ -127,6 +127,16 @@ public sealed class SymlinkSyncService : ISymlinkSyncService
         }
 
         linkedPath ??= item.LinkedPath;
+        if (!string.IsNullOrWhiteSpace(linkedPath) &&
+            File.Exists(linkedPath) &&
+            IsLinkedPathNowOwnedByAnother(item, linkedPath, _databaseService.GetSourceItems()))
+        {
+            // A re-link moved this library path to another record (two files swapped episodes, or a file became
+            // an orphan and another took its episode). The symlink is that record's now: keep it (audit R2-A-02).
+            result.SkippedCount++;
+            return result;
+        }
+
         linkedGroup = BuildRemovalGroup(item, linkedPath, linkedGroup);
 
         var symlinkPaths = linkedGroup
@@ -169,6 +179,35 @@ public sealed class SymlinkSyncService : ISymlinkSyncService
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// True when <paramref name="linkedPath"/> (still on disk) is the current link of another Linked record, so a
+    /// removal event for <paramref name="item"/> is stale for that path. Removed links are deleted from disk first,
+    /// so a normal unlink never matches.
+    /// </summary>
+    internal static bool IsLinkedPathNowOwnedByAnother(SourceItem item, string? linkedPath, IEnumerable<SourceItem> rows)
+    {
+        if (string.IsNullOrWhiteSpace(linkedPath))
+        {
+            return false;
+        }
+
+        string fullPath;
+        try
+        {
+            fullPath = Path.GetFullPath(linkedPath);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return false;
+        }
+
+        return rows.Any(row =>
+            row.Id != item.Id &&
+            row.State == ItemState.Linked &&
+            !string.IsNullOrWhiteSpace(row.LinkedPath) &&
+            string.Equals(Path.GetFullPath(row.LinkedPath), fullPath, StringComparison.OrdinalIgnoreCase));
     }
 
     public SymlinkSyncResult ReconcileAll()

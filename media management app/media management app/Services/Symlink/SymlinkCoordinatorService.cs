@@ -587,6 +587,20 @@ public sealed class SymlinkCoordinatorService : ISymlinkCoordinatorService
                     $"Symlink coordinator removed batch: {events.Count} item(s), SourceItems snapshot {snapshot.Count}.",
                     LogTarget.All);
 
+                // A removal whose library path another record now holds (a re-link moved it) must not delete that
+                // record's symlink, NFO or subtitles (audit R2-A-02).
+                var stale = events
+                    .Where(e => File.Exists(e.LinkedPath) &&
+                                SymlinkSyncService.IsLinkedPathNowOwnedByAnother(e.Item, e.LinkedPath, snapshot))
+                    .ToList();
+                if (stale.Count > 0)
+                {
+                    _logger.Info(
+                        $"Symlink coordinator kept {stale.Count} symlink(s) whose library path moved to another record in the same re-link.",
+                        LogTarget.File | LogTarget.Console);
+                    events = events.Except(stale).ToList();
+                }
+
                 var nfoTargets = events
                     .SelectMany(e => CollectSymlinkPathsForNfoCleanup(e.Item, snapshot))
                     .Distinct(StringComparer.OrdinalIgnoreCase)
