@@ -1,6 +1,7 @@
 using System.Text.Json;
 using media_management_app.Common;
 using media_management_app.Models;
+using media_management_app.Search;
 
 namespace media_management_app.Services;
 
@@ -1049,7 +1050,10 @@ public sealed class AutoTrackService : IAutoTrackService
                                 : searchRows > 0
                                     ? $"No recipe matches from {searchRows} search row(s)."
                                     : "No candidates found.";
-                            _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.NoCandidates, statusDetail);
+                            _torrentCartService.UpdateOrderStatus(
+                                order.Id,
+                                TorrentOrderStatus.NoCandidates,
+                                SearchBackendNotes.Append(statusDetail, _fetchJobService.GetSearchBackendNote(order.EpisodeId.Value)));
                             RecordAndLogEpisodeOutcome(
                                 result,
                                 BuildEpisodeOutcome(
@@ -1066,6 +1070,12 @@ public sealed class AutoTrackService : IAutoTrackService
 
                         result.CandidatesFound++;
                         _torrentCartService.ReplaceCandidates(order.Id, ToCartCandidates(candidates));
+                        if (_fetchJobService.GetSearchBackendNote(order.EpisodeId.Value) is { } backendNote &&
+                            _torrentCartService.GetOrder(order.Id) is { } found)
+                        {
+                            // The recipe chose Native/Both but native search is off or paused: the hunt went on with qBittorrent.
+                            _torrentCartService.UpdateOrderStatus(order.Id, found.Status, SearchBackendNotes.Append(found.StatusDetail, backendNote));
+                        }
                         approvedFetchOutcomes[order.Id] = BuildEpisodeOutcome(
                             order,
                             show.DisplayTitle,

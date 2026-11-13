@@ -92,7 +92,7 @@ public sealed partial class SearchQuotaViewModel : ObservableObject
         var skipped = active.Count(row => row.Severity == SearchSiteSeverity.Unavailable);
         var limited = active.Count(row => row.Severity == SearchSiteSeverity.Limited);
         SitesInUse = rows.Count(row => row.IsInUse);
-        IsNativeInUse = new[] { MediaKind.Movie, MediaKind.TvEpisode, MediaKind.TvSeasonPack }.Any(kind => _nativeSearch.UsesNative(kind));
+        IsNativeInUse = _nativeSearch.NativeEnabled;
         Severity = active.Count == 0 || skipped == active.Count
             ? SearchSiteSeverity.Unavailable
             : skipped > 0 || limited > 0 ? SearchSiteSeverity.Limited : SearchSiteSeverity.Ok;
@@ -106,8 +106,8 @@ public sealed partial class SearchQuotaViewModel : ObservableObject
               (limited > 0 ? $", {limited} limited" : string.Empty) + ".") +
             (SitesInUse > 0 ? $" {SitesInUse} {(SitesInUse == 1 ? "site is" : "sites are")} in use by a running search." : string.Empty);
         BackendLine = IsNativeInUse
-            ? "Native search is in use (Settings or recipe backend Native/Both)."
-            : "Searches use qBittorrent by default; these limits apply to recipes set to Native or Both.";
+            ? "Native search is on: recipes set to Native or Both use these sites."
+            : "Native search is off (Settings → Search engines): every recipe searches with qBittorrent.";
         ResetLine = $"Daily limits reset at {NativeSearchHealth.NextResetLocal(now):HH:mm}. Auto-Track may use 70% of each limit; the rest is kept for manual searches.";
     }
 

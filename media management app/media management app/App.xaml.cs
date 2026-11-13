@@ -66,6 +66,8 @@ public partial class App : System.Windows.Application
 
         var settings = _serviceProvider.GetRequiredService<ISettingsService>();
         settings.Load(launchOptions.StateFolder);
+        // Once: the search backend moves from Settings into each recipe (native-search P6 step 1).
+        SearchBackendMigrator.Run(settings, _serviceProvider.GetRequiredService<IRecipeService>(), _serviceProvider.GetRequiredService<IAppLogger>());
         // Shared by the search quota pill on the Auto, News and Cart screens ({DynamicResource SearchQuota}).
         Resources["SearchQuota"] = _serviceProvider.GetRequiredService<SearchQuotaViewModel>();
 

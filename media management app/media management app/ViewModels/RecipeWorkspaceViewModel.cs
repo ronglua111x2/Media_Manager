@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using media_management_app.Common;
 using media_management_app.Models;
+using media_management_app.Search;
 using media_management_app.Services;
 
 namespace media_management_app.ViewModels;
@@ -162,14 +163,17 @@ public sealed partial class RecipeWorkspaceViewModel : ViewModelBase
     private void CreateRecipe()
     {
         var defaultRecipe = _recipeService.GetDefaultRecipe(MediaKind.TvEpisode);
-        var recipe = _recipeService.SaveRecipe(new SearchRecipe
+        var draft = new SearchRecipe
         {
             Name = $"Recipe {Recipes.Count + 1}",
             TargetKind = MediaKind.TvEpisode,
             Modules = defaultRecipe.Modules
                 .Select(CloneModule)
                 .ToList()
-        });
+        };
+        // A new recipe searches with qBittorrent until the user picks Native or Both (the default recipe may use native).
+        RecipeRuntimeSettings.SetSearchBackend(draft, SearchBackends.Qbittorrent);
+        var recipe = _recipeService.SaveRecipe(draft);
         ReloadRecipes(recipe.RecipeId);
         ClearRecipeSearch();
         StatusMessage = $"Created recipe '{recipe.Name}'.";
@@ -1067,21 +1071,44 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
 
     public bool IsFuzzyDeduplicateEnabled => DeduplicateCandidates && FuzzyDeduplicate;
 
-    public IReadOnlyList<string> SearchBackendOptions { get; } = ["Default", "Qbittorrent", "Native", "Both"];
+    public IReadOnlyList<string> SearchBackendOptions { get; } = [SearchBackends.Qbittorrent, SearchBackends.Native, SearchBackends.Both];
 
-    /// <summary>Per-recipe search backend (native-search plan 08 §Q4); "Default" follows Settings → Search engines.</summary>
+    /// <summary>
+    /// The recipe's search backend (native-search P6 step 1: the recipe decides, Settings only turns native search on
+    /// or off). A recipe without one ("Default" from an older version) searches with qBittorrent.
+    /// </summary>
     public string SearchBackend
     {
-        get
-        {
-            var value = GetExtensionValue(RecipeRuntimeSettings.SearchBackendKey);
-            return SearchBackendOptions.FirstOrDefault(option => string.Equals(option, value, StringComparison.OrdinalIgnoreCase))
-                   ?? RecipeRuntimeSettings.DefaultSearchBackend;
-        }
-        set => SetExtensionValue(
-            RecipeRuntimeSettings.SearchBackendKey,
-            string.Equals(value, RecipeRuntimeSettings.DefaultSearchBackend, StringComparison.OrdinalIgnoreCase) ? string.Empty : value);
+        get => SearchBackendResolver.Normalize(GetExtensionValue(RecipeRuntimeSettings.SearchBackendKey));
+        set => SetExtensionValue(RecipeRuntimeSettings.SearchBackendKey, SearchBackendResolver.Normalize(value));
     }
+
+    public bool IsNativeBackend => SearchBackend == SearchBackends.Native;
+
+    public bool IsBothBackend => SearchBackend == SearchBackends.Both;
+
+    public bool UsesNativeBackend => IsNativeBackend || IsBothBackend;
+
+    /// <summary>Plugins, category, result limit, pagination and timeouts do nothing for a Native recipe: shown dimmed.</summary>
+    public bool QbittorrentFieldsInEffect => !IsNativeBackend;
+
+    /// <summary>Note above the fields only the qBittorrent search reads; empty for a qBittorrent recipe.</summary>
+    public string QbittorrentOnlyNote => SearchBackend switch
+    {
+        SearchBackends.Native => "Only used by the qBittorrent backend: plugins, category, result limit, pagination, timeouts and idle timeouts have no effect on native search.",
+        SearchBackends.Both => "Plugins, category, result limit, pagination, timeouts and idle timeouts only apply to the qBittorrent comparison search; native results ignore them.",
+        _ => string.Empty
+    };
+
+    public bool HasQbittorrentOnlyNote => QbittorrentOnlyNote.Length > 0;
+
+    /// <summary>Opacity of the qBittorrent-only fields: dimmed when the recipe searches native sites only.</summary>
+    public double QbittorrentFieldsOpacity => IsNativeBackend ? 0.45 : 1.0;
+
+    /// <summary>What native search still takes from the recipe.</summary>
+    public string NativeUsesSummary =>
+        "Native search uses from this recipe: the query list (Query module), Parallel searches, the episode numbering mode (Candidate Parser: Anime absolute also asks anime sites) and every filter and scoring module after the search. " +
+        "Sites, rate limits and the time budget come from Settings → Search engines, which must have native search enabled and not paused; otherwise this recipe searches with qBittorrent.";
 
     public bool UseShowSnapshotSearch
     {
@@ -1619,6 +1646,7 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
         {
             $"Enabled: {(IsEnabled ? "Yes" : "No")}",
             $"Mode: {SearchMode}",
+            $"Backend: {SearchBackend}",
             $"Candidate debug log: {(EnableCandidateDebugLog ? "On" : "Off")}",
             $"Search pagination: {(EnableSearchPagination ? "On" : "Off")}",
             $"Plugins: {PluginsSummary}",
@@ -1865,6 +1893,7 @@ internal static class ModuleFieldHelp
     {
         var items = new List<ModuleFieldHelpItem>
         {
+            new() { FieldName = "Search backend", Description = "Qbittorrent: qBittorrent's search plugins. Native: the app's own indexers (Settings → Search engines). Both: native results plus a qBittorrent comparison in the log. New recipes start on Qbittorrent.", OutputImpact = "While native search is off or paused in Settings, a Native or Both recipe searches with qBittorrent and the order status says so. Native ignores plugins, category, result limit, pagination and timeouts." },
             new() { FieldName = "Plugins", Description = "Which qBittorrent search plugins to query. Choose engines opens a live list from WebUI; disabled or missing plugins are skipped at hunt time.", OutputImpact = "Limits which indexers contribute candidates. Does not affect Quality preferred-engine scoring." },
             new() { FieldName = "Category", Description = "qBittorrent search category filter.", OutputImpact = "Narrows results to TV, movies, or all categories depending on plugin support." },
             new() { FieldName = "Candidates per fetch", Description = "How many accepted candidates are kept after scoring.", OutputImpact = "Lower values reduce noise; higher values keep more backup options." },

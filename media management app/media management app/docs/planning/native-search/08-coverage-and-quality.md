@@ -49,6 +49,8 @@ Mỗi nguồn mới phải có fixture test, chính sách governor và một dò
 
 ### Q4 — Chọn backend theo recipe (user yêu cầu)
 
+> **Thay đổi 13/11/2026 (P6 bước 1):** thứ tự ưu tiên bên dưới đã bỏ. Chỉ recipe quyết định (`Qbittorrent` | `Native` | `Both`, không còn `Default`); Settings chỉ còn công tắc **Enable native search** và kill switch. Xem [06 §1b](./06-rollout-and-migration.md#1b-backend-theo-recipe-p6-bước-1-13112026).
+
 - Thêm vào module `SearchSource` của recipe khoá `searchBackend` = `Default` | `Qbittorrent` | `Native` | `Both`.
 - **Thứ tự ưu tiên:** recipe (nếu khác `Default`) > override theo loại media trong Settings > backend chung trong Settings.
 - Recipe editor có một combo "Search backend". Cart và Auto-Track hiển thị backend đang dùng trong dòng log `Run Cart: … Mode=…`.

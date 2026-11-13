@@ -7,6 +7,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using media_management_app.Common;
 using media_management_app.Models;
+using media_management_app.Search;
 using media_management_app.Services;
 using media_management_app.Views;
 
@@ -385,12 +386,13 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
                     if (result.NoCandidates)
                     {
                         noCandidateCount++;
-                        _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.NoCandidates, result.Detail);
+                        _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.NoCandidates, SearchBackendNotes.Append(result.Detail, result.BackendNote));
                         continue;
                     }
 
                     candidateCount++;
                     _torrentCartService.ReplaceCandidates(result.Order.Id, result.Candidates);
+                    AppendBackendNote(result.Order.Id, result.BackendNote);
                 }
                 catch (OperationCanceledException)
                 {
@@ -695,11 +697,12 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
                     var result = await SearchOrderAsync(order, cancellationToken);
                     if (result.NoCandidates)
                     {
-                        _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.NoCandidates, result.Detail);
+                        _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.NoCandidates, SearchBackendNotes.Append(result.Detail, result.BackendNote));
                     }
                     else
                     {
                         _torrentCartService.ReplaceCandidates(result.Order.Id, result.Candidates);
+                        AppendBackendNote(result.Order.Id, result.BackendNote);
                     }
                 }
                 catch (OperationCanceledException)
@@ -1393,12 +1396,16 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
                 }
 
                 result.NoCandidateCount++;
-                _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.NoCandidates, "No candidates found.");
+                _torrentCartService.UpdateOrderStatus(
+                    order.Id,
+                    TorrentOrderStatus.NoCandidates,
+                    SearchBackendNotes.Append("No candidates found.", _fetchJobService.GetSearchBackendNote(episodeId)));
                 continue;
             }
 
             result.CandidateCount++;
             _torrentCartService.ReplaceCandidates(order.Id, ToCartCandidates(candidates));
+            AppendBackendNote(order.Id, _fetchJobService.GetSearchBackendNote(episodeId));
         }
 
         return result;
@@ -1425,10 +1432,10 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
             {
                 return result.SearchSourceProblem is { } sourceProblem
                     ? throw new SearchSourceUnavailableException(sourceProblem)
-                    : CartSearchResult.NoneFound(order, result.Summary);
+                    : CartSearchResult.NoneFound(order, result.Summary) with { BackendNote = result.SearchBackendNote };
             }
 
-            return CartSearchResult.Found(order, $"Found {result.AcceptedCandidates.Count} movie candidate(s).", ToCartCandidates(result.AcceptedCandidates));
+            return CartSearchResult.Found(order, $"Found {result.AcceptedCandidates.Count} movie candidate(s).", ToCartCandidates(result.AcceptedCandidates)) with { BackendNote = result.SearchBackendNote };
         }
 
         if (order.EpisodeId is null || order.SeasonNumber is null || order.EpisodeNumber is null)
@@ -1449,10 +1456,10 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         {
             return episodeResult.SearchSourceProblem is { } sourceProblem
                 ? throw new SearchSourceUnavailableException(sourceProblem)
-                : CartSearchResult.NoneFound(order, episodeResult.Summary);
+                : CartSearchResult.NoneFound(order, episodeResult.Summary) with { BackendNote = episodeResult.SearchBackendNote };
         }
 
-        return CartSearchResult.Found(order, $"Found {episodeResult.AcceptedCandidates.Count} episode candidate(s).", ToCartCandidates(episodeResult.AcceptedCandidates));
+        return CartSearchResult.Found(order, $"Found {episodeResult.AcceptedCandidates.Count} episode candidate(s).", ToCartCandidates(episodeResult.AcceptedCandidates)) with { BackendNote = episodeResult.SearchBackendNote };
     }
 
     private CancellationToken BeginOperation()
@@ -1522,15 +1529,16 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
             cancellationToken,
             GetOverrides(PackRecipeSummary),
             recipe.RecipeId);
+        var packNote = _fetchJobService.GetPackSearchBackendNote(order.MediaId, order.SeasonNumber.Value);
         if (!_fetchJobService.TryGetPackCandidates(order.MediaId, order.SeasonNumber.Value, out var candidates) ||
             candidates.Count == 0)
         {
             return _fetchJobService.GetPackSearchSourceProblem(order.MediaId, order.SeasonNumber.Value) is { } sourceProblem
                 ? throw new SearchSourceUnavailableException(sourceProblem)
-                : CartSearchResult.NoneFound(order, "No season pack candidates found.");
+                : CartSearchResult.NoneFound(order, "No season pack candidates found.") with { BackendNote = packNote };
         }
 
-        return CartSearchResult.Found(order, $"Found {candidates.Count} season pack candidate(s).", ToCartCandidates(candidates));
+        return CartSearchResult.Found(order, $"Found {candidates.Count} season pack candidate(s).", ToCartCandidates(candidates)) with { BackendNote = packNote };
     }
 
     private static IReadOnlyList<TorrentCartOrderCandidate> ToCartCandidates(IReadOnlyList<RecipeCandidateResult> candidates)
@@ -2003,6 +2011,20 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
             new(order, false, detail, candidates);
 
         public static CartSearchResult NoneFound(TorrentCartOrder order, string detail) => new(order, true, detail, []);
+
+        /// <summary>Why the recipe's Native/Both search ran on qBittorrent (native off or paused), for the status line.</summary>
+        public string? BackendNote { get; init; }
+    }
+
+    /// <summary>Adds the backend fallback note to the order's current status line (after candidates were stored).</summary>
+    private void AppendBackendNote(long orderId, string? note)
+    {
+        if (note is null || _torrentCartService.GetOrder(orderId) is not { } current)
+        {
+            return;
+        }
+
+        _torrentCartService.UpdateOrderStatus(orderId, current.Status, SearchBackendNotes.Append(current.StatusDetail, note));
     }
 
     private void ApplyMediaCardFilterAndSort()

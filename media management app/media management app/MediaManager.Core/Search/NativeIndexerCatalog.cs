@@ -17,10 +17,13 @@ public sealed class IndexerSettings
 /// <summary>Native search settings (settings.json → Search).</summary>
 public sealed class NativeSearchSettings
 {
-    /// <summary>"Qbittorrent" (default until the P6 cutover), "Native" or "Both" (native results + comparison log).</summary>
+    /// <summary>
+    /// Legacy (before per-recipe backends): "Qbittorrent", "Native" or "Both". Read once by
+    /// <see cref="SearchBackendMigration"/>; kept in settings.json so an older version still reads it. Never decides a search.
+    /// </summary>
     public string Backend { get; set; } = SearchBackends.Qbittorrent;
 
-    /// <summary>Per media kind override of <see cref="Backend"/>, e.g. {"Movie": "Native"} to roll out movies first.</summary>
+    /// <summary>Legacy per media kind override of <see cref="Backend"/>. Read once by the migration, like <see cref="Backend"/>.</summary>
     public Dictionary<string, string> BackendByKind { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
     public Dictionary<string, IndexerSettings> Indexers { get; set; } = new(StringComparer.OrdinalIgnoreCase);
@@ -32,6 +35,15 @@ public sealed class NativeSearchSettings
     public int OverallTimeoutSeconds { get; set; } = 90;
 
     public bool PauseAll { get; set; }
+
+    /// <summary>
+    /// Master switch of native search. Off: every recipe searches with qBittorrent; a recipe set to Native/Both does so
+    /// with a warning in the log and on the order. Each recipe chooses Qbittorrent, Native or Both.
+    /// </summary>
+    public bool NativeEnabled { get; set; }
+
+    /// <summary>True once the legacy <see cref="Backend"/>/<see cref="BackendByKind"/> were moved into the recipes.</summary>
+    public bool RecipeBackendsMigrated { get; set; }
 }
 
 public static class SearchBackends

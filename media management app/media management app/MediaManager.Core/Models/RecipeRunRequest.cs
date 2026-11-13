@@ -41,6 +41,12 @@ public sealed class RecipeDryRunResult
     /// </summary>
     public string? SearchSourceProblem { get; init; }
 
+    /// <summary>
+    /// Set when the recipe chose Native/Both but native search was off or paused, so the run searched with qBittorrent:
+    /// shown on the order status next to the result.
+    /// </summary>
+    public string? SearchBackendNote { get; init; }
+
     public string Summary => AcceptedCandidates.Count == 0 && SearchSourceProblem is { } problem
         ? problem
         : $"{AcceptedCandidates.Count} accepted, {RejectedCandidates.Count} rejected, {Queries.Count} quer{(Queries.Count == 1 ? "y" : "ies")}.";

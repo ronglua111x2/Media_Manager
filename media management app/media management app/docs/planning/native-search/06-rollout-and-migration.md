@@ -2,6 +2,8 @@
 
 ## 1. Feature flag
 
+> **Đã thay bằng §1b (13/11/2026):** `Search.Backend` chỉ còn được đọc một lần để migrate; backend do recipe chọn.
+
 | Giá trị `Search.Backend` | Hành vi |
 |---|---|
 | `Qbittorrent` (mặc định tới P6) | Đường cũ, không đổi (P1 vẫn áp dụng vì nằm ở bước khớp và chấm điểm) |
@@ -10,6 +12,21 @@
 
 - Recipe v2 có thể đặt `backend` riêng, ví dụ bật native cho **movie trước** (nơi đang đau nhất), anime để sau cùng.
 - Cờ đổi được trong Settings mà không cần khởi động lại; lượt search đang chạy dùng cờ tại thời điểm bắt đầu.
+
+## 1b. Backend theo recipe (P6 bước 1, 13/11/2026)
+
+User đã duyệt: **recipe quyết định backend**, Settings không còn chọn backend.
+
+- **Settings → Search engines** chỉ còn: `Search.NativeEnabled` (Enable native search, công tắc tổng), `PauseAll` (kill switch), timeout mỗi request, ngân sách mỗi search, bật/tắt và sức khoẻ từng site.
+- **Recipe** (module Search, key `searchBackend`): `Qbittorrent` / `Native` / `Both`. Recipe mới mặc định `Qbittorrent`. Giá trị `Default` không còn trong UI; recipe nào còn `Default` hoặc thiếu key (file import từ bản cũ) thì chạy qBittorrent.
+- Quyết định nằm ở `SearchBackendResolver` (Core): native tắt hoặc kill switch bật mà recipe chọn `Native`/`Both` thì **lùi về qBittorrent**, ghi cảnh báo vào log (mỗi recipe tối đa một lần mỗi 30 phút) và vào dòng trạng thái của order (cart và hunt) qua `SearchSession.BackendNote`. Lý do chọn lùi thay vì báo "No search source available": qBittorrent chính là đường search đã chạy ổn trước khi có native, nên hunt không bị đứng; người dùng vẫn thấy rõ vì sao. Trường hợp native bật nhưng mọi site bị bỏ qua (breaker, hết ngân sách) vẫn báo "No search source available" như cũ.
+- **Migration một lần** (`SearchBackendMigration` trong Core, chạy lúc khởi động qua `SearchBackendMigrator`):
+  - recipe đang `Default`/thiếu key được ghi backend hiệu lực lúc đó: `BackendByKind[TargetKind]` nếu có, không thì `Backend`;
+  - `NativeEnabled = true` nếu `Backend` khác `Qbittorrent` hoặc có recipe nào (sau migration) dùng `Native`/`Both`;
+  - mỗi recipe đổi được ghi một dòng log; recipe lưu xong mới đặt `Search.RecipeBackendsMigrated = true` rồi lưu settings, nên lưu lỗi thì lần khởi động sau chạy lại.
+- `Backend` và `BackendByKind` **vẫn nằm trong settings.json** (không ghi nữa) để bản cũ hơn đọc vẫn chạy như trước; chúng không còn quyết định search nào.
+- Trình sửa recipe: backend `Native` làm mờ Plugins, Category, Result limit, phân trang, timeout/idle timeout kèm ghi chú "chỉ dùng cho qBittorrent"; `Both` ghi rõ các ô đó chỉ áp dụng cho phần so sánh qBittorrent; có dòng liệt kê những gì native vẫn dùng (danh sách query, số search song song, chế độ đánh số anime, các module lọc/chấm điểm).
+- **Chưa làm (PR sau):** chọn site native theo recipe (danh sách indexer bật/tắt, mặc định theo loại media). Hiện native dùng mọi site đang bật trong Settings cho loại media đó. Xem §3.
 
 ## 2. Migration DB (đánh số tiếp từ `008_…`)
 
@@ -33,7 +50,8 @@ Mọi migration đi qua `MigrationRunner` hiện có, kèm test trong `MediaMana
 ## 3. Recipe v2
 
 - Module `SearchSource`:
-  - `plugins` (tên plugin qBittorrent) được thay bằng `indexers` (id indexer native) cùng override cho từng indexer (bật/tắt, số trang);
+  - `searchBackend` đã có từ P6 bước 1 (§1b);
+  - `plugins` (tên plugin qBittorrent) được thay bằng `indexers` (id indexer native) cùng override cho từng indexer (bật/tắt, số trang). **Bước tiếp theo (PR riêng):** key `nativeIndexers` (danh sách id, rỗng = mặc định theo loại media như hiện tại) và ô chọn site native trong trình sửa recipe; khoá memo của `NativeSearchService` phải gồm danh sách này;
   - các key timeout, idle, pagination, snapshot bị **bỏ**, vì governor và orchestrator đã quản lý.
 - Gỡ các key chết nằm sai module (SRCH-09).
 - `Require` / `Prefer` / `Avoid` thay cho `excludeTerms` / `preferTerms` (xem [05 §4](./05-quality-and-ui.md#4-chấm-điểm-trừ-điểm-thay-vì-loại-cứng-srch-14)).

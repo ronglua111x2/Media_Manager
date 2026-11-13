@@ -733,8 +733,28 @@
                                                 <TextBlock Text="Search backend" Style="{StaticResource RecipeLabelStyle}" />
                                                 <ComboBox ItemsSource="{Binding SearchBackendOptions}"
                                                           SelectedItem="{Binding SearchBackend, Mode=TwoWay}"
-                                                          ToolTip="Default follows Settings → Search engines. Native: the app's own indexers. Both: native results plus a comparison with qBittorrent in the log."
-                                                          Margin="0,0,0,12" />
+                                                          ToolTip="Qbittorrent: qBittorrent's search plugins. Native: the app's own indexers (Settings → Search engines). Both: native results plus a comparison with qBittorrent in the log. While native search is off or paused, Native and Both search with qBittorrent."
+                                                          Margin="0,0,0,4" />
+                                                <StackPanel Margin="0,0,0,12">
+                                                    <StackPanel.Style>
+                                                        <Style TargetType="StackPanel">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding UsesNativeBackend}" Value="True">
+                                                                    <Setter Property="Visibility" Value="Visible" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </StackPanel.Style>
+                                                    <TextBlock Text="{Binding NativeUsesSummary}"
+                                                               Style="{StaticResource MutedTextStyle}"
+                                                               TextWrapping="Wrap"
+                                                               Margin="0,0,0,4" />
+                                                    <TextBlock Text="{Binding QbittorrentOnlyNote}"
+                                                               FontWeight="SemiBold"
+                                                               TextWrapping="Wrap" />
+                                                </StackPanel>
+                                                <StackPanel Opacity="{Binding QbittorrentFieldsOpacity}" ToolTip="{Binding QbittorrentOnlyNote}">
                                                 <TextBlock Text="Plugins" Style="{StaticResource RecipeLabelStyle}" />
                                                 <Grid Margin="0,0,0,8">
                                                     <Grid.ColumnDefinitions>
@@ -755,6 +775,7 @@
                                                 <TextBlock Text="Category" Style="{StaticResource RecipeLabelStyle}" />
                                                 <TextBox Text="{Binding Category, UpdateSourceTrigger=PropertyChanged}"
                                                          Style="{StaticResource RecipeTextBoxStyle}" />
+                                                </StackPanel>
                                                 <TextBlock Text="Candidates per fetch" Style="{StaticResource RecipeLabelStyle}" />
                                                 <Border Style="{StaticResource RecipeNumericChromeStyle}">
                                                     <materialDesign:NumericUpDown Style="{StaticResource RecipeNumericUpDownStyle}"
@@ -773,8 +794,10 @@
                                                           Margin="0,0,0,8" />
                                                 <CheckBox Content="Enable search pagination"
                                                           IsChecked="{Binding EnableSearchPagination}"
+                                                          Opacity="{Binding QbittorrentFieldsOpacity}"
+                                                          ToolTip="{Binding QbittorrentOnlyNote}"
                                                           Margin="0,0,0,8" />
-                                                <StackPanel Margin="0,0,0,12">
+                                                <StackPanel Margin="0,0,0,12" Opacity="{Binding QbittorrentFieldsOpacity}">
                                                     <StackPanel.Style>
                                                         <Style TargetType="StackPanel">
                                                             <Setter Property="Visibility" Value="Collapsed" />
@@ -837,7 +860,7 @@
                                                                Style="{StaticResource MutedTextStyle}"
                                                                TextWrapping="Wrap"
                                                                Margin="0,0,0,8" />
-                                                    <StackPanel>
+                                                    <StackPanel Opacity="{Binding QbittorrentFieldsOpacity}" ToolTip="{Binding QbittorrentOnlyNote}">
                                                         <StackPanel.Style>
                                                             <Style TargetType="StackPanel">
                                                                 <Setter Property="Visibility" Value="Collapsed" />
@@ -870,6 +893,7 @@
                                                                                       Minimum="1"
                                                                                       Maximum="8" />
                                                     </Border>
+                                                    <StackPanel Opacity="{Binding QbittorrentFieldsOpacity}" ToolTip="{Binding QbittorrentOnlyNote}">
                                                     <TextBlock Text="Movie search timeout seconds" Style="{StaticResource RecipeLabelStyle}" />
                                                     <Border Style="{StaticResource RecipeNumericChromeStyle}">
                                                         <materialDesign:NumericUpDown Style="{StaticResource RecipeNumericUpDownStyle}"
@@ -877,7 +901,8 @@
                                                                                       Minimum="10"
                                                                                       Maximum="300" />
                                                     </Border>
-                                                    <StackPanel>
+                                                    </StackPanel>
+                                                    <StackPanel Opacity="{Binding QbittorrentFieldsOpacity}" ToolTip="{Binding QbittorrentOnlyNote}">
                                                         <StackPanel.Style>
                                                             <Style TargetType="StackPanel">
                                                                 <Setter Property="Visibility" Value="Collapsed" />
@@ -922,7 +947,7 @@
                                                                Style="{StaticResource MutedTextStyle}"
                                                                TextWrapping="Wrap"
                                                                Margin="0,0,0,8" />
-                                                    <StackPanel>
+                                                    <StackPanel Opacity="{Binding QbittorrentFieldsOpacity}" ToolTip="{Binding QbittorrentOnlyNote}">
                                                         <StackPanel.Style>
                                                             <Style TargetType="StackPanel">
                                                                 <Setter Property="Visibility" Value="Collapsed" />
@@ -955,6 +980,7 @@
                                                                                       Minimum="1"
                                                                                       Maximum="8" />
                                                     </Border>
+                                                    <StackPanel Opacity="{Binding QbittorrentFieldsOpacity}" ToolTip="{Binding QbittorrentOnlyNote}">
                                                     <TextBlock Text="TV parallel search timeout seconds" Style="{StaticResource RecipeLabelStyle}" />
                                                     <Border Style="{StaticResource RecipeNumericChromeStyle}">
                                                         <materialDesign:NumericUpDown Style="{StaticResource RecipeNumericUpDownStyle}"
@@ -962,7 +988,8 @@
                                                                                       Minimum="10"
                                                                                       Maximum="300" />
                                                     </Border>
-                                                    <StackPanel>
+                                                    </StackPanel>
+                                                    <StackPanel Opacity="{Binding QbittorrentFieldsOpacity}" ToolTip="{Binding QbittorrentOnlyNote}">
                                                         <StackPanel.Style>
                                                             <Style TargetType="StackPanel">
                                                                 <Setter Property="Visibility" Value="Collapsed" />
@@ -1007,6 +1034,7 @@
                                                                Style="{StaticResource MutedTextStyle}"
                                                                TextWrapping="Wrap"
                                                                Margin="0,0,0,8" />
+                                                    <StackPanel Opacity="{Binding QbittorrentFieldsOpacity}" ToolTip="{Binding QbittorrentOnlyNote}">
                                                     <TextBlock Text="Snapshot target results" Style="{StaticResource RecipeLabelStyle}" />
                                                     <Border Style="{StaticResource RecipeNumericChromeStyle}">
                                                         <materialDesign:NumericUpDown Style="{StaticResource RecipeNumericUpDownStyle}"
@@ -1028,6 +1056,7 @@
                                                                                       Minimum="0"
                                                                                       Maximum="120" />
                                                     </Border>
+                                                    </StackPanel>
                                                     <TextBlock Text="Local match workers" Style="{StaticResource RecipeLabelStyle}" />
                                                     <Border Style="{StaticResource RecipeNumericChromeStyle}">
                                                         <materialDesign:NumericUpDown Style="{StaticResource RecipeNumericUpDownStyle}"
@@ -1035,7 +1064,7 @@
                                                                                       Minimum="1"
                                                                                       Maximum="8" />
                                                     </Border>
-                                                    <StackPanel>
+                                                    <StackPanel Opacity="{Binding QbittorrentFieldsOpacity}" ToolTip="{Binding QbittorrentOnlyNote}">
                                                         <StackPanel.Style>
                                                             <Style TargetType="StackPanel">
                                                                 <Setter Property="Visibility" Value="Collapsed" />
