@@ -79,7 +79,7 @@ internal static class ReportWriter
                 $"{cell.Count(GeminiOutcome.Correct)} | **{cell.Count(GeminiOutcome.Wrong)}** | " +
                 $"{cell.Count(GeminiOutcome.DroppedRight)}/{cell.Count(GeminiOutcome.DroppedWrong)} | {cell.Count(GeminiOutcome.LeftOut)} | " +
                 $"{cell.Count(GeminiOutcome.AbstainCorrect)} | {Percent(cell.Count(GeminiOutcome.Correct), cell.RealSpecials)} | " +
-                $"{Percent(cell.Count(GeminiOutcome.Wrong), cell.Applied)} ({Percent(WilsonUpper(cell.Count(GeminiOutcome.Wrong), cell.Applied))}) | " +
+                $"{(cell.Applied == 0 ? "–" : $"{Percent(cell.Count(GeminiOutcome.Wrong), cell.Applied)} ({Percent(WilsonUpper(cell.Count(GeminiOutcome.Wrong), cell.Applied))})")} | " +
                 $"{cell.RawPairsRight}/{cell.RawPairs} | {Median(cell.LatenciesMs)} |");
         }
 
@@ -90,6 +90,7 @@ internal static class ReportWriter
         }
 
         AppendPerCase(text, scored, cells);
+        AppendPaired(text, scored);
         AppendStability(text, scored);
         AppendIssues(text, scored);
         AppendRules(text, cases);
@@ -176,7 +177,7 @@ internal static class ReportWriter
         text.AppendLine();
         text.AppendLine("## Per case");
         text.AppendLine();
-        text.AppendLine("Each cell: correct / real specials asked, then ✗ wrong, ⊘ dropped, – left out, ! error (summed over samples).");
+        text.AppendLine("Each cell: correct / real specials asked, then ✗ wrong links (on any file, a non-special included), ⊘ dropped, – left out, ! failed samples (summed over samples).");
         text.AppendLine();
         text.Append("| Case | Files to Gemini |");
         foreach (var cell in cells)
@@ -235,6 +236,75 @@ internal static class ReportWriter
         }
 
         return string.Join(" ", parts);
+    }
+
+    /// <summary>
+    /// Prompt against prompt on the same request: same run, case, model and sample number. Counts the units where
+    /// one prompt made fewer wrong links than the other, with an exact two-sided sign test on the units that differ.
+    /// </summary>
+    private static void AppendPaired(StringBuilder text, IReadOnlyList<SampleScore> samples)
+    {
+        var units = samples
+            .Where(sample => sample.Files.All(file => file.Outcome != GeminiOutcome.Error))
+            .GroupBy(sample => (sample.Record.RunId, sample.Case.Name, sample.Record.Model, sample.Record.Sample))
+            .Select(group => group.ToDictionary(sample => sample.Record.Variant, sample => sample.Files.Count(file => file.Outcome == GeminiOutcome.Wrong)))
+            .Where(unit => unit.Count >= 2)
+            .ToList();
+        var variants = units.SelectMany(unit => unit.Keys).Distinct().Order(StringComparer.Ordinal).ToList();
+        if (units.Count == 0 || variants.Count < 2)
+        {
+            return;
+        }
+
+        text.AppendLine();
+        text.AppendLine("## Prompts compared on the same requests");
+        text.AppendLine();
+        text.AppendLine("A unit is one run × case × model × sample answered under both prompts. Sign test: exact, two-sided, on the units where the wrong counts differ.");
+        text.AppendLine();
+        text.AppendLine("| A | B | Units | A fewer wrong | Same | B fewer wrong | Wrong links A → B | Sign test p |");
+        text.AppendLine("|---|---|---|---|---|---|---|---|");
+        for (var i = 0; i < variants.Count; i++)
+        {
+            for (var j = i + 1; j < variants.Count; j++)
+            {
+                var (a, b) = (variants[i], variants[j]);
+                var pairs = units.Where(unit => unit.ContainsKey(a) && unit.ContainsKey(b)).Select(unit => (A: unit[a], B: unit[b])).ToList();
+                var aBetter = pairs.Count(pair => pair.A < pair.B);
+                var bBetter = pairs.Count(pair => pair.B < pair.A);
+                text.AppendLine(
+                    $"| {a} | {b} | {pairs.Count} | {aBetter} | {pairs.Count - aBetter - bBetter} | {bBetter} | " +
+                    $"{pairs.Sum(pair => pair.A)} → {pairs.Sum(pair => pair.B)} | {SignTest(aBetter, bBetter).ToString("0.000", CultureInfo.InvariantCulture)} |");
+            }
+        }
+    }
+
+    /// <summary>Exact two-sided sign test p-value for <paramref name="wins"/> against <paramref name="losses"/> (ties dropped).</summary>
+    public static double SignTest(int wins, int losses)
+    {
+        var n = wins + losses;
+        if (n == 0)
+        {
+            return 1;
+        }
+
+        var tail = 0.0;
+        for (var k = 0; k <= Math.Min(wins, losses); k++)
+        {
+            tail += Math.Exp(LogChoose(n, k) - (n * Math.Log(2)));
+        }
+
+        return Math.Min(1, 2 * tail);
+    }
+
+    private static double LogChoose(int n, int k)
+    {
+        var sum = 0.0;
+        for (var i = 1; i <= k; i++)
+        {
+            sum += Math.Log(n - k + i) - Math.Log(i);
+        }
+
+        return sum;
     }
 
     private static void AppendStability(StringBuilder text, IReadOnlyList<SampleScore> samples)

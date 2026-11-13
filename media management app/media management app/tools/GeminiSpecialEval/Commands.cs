@@ -558,6 +558,8 @@ internal static class Commands
         Expect(silent.Count(GeminiOutcome.Wrong) == 0 && silent.Count(GeminiOutcome.Correct) == 0, "silent answers linked something");
         Expect(silent.Count(GeminiOutcome.LeftOut) == silent.RealSpecials, "silent answers were not all left out");
         Expect(ReportWriter.WilsonUpper(0, 20) is > 0.16 and < 0.17, "Wilson upper bound for 0/20 is not about 16.1%");
+        Expect(Math.Abs(ReportWriter.SignTest(8, 1) - 0.0390625) < 1e-9, "sign test for 8 wins and 1 loss is not 0.039");
+        Expect(ReportWriter.SignTest(0, 0) == 1 && ReportWriter.SignTest(3, 3) == 1, "sign test of a tie is not 1");
 
         foreach (var drop in scores.Where(score => score.Record.Model == "selftest-oracle")
                      .SelectMany(score => score.Files.Where(file => file.Outcome == GeminiOutcome.DroppedRight).Select(file => (score.Case.Name, file))))
