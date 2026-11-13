@@ -16,30 +16,36 @@
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
+                    <!-- One line per text, trimmed, with the full text on hover: the card's height and width
+                         never depend on how long a release name is. -->
                     <StackPanel Grid.Column="0">
-                        <StackPanel Orientation="Horizontal">
-                            <Border Style="{StaticResource CandidateChipStyle}" Margin="0,0,6,0">
+                        <DockPanel LastChildFill="True">
+                            <Border DockPanel.Dock="Left" Style="{StaticResource CandidateChipStyle}" Margin="0,0,6,0">
                                 <TextBlock Text="{Binding RankLabel}" Style="{StaticResource CandidateChipTextStyle}" />
                             </Border>
-                            <Border Style="{StaticResource CandidateChipStyle}" Margin="0,0,6,0">
+                            <Border DockPanel.Dock="Left" Style="{StaticResource CandidateChipStyle}" Margin="0,0,6,0">
                                 <TextBlock Text="{Binding QualityLabel}" Style="{StaticResource CandidateChipTextStyle}" />
                             </Border>
                             <TextBlock Text="{Binding StatsLine}"
                                        Style="{StaticResource MutedTextStyle}"
                                        VerticalAlignment="Center"
-                                       TextTrimming="CharacterEllipsis" />
-                        </StackPanel>
+                                       TextWrapping="NoWrap"
+                                       TextTrimming="CharacterEllipsis"
+                                       ToolTip="{Binding StatsLine}" />
+                        </DockPanel>
                         <TextBlock Text="{Binding AttributesLine}"
                                    Style="{StaticResource MutedTextStyle}"
                                    Margin="0,4,0,0"
                                    FontSize="11"
-                                   TextTrimming="CharacterEllipsis" />
+                                   TextWrapping="NoWrap"
+                                   TextTrimming="CharacterEllipsis"
+                                   ToolTip="{Binding AttributesLine}" />
                         <TextBlock Text="{Binding Name}"
                                    Margin="0,6,0,0"
                                    FontSize="12"
+                                   TextWrapping="NoWrap"
                                    TextTrimming="CharacterEllipsis"
-                                   MaxHeight="36"
-                                   TextWrapping="Wrap" />
+                                   ToolTip="{Binding Name}" />
                         <TextBlock Text="{Binding MultiSeasonWarningText}"
                                    Foreground="{StaticResource AppBrushAccent}"
                                    FontSize="11"
@@ -143,24 +149,27 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <StackPanel Grid.Column="0">
-                    <StackPanel Orientation="Horizontal">
-                        <Border Style="{StaticResource CandidateChipStyle}" Margin="0,0,6,0">
+                    <DockPanel LastChildFill="True">
+                        <Border DockPanel.Dock="Left" Style="{StaticResource CandidateChipStyle}" Margin="0,0,6,0">
                             <TextBlock Text="{Binding SelectedCandidate.RankLabel, FallbackValue='#—'}"
                                        Style="{StaticResource CandidateChipTextStyle}" />
                         </Border>
-                        <Border Style="{StaticResource CandidateChipStyle}" Margin="0,0,6,0">
+                        <Border DockPanel.Dock="Left" Style="{StaticResource CandidateChipStyle}" Margin="0,0,6,0">
                             <TextBlock Text="{Binding SelectedCandidate.QualityLabel, FallbackValue='unknown'}"
                                        Style="{StaticResource CandidateChipTextStyle}" />
                         </Border>
                         <TextBlock Text="{Binding SelectedCandidate.StatsLine, FallbackValue='No candidate selected'}"
                                    Style="{StaticResource MutedTextStyle}"
                                    VerticalAlignment="Center"
+                                   TextWrapping="NoWrap"
                                    TextTrimming="CharacterEllipsis" />
-                    </StackPanel>
+                    </DockPanel>
                     <TextBlock Text="{Binding SelectedCandidate.Name, FallbackValue='Select a torrent candidate'}"
                                Margin="0,6,0,0"
                                FontSize="12"
-                               TextTrimming="CharacterEllipsis" />
+                               TextWrapping="NoWrap"
+                               TextTrimming="CharacterEllipsis"
+                               ToolTip="{Binding SelectedCandidate.Name, FallbackValue='Select a torrent candidate'}" />
                     <TextBlock Text="{Binding SelectedCandidateMultiSeasonWarning}"
                                Foreground="{StaticResource AppBrushAccent}"
                                FontSize="11"
@@ -215,20 +224,25 @@
             </Grid>
         </ToggleButton>
 
+        <!-- Fixed size (the picker's width, at least 520; height capped by the room below the picker) and always
+             below the picker: Placement=Custom (OnPlacePopup) plus a MaxHeight that fits the screen below
+             (FitPopupBelow), so WPF never flips it above. The margin leaves room for the drop shadow. -->
         <Popup x:Name="CandidatePopup"
-               Placement="Bottom"
+               Placement="Custom"
                PlacementTarget="{Binding ElementName=PickerToggle}"
                StaysOpen="False"
                AllowsTransparency="True"
                PopupAnimation="Fade"
                IsOpen="{Binding IsChecked, ElementName=PickerToggle}">
-            <Border Background="{StaticResource AppBrushSurfaceRaised}"
+            <Border x:Name="PopupCard"
+                    Background="{StaticResource AppBrushSurfaceRaised}"
                     BorderBrush="{StaticResource AppBrushBorder}"
                     BorderThickness="1"
                     CornerRadius="8"
                     Padding="6"
-                    MinWidth="{Binding ActualWidth, ElementName=PickerToggle}"
-                    MaxWidth="680"
+                    Margin="8,2,8,12"
+                    Width="{Binding ActualWidth, ElementName=PickerToggle}"
+                    MinWidth="520"
                     MaxHeight="460">
                 <Border.Effect>
                     <DropShadowEffect BlurRadius="12"

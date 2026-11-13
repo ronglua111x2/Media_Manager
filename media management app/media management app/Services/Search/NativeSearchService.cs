@@ -38,6 +38,12 @@ public interface INativeSearchService
 
     IReadOnlyList<IndexerStateSnapshot> HealthSnapshot();
 
+    /// <summary>
+    /// Sites some running native search is using right now: from the moment a search starts a site until that site's
+    /// queries finish, fail, time out or the search is cancelled (<see cref="IndexerRequestGovernor.BeginSiteRun"/>).
+    /// </summary>
+    IReadOnlyDictionary<string, SiteActivity> ActiveSiteRuns() => new Dictionary<string, SiteActivity>();
+
     /// <summary>The rate limits and daily budget that apply to an indexer (defaults, tightened by Settings).</summary>
     IndexerPolicy PolicyFor(string indexerId);
 
@@ -47,7 +53,10 @@ public interface INativeSearchService
 
     bool IsIndexerEnabled(string indexerId);
 
-    /// <summary>Raised (on any thread) when a site's usage, breaker or cooldown changes, or the kill switch is toggled.</summary>
+    /// <summary>
+    /// Raised (on any thread) when a site's usage, breaker or cooldown changes, a site joins or leaves a running search,
+    /// or the kill switch is toggled.
+    /// </summary>
     event Action? HealthChanged;
 
     bool PauseAll { get; set; }
@@ -148,6 +157,7 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
         _governor.KillSwitch = Settings.PauseAll;
         _governor.StateChanged += ScheduleSave;
         _governor.StateChanged += () => HealthChanged?.Invoke();
+        _governor.ActivityChanged += () => HealthChanged?.Invoke();
     }
 
     /// <summary>Marks searches in the current async flow as background work (Auto-Track): they get a smaller budget share.</summary>
@@ -201,6 +211,8 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
     public bool ComparesWithQbittorrent(MediaKind kind, SearchRecipe? recipe = null) => BackendFor(kind, recipe) == SearchBackends.Both;
 
     public IReadOnlyList<IndexerStateSnapshot> HealthSnapshot() => _governor.Snapshot();
+
+    public IReadOnlyDictionary<string, SiteActivity> ActiveSiteRuns() => _governor.ActiveSiteRuns();
 
     public IndexerPolicy PolicyFor(string indexerId) => NativeIndexerCatalog.PolicyResolver(Settings)(indexerId);
 

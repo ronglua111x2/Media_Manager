@@ -303,6 +303,9 @@ public sealed class SearchOrchestrator(IndexerRequestGovernor governor, Func<str
         CancellationToken callerToken,
         Func<TorrentSearchResult, bool>? couldMatter = null)
     {
+        // The site is "in use" (quota pill) from here until this method returns or throws: taken synchronously, before
+        // the first await, so a search that has started a site always shows it.
+        using var siteRun = governor.BeginSiteRun(indexer.Id, lane);
         var watch = Stopwatch.StartNew();
         var rows = new List<TorrentSearchResult>();
         var http = httpFactory(indexer.Id, lane, budget);
