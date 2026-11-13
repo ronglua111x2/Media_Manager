@@ -11,6 +11,10 @@ public class ReleaseAttributesTests
     [InlineData("Coherence (2013) 1080p BrRip x264 - YIFY", "BluRay,x264")]
     [InlineData("[SubsPlease] Kanata Kara - 06 (1080p) [ABCDEF12].mkv", "SubsPlease")]
     [InlineData("Coherence 2013 1080p BluRay x265 10bit AAC 5.1-Joy", "BluRay,x265,10bit,AAC,Joy")]
+    // "DL" of WEB-DL is not a group (07c NS-30)
+    [InlineData("Oppenheimer.2023.1080p.WEB-DL", "WEB-DL")]
+    [InlineData("Oppenheimer.2023.1080p.AMZN.WEB-DL.DDP5.1.H.264-FLUX", "WEB-DL,x264,DD+,FLUX")]
+    [InlineData("Dune.2021.1080p.Blu-Ray.mkv", "BluRay")]
     public void Describe_ExtractsEncodeAttributes(string name, string expected)
     {
         ReleaseAttributes.Describe(name).Should().Equal(expected.Split(','));

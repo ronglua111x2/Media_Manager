@@ -78,5 +78,6 @@ public static partial class ReleaseAttributes
     [GeneratedRegex(@"\bflac\b", RegexOptions.IgnoreCase)] private static partial Regex FlacRegex();
     [GeneratedRegex(@"\baac", RegexOptions.IgnoreCase)] private static partial Regex AacRegex();
     [GeneratedRegex(@"\bopus\b", RegexOptions.IgnoreCase)] private static partial Regex OpusRegex();
-    [GeneratedRegex(@"-(?<group>[A-Za-z0-9]{2,15})(\.(mkv|mp4|avi))?\s*$|^\[(?<group>[^\]]{2,30})\]")] private static partial Regex GroupRegex();
+    // "WEB-DL", "Blu-Ray", "DTS-HD" at the end of a name are tags, not the release group (07c NS-30).
+    [GeneratedRegex(@"(?<!\b(?:web|blu|dts|hdr10|ac|e))-(?<group>(?!(?:dl|rip|ray|hd|x|ma)\b)[A-Za-z0-9]{2,15})(\.(mkv|mp4|avi))?\s*$|^\[(?<group>[^\]]{2,30})\]", RegexOptions.IgnoreCase)] private static partial Regex GroupRegex();
 }

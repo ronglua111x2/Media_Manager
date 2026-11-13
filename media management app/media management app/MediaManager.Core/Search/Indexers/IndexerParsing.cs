@@ -55,9 +55,15 @@ internal static class IndexerParsing
     public static DateTimeOffset? FromUnixMilliseconds(long value) =>
         value is > 0 and <= (MaxUnixSeconds * 1000) + 999 ? DateTimeOffset.FromUnixTimeMilliseconds(value) : null;
 
+    private static readonly Regex DecimalComma = new(@"^\d+,\d{1,2}$", RegexOptions.Compiled);
+
     private static readonly Regex SizeRegex = new(@"(?<value>[\d.,]+)\s*(?<unit>[KMGT]i?B|B|bytes)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    /// <summary>"1.24 GB", "430.5 MiB", "700 MB" → bytes (binary multiples, as torrent sites use them).</summary>
+    /// <summary>
+    /// "1.24 GB", "430.5 MiB", "700 MB", "1,024.5 MB", "1,5 GB" → bytes (binary multiples, as torrent sites use them).
+    /// A comma followed by one or two final digits is a decimal comma ("1,5 GB" is 1.5 GB, not 15 GB, 07c NS-30);
+    /// otherwise commas separate thousands.
+    /// </summary>
     public static long ParseSize(string? text)
     {
         if (string.IsNullOrWhiteSpace(text))
@@ -66,8 +72,14 @@ internal static class IndexerParsing
         }
 
         var match = SizeRegex.Match(text);
-        if (!match.Success ||
-            !double.TryParse(match.Groups["value"].Value.Replace(",", ""), NumberStyles.Float, CultureInfo.InvariantCulture, out var value))
+        if (!match.Success)
+        {
+            return 0;
+        }
+
+        var number = match.Groups["value"].Value.TrimEnd('.', ',');
+        number = !number.Contains('.') && DecimalComma.IsMatch(number) ? number.Replace(',', '.') : number.Replace(",", "");
+        if (!double.TryParse(number, NumberStyles.Float, CultureInfo.InvariantCulture, out var value))
         {
             return 0;
         }

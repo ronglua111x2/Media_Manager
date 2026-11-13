@@ -103,6 +103,9 @@ public class NativeIndexerParserTests
     [InlineData("1.24 GB", 1_331_439_861L)]
     [InlineData("430.5 MiB", 451_411_968L)]
     [InlineData("700 MB", 734_003_200L)]
+    [InlineData("1,5 GB", 1_610_612_736L)]
+    [InlineData("1,024.5 MB", 1_074_266_112L)]
+    [InlineData("1,234 MB", 1_293_942_784L)]
     [InlineData("", 0L)]
     public void ParseSize_UsesBinaryUnits(string text, long expected)
     {
