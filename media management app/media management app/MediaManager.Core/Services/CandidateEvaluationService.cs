@@ -109,6 +109,12 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
         // When the year does not confirm the film (one off, or none), the release title must match one title
         // variant completely and carry no sequel marker the variant lacks: otherwise "Kill Bill Vol 1" (2003) is
         // taken for Vol. 2 (2004) and "Dune Part Two" for "Dune" (audit 07c NS-01/02).
+        // Same year: a sequel released the same year ("The Matrix Revolutions" for "The Matrix Reloaded", 2003).
+        if (yearMatch.Kind == YearMatchKind.Exact && !MovieReleaseTitle.MatchesTitle(result.FileName, titleVariants, ignorePrefix: true))
+        {
+            return Rejected(result, CandidateRejectReason.TitleMismatch, "the release names another film of the same year");
+        }
+
         if (yearMatch.Kind == YearMatchKind.OffByOne && !MovieReleaseTitle.MatchesTitle(result.FileName, titleVariants))
         {
             return Rejected(result, CandidateRejectReason.YearMismatch, $"{yearMatch.Detail} and the title is not an exact match");

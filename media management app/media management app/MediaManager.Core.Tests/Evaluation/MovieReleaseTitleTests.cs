@@ -100,4 +100,18 @@ public class MovieReleaseTitleTests
     {
         Match(name, variants).Should().BeFalse();
     }
+    // Same-year sequels: the year confirms nothing, the title must (prefix words are not checked).
+    [Theory]
+    [InlineData("The.Matrix.Revolutions.2003.1080p.BluRay.x264-GROUP", "The Matrix Reloaded", false)]
+    [InlineData("The.Matrix.Reloaded.2003.1080p.BluRay.x264-GROUP", "The Matrix Reloaded", true)]
+    [InlineData("www.SiteName.org - The.Matrix.Reloaded.2003.1080p.BluRay.x264-GROUP", "The Matrix Reloaded", true)]
+    [InlineData("AnimeKaizoku Kimi no Na wa 2016 1080p", "Your Name.|Kimi no Na wa.", true)]
+    [InlineData("续命之徒 绝命毒师电影El Camino A Breaking Bad Movie 2019 BluRay 1080p ..", "El Camino: A Breaking Bad Movie|El Camino", true)]
+    [InlineData("To End All War: Oppenheimer & the Atomic Bomb (2023) [1080p] [web] [YTS]", "Oppenheimer", false)]
+    [InlineData("Oppenheimer The Real Story 2023 1080p WEBRip DDP5 1 x265 10bit-G", "Oppenheimer", false)]
+    [InlineData("Oppenheimer.2023.IMAX.1080p.BluRay.x264-GROUP", "Oppenheimer", true)]
+    public void SameYear_ChecksTitleAndSuffixOnly(string name, string variants, bool expected)
+    {
+        MovieReleaseTitle.MatchesTitle(name, variants.Split('|'), ignorePrefix: true).Should().Be(expected);
+    }
 }

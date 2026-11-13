@@ -130,8 +130,9 @@ public static partial class JunkFilter
     private static partial Regex FrameSize();
 
     // exe/msi/lnk/vbs/apk never occur as words in titles; scr/bat/cmd do (".SCR." screener tag, "The.Bat.1959"),
-    // so those only count as the final extension of the name.
-    [GeneratedRegex(@"\.(exe|msi|lnk|vbs|apk)\b|\.(scr|bat|cmd)\s*$", RegexOptions.IgnoreCase)]
+    // so those only count as the final extension of the name. Some sources (qBittorrent's torrentdownloads plugin)
+    // turn the dots into spaces: "Rick and Morty S09E10 1080p WEB h264-EDITH scr" is the same fake (bench 13/11/2026).
+    [GeneratedRegex(@"\.(exe|msi|lnk|vbs|apk)\b|[.\s](exe|msi|lnk|vbs|apk|scr|bat|cmd)\s*$", RegexOptions.IgnoreCase)]
     private static partial Regex ExecutableRegex();
 
     [GeneratedRegex(@"\bcodec\s*pack\b|\bkeygen\b|\bpassword\s*(protected|\.txt|in\s+(comments|description|file))", RegexOptions.IgnoreCase)]

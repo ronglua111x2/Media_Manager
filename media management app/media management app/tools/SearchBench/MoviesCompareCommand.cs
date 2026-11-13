@@ -188,7 +188,7 @@ public static class MoviesCompareCommand
             : new AutoTorrentSettings();
     }
 
-    private static List<TrackedMovie> LoadMovies(string state)
+    internal static List<TrackedMovie> LoadMovies(string state)
     {
         using var connection = new SqliteConnection($"Data Source={Path.Combine(state, "media-manager.db")};Mode=ReadOnly");
         connection.Open();

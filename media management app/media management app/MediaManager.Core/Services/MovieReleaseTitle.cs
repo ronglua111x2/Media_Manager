@@ -65,7 +65,12 @@ public static partial class MovieReleaseTitle
     /// True when <paramref name="releaseName"/> names the film of one of <paramref name="titleVariants"/> (see the class
     /// summary). Only meant for releases whose year does not already confirm the film.
     /// </summary>
-    public static bool MatchesTitle(string? releaseName, IReadOnlyList<string> titleVariants)
+    /// <param name="ignorePrefix">
+    /// For releases whose year already matches: only the title itself and what follows it are checked (a same-year
+    /// sequel such as "The Matrix Revolutions" for "The Matrix Reloaded"); words before it are not, because group
+    /// tags and site names there are common and the year already confirms the film.
+    /// </param>
+    public static bool MatchesTitle(string? releaseName, IReadOnlyList<string> titleVariants, bool ignorePrefix = false)
     {
         if (string.IsNullOrWhiteSpace(releaseName))
         {
@@ -85,7 +90,7 @@ public static partial class MovieReleaseTitle
         var titleWords = variants.SelectMany(tokens => tokens).ToHashSet(StringComparer.Ordinal);
         var tokens = Tokenize(releaseName);
         var end = RegionEnd(tokens, titleWords);
-        return variants.Any(variant => MatchesVariant(tokens, end, variant, titleWords));
+        return variants.Any(variant => MatchesVariant(tokens, end, variant, titleWords, ignorePrefix));
     }
 
     /// <summary>
@@ -141,6 +146,12 @@ public static partial class MovieReleaseTitle
 
             if (char.IsLetterOrDigit(c))
             {
+                // "绝命毒师电影El Camino": a change of script is a word boundary.
+                if (current.Length > 0 && IsNonLatinLetter(current[^1]) != IsNonLatinLetter(c))
+                {
+                    Flush();
+                }
+
                 current.Append(c);
                 continue;
             }
@@ -199,7 +210,7 @@ public static partial class MovieReleaseTitle
         return tokens.Count;
     }
 
-    private static bool MatchesVariant(List<Token> tokens, int end, IReadOnlyList<string> variant, HashSet<string> titleWords)
+    private static bool MatchesVariant(List<Token> tokens, int end, IReadOnlyList<string> variant, HashSet<string> titleWords, bool ignorePrefix)
     {
         for (var start = 0; start < end; start++)
         {
@@ -208,7 +219,7 @@ public static partial class MovieReleaseTitle
                 continue;
             }
 
-            if (PrefixIsAllowed(tokens, start, titleWords) && SuffixIsAllowed(tokens, end, last, titleWords))
+            if ((ignorePrefix || PrefixIsAllowed(tokens, start, titleWords)) && SuffixIsAllowed(tokens, end, last, titleWords))
             {
                 return true;
             }
@@ -358,7 +369,9 @@ public static partial class MovieReleaseTitle
         return text.All(char.IsDigit) && i > 0 && MovieWords.Contains(tokens[i - 1].Text);
     }
 
-    private static bool IsNonLatin(string text) => text.Any(c => char.IsLetter(c) && c > 'ɏ');
+    private static bool IsNonLatin(string text) => text.Any(IsNonLatinLetter);
+
+    private static bool IsNonLatinLetter(char c) => char.IsLetter(c) && c > 'ɏ';
 
     private static bool IsYear(string text) =>
         text.Length == 4 && (text.StartsWith("19", StringComparison.Ordinal) || text.StartsWith("20", StringComparison.Ordinal)) && text.All(char.IsDigit);

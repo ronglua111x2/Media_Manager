@@ -106,6 +106,8 @@ public class QueryPlanAndJunkTests
     [InlineData("Movie.2014.1080p.BluRay.x264.scr")]
     [InlineData("Movie.2014.1080p.BluRay.x264.bat")]
     [InlineData("Movie 2014 1080p setup.msi")]
+    [InlineData("Rick and Morty S09E10 1080p WEB h264-EDITH scr")]
+    [InlineData("Rick and Morty S09E10 1080p WEB h264-EDITH exe")]
     public void Junk_ExecutableExtensions_AreRejected(string name)
     {
         var recipe = RecipeBuilder.Movie().Build();
