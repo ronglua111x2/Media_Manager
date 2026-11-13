@@ -48,6 +48,31 @@ public sealed class EpisodeRenumberingTests : IDisposable
         Assert.Contains(_host.Db.GetTrackedEpisodes(showId), item => item.SeasonNumber == 1 && item.EpisodeNumber == 13);
     }
 
+    // Audit R2-A-05: one link open in a player must stop the change before any other link is removed.
+    [Fact]
+    public async Task SwitchEpisodeOrganization_OneOfSeveralLinksLocked_LeavesEveryLinkInPlace()
+    {
+        _host.AddTorrent("HLA", "Demo.S01E01.1080p.mkv");
+        _host.AddTorrent("HLB", "Demo.S01E02.1080p.mkv");
+        var showId = _host.AddShow(5028, "Demo Show", (1, 1, "One"), (1, 2, "Two"));
+        _host.AssignEpisodeTorrent(showId, 1, 1, "HLA");
+        _host.AssignEpisodeTorrent(showId, 1, 2, "HLB");
+        await _host.Link.LinkEpisodeAsync(showId, 1, 1);
+        await _host.Link.LinkEpisodeAsync(showId, 1, 2);
+        _host.TmdbDetails = Details(5028, (1, 1), (2, 1));
+        var links = _host.Items().ToDictionary(item => item.EpisodeNumber!.Value, item => item.LinkedPath!);
+
+        using (new FileStream(links[1], FileMode.Open, FileAccess.Read, FileShare.Read))
+        {
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                _host.Shows.SwitchEpisodeOrganizationAsync(_host.Db.GetTrackedShow(showId)!, "group-1", "Arcs"));
+        }
+
+        Assert.True(File.Exists(links[2]));
+        Assert.All(_host.Items(), item => Assert.Equal(ItemState.Linked, item.State));
+        Assert.Equal(2, _host.Items().Count);
+    }
+
     // Audit L3-01: the TMDB fetch failed after every link had been deleted.
     [Fact]
     public async Task SwitchEpisodeOrganization_WhenTmdbFetchFails_ChangesNothing()

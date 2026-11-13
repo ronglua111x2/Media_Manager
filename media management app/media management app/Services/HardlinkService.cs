@@ -138,6 +138,51 @@ public sealed class HardlinkService : IHardlinkService
         return true;
     }
 
+    public bool CanRemoveHardLink(SourceItem item, out string? reason)
+    {
+        reason = null;
+        if (string.IsNullOrWhiteSpace(item.LinkedPath) ||
+            string.Equals(Path.GetFullPath(item.LinkedPath), Path.GetFullPath(item.FilePath), StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (!File.Exists(item.LinkedPath))
+        {
+            if (CreateLinkStorageProbe().IsLinkStorageReachable(item))
+            {
+                return true;
+            }
+
+            reason = $"The library folder of '{item.LinkedPath}' is not reachable (drive offline or not mounted). Reconnect it and retry.";
+            return false;
+        }
+
+        if (!_libraryPathResolver.TryResolveGeneratedLibraryRoot(item, out var libraryRoot, out reason))
+        {
+            return false;
+        }
+
+        if (ResolveCleanupRoot(item.LinkedPath, libraryRoot) is null)
+        {
+            reason =
+                $"'{item.LinkedPath}' is outside the current library folder ({libraryRoot}), probably because the library folder setting changed. " +
+                "The app does not delete files there: move or delete that file yourself, then retry.";
+            return false;
+        }
+
+        try
+        {
+            using var exclusive = new FileStream(item.LinkedPath, FileMode.Open, FileAccess.Read, FileShare.None);
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            reason = $"'{Path.GetFileName(item.LinkedPath)}' is in use ({ex.Message.Trim()}). Close any player using it and retry.";
+            return false;
+        }
+    }
+
     public LinkStorageProbe CreateLinkStorageProbe() =>
         new(item => _libraryPathResolver.TryResolveGeneratedLibraryRoot(item, out var libraryRoot, out _) ? libraryRoot : null);
 

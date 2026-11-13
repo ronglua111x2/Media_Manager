@@ -148,6 +148,26 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             return new AutoTorrentLinkResult { SkippedCount = 1, Messages = { "Tracked show was not found." } };
         }
 
+        // Check every link first: one that cannot be removed (open in a player, drive offline, outside the library
+        // folder) must stop the change before any other link, pack provenance or import row is touched (R2-A-05).
+        var blocked = new AutoTorrentLinkResult();
+        foreach (var item in _databaseService.GetSourceItems().Where(item =>
+                     item.MediaKind == MediaKind.TvEpisode &&
+                     string.Equals(item.Provider, "tmdb", StringComparison.OrdinalIgnoreCase) &&
+                     string.Equals(item.ProviderId, providerId, StringComparison.OrdinalIgnoreCase)))
+        {
+            if (!_hardlinkService.CanRemoveHardLink(item, out var reason))
+            {
+                blocked.ErrorCount++;
+                blocked.Messages.Add($"{item.FileName}: {reason}");
+            }
+        }
+
+        if (blocked.ErrorCount > 0)
+        {
+            return blocked;
+        }
+
         AutoTorrentLinkResult result;
         using (_eventHub.BeginBulkMutation())
         {
