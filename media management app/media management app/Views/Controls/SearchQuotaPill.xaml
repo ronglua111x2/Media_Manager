@@ -29,6 +29,7 @@
     <Grid>
         <Button x:Name="PillButton"
                 Style="{StaticResource StatusPillButtonStyle}"
+                Margin="0"
                 Click="OnPillClick"
                 Focusable="False">
             <Button.ToolTip>

@@ -155,7 +155,7 @@
                 <StackPanel VerticalAlignment="Center">
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="News" Style="{StaticResource SectionTitleStyle}" VerticalAlignment="Center" />
-                        <controls:SearchQuotaPill Margin="6,0,0,0" VerticalAlignment="Center" />
+                        <controls:SearchQuotaPill Margin="14,0,0,0" VerticalAlignment="Center" />
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
                         <iconPacks:PackIconLucide Kind="Sun"
