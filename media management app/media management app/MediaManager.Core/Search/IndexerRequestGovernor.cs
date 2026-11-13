@@ -99,6 +99,12 @@ public sealed class IndexerStateSnapshot
 
 public readonly record struct IndexerAvailability(bool CanRun, string? Reason);
 
+/// <summary>Running searches using one site, by lane (<see cref="IndexerRequestGovernor.BeginSiteRun"/>).</summary>
+public readonly record struct SiteActivity(int Interactive, int Background)
+{
+    public int Total => Interactive + Background;
+}
+
 /// <summary>
 /// Central request governor (native-search P2, user requirement: free sites ban IPs that hammer them).
 /// Every indexer request must acquire a lease here. Enforces per-site rate (requests/minute, minimum
@@ -128,6 +134,7 @@ public sealed class IndexerRequestGovernor
     private readonly Dictionary<string, DateTimeOffset> _lastStart = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _disabled = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, int> _interactiveWaiting = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, SiteActivity> _activeRuns = new(StringComparer.OrdinalIgnoreCase);
     private bool _killSwitch;
 
     public IndexerRequestGovernor(
@@ -172,6 +179,67 @@ public sealed class IndexerRequestGovernor
 
     /// <summary>Raised after any state change worth persisting.</summary>
     public event Action? StateChanged;
+
+    /// <summary>
+    /// Raised when a site joins or leaves a running search (<see cref="BeginSiteRun"/>). Not persisted: only the quota
+    /// pill listens.
+    /// </summary>
+    public event Action? ActivityChanged;
+
+    /// <summary>
+    /// Marks <paramref name="indexerId"/> as in use by one running search until the returned handle is disposed. The
+    /// orchestrator holds one handle per site of a search, from the moment the site is started (after its
+    /// availability check) until the site's last query finishes, fails, times out or the search is cancelled; waiting
+    /// for the site's turn here counts as in use. Several searches on the same site (Auto-Track hunt and a cart search)
+    /// each hold their own handle.
+    /// </summary>
+    public IDisposable BeginSiteRun(string indexerId, SearchLane lane)
+    {
+        lock (_gate)
+        {
+            var current = _activeRuns.GetValueOrDefault(indexerId);
+            _activeRuns[indexerId] = lane == SearchLane.Background
+                ? current with { Background = current.Background + 1 }
+                : current with { Interactive = current.Interactive + 1 };
+        }
+
+        ActivityChanged?.Invoke();
+        return new SiteRun(this, indexerId, lane);
+    }
+
+    /// <summary>The sites some running search is using right now (only sites with at least one run).</summary>
+    public IReadOnlyDictionary<string, SiteActivity> ActiveSiteRuns()
+    {
+        lock (_gate)
+        {
+            return new Dictionary<string, SiteActivity>(_activeRuns, StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
+    private void EndSiteRun(string indexerId, SearchLane lane)
+    {
+        lock (_gate)
+        {
+            if (!_activeRuns.TryGetValue(indexerId, out var current))
+            {
+                return;
+            }
+
+            var next = lane == SearchLane.Background
+                ? current with { Background = Math.Max(0, current.Background - 1) }
+                : current with { Interactive = Math.Max(0, current.Interactive - 1) };
+            if (next.Total == 0)
+            {
+                _activeRuns.Remove(indexerId);
+            }
+            else
+            {
+                _activeRuns[indexerId] = next;
+            }
+        }
+
+        ActivityChanged?.Invoke();
+    }
 
     public bool KillSwitch
     {
@@ -537,6 +605,19 @@ public sealed class IndexerRequestGovernor
         }
 
         return queue;
+    }
+
+    private sealed class SiteRun(IndexerRequestGovernor owner, string indexerId, SearchLane lane) : IDisposable
+    {
+        private int _disposed;
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) == 0)
+            {
+                owner.EndSiteRun(indexerId, lane);
+            }
+        }
     }
 
     private sealed class Lease(IndexerRequestGovernor owner, string indexerId) : IDisposable
