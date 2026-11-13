@@ -313,6 +313,34 @@ public class PackScenarioTests
         PackScenario.AssertRegular(inventory, "[Grp] Show (01-24)/[Grp] Show - 13 [1080p].mkv", 2, 1);
     }
 
+    // Audit L1-L4: specials named inside a season folder were dropped by both pipelines. "S00E02" is always a
+    // special; "S01E13.OVA" is one because TMDB season 1 has no episode 13.
+    [Fact]
+    public void SpecialsNamedInsideASeasonFolder_AreMappedOrKeptAsExtras()
+    {
+        var inventory = PackScenario.Run(Scenarios["specials-in-season-folder"]);
+
+        Assert.Equal(12, inventory.RegularEpisodeCount);
+        var direct = PackScenario.Entry(inventory, "Show/Season 1/Show.S00E02.1080p.mkv");
+        Assert.Equal(PackFileClassification.MatchedSpecial, direct.Classification);
+        Assert.Equal(2, direct.MatchedEpisodeNumber);
+        var ova = PackScenario.Entry(inventory, "Show/Season 1/Show.S01E13.OVA.1080p.mkv");
+        Assert.NotEqual(PackFileClassification.Skipped, ova.Classification);
+        Assert.NotEqual(PackFileClassification.RegularEpisode, ova.Classification);
+    }
+
+    // PARSE-03 stays fixed: an OVA word in a name whose SxxEyy IS a TMDB regular episode stays a regular episode.
+    [Fact]
+    public void OvaWordOnARealRegularEpisode_StaysRegular()
+    {
+        var inventory = PackScenario.Run(Scenarios["specials-in-season-folder"] with
+        {
+            EpisodesPerSeason = new() { [1] = 13 }
+        });
+
+        PackScenario.AssertRegular(inventory, "Show/Season 1/Show.S01E13.OVA.1080p.mkv", 1, 13);
+    }
+
     [Fact]
     public void AbsoluteNumberBeyondShow_IsSkippedWithReason()
     {
@@ -650,6 +678,13 @@ public class PackScenarioTests
             ["part2-owned-by-s2"] = new(
                 Owner: 2, Covered: [1, 2], EpisodesPerSeason: new() { [1] = 12, [2] = 12 },
                 Files: Enumerable.Range(13, 12).Select(e => $"Show/Season 1 Part 2/[Group] Show - {e:00} [1080p].mkv").ToArray()),
+            ["specials-in-season-folder"] = new(
+                Owner: 1, Covered: [1], EpisodesPerSeason: new() { [1] = 12 },
+                Files: Enumerable.Range(1, 12).Select(e => $"Show/Season 1/Show.S01E{e:00}.1080p.mkv")
+                    .Append("Show/Season 1/Show.S01E13.OVA.1080p.mkv")
+                    .Append("Show/Season 1/Show.S00E02.1080p.mkv")
+                    .ToArray(),
+                Specials: [(1, "2020-06-01", "Beach OVA"), (2, "2020-07-01", "Recap Special")]),
             ["absolute-beyond"] = new(
                 Owner: 1, Covered: [1], EpisodesPerSeason: new() { [1] = 12 },
                 Files: Enumerable.Range(1, 12).Select(e => $"[Grp] Show/[Grp] Show - {e:00} [1080p].mkv")

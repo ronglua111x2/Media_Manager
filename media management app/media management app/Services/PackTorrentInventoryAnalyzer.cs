@@ -65,7 +65,12 @@ public static class PackTorrentInventoryAnalyzer
             tree,
             inventory.Warnings);
         FlagSpecialLikeEpisodes(resolutionsByPath, files, fileSizes, episodes, inventory.Warnings);
-        var specialMappings = BuildSpecialMappings(files, tree, specialsEpisodes, resolvedSpecialMappings);
+        var specialMappings = BuildSpecialMappings(
+            files,
+            tree,
+            specialsEpisodes,
+            resolvedSpecialMappings,
+            episodes.Where(episode => episode.SeasonNumber > 0).ToList());
 
         foreach (var (relativePath, fileName) in files)
         {
@@ -621,14 +626,15 @@ public static class PackTorrentInventoryAnalyzer
         IReadOnlyList<(string RelativePath, string FileName)> files,
         PackFolderTreeAnalysis tree,
         IReadOnlyList<TrackedEpisode> specialsEpisodes,
-        SpecialMappingResult? resolvedSpecialMappings)
+        SpecialMappingResult? resolvedSpecialMappings,
+        IReadOnlyList<TrackedEpisode> regularEpisodes)
     {
         if (resolvedSpecialMappings is not null)
         {
             return BuildSpecialMappingsFromResult(resolvedSpecialMappings);
         }
 
-        return BuildLegacySpecialMappings(files, tree, specialsEpisodes);
+        return BuildLegacySpecialMappings(files, tree, specialsEpisodes, regularEpisodes);
     }
 
     private static IReadOnlyDictionary<string, SpecialFileMapping> BuildSpecialMappingsFromResult(
@@ -650,11 +656,12 @@ public static class PackTorrentInventoryAnalyzer
     private static IReadOnlyDictionary<string, SpecialFileMapping> BuildLegacySpecialMappings(
         IReadOnlyList<(string RelativePath, string FileName)> files,
         PackFolderTreeAnalysis tree,
-        IReadOnlyList<TrackedEpisode> specialsEpisodes)
+        IReadOnlyList<TrackedEpisode> specialsEpisodes,
+        IReadOnlyList<TrackedEpisode>? regularEpisodes = null)
     {
         var mappings = new Dictionary<string, SpecialFileMapping>(StringComparer.OrdinalIgnoreCase);
         var claimed = new HashSet<int>();
-        var buckets = PackSpecialBucketDetector.Detect(files, tree);
+        var buckets = PackSpecialBucketDetector.Detect(files, tree, PackSpecialPayloadBuilder.RegularEpisodePredicate(regularEpisodes));
 
         foreach (var bucket in buckets.OrderBy(item => item.LayoutKind).ThenBy(item => item.ParentSeasonNumber))
         {

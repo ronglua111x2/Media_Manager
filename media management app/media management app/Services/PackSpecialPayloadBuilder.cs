@@ -22,7 +22,7 @@ public static class PackSpecialPayloadBuilder
         int tmdbId,
         IReadOnlyList<TrackedEpisode>? regularEpisodes = null)
     {
-        var context = BuildContext(files, tree, specialsEpisodes, showTitle, tmdbId);
+        var context = BuildContext(files, tree, specialsEpisodes, showTitle, tmdbId, regularEpisodes);
         var tier = BuildProposals(context, specialsEpisodes, regularEpisodes ?? []);
         return new SpecialMappingAIRequest
         {
@@ -265,9 +265,10 @@ public static class PackSpecialPayloadBuilder
         PackFolderTreeAnalysis tree,
         IReadOnlyList<TrackedEpisode> specialsEpisodes,
         string showTitle,
-        int tmdbId)
+        int tmdbId,
+        IReadOnlyList<TrackedEpisode>? regularEpisodes = null)
     {
-        var buckets = PackSpecialBucketDetector.Detect(files, tree);
+        var buckets = PackSpecialBucketDetector.Detect(files, tree, RegularEpisodePredicate(regularEpisodes));
         var candidates = new List<SpecialMappingCandidate>();
         var bucketPatterns = new Dictionary<(SpecialLayoutKind Kind, int? ParentSeason), InferredSpecialPattern>();
 
@@ -555,6 +556,20 @@ public static class PackSpecialPayloadBuilder
         }
 
         return SpecialMappingNamingPattern.Opaque;
+    }
+
+    internal static Func<int, int, bool>? RegularEpisodePredicate(IReadOnlyList<TrackedEpisode>? regularEpisodes)
+    {
+        if (regularEpisodes is not { Count: > 0 })
+        {
+            return null;
+        }
+
+        var keys = regularEpisodes
+            .Where(episode => episode.SeasonNumber > 0)
+            .Select(episode => (episode.SeasonNumber, episode.EpisodeNumber))
+            .ToHashSet();
+        return (season, episode) => keys.Contains((season, episode));
     }
 
     private static int? TryGetDirectS00E(SpecialMappingCandidate candidate)
