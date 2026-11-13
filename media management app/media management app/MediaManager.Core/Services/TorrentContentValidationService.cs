@@ -20,10 +20,16 @@ public sealed class TorrentContentValidationService
     /// installer launchers run code when opened. settings.json files saved the DangerousExtensions list (without
     /// .lnk), so changing the config default alone would not reach existing installs. ".url" (a web link) stays an
     /// ignored extra.
+    /// SEC-A04: disk images (mount on double-click, contents lose Mark-of-the-Web), Windows search/library/settings
+    /// shortcuts and .website (NTLM leak or command run when Explorer shows them), ClickOnce, Excel add-ins,
+    /// script components, troubleshooter packs and installer patches. None belongs in a film or episode torrent.
     /// </summary>
     internal static readonly IReadOnlyList<string> AlwaysDangerousExtensions =
     [
-        ".lnk", ".hta", ".wsf", ".wsh", ".vbe", ".jse", ".msc", ".reg", ".scf", ".chm", ".msix", ".appx", ".appinstaller"
+        ".lnk", ".hta", ".wsf", ".wsh", ".vbe", ".jse", ".msc", ".reg", ".scf", ".chm", ".msix", ".appx", ".appinstaller",
+        ".iso", ".img", ".vhd", ".vhdx",
+        ".library-ms", ".searchconnector-ms", ".settingcontent-ms", ".website",
+        ".application", ".appref-ms", ".xll", ".wsc", ".sct", ".diagcab", ".msp"
     ];
 
     private const int PackPayloadCount = 3;
