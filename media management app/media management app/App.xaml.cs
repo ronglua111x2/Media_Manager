@@ -103,7 +103,11 @@ public partial class App : System.Windows.Application
         {
             // A previous session may have exited while WARP was switched to warp+doh for TMDB.
             var warpCliService = _serviceProvider.GetRequiredService<IWarpCliService>();
-            _ = Task.Run(() => warpCliService.RestorePendingModeAsync());
+            _ = Task.Run(async () =>
+            {
+                await warpCliService.RestorePendingModeAsync();
+                await warpCliService.GetOperationModeAsync(); // so network failure logs can show the mode
+            });
         }
 
         var setupCompleted = settings.Current.Startup?.SetupCompleted == true;
@@ -291,7 +295,7 @@ public partial class App : System.Windows.Application
     private static void ConfigureServices(IServiceCollection services, AppLaunchOptions launchOptions)
     {
         services.AddLogging(builder => builder.AddDebug());
-        services.AddSingleton<HttpClient>();
+        services.AddSingleton(_ => Services.Net.NetworkClients.CreateShared());
         services.AddSingleton(launchOptions);
 
         services.AddSingleton<ISettingsService, SettingsService>();
@@ -338,7 +342,17 @@ public partial class App : System.Windows.Application
         services.AddSingleton<ShowSearchSnapshotService>();
         services.AddSingleton<INativeSearchService, NativeSearchService>();
         services.AddSingleton<SearchQuotaViewModel>();
-        services.AddSingleton<TmdbMetadataProvider>();
+        services.AddSingleton(provider =>
+        {
+            var connectionTracker = new Services.Net.ConnectionTracker();
+            return new TmdbMetadataProvider(
+                provider.GetRequiredService<ISettingsService>(),
+                provider.GetRequiredService<IAppLogger>(),
+                Services.Net.NetworkClients.CreateTmdb(connectionTracker),
+                provider.GetRequiredService<ITmdbBlockAdvisor>(),
+                connectionTracker,
+                provider.GetRequiredService<IWarpCliService>());
+        });
         services.AddSingleton<IMetadataProvider>(provider => provider.GetRequiredService<TmdbMetadataProvider>());
         services.AddSingleton<ITmdbShowCatalogService>(provider => provider.GetRequiredService<TmdbMetadataProvider>());
         services.AddSingleton<ITmdbMovieCatalogService>(provider => provider.GetRequiredService<TmdbMetadataProvider>());

@@ -486,7 +486,7 @@ Settings organized in seven sections (`SettingsSection` enum). All saved to `set
 | qBittorrent | URL, credentials, API key, test | `Services/QbittorrentClient.cs` |
 | qBittorrent restart | Opt-in process recovery | `Services/QbittorrentProcessRestartService.cs` |
 | Jellyfin | URL, API key, test | `Services/JellyfinClient.cs` |
-| WARP CLI | Path, test, auto-recover (switches DNS-only mode to warp+doh for TMDB, §10.21) | `Services/WarpCliService.cs` |
+| WARP CLI | Path, test, auto-recover (switches DNS-only mode to warp+doh for TMDB, §10.21), route Auto-Track search through a tunnel | `Services/WarpCliService.cs` |
 | Flush Jellyfin queue | Manual | `Services/JellyfinLibraryRefreshService.cs` |
 
 ### 8.5 Torrent Storage Section
@@ -563,7 +563,7 @@ Setup details: [STATE_FOLDER.md](./STATE_FOLDER.md#google-drive-oauth)
   - **Status:** interrupted-order recovery is not yet verified in a real crash / power-loss test. Merged to `main` (PR #8, label `release:skip`, so no GitHub Release); used from a local publish. Migration 008 applied cleanly on the live DB (2026-10-26).
 - **Code:** `Services/AutoTrackService.cs` (`RunTorrentHuntAsync`, `RecoverInterruptedOrdersOnceAsync`), `Services/InterruptedOrderRecovery.cs`, `TorrentCartService.ReleaseInterruptedAutoTrackOrder`
 - **DB:** `TorrentCartOrders` (incl. `PendingValidationHash`), `TorrentCartOrderCandidates`, `TrackedShows.AutoTrackEpisodeOverridesJson`
-- **External:** WARP connect, qBittorrent restart if WebUI down
+- **External:** WARP connect (real tunnel by default, §10.21), qBittorrent restart if WebUI down
 - **Tests:** `MediaManager.App.Tests/Services/InterruptedOrderRecoveryTests.cs`, `TorrentAddGatePendingHashTests.cs`
 
 ### 10.4 Background Reconcile (Auto-Track)
@@ -615,9 +615,9 @@ Setup details: [STATE_FOLDER.md](./STATE_FOLDER.md#google-drive-oauth)
 
 ### 10.10 Jellyfin Library Refresh
 - **What:** Debounced path notifications after symlinks; WARP hold during refresh
-- **TMDB pre-probe:** before notifying, the app probes `api.themoviedb.org` (Jellyfin's TMDb plugin needs it to fetch metadata). A network-block error (SSL/TLS, refused/reset, DNS, timeout) goes through the same WARP recover as §10.2 (`TmdbWarpRecovery`: connect WARP, wait for DNS, retry 3 s / 5 s apart) under lease `JellyfinHold`.
+- **TMDB pre-probe:** before notifying, the app probes `api.themoviedb.org`, the host Jellyfin's TMDb plugin uses. A failure WARP can get past (`NetworkFailureClassifier.IsWarpFallbackCandidate`) goes through `TmdbWarpRecovery` under lease `JellyfinHold`; if the tunnel does not help, the paths stay queued with backoff. Any other failure (401, 5xx, recovery switched off) still notifies Jellyfin, because library changes do not depend on TMDB.
 - **Post-notify WARP hold:** runs when the pre-probe needed WARP **or** an Auto-Track hunt lease is active. It keeps WARP up while Jellyfin refreshes (log tail or timer, `WarpHoldSecondsAfterNotify`), then releases; WARP is disconnected only if the app connected it.
-- **Retry backoff:** a failed flush re-queues its paths and retries after 3 s → 30 s → 2 min → 5 min (cap); a failed WARP connect waits 5 min straight away. Newly queued paths and a successful flush reset it to 3 s (`Services/JellyfinRetryBackoff.cs`). The queue is in memory only — paths still pending when the app exits are not resent (Jellyfin's own library monitor usually picks the file up).
+- **Retry backoff:** a failed flush re-queues its paths and retries after 3 s → 30 s → 2 min → 5 min (cap); a failed WARP connect waits 5 min straight away. Newly queued paths and a successful flush reset it to 3 s (`Services/JellyfinRetryBackoff.cs`). The queue is in memory only — paths still pending when the app exits are not resent (Jellyfin's own library monitor usually picks the file up). If Jellyfin itself refuses the API key (401/403) the paths are dropped with an error instead of retried.
 - **Code:** `Services/JellyfinLibraryRefreshService.cs`, `Services/JellyfinRetryBackoff.cs`, `Services/TmdbWarpRecovery.cs`, `Services/JellyfinLogTailer.cs`
 - **DB:** None (API calls)
 
@@ -676,11 +676,15 @@ Setup details: [STATE_FOLDER.md](./STATE_FOLDER.md#google-drive-oauth)
 - **DB:** None
 
 ### 10.21 WARP mode switch for TMDB
+- **TMDB hosts:** the API uses `api.tmdb.org` (setting `TmdbApiHost`, JSON only; hosts live in `Common/NetworkEndpoints.cs`), which the network does not block, so Library, Find/Add and Auto-Track need no WARP. Retries inside WARP recovery use `api.themoviedb.org` through the tunnel. A redirect or HTML page from the API host counts as a failure.
+- **Failure classes:** `Common/NetworkFailureClassifier.cs` is the only place that interprets a network error (HTTP status, then exception type, `HttpRequestError`, `SocketError`; never message text). WARP recovery covers refused and cut connections, TLS failures, DNS failures, timeouts, bad replies, HTTP 451 and redirects; it does not fire for an offline machine, auth errors, rate limits or server errors. After 2 shows in one discovery cycle exhaust recovery, the rest of the cycle skips it.
+- **Clients:** `Services/Net/NetworkClients.cs` gives each destination its own timeouts and an expiring connection pool (TMDB 20 s, Jellyfin 30 s, qBittorrent 60 s, images 30 s, shared client 100 s). A failed TMDB request logs one `net.fail` line with host, address, attempt, class, elapsed time and WARP state.
 - **Why:** this network blocks `api.themoviedb.org` twice: local DNS answers loopback, and TLS is cut by SNI. A DNS-only WARP mode (`doh`/`dot`) fixes DNS only, so TMDB still fails; a tunnel mode (`warp+doh`) gets through.
-- **What:** leases that need TMDB (`WarpLeaseReasonText.RequiresTunnel`: Auto-Track TMDB recover, Jellyfin hold, Host setup) read the mode (`warp-cli -j settings` → `settings.operation_mode`). A non-tunnel mode is switched to `warp+doh` before connect (an existing tunnel reconnects). When no held lease needs the tunnel any more (release, connect failure, or the user's force-disconnect), the original mode is restored — unless the user changed the mode meanwhile. Hunt, user and Settings-test leases keep the user's mode.
+- **What:** leases that need TMDB (`WarpLeaseReasonText.RequiresTunnel`: Auto-Track TMDB recover, Jellyfin hold, Host setup) read the mode (`warp-cli -j settings` → `settings.operation_mode`). A non-tunnel mode is switched to `warp+doh` before connect (an existing tunnel reconnects). When no held lease needs the tunnel any more (release, connect failure, or the user's force-disconnect), the original mode is restored — unless the user changed the mode meanwhile. User and Settings-test leases keep the user's mode; Hunt follows `Warp.ForceTunnelForHunt` (below). Each `warp-cli` call has a deadline (20 s `connect`, 10 s others) and is killed on expiry, so a hung CLI cannot hold the global gate (`Services/WarpCliProcess.cs`).
 - **Crash safety:** `{StateFolder}/warp-mode-restore.json` is written before switching and deleted after restoring; on the next start `RestorePendingModeAsync` restores the mode if the marker is still there.
 - **No recovery (Library, Find/Add, …):** when a TMDB call through `TmdbMetadataProvider` finally fails with a network block outside Auto-Track recovery, `TmdbBlockAdvisor` logs a console warning (≤ 1 per 10 min) with the WARP state and mode and tells the user to use "Traffic and DNS" (warp+doh). Auto-Track's last retry also runs outside the recovery scope, so a final failure there gets the same hint.
-- **Setting:** `Warp.SwitchModeForTmdb` (JSON only, default true).
+- **Hunt tunnel:** many torrent sites block this network, so search engines return far more results through a tunnel. With `Warp.ForceTunnelForHunt` (Settings checkbox, default off since the PR #12 review: opt in) a hunt switches a DNS-only mode to `warp+doh` for the fetch/add phase and restores it afterwards; the machine's traffic uses WARP meanwhile. If no tunnel is available the hunt aborts and retries next cycle. Manual searches are not covered.
+- **Settings:** `Warp.SwitchModeForTmdb` (JSON only, default true) for TMDB leases; `Warp.ForceTunnelForHunt` for hunts. Which leases asked for a tunnel is recorded at acquire, so changing a setting mid-hunt does not switch the mode under a running search.
 - **Code:** `Services/WarpCliService.cs`, `Services/WarpModePolicy.cs`, `Services/TmdbBlockAdvisor.cs`, `Services/TmdbWarpRecovery.cs`, `App.xaml.cs` (startup restore)
 - **DB:** None
 

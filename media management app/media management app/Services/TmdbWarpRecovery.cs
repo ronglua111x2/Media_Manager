@@ -17,6 +17,12 @@ public static class TmdbWarpRecovery
     public static readonly TimeSpan DnsReadyTimeout = TimeSpan.FromSeconds(15);
     public static readonly TimeSpan[] RetryDelays = [TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(5)];
 
+    /// <summary>Shows in one discovery cycle allowed to exhaust recovery before the rest of the cycle skips it.</summary>
+    public const int MaxExhaustedShowsPerCycle = 2;
+
+    public static bool ShouldStopRecovering(int exhaustedShowsThisCycle) =>
+        exhaustedShowsThisCycle >= MaxExhaustedShowsPerCycle;
+
     private static readonly AsyncLocal<bool> RecoveryScope = new();
 
     /// <summary>
@@ -26,6 +32,20 @@ public static class TmdbWarpRecovery
     public static bool IsInRecoveryScope => RecoveryScope.Value;
 
     public static IDisposable EnterRecoveryScope(bool active = true) => new ScopeHandle(active);
+
+    private static readonly AsyncLocal<bool> TunnelRoute = new();
+
+    /// <summary>True during a WARP retry: the TMDB call uses the original API host, through the tunnel.</summary>
+    public static bool IsOnTunnelRoute => TunnelRoute.Value;
+
+    private sealed class TunnelRouteHandle : IDisposable
+    {
+        private readonly bool _previous = TunnelRoute.Value;
+
+        public TunnelRouteHandle() => TunnelRoute.Value = true;
+
+        public void Dispose() => TunnelRoute.Value = _previous;
+    }
 
     private sealed class ScopeHandle : IDisposable
     {
@@ -98,6 +118,7 @@ public static class TmdbWarpRecovery
             {
                 // Last attempt outside the scope: if it still fails, the "check WARP mode" hint is logged.
                 using (EnterRecoveryScope(active: retry <= RetryDelays.Length))
+                using (new TunnelRouteHandle())
                 {
                     return await action(cancellationToken);
                 }

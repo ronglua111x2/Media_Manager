@@ -29,7 +29,8 @@ public sealed class WarpConnectionChangedEventArgs : EventArgs
     public WarpConnectionChangeSource Source { get; init; }
 }
 
-public readonly record struct WarpLeaseResult(bool Connected, bool StartedByThisAcquire);
+/// <param name="TunnelActive">The lease asked for a real tunnel and the WARP mode provides one.</param>
+public readonly record struct WarpLeaseResult(bool Connected, bool StartedByThisAcquire, bool TunnelActive = false);
 
 public interface IWarpCliService
 {
@@ -40,6 +41,9 @@ public interface IWarpCliService
     bool InFlight { get; }
 
     bool LastKnownConnected { get; }
+
+    /// <summary>Last WARP mode read from the CLI ("doh", "warp+doh", …); null before the first read. Never spawns a process.</summary>
+    string? LastKnownMode { get; }
 
     IReadOnlySet<WarpLeaseReason> ActiveLeases { get; }
 

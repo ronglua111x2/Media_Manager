@@ -126,7 +126,7 @@ public sealed partial class AutoTrackShowCardViewModel : ObservableObject
 
     public string PosterUrl => string.IsNullOrWhiteSpace(PosterPath)
         ? string.Empty
-        : $"https://image.tmdb.org/t/p/w154{PosterPath}";
+        : $"{NetworkEndpoints.TmdbImageBaseUrl}/w154{PosterPath}";
 
     [ObservableProperty]
     private ImageSource? posterImage;

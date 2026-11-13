@@ -24,6 +24,13 @@ public sealed class WarpSettings
     public bool SwitchModeForTmdb { get; set; } = true;
 
     /// <summary>
+    /// When true, an Auto-Track hunt runs through a real WARP tunnel so search engines return the most results:
+    /// a DNS-only mode is switched to "warp+doh" for the hunt and restored afterwards, and the hunt is aborted
+    /// when no tunnel is available. When false (the default; opt in from Settings), the hunt keeps the user's mode.
+    /// </summary>
+    public bool ForceTunnelForHunt { get; set; }
+
+    /// <summary>
     /// When true, the status pill asks before disconnecting WARP if Auto-Track
     /// currently holds a pipeline lease (TMDB recover, hunt, or Jellyfin hold).
     /// </summary>

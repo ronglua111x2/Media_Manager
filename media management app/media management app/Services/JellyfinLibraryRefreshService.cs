@@ -313,9 +313,18 @@ public sealed class JellyfinLibraryRefreshService : IJellyfinLibraryRefreshServi
 
             return false;
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
+        }
+        catch (Exception ex) when (!notifySucceeded &&
+                                   JellyfinNotifyPolicy.DropPaths(NetworkFailureClassifier.Classify(ex, cancellationToken)))
+        {
+            _logger.Error(
+                $"Jellyfin rejected the path notify; dropping {paths.Count} path(s). Check the Jellyfin API key.",
+                ex,
+                LogTarget.All);
+            return false;
         }
         catch (Exception ex) when (!notifySucceeded && IsTransientJellyfinFailure(ex))
         {
@@ -367,15 +376,7 @@ public sealed class JellyfinLibraryRefreshService : IJellyfinLibraryRefreshServi
 
     private static bool IsTransientJellyfinFailure(Exception ex)
     {
-        for (var current = ex; current is not null; current = current.InnerException)
-        {
-            if (current is HttpRequestException or TaskCanceledException or TimeoutException or IOException)
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return NetworkFailureClassifier.Classify(ex) != NetFailure.Unknown;
     }
 
     private async Task<string> HoldWarpForJellyfinAsync(
@@ -690,9 +691,17 @@ public sealed class JellyfinLibraryRefreshService : IJellyfinLibraryRefreshServi
             _logger.Info("TMDB pre-probe OK before Jellyfin refresh.", LogTarget.All);
             return false;
         }
-        catch (Exception ex) when (CanAutoRecoverOnNetworkBlock() &&
-                                   TmdbNetworkBlockDetector.IsLikelyBlocked(ex, cancellationToken))
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
+            var failure = NetworkFailureClassifier.Classify(ex, cancellationToken);
+            if (JellyfinNotifyPolicy.NotifyWithoutTunnel(failure, CanAutoRecoverOnNetworkBlock()))
+            {
+                _logger.Warning(
+                    $"TMDB pre-probe failed ({failure}): {ex.Message}. Notifying Jellyfin anyway; its metadata fetch may fail.",
+                    LogTarget.All);
+                return false;
+            }
+
             var timeout = TimeSpan.FromSeconds(_settingsService.Current.Warp?.ConnectTimeoutSeconds ?? 30);
             try
             {
@@ -713,6 +722,15 @@ public sealed class JellyfinLibraryRefreshService : IJellyfinLibraryRefreshServi
                 _lastWarpConnectFailed = true;
                 throw;
             }
+            catch (Exception retryEx) when (!cancellationToken.IsCancellationRequested &&
+                                            !TmdbNetworkBlockDetector.IsLikelyBlocked(retryEx, cancellationToken))
+            {
+                // WARP is up and TMDB answered with something a tunnel cannot fix (e.g. 401): still notify and hold.
+                _logger.Warning(
+                    $"TMDB pre-probe through WARP failed ({NetworkFailureClassifier.Classify(retryEx, cancellationToken)}): {retryEx.Message}. Notifying Jellyfin anyway.",
+                    LogTarget.All);
+                return true;
+            }
 
             _logger.Info("TMDB pre-probe OK after WARP.", LogTarget.All);
             return true;
@@ -727,7 +745,7 @@ public sealed class JellyfinLibraryRefreshService : IJellyfinLibraryRefreshServi
             throw new InvalidOperationException("TMDB read access token is not configured.");
         }
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, "https://api.themoviedb.org/3/configuration");
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"https://{NetworkEndpoints.TmdbLegacyApiHost}/3/configuration");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.Trim());
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
@@ -735,7 +753,9 @@ public sealed class JellyfinLibraryRefreshService : IJellyfinLibraryRefreshServi
         if (!response.IsSuccessStatusCode)
         {
             throw new HttpRequestException(
-                $"TMDB probe failed: {(int)response.StatusCode} {response.ReasonPhrase}");
+                $"TMDB probe failed: {(int)response.StatusCode} {response.ReasonPhrase}",
+                null,
+                response.StatusCode);
         }
     }
 

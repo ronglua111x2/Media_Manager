@@ -76,11 +76,11 @@ public sealed partial class LibraryShowDetailViewModel : ObservableObject
 
     public string Stats => $"{AvailableEpisodes}/{TotalEpisodes} available | {Seasons.Count} season(s)";
 
-    public string TmdbPageUrl => $"https://www.themoviedb.org/tv/{TmdbId}";
+    public string TmdbPageUrl => $"{NetworkEndpoints.TmdbWebBaseUrl}/tv/{TmdbId}";
 
     public string PosterUrl => string.IsNullOrWhiteSpace(PosterPath)
         ? string.Empty
-        : $"https://image.tmdb.org/t/p/w342{PosterPath}";
+        : $"{NetworkEndpoints.TmdbImageBaseUrl}/w342{PosterPath}";
 
     public ObservableCollection<LibrarySeasonViewModel> Seasons { get; }
 

@@ -19,7 +19,7 @@ public sealed class JellyfinClient : IJellyfinClient, IDisposable
     {
         _settingsService = settingsService;
         _logger = logger;
-        _httpClient = new HttpClient();
+        _httpClient = Net.NetworkClients.CreateJellyfin();
     }
 
     public async Task<string> TestConnectionAsync(CancellationToken cancellationToken = default)
@@ -84,8 +84,8 @@ public sealed class JellyfinClient : IJellyfinClient, IDisposable
         if (!response.IsSuccessStatusCode)
         {
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
-            throw new InvalidOperationException(
-                $"Jellyfin Library/Media/Updated failed: {(int)response.StatusCode} {response.ReasonPhrase}. {TrimBody(body)}");
+            throw new HttpRequestException(
+                $"Jellyfin Library/Media/Updated failed: {(int)response.StatusCode} {response.ReasonPhrase}. {TrimBody(body)}", null, response.StatusCode);
         }
 
         _logger.Info(

@@ -93,6 +93,8 @@ public class TmdbBlockAdvisorTests
 
         public bool LastKnownConnected => false;
 
+        public string? LastKnownMode => null;
+
         public IReadOnlySet<WarpLeaseReason> ActiveLeases => new HashSet<WarpLeaseReason>();
 
         public bool HasAutoTrackPipelineLease => false;

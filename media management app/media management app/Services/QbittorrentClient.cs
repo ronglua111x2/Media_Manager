@@ -33,12 +33,10 @@ public sealed class QbittorrentClient : IQbittorrentClient, IDisposable
     {
         _settingsService = settingsService;
         _logger = logger;
-        var cookieHandler = new HttpClientHandler
+        _httpClient = new HttpClient(new QbittorrentAuthHandler(this, Net.NetworkClients.CreateQbittorrentHandler(_cookies)))
         {
-            CookieContainer = _cookies,
-            UseCookies = true
+            Timeout = Net.NetworkClients.QbittorrentRequestTimeout
         };
-        _httpClient = new HttpClient(new QbittorrentAuthHandler(this, cookieHandler));
     }
 
     public async Task<string> TestConnectionAsync(CancellationToken cancellationToken = default)

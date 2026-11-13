@@ -16,6 +16,8 @@ Per-sprint **Plan Mode** output before Agent Mode implementation.
 | `auto-track-anchor-cycle-warp-fix.md` | — | One-PR bugfix — Auto-Track rolling anchor cycle + WARP recovery on TMDB connection errors |
 | `jellyfin-refresh-warp-backoff-fix.md` | — | One-PR bugfix — Jellyfin refresh TMDB pre-probe WARP recover + retry backoff |
 | `warp-tunnel-mode-switch.md` | — | One-PR bugfix — switch WARP to warp+doh for TMDB (SNI block) and restore the user mode; no-recovery console hint |
+| `network-package-1.md` | — | One-PR bugfix — per-request TMDB headers, `warp-cli` deadlines, tunnel option for Auto-Track hunts |
+| `network-package-2.md` | — | One-PR bugfix — hosts table + `api.tmdb.org`, per-destination clients, one failure classifier, Jellyfin notify rules |
 | — | 0–4 | ✅ Complete. E4 sprints 5–10 frozen. |
 
 ## Template (copy for each sprint)

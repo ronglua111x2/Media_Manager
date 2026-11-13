@@ -1,5 +1,3 @@
-using System.Diagnostics;
-using System.Text;
 using System.Text.Json;
 using media_management_app.Common;
 using media_management_app.Models;
@@ -16,6 +14,9 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
     private readonly SemaphoreSlim _cliGate = new(1, 1);
     private readonly object _stateLock = new();
     private readonly HashSet<WarpLeaseReason> _leases = [];
+    // Guarded by _stateLock: held leases that asked for a tunnel. Decided at acquire, so changing a setting
+    // mid-hunt cannot switch the mode back under a running search.
+    private readonly HashSet<WarpLeaseReason> _tunnelLeases = [];
     private readonly WarpLogStatusWatcher _logWatcher;
 
     private bool _inFlight;
@@ -24,6 +25,7 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
     private bool _tunnelOwnedByApp;
     // Guarded by _cliGate: the user's mode before the app switched to WarpModePolicy.AppTunnelMode; null when not switched.
     private string? _modeSwitchedFrom;
+    private string? _lastKnownMode;
     private bool _disposed;
 
     public WarpCliService(
@@ -76,6 +78,8 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
         }
     }
 
+    public string? LastKnownMode => Volatile.Read(ref _lastKnownMode);
+
     public IReadOnlySet<WarpLeaseReason> ActiveLeases
     {
         get
@@ -116,14 +120,14 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
             {
                 if (_leases.Contains(reason))
                 {
-                    return new WarpLeaseResult(_lastKnownConnected, false);
+                    return new WarpLeaseResult(_lastKnownConnected, false, _tunnelLeases.Contains(reason));
                 }
             }
 
             SetInFlight(true, WarpConnectionChangeSource.Cli);
 
             var alreadyConnected = await QueryConnectedUnlockedAsync(ct);
-            var modeSwitched = await EnsureTunnelModeUnlockedAsync(reason, ct);
+            var (modeSwitched, tunnelActive) = await EnsureTunnelModeUnlockedAsync(reason, ct);
             if (alreadyConnected && modeSwitched &&
                 !await WaitUntilConnectedUnlockedAsync(timeout, ct))
             {
@@ -147,12 +151,12 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
                     }
                 }
 
-                AddLease(reason);
+                AddLease(reason, tunnelActive);
                 _logger.Debug(
                     $"WARP lease acquired ({WarpLeaseReasonText.Label(reason)}); tunnel already up.",
                     LogTarget.File | LogTarget.Console);
                 RaiseChanged(WarpConnectionChangeSource.Cli);
-                return new WarpLeaseResult(true, false);
+                return new WarpLeaseResult(true, false, tunnelActive);
             }
 
             _logger.Info($"Connecting WARP via warp-cli ({WarpLeaseReasonText.Label(reason)})...", LogTarget.All);
@@ -177,12 +181,12 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
                 _tunnelOwnedByApp = true;
             }
 
-            AddLease(reason);
+            AddLease(reason, tunnelActive);
             SetLastKnown(true);
             _logger.Info($"WARP connected ({WarpLeaseReasonText.Label(reason)}).", LogTarget.All);
             ShowConnectedToast();
             RaiseChanged(WarpConnectionChangeSource.Cli);
-            return new WarpLeaseResult(true, true);
+            return new WarpLeaseResult(true, true, tunnelActive);
         }
         catch (OperationCanceledException)
         {
@@ -191,6 +195,7 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
         catch (Exception ex)
         {
             _logger.Warning($"WARP connect failed: {ex.Message}", LogTarget.All);
+            await RestoreModeIfUnneededUnlockedAsync(CancellationToken.None);
             return new WarpLeaseResult(false, false);
         }
         finally
@@ -211,6 +216,7 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
             lock (_stateLock)
             {
                 removed = _leases.Remove(reason);
+                _tunnelLeases.Remove(reason);
                 remaining = _leases.Count;
                 ownedByApp = _tunnelOwnedByApp;
             }
@@ -271,6 +277,7 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
             {
                 remaining = WarpLeaseReasonText.Describe(_leases);
                 _leases.Clear();
+                _tunnelLeases.Clear();
                 _tunnelOwnedByApp = false;
             }
 
@@ -460,16 +467,19 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
     private string MarkerPath => Path.Combine(_settingsService.Current.StateFolder, WarpModePolicy.MarkerFileName);
 
     /// <summary>
-    /// Switches a DNS-only mode to <see cref="WarpModePolicy.AppTunnelMode"/> for leases that need TMDB.
-    /// Returns true when this call changed the mode.
+    /// Switches a DNS-only mode to <see cref="WarpModePolicy.AppTunnelMode"/> for leases that need a real tunnel.
+    /// Switched: this call changed the mode. TunnelActive: the lease asked for a tunnel and the mode provides one.
     /// </summary>
-    private async Task<bool> EnsureTunnelModeUnlockedAsync(WarpLeaseReason reason, CancellationToken ct)
+    private async Task<(bool Switched, bool TunnelActive)> EnsureTunnelModeUnlockedAsync(WarpLeaseReason reason, CancellationToken ct)
     {
-        if (!WarpLeaseReasonText.RequiresTunnel(reason) ||
-            !(_settingsService.Current.Warp?.SwitchModeForTmdb ?? true) ||
-            _modeSwitchedFrom is not null)
+        if (!WarpModePolicy.LeaseNeedsTunnel(reason, _settingsService.Current.Warp))
         {
-            return false;
+            return (false, false);
+        }
+
+        if (_modeSwitchedFrom is not null)
+        {
+            return (false, true);
         }
 
         var mode = await QueryModeUnlockedAsync(ct);
@@ -478,18 +488,18 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
             _logger.Warning(
                 $"WARP mode could not be read; not switching it for {WarpLeaseReasonText.Label(reason)}.",
                 LogTarget.All);
-            return false;
+            return (false, false);
         }
 
         if (WarpModePolicy.IsTunnelMode(mode))
         {
-            return false;
+            return (false, true);
         }
 
         if (!WarpModePolicy.IsValidModeName(mode))
         {
             _logger.Warning($"WARP mode '{mode}' is not recognised; not switching it.", LogTarget.All);
-            return false;
+            return (false, false);
         }
 
         // Marker first: if the app dies before restoring, the next start puts the user's mode back.
@@ -500,16 +510,16 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
             LogCliOutputOnce("mode", result);
             TryDeleteMarker();
             _logger.Warning(
-                $"WARP mode switch {mode} → {WarpModePolicy.AppTunnelMode} failed; TMDB may stay blocked.",
+                $"WARP mode switch {mode} → {WarpModePolicy.AppTunnelMode} failed for {WarpLeaseReasonText.Label(reason)}; no tunnel.",
                 LogTarget.All);
-            return false;
+            return (false, false);
         }
 
         _modeSwitchedFrom = mode;
         _logger.Info(
-            $"WARP mode {mode} → {WarpModePolicy.AppTunnelMode} for {WarpLeaseReasonText.Label(reason)} (TMDB is blocked by SNI in DNS-only modes); your mode is restored when done.",
+            $"WARP mode {mode} → {WarpModePolicy.AppTunnelMode} for {WarpLeaseReasonText.Label(reason)} (DNS-only modes cannot reach TMDB or most search engines); your mode is restored when done.",
             LogTarget.All);
-        return true;
+        return (true, true);
     }
 
     /// <summary>Restores the user's mode once no held lease needs the tunnel.</summary>
@@ -523,7 +533,7 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
 
         lock (_stateLock)
         {
-            if (_leases.Any(WarpLeaseReasonText.RequiresTunnel))
+            if (_tunnelLeases.Count > 0)
             {
                 return;
             }
@@ -531,7 +541,7 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
 
         await RestoreFromMarkerUnlockedAsync(
             new WarpModeRestoreMarker(original, WarpModePolicy.AppTunnelMode, DateTime.UtcNow),
-            "TMDB work done",
+            "tunnel no longer needed",
             ct);
         _modeSwitchedFrom = null;
     }
@@ -594,7 +604,13 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
         try
         {
             var result = await RunCliUnlockedAsync("-j settings", ct);
-            return WarpModePolicy.ParseOperationMode(result.Output);
+            var mode = WarpModePolicy.ParseOperationMode(result.Output);
+            if (mode is not null)
+            {
+                Volatile.Write(ref _lastKnownMode, mode);
+            }
+
+            return mode;
         }
         catch (OperationCanceledException)
         {
@@ -730,47 +746,16 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
         }
     }
 
-    private async Task<CliRunResult> RunCliUnlockedAsync(string arguments, CancellationToken ct)
+    private Task<WarpCliRunResult> RunCliUnlockedAsync(string arguments, CancellationToken ct)
     {
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = ResolvedExecutablePath,
-            Arguments = $"--accept-tos {arguments}",
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            StandardOutputEncoding = Encoding.UTF8,
-            StandardErrorEncoding = Encoding.UTF8
-        };
-
-        using var process = new Process { StartInfo = startInfo };
-        var outputBuilder = new StringBuilder();
-
-        process.OutputDataReceived += (_, e) =>
-        {
-            if (e.Data is not null)
-            {
-                outputBuilder.AppendLine(e.Data);
-            }
-        };
-        process.ErrorDataReceived += (_, e) =>
-        {
-            if (e.Data is not null)
-            {
-                outputBuilder.AppendLine(e.Data);
-            }
-        };
-
-        process.Start();
-        process.BeginOutputReadLine();
-        process.BeginErrorReadLine();
-        await process.WaitForExitAsync(ct);
-
-        return new CliRunResult(process.ExitCode, outputBuilder.ToString());
+        return WarpCliProcess.RunAsync(
+            ResolvedExecutablePath,
+            $"--accept-tos {arguments}",
+            WarpCliProcess.DeadlineFor(arguments),
+            ct);
     }
 
-    private void LogCliOutputOnce(string operation, CliRunResult result)
+    private void LogCliOutputOnce(string operation, WarpCliRunResult result)
     {
         var trimmed = result.Output.Trim();
         if (string.IsNullOrEmpty(trimmed))
@@ -786,11 +771,15 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
             LogTarget.File | LogTarget.Console);
     }
 
-    private void AddLease(WarpLeaseReason reason)
+    private void AddLease(WarpLeaseReason reason, bool tunnelActive)
     {
         lock (_stateLock)
         {
             _leases.Add(reason);
+            if (tunnelActive)
+            {
+                _tunnelLeases.Add(reason);
+            }
         }
     }
 
@@ -913,5 +902,4 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
         }
     }
 
-    private sealed record CliRunResult(int ExitCode, string Output);
 }

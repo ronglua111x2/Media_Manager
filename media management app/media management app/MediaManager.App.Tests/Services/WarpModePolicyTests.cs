@@ -1,3 +1,4 @@
+using media_management_app.Models;
 using media_management_app.Services;
 
 namespace MediaManager.App.Tests.Services;
@@ -102,5 +103,30 @@ public class WarpModePolicyTests
     public void RequiresTunnel(WarpLeaseReason reason, bool expected)
     {
         Assert.Equal(expected, WarpLeaseReasonText.RequiresTunnel(reason));
+    }
+
+    [Theory]
+    [InlineData(WarpLeaseReason.Hunt, true, false, true)]
+    [InlineData(WarpLeaseReason.Hunt, false, true, false)]
+    [InlineData(WarpLeaseReason.TmdbSslRecover, false, true, true)]
+    [InlineData(WarpLeaseReason.TmdbSslRecover, true, false, false)]
+    [InlineData(WarpLeaseReason.JellyfinHold, false, true, true)]
+    [InlineData(WarpLeaseReason.FirstRun, false, true, true)]
+    [InlineData(WarpLeaseReason.User, true, true, false)]
+    [InlineData(WarpLeaseReason.SettingsTest, true, true, false)]
+    public void LeaseNeedsTunnel(WarpLeaseReason reason, bool forceHunt, bool switchTmdb, bool expected)
+    {
+        var settings = new WarpSettings { ForceTunnelForHunt = forceHunt, SwitchModeForTmdb = switchTmdb };
+
+        Assert.Equal(expected, WarpModePolicy.LeaseNeedsTunnel(reason, settings));
+    }
+
+    [Theory]
+    [InlineData(WarpLeaseReason.Hunt, false)] // hunt tunnel is opt-in (PR #12 review)
+    [InlineData(WarpLeaseReason.TmdbSslRecover, true)]
+    [InlineData(WarpLeaseReason.User, false)]
+    public void LeaseNeedsTunnel_MissingSettings_UsesDefaults(WarpLeaseReason reason, bool expected)
+    {
+        Assert.Equal(expected, WarpModePolicy.LeaseNeedsTunnel(reason, null));
     }
 }

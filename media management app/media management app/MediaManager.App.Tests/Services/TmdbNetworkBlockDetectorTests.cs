@@ -20,7 +20,7 @@ public class TmdbNetworkBlockDetectorTests
             new SocketException((int)SocketError.ConnectionRefused));
 
         Assert.True(TmdbNetworkBlockDetector.IsLikelyBlocked(ex));
-        Assert.Equal("ConnectionError", TmdbNetworkBlockDetector.Describe(ex));
+        Assert.Equal("ConnectRefused", TmdbNetworkBlockDetector.Describe(ex));
     }
 
     [Fact]
@@ -28,7 +28,7 @@ public class TmdbNetworkBlockDetectorTests
     {
         var ex = new HttpRequestException("send failed", new IOException("io", new SocketException((int)SocketError.ConnectionReset)));
 
-        Assert.Equal("ConnectionReset", TmdbNetworkBlockDetector.Describe(ex));
+        Assert.Equal("ConnectionCut", TmdbNetworkBlockDetector.Describe(ex));
     }
 
     [Fact]
@@ -38,7 +38,7 @@ public class TmdbNetworkBlockDetectorTests
             "The SSL connection could not be established, see inner exception.",
             new AuthenticationException("handshake"));
 
-        Assert.Equal("SSL/TLS", TmdbNetworkBlockDetector.Describe(ex));
+        Assert.Equal("TlsFailure", TmdbNetworkBlockDetector.Describe(ex));
     }
 
     [Fact]

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Net;
 using System.Net.Http;
@@ -6,16 +7,21 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using media_management_app.Common;
 using media_management_app.Models;
+using media_management_app.Services.Net;
 
 namespace media_management_app.Services;
 
 public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogService, ITmdbMovieCatalogService, ITmdbExternalIdService
 {
     private const double HighConfidenceThreshold = 75;
+    private int _invalidHostWarned;
+
     private readonly ISettingsService _settingsService;
     private readonly IAppLogger _logger;
     private readonly HttpClient _httpClient;
     private readonly ITmdbBlockAdvisor _blockAdvisor;
+    private readonly ConnectionTracker _connectionTracker;
+    private readonly IWarpCliService? _warpCliService;
     private readonly Dictionary<int, TmdbTvCandidate> _candidateDetailsCache = [];
     private readonly Dictionary<string, IReadOnlyList<int>> _tvSearchIdsCache = [];
     private readonly Dictionary<int, IReadOnlyList<TmdbSeasonSummary>> _seasonSummaryCache = [];
@@ -25,13 +31,16 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
         ISettingsService settingsService,
         IAppLogger logger,
         HttpClient httpClient,
-        ITmdbBlockAdvisor blockAdvisor)
+        ITmdbBlockAdvisor blockAdvisor,
+        ConnectionTracker? connectionTracker = null,
+        IWarpCliService? warpCliService = null)
     {
         _settingsService = settingsService;
         _logger = logger;
         _blockAdvisor = blockAdvisor;
+        _connectionTracker = connectionTracker ?? new ConnectionTracker();
+        _warpCliService = warpCliService;
         _httpClient = httpClient;
-        _httpClient.BaseAddress = new Uri("https://api.themoviedb.org/3/");
     }
 
     public async Task<MetadataMatchResult> MatchTvSeriesAsync(SourceItem item, CancellationToken cancellationToken = default)
@@ -55,7 +64,6 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
         {
             return new MetadataMatchResult { IsAvailable = false, ErrorMessage = "TMDb read access token is not configured." };
         }
-
 
         try
         {
@@ -123,7 +131,6 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
                 ErrorMessage = "TMDb read access token is not configured."
             };
         }
-
 
         try
         {
@@ -435,7 +442,6 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
             throw new InvalidOperationException("TMDb read access token is not configured.");
         }
 
-
         // Show-level metadata still comes from the standard TV details endpoint.
         using var detailsResponse = await GetAsyncWithRetryAsync($"tv/{tmdbId}?language=en-US", cancellationToken);
         detailsResponse.EnsureSuccessStatusCode();
@@ -726,7 +732,6 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
                 ErrorMessage = "TMDb read access token is not configured."
             };
         }
-
 
         try
         {
@@ -1201,19 +1206,62 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
         return (penalty, $"TMDb season {seasonNumber:00} does not contain episode {episodeNumber:00}; max episode is {maxEpisode:00}");
     }
 
+    private string CurrentApiHost()
+    {
+        // WARP recovery goes through the tunnel, where the original host is known to work.
+        if (TmdbWarpRecovery.IsOnTunnelRoute)
+        {
+            return NetworkEndpoints.TmdbLegacyApiHost;
+        }
+
+        var configured = _settingsService.Current.TmdbApiHost;
+        if (!string.IsNullOrWhiteSpace(configured) &&
+            !NetworkEndpoints.IsValidHost(configured) &&
+            Interlocked.Exchange(ref _invalidHostWarned, 1) == 0)
+        {
+            _logger.Warning(
+                $"TmdbApiHost '{configured}' is not a valid host name; using {NetworkEndpoints.TmdbApiHostDefault}.",
+                LogTarget.All);
+        }
+
+        return NetworkEndpoints.ResolveTmdbApiHost(configured);
+    }
+
+    /// <summary>A redirect or an HTML page is not a TMDB API reply: fail so it can be classified and retried via WARP.</summary>
+    private static void EnsureApiResponse(HttpResponseMessage response)
+    {
+        var status = response.StatusCode;
+        if ((int)status is >= 300 and < 400)
+        {
+            var location = response.Headers.Location?.Host ?? "unknown host";
+            response.Dispose();
+            throw new HttpRequestException($"TMDB API host redirected to {location}.", null, status);
+        }
+
+        if (response.IsSuccessStatusCode &&
+            string.Equals(response.Content.Headers.ContentType?.MediaType, "text/html", StringComparison.OrdinalIgnoreCase))
+        {
+            response.Dispose();
+            throw new HttpRequestException(HttpRequestError.InvalidResponse, "TMDB API host returned HTML instead of JSON.");
+        }
+    }
+
     private async Task<HttpResponseMessage> GetAsyncWithRetryAsync(string requestUri, CancellationToken cancellationToken)
     {
         const int maxAttempts = 3;
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
+            var started = Stopwatch.GetTimestamp();
             try
             {
                 // Headers per request: the HttpClient is shared, and native search looks up IMDb ids from search
                 // threads while other TMDB calls run (mutating DefaultRequestHeaders is not thread-safe, 07c NS-30).
-                using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
+                // The host is resolved per request too (NetworkEndpoints): api.tmdb.org, or the legacy host on the WARP tunnel.
+                using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(NetworkEndpoints.TmdbApiBase(CurrentApiHost()), requestUri));
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _settingsService.Current.TmdbReadAccessToken);
                 request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
                 var response = await _httpClient.SendAsync(request, cancellationToken);
+                EnsureApiResponse(response);
                 if (!ShouldRetry(response.StatusCode) || attempt == maxAttempts)
                 {
                     return response;
@@ -1224,12 +1272,20 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
             }
             catch (Exception ex) when (IsTransientNetworkError(ex) && attempt < maxAttempts)
             {
-                _logger.Warning($"TMDb network error; retrying attempt {attempt + 1}/{maxAttempts}. {ex.Message}", LogTarget.File | LogTarget.Console);
+                LogNetworkFailure(ex, attempt, maxAttempts, started, $"retrying attempt {attempt + 1}/{maxAttempts}", cancellationToken);
             }
             catch (Exception ex) when (TmdbNetworkBlockDetector.IsLikelyBlocked(ex, cancellationToken))
             {
+                LogNetworkFailure(ex, attempt, maxAttempts, started, "giving up", cancellationToken);
+
                 // Final failure: outside Auto-Track recovery, hint the user to check the WARP mode.
                 _blockAdvisor.Warn(ex, cancellationToken);
+                if (ex is OperationCanceledException)
+                {
+                    // HttpClient reports its timeout as a cancellation; callers must not mistake it for the user's.
+                    throw new TimeoutException($"TMDB request timed out on {CurrentApiHost()}.", ex);
+                }
+
                 throw;
             }
 
@@ -1237,6 +1293,29 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
         }
 
         throw new HttpRequestException("TMDb request failed after retry attempts.");
+    }
+
+    private void LogNetworkFailure(
+        Exception exception,
+        int attempt,
+        int maxAttempts,
+        long startedTimestamp,
+        string outcome,
+        CancellationToken cancellationToken)
+    {
+        var warpState = _warpCliService is null
+            ? "unknown"
+            : $"{(_warpCliService.LastKnownConnected ? "connected" : "disconnected")}/{_warpCliService.LastKnownMode ?? "?"}";
+        var line = NetFailureLog.Format(
+            "tmdb",
+            CurrentApiHost(),
+            _connectionTracker.LastAddress,
+            attempt,
+            maxAttempts,
+            NetworkFailureClassifier.Classify(exception, cancellationToken),
+            Stopwatch.GetElapsedTime(startedTimestamp),
+            warpState);
+        _logger.Warning($"{line} — {outcome}. {exception.Message}", LogTarget.File | LogTarget.Console);
     }
 
     private static bool ShouldRetry(HttpStatusCode statusCode)
@@ -1247,7 +1326,7 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
 
     private static bool IsTransientNetworkError(Exception exception)
     {
-        return exception is HttpRequestException or IOException;
+        return NetworkFailureClassifier.IsRetryableTransportFailure(NetworkFailureClassifier.Classify(exception));
     }
 
     private static (string Title, int? Year) SplitTrailingYear(string title)

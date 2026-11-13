@@ -503,7 +503,10 @@ integrations:
     config: WarpSettings
     use_case: "Auto-Track only — hunt preflight; TMDB refresh recovery and Jellyfin refresh pre-probe + post-notify hold on SSL/TLS or connection block (TMDB blocks this network's IP)"
     lease_ownership: "release disconnects only a tunnel the app connected; a tunnel already up before the first lease stays up"
-    mode_switch: "TMDB blocked by SNI here; RequiresTunnel leases (TmdbSslRecover, JellyfinHold, FirstRun) switch a DNS-only mode to warp+doh and restore it when no such lease remains (skip if the user changed the mode). Marker {StateFolder}/warp-mode-restore.json; App startup RestorePendingModeAsync. Setting Warp.SwitchModeForTmdb. Services/WarpModePolicy.cs"
+    mode_switch: "TMDB blocked by SNI here; RequiresTunnel leases (TmdbSslRecover, JellyfinHold, FirstRun) switch a DNS-only mode to warp+doh and restore it when no such lease remains (skip if the user changed the mode). Marker {StateFolder}/warp-mode-restore.json; App startup RestorePendingModeAsync. Setting Warp.SwitchModeForTmdb. Hunt follows Warp.ForceTunnelForHunt (default false, opt in from Settings; WarpModePolicy.LeaseNeedsTunnel); when on, no tunnel aborts the hunt. Services/WarpModePolicy.cs"
+    cli_deadlines: "Services/WarpCliProcess.cs: 20s connect, 10s other commands; process tree killed on expiry or cancellation"
+    http_credentials: "never set DefaultRequestHeaders/BaseAddress on the shared HttpClient singleton; TMDB headers go on each request"
+    network_layer: "Common/NetworkEndpoints (hosts; TmdbApiHost setting, default api.tmdb.org), Common/NetworkFailureClassifier (only error interpreter; TmdbNetworkBlockDetector wraps it), Services/Net/NetworkClients (per-destination timeouts/pools). WARP retries use api.themoviedb.org through the tunnel; Jellyfin pre-probe always uses it because the plugin does"
     no_recovery_hint: "TmdbMetadataProvider final network-block failure outside TmdbWarpRecovery scope -> TmdbBlockAdvisor console warning (<=1/10min) with WARP state + mode"
   google_drive:
     client: Services/Backup/GoogleDriveClient.cs
@@ -624,7 +627,7 @@ core:
   app_tests: MediaManager.App.Tests/MediaManager.App.Tests.csproj
   test_stack: [xUnit, FluentAssertions, coverlet.collector]
   test_count_core: 248
-  test_count_app: 131  # Windows-targeted: AUD-002 cleanup/halt, startup task, Auto-Track anchor cycle, TMDB network-block detector/DNS probe/WARP recovery, Jellyfin retry backoff, interrupted-order recovery + pending validation hash, WARP mode policy + TMDB block advisor; xUnit Assert only
+  test_count_app: 234  # Windows-targeted: AUD-002 cleanup/halt, startup task, Auto-Track anchor cycle, TMDB network-block detector/DNS probe/WARP recovery, Jellyfin retry backoff, interrupted-order recovery + pending validation hash, WARP mode policy + TMDB block advisor, TMDB request headers, warp-cli deadlines, network classifier/endpoints/clients, Jellyfin notify policy; xUnit Assert only
   wpf_reference: media management app.csproj -> ProjectReference MediaManager.Core
   moved_types:
     - TorrentCandidateParser (+ TorrentCandidateParseResult)
@@ -667,7 +670,7 @@ build:
   test_command: >
     dotnet test MediaManager.Core.Tests/MediaManager.Core.Tests.csproj -c Release -p:Platform=x64;
     dotnet test MediaManager.App.Tests/MediaManager.App.Tests.csproj -c Release -p:Platform=x64
-  test_counts: { core: 248, app: 131 }
+  test_counts: { core: 248, app: 234 }
   publish: single-file self-contained win-x64
   third_party: ThirdParty/Sonarr.Parser/MediaManager.Sonarr.Parser.csproj
 ```

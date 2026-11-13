@@ -8,8 +8,8 @@ namespace media_management_app.Services;
 
 public sealed class NfoWriterService : INfoWriterService
 {
-    private const string TmdbStillBaseUrl = "https://image.tmdb.org/t/p/w300";
-    private const string TmdbPosterBaseUrl = "https://image.tmdb.org/t/p/w342";
+    private const string TmdbStillBaseUrl = NetworkEndpoints.TmdbImageBaseUrl + "/w300";
+    private const string TmdbPosterBaseUrl = NetworkEndpoints.TmdbImageBaseUrl + "/w342";
     private const string TvShowNfoFileName = "tvshow.nfo";
 
     private readonly IAppLogger _logger;
