@@ -292,9 +292,9 @@ public class TorrentCandidateParserTests
     // Rows 12-15: absolute parse used by search/hunt (report section 8), owned by feat/native-search.
     // Row 12 is solved by SeasonDashEpisodeRegex ("S2 - 05" -> S02E05); rows 13-15 are still open.
     [InlineData(12, "[SubsPlease] Show S2 - 05 (1080p) [ABCD1234].mkv", 2, 5, 2, 5, false, false, null, false, null)]
-    [InlineData(13, "[SubsPlease] Show 100 - 05 (1080p).mkv", null, null, null, 5, false, false, null, false, null, Skip = "Report section 8 (search, feat/native-search)")]
-    [InlineData(14, "[Erai-raws] 86 - Show - 05 [1080p].mkv", null, null, null, 5, false, false, null, false, null, Skip = "Report section 8 (search, feat/native-search)")]
-    [InlineData(15, "[SubsPlease] Show No. 8 - 05 (1080p).mkv", null, null, null, 5, false, false, null, false, null, Skip = "Report section 8 (search, feat/native-search)")]
+    [InlineData(13, "[SubsPlease] Show 100 - 05 (1080p).mkv", null, null, null, 5, false, false, null, false, null, Skip = "Report section 8: still open after native-search merge")]
+    [InlineData(14, "[Erai-raws] 86 - Show - 05 [1080p].mkv", null, null, null, 5, false, false, null, false, null, Skip = "Report section 8: still open after native-search merge")]
+    [InlineData(15, "[SubsPlease] Show No. 8 - 05 (1080p).mkv", null, null, null, 5, false, false, null, false, null, Skip = "Report section 8: still open after native-search merge")]
     [InlineData(16, "[Group] 番組名 - 05 [1080p].mkv", null, null, null, 5, false, false, null, false, null)]
     [InlineData(17, "番組名.S01E05.1080p.mkv", 1, 5, 1, 5, false, false, null, false, null)]
     [InlineData(18, "2049.S01E03.1080p.WEB.mkv", 1, 3, 1, 3, false, false, null, false, null)]
