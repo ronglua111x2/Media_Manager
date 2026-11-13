@@ -1277,9 +1277,10 @@ public sealed class DatabaseService : IDatabaseService
         var now = DateTime.UtcNow;
         using var command = connection.CreateCommand();
         command.CommandText = """
-            INSERT INTO TrackedEpisodes (ShowId, SeasonNumber, EpisodeNumber, Title, AirDate, Availability, TorrentHash, TorrentName, TorrentState, TorrentProgress, TorrentUpdatedUtc, SelectedCandidateName, SelectedCandidateUrl, SelectedCandidatePlugin, SelectedCandidateFileSize, SelectedCandidateSeeders, SelectedCandidateQuality, SelectedCandidateAudioCodec, Overview, VoteAverage, StillPath, CreatedUtc, UpdatedUtc)
-            VALUES ($ShowId, $SeasonNumber, $EpisodeNumber, $Title, $AirDate, $Availability, $TorrentHash, $TorrentName, $TorrentState, $TorrentProgress, $TorrentUpdatedUtc, $SelectedCandidateName, $SelectedCandidateUrl, $SelectedCandidatePlugin, $SelectedCandidateFileSize, $SelectedCandidateSeeders, $SelectedCandidateQuality, $SelectedCandidateAudioCodec, $Overview, $VoteAverage, $StillPath, $CreatedUtc, $UpdatedUtc)
+            INSERT INTO TrackedEpisodes (ShowId, SeasonNumber, EpisodeNumber, TmdbEpisodeId, Title, AirDate, Availability, TorrentHash, TorrentName, TorrentState, TorrentProgress, TorrentUpdatedUtc, SelectedCandidateName, SelectedCandidateUrl, SelectedCandidatePlugin, SelectedCandidateFileSize, SelectedCandidateSeeders, SelectedCandidateQuality, SelectedCandidateAudioCodec, Overview, VoteAverage, StillPath, CreatedUtc, UpdatedUtc)
+            VALUES ($ShowId, $SeasonNumber, $EpisodeNumber, $TmdbEpisodeId, $Title, $AirDate, $Availability, $TorrentHash, $TorrentName, $TorrentState, $TorrentProgress, $TorrentUpdatedUtc, $SelectedCandidateName, $SelectedCandidateUrl, $SelectedCandidatePlugin, $SelectedCandidateFileSize, $SelectedCandidateSeeders, $SelectedCandidateQuality, $SelectedCandidateAudioCodec, $Overview, $VoteAverage, $StillPath, $CreatedUtc, $UpdatedUtc)
             ON CONFLICT(ShowId, SeasonNumber, EpisodeNumber) DO UPDATE SET
+                TmdbEpisodeId = COALESCE(excluded.TmdbEpisodeId, TrackedEpisodes.TmdbEpisodeId),
                 Title = excluded.Title,
                 AirDate = excluded.AirDate,
                 Availability = excluded.Availability,
@@ -1304,6 +1305,7 @@ public sealed class DatabaseService : IDatabaseService
         command.Parameters.AddWithValue("$ShowId", episode.ShowId);
         command.Parameters.AddWithValue("$SeasonNumber", episode.SeasonNumber);
         command.Parameters.AddWithValue("$EpisodeNumber", episode.EpisodeNumber);
+        command.Parameters.AddWithValue("$TmdbEpisodeId", (object?)episode.TmdbEpisodeId ?? DBNull.Value);
         command.Parameters.AddWithValue("$Title", episode.Title);
         command.Parameters.AddWithValue("$AirDate", (object?)episode.AirDate?.ToString("yyyy-MM-dd") ?? DBNull.Value);
         command.Parameters.AddWithValue("$Availability", (int)episode.Availability);
@@ -1364,7 +1366,8 @@ public sealed class DatabaseService : IDatabaseService
                    TorrentHash, TorrentName, TorrentState, TorrentProgress, TorrentUpdatedUtc,
                    SelectedCandidateName, SelectedCandidateUrl, SelectedCandidatePlugin, SelectedCandidateFileSize,
                    SelectedCandidateSeeders, SelectedCandidateQuality, SelectedCandidateAudioCodec,
-                   CreatedUtc, UpdatedUtc, Overview, VoteAverage, StillPath, UserRating, Thought, RemovedUpstreamUtc
+                   CreatedUtc, UpdatedUtc, Overview, VoteAverage, StillPath, UserRating, Thought, RemovedUpstreamUtc,
+                   TmdbEpisodeId
             FROM TrackedEpisodes
             WHERE ShowId = $ShowId
             ORDER BY SeasonNumber, EpisodeNumber;
@@ -2609,6 +2612,7 @@ public sealed class DatabaseService : IDatabaseService
         EnsureColumn(connection, "TrackedEpisodes", "UserRating", "REAL NULL");
         EnsureColumn(connection, "TrackedEpisodes", "Thought", "TEXT NULL");
         EnsureColumn(connection, "TrackedEpisodes", "RemovedUpstreamUtc", "TEXT NULL");
+        EnsureColumn(connection, "TrackedEpisodes", "TmdbEpisodeId", "INTEGER NULL");
     }
 
     private static void InitializeTrackedMovies(SqliteConnection connection)
@@ -2886,7 +2890,8 @@ public sealed class DatabaseService : IDatabaseService
             Thought = reader.IsDBNull(25) ? null : reader.GetString(25),
             RemovedUpstreamUtc = reader.FieldCount > 26 && !reader.IsDBNull(26)
                 ? DateTime.Parse(reader.GetString(26), null, System.Globalization.DateTimeStyles.RoundtripKind)
-                : null
+                : null,
+            TmdbEpisodeId = reader.FieldCount > 27 && !reader.IsDBNull(27) ? reader.GetInt32(27) : null
         };
     }
 

@@ -473,6 +473,7 @@ public sealed class TrackedShowService : ITrackedShowService
                 _databaseService.UpsertTrackedEpisode(new TrackedEpisode
                 {
                     ShowId = showId,
+                    TmdbEpisodeId = episode.TmdbEpisodeId,
                     SeasonNumber = episode.SeasonNumber,
                     EpisodeNumber = episode.EpisodeNumber,
                     Title = episode.Title,

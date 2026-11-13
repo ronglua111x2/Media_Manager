@@ -8,6 +8,12 @@ public sealed class TrackedEpisode
 
     public long ShowId { get; set; }
 
+    /// <summary>
+    /// TMDB episode id of the episode this row (and its link and download) belongs to. When TMDB renumbers, the row
+    /// follows this id to its new number (audit L3-09). Null until the first refresh that reads it.
+    /// </summary>
+    public int? TmdbEpisodeId { get; set; }
+
     public int SeasonNumber { get; set; }
 
     public int EpisodeNumber { get; set; }
