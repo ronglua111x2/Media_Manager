@@ -26,7 +26,7 @@
 | `010_movie_release_years.sql` | `TrackedMovies.ReleaseYearsJson` (tập năm từ TMDB `release_dates`) | P1 |
 | `011_indexer_state.sql` | Bảng `IndexerState` (`IndexerId`, `DayKey`, `RequestsUsed`, `BreakerState`, `OpenUntilUtc`, `ConsecutiveFailures`, `LastErrorKind`, `LastErrorUtc`, `LastSuccessUtc`) | P2 |
 | `012_blacklist_infohash.sql` | Thêm khoá theo infohash vào blacklist | P5 |
-| `013_recipe_v2_marker.sql` (hoặc migration file `.rcp`) | Đánh dấu recipe đã chuyển sang v2 | P6 |
+| `014_recipe_v2_marker.sql` (hoặc migration file `.rcp`; 013 đã dùng cho `013_reset_torrent_hashes`) | Đánh dấu recipe đã chuyển sang v2 | P6 |
 
 Mọi migration đi qua `MigrationRunner` hiện có, kèm test trong `MediaManager.Core.Tests/Migrations`.
 
