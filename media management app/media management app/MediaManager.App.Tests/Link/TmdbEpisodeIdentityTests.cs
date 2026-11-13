@@ -173,6 +173,146 @@ public sealed class TmdbEpisodeIdentityTests : IDisposable
         Assert.Equal(EpisodeAvailability.Missing, _host.Availability(showId, 1, 1));
     }
 
+    // Review of L3-09: auto-link re-read the range from the file name ("S01E01E02") and moved the link back.
+    [Fact]
+    public async Task RangeFileFromEpisodeTorrent_StaysMovedAfterReconcile()
+    {
+        _host.AddNamedTorrent("HRNG", "Demo.S01E01E02.1080p", "Demo.S01E01E02.1080p.mkv");
+        var showId = _host.AddShow(6113, "Demo Show", (1, 1, "Episode 1001"), (1, 2, "Episode 1002"));
+        _host.AssignEpisodeTorrent(showId, 1, 1, "HRNG");
+        Assert.Equal(1, (await _host.Link.LinkEpisodeAsync(showId, 1, 1)).LinkedCount);
+        _host.Symlinks.ReconcileAll();
+        _host.TmdbDetails = Details(6113, Ep(1, 1, 1001), Ep(1, 2, 1002));
+        await RefreshAsync(showId);
+
+        _host.TmdbDetails = Details(6113, Ep(1, 1, 1099), Ep(1, 2, 1001), Ep(1, 3, 1002));
+        await RefreshAsync(showId);
+        _host.Settings.AutoTorrent.AutoLinkCompletedDownloads = true;
+        await _host.Reconciliation.ReconcileAsync(TorrentReconciliationScope.All);
+
+        Assert.Equal("Demo Show - S01E02-E03.mkv", Path.GetFileName(Assert.Single(_host.LibraryFiles())));
+        var item = Assert.Single(_host.Items());
+        Assert.Equal((2, 3), (item.EpisodeNumber!.Value, item.LastEpisodeNumber!.Value));
+        var missing = Assert.Single(Episodes(showId), episode => episode.Availability == EpisodeAvailability.Missing);
+        Assert.Equal(1, missing.EpisodeNumber);
+        AssertJellyfinFollowsLibrary("S01E02-E03");
+    }
+
+    // Review of L3-09: one torrent with both episode files, assigned to both rows; auto-link picked the file by the
+    // row's new number and moved another link back.
+    [Fact]
+    public async Task BatchTorrentAssignedToSeveralRows_StaysMovedAfterReconcile()
+    {
+        _host.AddNamedTorrent("HBATCH", "Demo.S01.1080p", "Demo.S01E01.1080p.mkv", "Demo.S01E02.1080p.mkv");
+        var showId = _host.AddShow(6114, "Demo Show", (1, 1, "Episode 1011"), (1, 2, "Episode 1012"));
+        foreach (var episode in new[] { 1, 2 })
+        {
+            _host.AssignEpisodeTorrent(showId, 1, episode, "HBATCH");
+            Assert.Equal(1, (await _host.Link.LinkEpisodeAsync(showId, 1, episode)).LinkedCount);
+        }
+
+        _host.Symlinks.ReconcileAll();
+        _host.TmdbDetails = Details(6114, Ep(1, 1, 1011), Ep(1, 2, 1012));
+        await RefreshAsync(showId);
+
+        _host.TmdbDetails = Details(6114, Ep(1, 1, 1019), Ep(1, 2, 1011), Ep(1, 3, 1012));
+        await RefreshAsync(showId);
+        _host.Settings.AutoTorrent.AutoLinkCompletedDownloads = true;
+        await _host.Reconciliation.ReconcileAsync(TorrentReconciliationScope.All);
+
+        AssertLibrary(("S01E02", "S01E01"), ("S01E03", "S01E02"));
+        AssertJellyfinFollowsLibrary("S01E02", "S01E03");
+        Assert.Equal(EpisodeAvailability.Missing, _host.Availability(showId, 1, 1));
+    }
+
+    // Review of L3-09: a download still running when TMDB renumbers is named with the old number; once complete it
+    // must link at the episode's new number, not be refused forever.
+    [Fact]
+    public async Task DownloadCompletingAfterTheMove_LinksAtTheNewNumber()
+    {
+        var showId = await LinkedShowAsync(6115, Ep(1, 1, 1021));
+        _host.Db.UpsertTrackedEpisode(new TrackedEpisode { ShowId = showId, SeasonNumber = 1, EpisodeNumber = 2, Title = "Episode 1022" });
+        _host.AssignEpisodeTorrent(showId, 1, 2, "HLATE");
+        _host.TmdbDetails = Details(6115, Ep(1, 1, 1021), Ep(1, 2, 1022));
+        await RefreshAsync(showId);
+
+        _host.TmdbDetails = Details(6115, Ep(1, 1, 1029), Ep(1, 2, 1021), Ep(1, 3, 1022));
+        await RefreshAsync(showId);
+        Assert.Equal("HLATE", Episode(showId, 1, 3).TorrentHash);
+
+        _host.AddNamedTorrent("HLATE", "Demo.S01E02.1080p", "Demo.S01E02.1080p.mkv");
+        _host.Settings.AutoTorrent.AutoLinkCompletedDownloads = true;
+        await _host.Reconciliation.ReconcileAsync(TorrentReconciliationScope.All);
+
+        AssertLibrary(("S01E02", "S01E01"), ("S01E03", "S01E02"));
+        Assert.Equal(EpisodeAvailability.Available, _host.Availability(showId, 1, 3));
+        Assert.Equal(EpisodeAvailability.Missing, _host.Availability(showId, 1, 1));
+    }
+
+    // Review of L3-09: a second refresh that planned from the same rows as the first (Auto-Track and the Refresh
+    // button at once) swapped the files back while the rows stayed: every link then named the other episode.
+    [Fact]
+    public async Task StaleRenumbering_IsRefusedAndChangesNothing()
+    {
+        var showId = await LinkedShowAsync(6116, Ep(1, 1, 1031), Ep(1, 2, 1032));
+        var staleRows = Episodes(showId).ToDictionary(item => item.EpisodeNumber, item => item.Id);
+        _host.TmdbDetails = Details(6116, Ep(1, 1, 1032), Ep(1, 2, 1031));
+        await RefreshAsync(showId);
+
+        Assert.ThrowsAny<InvalidOperationException>(() => _host.Link.RenumberEpisodes(
+            showId,
+            [new EpisodeRenumber(staleRows[1], (1, 1), (1, 2)), new EpisodeRenumber(staleRows[2], (1, 2), (1, 1))],
+            []));
+
+        AssertLibrary(("S01E01", "S01E02"), ("S01E02", "S01E01"));
+        Assert.Equal([1032, 1031], Episodes(showId).Select(item => item.TmdbEpisodeId!.Value));
+        Assert.Equal(Hash(6116, 1, 2), Episode(showId, 1, 1).TorrentHash);
+    }
+
+    // Review of L3-09: TMDB merges S02 into S01, so S02 is no longer returned; its episodes are found in S01.
+    [Fact]
+    public async Task SeasonMerged_EpisodesFollowIntoTheRemainingSeason()
+    {
+        var showId = await LinkedShowAsync(6117, Ep(1, 1, 1041), Ep(1, 2, 1042), Ep(2, 1, 1043), Ep(2, 2, 1044));
+
+        _host.TmdbDetails = Details(6117, Ep(1, 1, 1041), Ep(1, 2, 1042), Ep(1, 3, 1043), Ep(1, 4, 1044));
+        await RefreshAsync(showId);
+
+        AssertLibrary(("S01E01", "S01E01"), ("S01E02", "S01E02"), ("S01E03", "S02E01"), ("S01E04", "S02E02"));
+        Assert.Equal(
+            [(1, 1, 1041), (1, 2, 1042), (1, 3, 1043), (1, 4, 1044)],
+            Episodes(showId).Select(item => (item.SeasonNumber, item.EpisodeNumber, item.TmdbEpisodeId!.Value)));
+        Assert.All(Episodes(showId), item => Assert.Equal(EpisodeAvailability.Available, item.Availability));
+    }
+
+    // Review of L3-09: bad TMDB data with two episodes on one number made every refresh of the show fail.
+    [Fact]
+    public async Task TwoEpisodesMovedOntoOneNumber_RefreshStillWorks()
+    {
+        var showId = _host.AddShow(6118, "Demo Show", (1, 1, "Episode 1051"), (1, 2, "Episode 1052"));
+        _host.TmdbDetails = Details(6118, Ep(1, 1, 1051), Ep(1, 2, 1052));
+        await RefreshAsync(showId);
+
+        _host.TmdbDetails = Details(6118, Ep(1, 1, 1058), Ep(1, 2, 1059), Ep(1, 3, 1051), Ep(1, 3, 1052));
+        await RefreshAsync(showId);
+
+        Assert.Contains(Episodes(showId), item => item.EpisodeNumber == 3);
+    }
+
+    // Review of L3-09: "Auto-Track from E02" means from that episode; when TMDB moves it, the start follows it.
+    [Fact]
+    public async Task AutoTrackStart_FollowsItsEpisode()
+    {
+        var showId = await LinkedShowAsync(6119, Ep(1, 1, 1061), Ep(1, 2, 1062), Ep(1, 3, 1063));
+        _host.Db.UpdateTrackedShowAutoTrack(showId, 1, 2);
+
+        _host.TmdbDetails = Details(6119, Ep(1, 1, 1069), Ep(1, 2, 1061), Ep(1, 3, 1062), Ep(1, 4, 1063));
+        await RefreshAsync(showId);
+
+        var show = _host.Db.GetTrackedShow(showId)!;
+        Assert.Equal((1, 3), (show.AutoTrackFromSeason, show.AutoTrackFromEpisode));
+    }
+
     // While E01's file cannot move, the not-yet-downloaded row at E02 (the number TMDB now gives E01's episode) must not
     // stay Missing: Auto-Track would download E01's episode a second time.
     [Fact]

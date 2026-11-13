@@ -832,21 +832,24 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             return;
         }
 
+        // After TMDB renumbered the episode its download is still named with the number it had (audit L3-09).
+        var namedSeason = episode.DownloadSeasonNumber ?? episode.SeasonNumber;
+        var namedEpisode = episode.DownloadEpisodeNumber ?? episode.EpisodeNumber;
         var videoFiles = await GetCompletedVideoFilesAsync(torrent, cancellationToken);
-        var selectedFile = SelectEpisodeFile(videoFiles, episode);
+        var selectedFile = SelectEpisodeFile(videoFiles, namedSeason, namedEpisode);
         if (selectedFile is null)
         {
             AddSkip(result, $"{show.DisplayTitle} S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00}: no unambiguous completed video file.");
             return;
         }
 
-        if (NamesAnotherEpisode(selectedFile, episode, out var namedEpisode, out var fileRange))
+        if (NamesAnotherEpisode(selectedFile, namedSeason, namedEpisode, out var fileEpisode, out var fileRange))
         {
             // A single-file torrent is taken as-is; refuse it when its name says it is another
             // episode (for example a torrent adopted under the wrong episode) (PARSE-25).
             AddSkip(
                 result,
-                $"{show.DisplayTitle} S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00}: file '{Path.GetFileName(selectedFile.Name)}' is {namedEpisode}, not linked.");
+                $"{show.DisplayTitle} S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00}: file '{Path.GetFileName(selectedFile.Name)}' is {fileEpisode}, not linked.");
             return;
         }
 
@@ -857,12 +860,16 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             BuildSourcePath(torrent, selectedFile),
             AutoTorrentLinkKind.Episode,
             packOwnerSeasonNumber: null);
-        if (fileRange is { } range && RangeIsInTmdb(show.Id, episode.SeasonNumber, range.First, range.Last))
+        if (fileRange is { } range)
         {
             // One file holding several episodes is linked once as "S01E01-E02", whichever of its
-            // episodes the torrent was assigned to (audit L1-M2).
-            episodeItem.EpisodeNumber = range.First;
-            episodeItem.LastEpisodeNumber = range.Last;
+            // episodes the torrent was assigned to (audit L1-M2); shifted like its episode when TMDB renumbered.
+            var offset = episode.EpisodeNumber - namedEpisode;
+            if (RangeIsInTmdb(show.Id, episode.SeasonNumber, range.First + offset, range.Last + offset))
+            {
+                episodeItem.EpisodeNumber = range.First + offset;
+                episodeItem.LastEpisodeNumber = range.Last + offset;
+            }
         }
 
         LinkSourceItem(episodeItem, result);
@@ -1802,19 +1809,20 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
         item.AutoTorrentPackOwnerSeasonNumber is not null ||
         item.IsOrphanPackSpecial;
 
-    private static TorrentContentFile? SelectEpisodeFile(IReadOnlyList<TorrentContentFile> files, TrackedEpisode episode)
+    private static TorrentContentFile? SelectEpisodeFile(IReadOnlyList<TorrentContentFile> files, int seasonNumber, int episodeNumber)
     {
         if (files.Count == 1)
         {
             return files[0];
         }
 
-        return TorrentFileRules.SelectEpisodeFile(files, episode.SeasonNumber, episode.EpisodeNumber);
+        return TorrentFileRules.SelectEpisodeFile(files, seasonNumber, episodeNumber);
     }
 
     private static bool NamesAnotherEpisode(
         TorrentContentFile file,
-        TrackedEpisode episode,
+        int seasonNumber,
+        int episodeNumber,
         out string namedEpisode,
         out (int First, int Last)? fileRange)
     {
@@ -1833,7 +1841,7 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
         // A multi-episode file names each episode of its range (audit L1-M2).
         var first = parsed.EpisodeNumber.Value;
         var lastEpisode = parsed.LastEpisodeNumber ?? first;
-        if (parsed.SeasonNumber != episode.SeasonNumber || episode.EpisodeNumber < first || episode.EpisodeNumber > lastEpisode)
+        if (parsed.SeasonNumber != seasonNumber || episodeNumber < first || episodeNumber > lastEpisode)
         {
             return true;
         }

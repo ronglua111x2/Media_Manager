@@ -18,6 +18,14 @@ public sealed class TrackedEpisode
 
     public int EpisodeNumber { get; set; }
 
+    /// <summary>
+    /// Season and episode the assigned download is named with, when TMDB renumbered the episode after it was chosen;
+    /// null when it is named with <see cref="SeasonNumber"/>/<see cref="EpisodeNumber"/> (audit L3-09).
+    /// </summary>
+    public int? DownloadSeasonNumber { get; set; }
+
+    public int? DownloadEpisodeNumber { get; set; }
+
     public string Title { get; set; } = string.Empty;
 
     public DateTime? AirDate { get; set; }

@@ -64,6 +64,10 @@ internal static class EpisodeIdentityPlanner
             .ToDictionary(
                 group => group.Key,
                 group => group.Select(episode => (episode.SeasonNumber, episode.EpisodeNumber)).Distinct().ToList());
+        var episodesPerKey = details.Seasons
+            .SelectMany(season => season.Episodes)
+            .GroupBy(episode => (episode.SeasonNumber, episode.EpisodeNumber))
+            .ToDictionary(group => group.Key, group => group.Count());
         var duplicatedIds = rows
             .Where(row => row.TmdbEpisodeId is not null)
             .GroupBy(row => row.TmdbEpisodeId!.Value)
@@ -79,9 +83,7 @@ internal static class EpisodeIdentityPlanner
         foreach (var row in rows)
         {
             // No id yet (first refresh after the update) or an id two rows claim: nothing to follow.
-            if (row.TmdbEpisodeId is not { } id ||
-                !returnedSeasons.Contains(row.SeasonNumber) ||
-                duplicatedIds.Contains(id))
+            if (row.TmdbEpisodeId is not { } id || duplicatedIds.Contains(id))
             {
                 continue;
             }
@@ -89,7 +91,13 @@ internal static class EpisodeIdentityPlanner
             var key = (row.SeasonNumber, row.EpisodeNumber);
             if (!keysById.TryGetValue(id, out var keys))
             {
-                stranded[row.Id] = (row, "TMDB no longer lists this episode (deleted, or replaced by a new one)");
+                // Only a season TMDB returned can tell that an episode is gone; a season it did not return (a failed
+                // request, or a season merged into another) proves nothing, but an id found elsewhere is followed.
+                if (returnedSeasons.Contains(row.SeasonNumber))
+                {
+                    stranded[row.Id] = (row, "TMDB no longer lists this episode (deleted, or replaced by a new one)");
+                }
+
                 continue;
             }
 
@@ -101,6 +109,12 @@ internal static class EpisodeIdentityPlanner
             if (keys.Count > 1)
             {
                 stranded[row.Id] = (row, $"TMDB now lists this episode as {string.Join(" and ", keys.Select(Describe))}");
+                continue;
+            }
+
+            if (episodesPerKey[keys[0]] > 1)
+            {
+                stranded[row.Id] = (row, $"TMDB moved it to {Describe(keys[0])}, where it lists more than one episode");
                 continue;
             }
 

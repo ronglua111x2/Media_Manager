@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using media_management_app.Common;
 using media_management_app.Models;
 
@@ -10,6 +11,7 @@ public sealed class TrackedShowService : ITrackedShowService
     private readonly IPosterImageService _posterImageService;
     private readonly IAutoTorrentLinkService _autoTorrentLinkService;
     private readonly IAppLogger _logger;
+    private readonly ConcurrentDictionary<int, object> _importLocks = new();
 
     public TrackedShowService(
         IDatabaseService databaseService,
@@ -409,6 +411,20 @@ public sealed class TrackedShowService : ITrackedShowService
         string? episodeGroupId = null,
         string? episodeGroupName = null)
     {
+        // Auto-Track and the Refresh button can refresh one show at the same time: both would renumber from the same
+        // rows and shift the links twice (audit L3-09). One import per show at a time; the second reads the result.
+        lock (_importLocks.GetOrAdd(details.TmdbId, _ => new object()))
+        {
+            return ImportShowCore(details, preferredQuality, episodeGroupId, episodeGroupName);
+        }
+    }
+
+    private long ImportShowCore(
+        TmdbShowDetails details,
+        string preferredQuality,
+        string? episodeGroupId,
+        string? episodeGroupName)
+    {
         var existing = _databaseService.GetTrackedShowByTmdbId(details.TmdbId);
 
         // First insert uses explicit args. Refresh/switch rely on the row (Switch updates organization first).
@@ -563,8 +579,25 @@ public sealed class TrackedShowService : ITrackedShowService
                     LogTarget.All);
             }
 
+            FollowAutoTrackStart(show, plan);
             return plan;
         }
+    }
+
+    /// <summary>"Auto-Track from S01E05" names an episode: when TMDB moves it, the start moves with it.</summary>
+    private void FollowAutoTrackStart(TrackedShow show, EpisodeIdentityPlanner.Plan plan)
+    {
+        if (show.AutoTrackFromSeason is not { } fromSeason ||
+            show.AutoTrackFromEpisode is not { } fromEpisode ||
+            plan.Moves.FirstOrDefault(move => move.From == (fromSeason, fromEpisode)) is not { } startMove)
+        {
+            return;
+        }
+
+        _databaseService.UpdateTrackedShowAutoTrack(show.Id, startMove.To.SeasonNumber, startMove.To.EpisodeNumber);
+        _logger.Info(
+            $"Auto-Track start of {show.DisplayTitle} follows its episode: {EpisodeIdentityPlanner.Describe(startMove.From)} -> {EpisodeIdentityPlanner.Describe(startMove.To)}.",
+            LogTarget.All);
     }
 
     private void FlagPinnedEpisodes(TrackedShow show, EpisodeIdentityPlanner.Plan identity)

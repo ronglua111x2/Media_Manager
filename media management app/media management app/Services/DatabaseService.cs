@@ -1355,7 +1355,7 @@ public sealed class DatabaseService : IDatabaseService
         using var transaction = connection.BeginTransaction();
         var now = DateTime.UtcNow.ToString("O");
 
-        void Execute(string sql, params (string Name, object? Value)[] parameters)
+        int Execute(string sql, params (string Name, object? Value)[] parameters)
         {
             using var command = connection.CreateCommand();
             command.Transaction = transaction;
@@ -1365,7 +1365,7 @@ public sealed class DatabaseService : IDatabaseService
                 command.Parameters.AddWithValue(name, value ?? DBNull.Value);
             }
 
-            command.ExecuteNonQuery();
+            return command.ExecuteNonQuery();
         }
 
         foreach (var episodeId in deleteEpisodeIds)
@@ -1373,13 +1373,28 @@ public sealed class DatabaseService : IDatabaseService
             Execute("DELETE FROM TrackedEpisodes WHERE Id = $Id AND ShowId = $ShowId;", ("$Id", episodeId), ("$ShowId", showId));
         }
 
-        // (Season, -Id) is free for every row: no real episode number is negative.
+        // (Season, -Id) is free for every row: no real episode number is negative. A row no longer at the number the
+        // plan saw (another refresh moved it meanwhile) stops everything, so nothing is shifted twice.
+        // The download keeps the number it is named with, so auto-link still finds its file (audit L3-09).
         foreach (var move in episodeMoves)
         {
-            Execute(
-                "UPDATE TrackedEpisodes SET EpisodeNumber = -Id WHERE Id = $Id AND ShowId = $ShowId;",
+            var parked = Execute(
+                """
+                UPDATE TrackedEpisodes
+                SET DownloadSeasonNumber = CASE WHEN COALESCE(TorrentHash, '') = '' THEN NULL ELSE COALESCE(DownloadSeasonNumber, SeasonNumber) END,
+                    DownloadEpisodeNumber = CASE WHEN COALESCE(TorrentHash, '') = '' THEN NULL ELSE COALESCE(DownloadEpisodeNumber, EpisodeNumber) END,
+                    EpisodeNumber = -Id
+                WHERE Id = $Id AND ShowId = $ShowId AND SeasonNumber = $FromSeason AND EpisodeNumber = $FromEpisode;
+                """,
                 ("$Id", move.EpisodeId),
-                ("$ShowId", showId));
+                ("$ShowId", showId),
+                ("$FromSeason", move.From.SeasonNumber),
+                ("$FromEpisode", move.From.EpisodeNumber));
+            if (parked != 1)
+            {
+                throw new InvalidOperationException(
+                    $"Episode row {move.EpisodeId} is no longer at S{move.From.SeasonNumber:00}E{move.From.EpisodeNumber:00}; renumbering was not saved.");
+            }
         }
 
         foreach (var move in episodeMoves)
@@ -1387,7 +1402,15 @@ public sealed class DatabaseService : IDatabaseService
             Execute(
                 """
                 UPDATE TrackedEpisodes
-                SET SeasonNumber = $SeasonNumber, EpisodeNumber = $EpisodeNumber, UpdatedUtc = $UpdatedUtc
+                SET SeasonNumber = $SeasonNumber,
+                    EpisodeNumber = $EpisodeNumber,
+                    DownloadSeasonNumber = CASE
+                        WHEN DownloadSeasonNumber = $SeasonNumber AND DownloadEpisodeNumber = $EpisodeNumber THEN NULL
+                        ELSE DownloadSeasonNumber END,
+                    DownloadEpisodeNumber = CASE
+                        WHEN DownloadSeasonNumber = $SeasonNumber AND DownloadEpisodeNumber = $EpisodeNumber THEN NULL
+                        ELSE DownloadEpisodeNumber END,
+                    UpdatedUtc = $UpdatedUtc
                 WHERE Id = $Id AND ShowId = $ShowId;
                 UPDATE TorrentCartOrders
                 SET SeasonNumber = $SeasonNumber, EpisodeNumber = $EpisodeNumber, UpdatedUtc = $UpdatedUtc
@@ -1467,7 +1490,7 @@ public sealed class DatabaseService : IDatabaseService
                    SelectedCandidateName, SelectedCandidateUrl, SelectedCandidatePlugin, SelectedCandidateFileSize,
                    SelectedCandidateSeeders, SelectedCandidateQuality, SelectedCandidateAudioCodec,
                    CreatedUtc, UpdatedUtc, Overview, VoteAverage, StillPath, UserRating, Thought, RemovedUpstreamUtc,
-                   TmdbEpisodeId
+                   TmdbEpisodeId, DownloadSeasonNumber, DownloadEpisodeNumber
             FROM TrackedEpisodes
             WHERE ShowId = $ShowId
             ORDER BY SeasonNumber, EpisodeNumber;
@@ -1507,7 +1530,13 @@ public sealed class DatabaseService : IDatabaseService
         using var command = connection.CreateCommand();
         command.CommandText = """
             UPDATE TrackedEpisodes
-            SET TorrentHash = $TorrentHash,
+            SET DownloadSeasonNumber = CASE
+                    WHEN COALESCE(TorrentHash, '') = COALESCE($TorrentHash, '') COLLATE NOCASE THEN DownloadSeasonNumber
+                    ELSE NULL END,
+                DownloadEpisodeNumber = CASE
+                    WHEN COALESCE(TorrentHash, '') = COALESCE($TorrentHash, '') COLLATE NOCASE THEN DownloadEpisodeNumber
+                    ELSE NULL END,
+                TorrentHash = $TorrentHash,
                 TorrentName = $TorrentName,
                 TorrentState = $TorrentState,
                 TorrentProgress = $TorrentProgress,
@@ -2713,6 +2742,8 @@ public sealed class DatabaseService : IDatabaseService
         EnsureColumn(connection, "TrackedEpisodes", "Thought", "TEXT NULL");
         EnsureColumn(connection, "TrackedEpisodes", "RemovedUpstreamUtc", "TEXT NULL");
         EnsureColumn(connection, "TrackedEpisodes", "TmdbEpisodeId", "INTEGER NULL");
+        EnsureColumn(connection, "TrackedEpisodes", "DownloadSeasonNumber", "INTEGER NULL");
+        EnsureColumn(connection, "TrackedEpisodes", "DownloadEpisodeNumber", "INTEGER NULL");
     }
 
     private static void InitializeTrackedMovies(SqliteConnection connection)
@@ -2991,7 +3022,9 @@ public sealed class DatabaseService : IDatabaseService
             RemovedUpstreamUtc = reader.FieldCount > 26 && !reader.IsDBNull(26)
                 ? DateTime.Parse(reader.GetString(26), null, System.Globalization.DateTimeStyles.RoundtripKind)
                 : null,
-            TmdbEpisodeId = reader.FieldCount > 27 && !reader.IsDBNull(27) ? reader.GetInt32(27) : null
+            TmdbEpisodeId = reader.FieldCount > 27 && !reader.IsDBNull(27) ? reader.GetInt32(27) : null,
+            DownloadSeasonNumber = reader.FieldCount > 28 && !reader.IsDBNull(28) ? reader.GetInt32(28) : null,
+            DownloadEpisodeNumber = reader.FieldCount > 29 && !reader.IsDBNull(29) ? reader.GetInt32(29) : null
         };
     }
 
