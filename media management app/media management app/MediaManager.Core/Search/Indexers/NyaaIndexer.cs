@@ -19,7 +19,7 @@ public sealed class NyaaIndexer(string baseUrl = "https://nyaa.si") : ITorrentIn
 
     public async Task<IReadOnlyList<IndexerResult>> SearchAsync(IndexerQuery query, IIndexerHttp http, CancellationToken cancellationToken)
     {
-        var uri = new Uri($"{baseUrl.TrimEnd('/')}/?page=rss&q={Uri.EscapeDataString(query.Text)}&c=0_0&f=0");
+        var uri = new Uri($"{baseUrl.TrimEnd('/')}/?page=rss&q={Uri.EscapeDataString(query.Text)}&c=1_0&f=0");
         var response = await http.GetAsync(uri, cancellationToken);
         return Parse(response.Body);
     }

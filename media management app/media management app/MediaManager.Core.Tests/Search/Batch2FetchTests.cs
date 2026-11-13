@@ -191,4 +191,23 @@ public class Batch2FetchTests
         evaluator.EvaluateMovie(recipe, movie, TorrentResultBuilder.Magnet("Joker.2019.1080p.BluRay.x264-GROUP", fileSize: 2_000_000_000)).IsAccepted.Should().BeFalse();
         evaluator.EvaluateMovie(recipe, movie, TorrentResultBuilder.Magnet("Us.2019.1080p.BluRay.x264-GROUP", fileSize: 2_000_000_000)).IsAccepted.Should().BeTrue();
     }
+    // NS-30: split apostrophes and Japanese dakuten.
+    [Theory]
+    [InlineData("Schindler's List", 1993, "Schindler s List 1993 1080p BluRay x264-GROUP")]
+    [InlineData("Schindler's List", 1993, "Schindlers.List.1993.1080p.BluRay.x264-GROUP")]
+    public void ApostropheTitle_MatchesSplitAndJoinedReleases(string title, int year, string name)
+    {
+        var evaluator = new CandidateEvaluationService(new SearchTitleResolver());
+
+        var result = evaluator.EvaluateMovie(RecipeBuilder.Movie().Build(), TrackedShowBuilder.Movie(title, year), TorrentResultBuilder.Magnet(name, fileSize: 2_000_000_000));
+
+        result.IsAccepted.Should().BeTrue(result.RejectDetail);
+    }
+
+    [Fact]
+    public void FoldDiacritics_KeepsJapaneseDakuten_ButFoldsLatinAccents()
+    {
+        TitleNormalizer.FoldDiacritics("ダンジョン飯").Should().Be("ダンジョン飯");
+        TitleNormalizer.FoldDiacritics("Amélie").Should().Be("Amelie");
+    }
 }

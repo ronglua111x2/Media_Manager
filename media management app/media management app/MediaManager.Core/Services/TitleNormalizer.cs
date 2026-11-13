@@ -39,12 +39,22 @@ public static class TitleNormalizer
 
         var decomposed = value.Normalize(NormalizationForm.FormD);
         var builder = new StringBuilder(decomposed.Length);
+        var previousBase = '\0';
         foreach (var character in decomposed)
         {
             if (CharUnicodeInfo.GetUnicodeCategory(character) == UnicodeCategory.NonSpacingMark)
             {
+                // Only Latin letters lose their accents: "ダ" is not "タ" with an accent (audit 07c NS-30).
+                if (previousBase <= 'ɏ')
+                {
+                    continue;
+                }
+
+                builder.Append(character);
                 continue;
             }
+
+            previousBase = character;
 
             if (ExtraFolds.TryGetValue(character, out var replacement))
             {
@@ -141,8 +151,22 @@ public static class TitleNormalizer
     }
 
     /// <summary>Normalized lookup set for already-tokenized candidate tokens (e.g. parser TitleTokens).</summary>
-    public static HashSet<string> NormalizeTokens(IEnumerable<string> tokens) =>
-        tokens.Select(NormalizeToken).Where(token => token.Length > 0).ToHashSet(StringComparer.Ordinal);
+    public static HashSet<string> NormalizeTokens(IEnumerable<string> tokens)
+    {
+        var normalized = tokens.Select(NormalizeToken).Where(token => token.Length > 0).ToList();
+        var set = normalized.ToHashSet(StringComparer.Ordinal);
+        // "Schindler s List", "Grey s Anatomy": a release that split the apostrophe still has "schindlers"
+        // (titles fold "Schindler's" to "schindlers") (audit 07c NS-30).
+        for (var i = 0; i + 1 < normalized.Count; i++)
+        {
+            if (normalized[i + 1] == "s")
+            {
+                set.Add(normalized[i] + "s");
+            }
+        }
+
+        return set;
+    }
 
     public static bool TokenEquals(string? left, string? right) =>
         string.Equals(NormalizeToken(left), NormalizeToken(right), StringComparison.Ordinal);
