@@ -116,6 +116,18 @@ public sealed class TorrentContentValidationService
             return Task.FromResult(result);
         }
 
+        FlagDirectionOverrides(files, result);
+
+        // SEC-A12: check the name Windows will use, not the raw one (see NormalizeFileName).
+        files = files.Select(file => new TorrentContentFile
+        {
+            Name = NormalizeFileName(file.Name),
+            Size = file.Size,
+            Progress = file.Progress,
+            Priority = file.Priority,
+            IsSeed = file.IsSeed
+        }).ToList();
+
         foreach (var file in files)
         {
             ValidateFile(file, result, config);
@@ -139,6 +151,60 @@ public sealed class TorrentContentValidationService
         }
 
         return Task.FromResult(result);
+    }
+
+    // Invisible characters that change text direction (LRM, RLM, ALM, embeddings, overrides, isolates).
+    private static readonly HashSet<char> DirectionControls =
+    [
+        '\u200E', '\u200F', '\u061C',
+        '\u202A', '\u202B', '\u202C', '\u202D', '\u202E',
+        '\u2066', '\u2067', '\u2068', '\u2069'
+    ];
+
+    /// <summary>
+    /// SEC-A12: Windows drops trailing dots and spaces when it opens a file ("Setup.exe. " runs as Setup.exe), and
+    /// direction controls are invisible but split an extension ("Setup.ex[U+2066]e"). libtorrent on Windows already
+    /// strips both; a qBittorrent on Linux or a NAS does not. Remove them and use NFC before reading extensions.
+    /// </summary>
+    internal static string NormalizeFileName(string name)
+    {
+        if (string.IsNullOrEmpty(name))
+        {
+            return name;
+        }
+
+        var builder = new System.Text.StringBuilder(name.Length);
+        foreach (var c in name)
+        {
+            if (!DirectionControls.Contains(c))
+            {
+                builder.Append(c);
+            }
+        }
+
+        return builder.ToString().Normalize(System.Text.NormalizationForm.FormC).TrimEnd(' ', '.');
+    }
+
+    /// <summary>
+    /// SEC-A12: an override (U+202D, U+202E) reverses how the rest of the name is shown, the classic way to make
+    /// "...exe.mkv" or "...[RLO]vkm.exe" look like a video. No real release name needs one.
+    /// </summary>
+    private void FlagDirectionOverrides(IReadOnlyList<TorrentContentFile> files, TorrentContentValidationResult result)
+    {
+        foreach (var file in files.Where(file => file.Name.Contains('\u202E') || file.Name.Contains('\u202D')))
+        {
+            var fileName = NormalizeFileName(Path.GetFileName(file.Name));
+            result.SuspiciousFiles.Add(new SuspiciousFile
+            {
+                FileName = fileName,
+                Extension = Path.GetExtension(fileName).ToLowerInvariant(),
+                Reason = "File name contains a text-direction override that disguises its real extension",
+                FileSizeBytes = file.Size,
+                SuspicionLevel = SuspicionLevel.High
+            });
+            result.IsValid = false;
+            _logger?.Warning($"Text-direction override in file name '{fileName}' in torrent {result.TorrentHash}.");
+        }
     }
 
     private void ValidateFile(
