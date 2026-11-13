@@ -30,6 +30,12 @@ public class PackSignalPrecedenceTests
     [InlineData("[Group] Show Season 2 - 13-24 [1080p]", 2)]
     [InlineData("Show Season 1 - 01~12", 1)]
     [InlineData("Show Season 2 - 13~24 (BD)", 2)]
+    // Audit R2-B-07: an unspaced "Season 1-2" stays a season range whatever follows; full-width tilde and "to"
+    // after a spaced dash name episodes.
+    [InlineData("[Group] Show Season 1-2 - 01-24 [BD 1080p]", null)]
+    [InlineData("Show Season 1-2 - 1080p", null)]
+    [InlineData("Show Season 2 - 13" + "\uFF5E" + "24", 2)]
+    [InlineData("Show Season 2 - 13 to 24", 2)]
     // Audit L1-L2: non-ASCII digits must not throw.
     [InlineData("Show Season ２", null)]
     public void TryParseSeasonFolderSegment_OnlyASingleSeason(string segment, int? expected)

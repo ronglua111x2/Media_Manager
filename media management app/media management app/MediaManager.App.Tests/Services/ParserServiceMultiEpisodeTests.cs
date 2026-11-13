@@ -49,6 +49,29 @@ public sealed class ParserServiceMultiEpisodeTests
         Assert.Null(parsed.LastEpisodeNumber);
     }
 
+    // Audit R2-B-08: a revision suffix ("v2") is part of the episode token; with a year in the name it used to
+    // become a movie.
+    [Theory]
+    [InlineData("Show.Name.S01E05v2.1080p.mkv")]
+    [InlineData("Show.Name.2019.S01E05v2.1080p.mkv")]
+    public void Parse_RevisionSuffix_IsStillAnEpisode(string fileName)
+    {
+        var parsed = _parser.Parse(fileName, @"D:\Media\Show Name");
+
+        Assert.Equal(MediaKind.TvEpisode, parsed.MediaKind);
+        Assert.Equal(1, parsed.SeasonNumber);
+        Assert.Equal(5, parsed.EpisodeNumber);
+    }
+
+    [Fact]
+    public void Parse_SpacedSecondEpisode_KeepsTheRange()
+    {
+        var parsed = _parser.Parse("Show Name S01E01 E02 Two Part Title.mkv", @"D:\Media\Show Name");
+
+        Assert.Equal(2, parsed.LastEpisodeNumber);
+        Assert.Equal("Two Part Title", parsed.EpisodeTitle);
+    }
+
     // Audit R2-B-03: Import must not read a DVD resolution as S720E480.
     [Fact]
     public void Parse_DvdResolutionInName_IsNotReadAsSeasonEpisode()

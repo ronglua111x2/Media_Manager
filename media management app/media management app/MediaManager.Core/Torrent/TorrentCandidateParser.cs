@@ -85,7 +85,7 @@ public static class TorrentCandidateParser
         RegexOptions.Compiled);
     // Multi-episode markers on the raw name, before "-" is normalized away: E01E02, E01-E02, E01-02.
     private static readonly Regex MultiEpisodeRegex = new(
-        @"\bS(?<season>\d{1,3})E(?<first>\d{1,4})(?:(?:[-_.]?E|-)(?<next>\d{1,4}))+(?:v\d{1,2})?(?![0-9a-z])",
+        @"\bS(?<season>\d{1,3})E(?<first>\d{1,4})(?:(?:[-_. ]?E|-)(?<next>\d{1,4}))+(?:v\d{1,2})?(?![0-9a-z])",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex LeadingEpisodeContinuationRegex = new(
         @"^(?:\s*E?\d{1,4}\b)+",
@@ -96,8 +96,13 @@ public static class TorrentCandidateParser
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
     // "Season 1-3", "Season 1 & 2", "S01-S03". A dash or tilde followed by an episode range ("Season 2 - 13-24",
     // "Season 1 - 01~12") names episodes, not seasons (audit L1-L1).
+    // Unspaced "Season 1-2" is always a season range (R2-B-07); after a spaced dash, a number followed by another
+    // "-", "~", "～", "〜" or "to" starts an episode range ("Season 2 - 13-24").
     private static readonly Regex FolderSeasonRangeRegex = new(
-        @"\bSeasons?\s*\d{1,2}\s*(?:(?:-|~)\s*(?:Season\s*)?\d{1,2}(?!\s*(?:-|~)\s*\d)|(?:to|&|\+|,|and)\s*(?:Season\s*)?\d{1,2})\b|\bS\d{1,2}\s*(?:-|~|to|&|\+)\s*S?\d{1,2}\b",
+        @"\bSeasons?\s*\d{1,2}(?:-|~|～|〜)(?:Season\s*)?\d{1,2}\b" +
+        @"|\bSeasons?\s*\d{1,2}(?:\s+(?:-|~|～|〜)\s*|\s*(?:-|~|～|〜)\s+)(?:Season\s*)?\d{1,2}\b(?!\s*(?:-|~|～|〜|to\b)\s*\d)" +
+        @"|\bSeasons?\s*\d{1,2}\s*(?:to|&|\+|,|and)\s*(?:Season\s*)?\d{1,2}\b" +
+        @"|\bS\d{1,2}\s*(?:-|~|to|&|\+)\s*S?\d{1,2}\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex FolderSeasonWordRegex = new(
         @"\b(?<word>Seasons?)\s*(?<season>\d{1,2})\b",

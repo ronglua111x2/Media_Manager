@@ -246,6 +246,7 @@ public class TorrentCandidateParserTests
     [InlineData("Show.Name.S02E09-E10.1080p.mkv", 2, 9, 10)]
     [InlineData("Show.Name.S01E01E02E03.mkv", 1, 1, 3)]
     [InlineData("Show.Name.S01E01-E02v2.mkv", 1, 1, 2)]
+    [InlineData("Show Name S01E01 E02 Two Part Title.mkv", 1, 1, 2)]
     [InlineData("Show.Name.S01E05.1080p.mkv", 1, 5, null)]
     [InlineData("Show.Name.S01E05-1080p.mkv", 1, 5, null)]
     [InlineData("Show.Name.S01E05-2019.mkv", 1, 5, null)]
