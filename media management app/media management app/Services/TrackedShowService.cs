@@ -531,6 +531,11 @@ public sealed class TrackedShowService : ITrackedShowService
             var plan = EpisodeIdentityPlanner.Create(rows, details, HoldsDownload, IsInUse, blocked);
             if (plan.Moves.Count == 0)
             {
+                foreach (var episodeId in plan.DeleteRowIds)
+                {
+                    _databaseService.DeleteTrackedEpisode(episodeId);
+                }
+
                 return plan;
             }
 

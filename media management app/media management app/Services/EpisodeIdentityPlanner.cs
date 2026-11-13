@@ -19,7 +19,10 @@ internal static class EpisodeIdentityPlanner
         /// <summary>Rows that move to the number TMDB now gives their id, with their link and download.</summary>
         public List<Move> Moves { get; } = [];
 
-        /// <summary>Unused rows sitting on a number a moving row needs; the refresh would overwrite them anyway.</summary>
+        /// <summary>
+        /// Unused rows sitting on a number a moving row needs (the refresh would overwrite them anyway), or on the number
+        /// TMDB now gives the episode of a pinned row.
+        /// </summary>
         public HashSet<long> DeleteRowIds { get; } = [];
 
         /// <summary>
@@ -141,6 +144,27 @@ internal static class EpisodeIdentityPlanner
         foreach (var (row, reason) in stranded.Values.Where(item => holdsDownload(item.Row)))
         {
             plan.Pinned[row.Id] = (row, reason);
+        }
+
+        // A pinned row stands for its episode. An unused row left on the number TMDB now gives that episode would show
+        // Missing and Auto-Track would download the episode a second time.
+        foreach (var (row, _) in plan.Pinned.Values)
+        {
+            if (row.TmdbEpisodeId is not { } id || !keysById.TryGetValue(id, out var keys))
+            {
+                continue;
+            }
+
+            foreach (var key in keys)
+            {
+                if (rowsByKey.TryGetValue(key, out var occupant) &&
+                    !plan.Pinned.ContainsKey(occupant.Id) &&
+                    !moves.ContainsKey(key) &&
+                    !isInUse(occupant))
+                {
+                    plan.DeleteRowIds.Add(occupant.Id);
+                }
+            }
         }
 
         return plan;

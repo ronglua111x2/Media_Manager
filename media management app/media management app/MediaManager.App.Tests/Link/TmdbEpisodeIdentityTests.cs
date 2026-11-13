@@ -173,6 +173,38 @@ public sealed class TmdbEpisodeIdentityTests : IDisposable
         Assert.Equal(EpisodeAvailability.Missing, _host.Availability(showId, 1, 1));
     }
 
+    // While E01's file cannot move, the not-yet-downloaded row at E02 (the number TMDB now gives E01's episode) must not
+    // stay Missing: Auto-Track would download E01's episode a second time.
+    [Fact]
+    public async Task LockedLibraryFile_UnusedRowOnItsNewNumber_IsNotHunted()
+    {
+        const string name = "Demo.S01E01.1080p";
+        _host.AddNamedTorrent("HLOCK1", name, name + ".mkv");
+        var showId = _host.AddShow(6112, "Demo Show", (1, 1, "Episode 711"), (1, 2, "Episode 712"));
+        _host.AssignEpisodeTorrent(showId, 1, 1, "HLOCK1");
+        await _host.Link.LinkEpisodeAsync(showId, 1, 1);
+        _host.TmdbDetails = Details(6112, Ep(1, 1, 711), Ep(1, 2, 712));
+        await RefreshAsync(showId);
+        var link = Assert.Single(_host.Items()).LinkedPath!;
+        _host.TmdbDetails = Details(6112, Ep(1, 1, 719), Ep(1, 2, 711), Ep(1, 3, 712));
+
+        using (new FileStream(link, FileMode.Open, FileAccess.Read, FileShare.Read))
+        {
+            await RefreshAsync(showId);
+        }
+
+        _host.Shows.RefreshAvailability(showId);
+        Assert.Equal([(1, 1, 711), (1, 3, 712)], Episodes(showId).Select(item => (item.SeasonNumber, item.EpisodeNumber, item.TmdbEpisodeId!.Value)));
+        var missing = Assert.Single(Episodes(showId), item => item.Availability == EpisodeAvailability.Missing);
+        Assert.Equal(3, missing.EpisodeNumber);
+
+        await RefreshAsync(showId);
+
+        AssertLibrary(("S01E02", "S01E01"));
+        Assert.Equal([(1, 1, 719), (1, 2, 711), (1, 3, 712)], Episodes(showId).Select(item => (item.SeasonNumber, item.EpisodeNumber, item.TmdbEpisodeId!.Value)));
+        Assert.Equal(EpisodeAvailability.Available, _host.Availability(showId, 1, 2));
+    }
+
     [Fact]
     public async Task MultiEpisodeFile_RangeMovesWhenAllItsEpisodesMoveTogether()
     {
