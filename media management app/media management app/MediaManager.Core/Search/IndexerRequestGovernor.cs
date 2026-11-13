@@ -24,16 +24,23 @@ public sealed record IndexerPolicy(
     int DailyBudget,
     double BackgroundBudgetShare = 0.7)
 {
-    public static IndexerPolicy Conservative { get; } = new(6, 1, TimeSpan.FromSeconds(5), 200);
+    /// <summary>
+    /// Daily budget of every site (13/11/2026, user decision). Sites block bursts, not daily totals: the
+    /// per-minute limit, minimum interval and concurrency protect against bans. The daily budget is a fuse
+    /// against a runaway loop (e.g. Auto-Track re-hunting stuck episodes all day), not a quota to plan with.
+    /// </summary>
+    public const int DefaultDailyBudget = 1000;
 
-    /// <summary>Defaults from docs/planning/native-search/03-request-governor.md §2.</summary>
+    public static IndexerPolicy Conservative { get; } = new(6, 1, TimeSpan.FromSeconds(5), DefaultDailyBudget);
+
+    /// <summary>Rate limits from docs/planning/native-search/03-request-governor.md §2; daily budget: see <see cref="DefaultDailyBudget"/>.</summary>
     public static IndexerPolicy DefaultFor(string indexerId) => indexerId switch
     {
-        "knaben" => new IndexerPolicy(10, 1, TimeSpan.FromSeconds(2), 500),
-        "apibay" => new IndexerPolicy(15, 2, TimeSpan.FromSeconds(1), 800),
-        "nyaa" => new IndexerPolicy(10, 1, TimeSpan.FromSeconds(2), 600),
-        "limetorrents" => new IndexerPolicy(10, 1, TimeSpan.FromSeconds(3), 500),
-        "eztv" => new IndexerPolicy(10, 1, TimeSpan.FromSeconds(2), 300),
+        "knaben" => new IndexerPolicy(10, 1, TimeSpan.FromSeconds(2), DefaultDailyBudget),
+        "apibay" => new IndexerPolicy(15, 2, TimeSpan.FromSeconds(1), DefaultDailyBudget),
+        "nyaa" => new IndexerPolicy(10, 1, TimeSpan.FromSeconds(2), DefaultDailyBudget),
+        "limetorrents" => new IndexerPolicy(10, 1, TimeSpan.FromSeconds(3), DefaultDailyBudget),
+        "eztv" => new IndexerPolicy(10, 1, TimeSpan.FromSeconds(2), DefaultDailyBudget),
         _ => Conservative
     };
 

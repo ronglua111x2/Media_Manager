@@ -3,7 +3,8 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
              xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
-             xmlns:views="clr-namespace:media_management_app.Views">
+             xmlns:views="clr-namespace:media_management_app.Views"
+             xmlns:controls="clr-namespace:media_management_app.Views.Controls">
     <!-- #region Local resources and templates -->
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
@@ -501,6 +502,7 @@
                                Style="{StaticResource SectionTitleStyle}"
                                VerticalAlignment="Center"
                                TextTrimming="CharacterEllipsis" />
+                    <controls:SearchQuotaPill Margin="6,0,0,0" VerticalAlignment="Center" />
                 </StackPanel>
                 <WrapPanel Grid.Row="1">
                     <Button Style="{StaticResource AppOutlinedButtonStyle}"

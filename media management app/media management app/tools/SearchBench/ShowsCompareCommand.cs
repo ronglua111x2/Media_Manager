@@ -12,7 +12,7 @@ namespace SearchBench;
 
 /// <summary>
 /// SearchBench shows-compare [--state D:\MediaManagerState] [--only "a,b"] [--episodes 1] [--packs 1]
-///                           [--max-seconds 30] [--native-only 1] [--dump file.tsv] [--plugins …]
+///                           [--max-seconds 30] [--native-only 1] [--dump file.tsv] [--plugins …] [--disable "a,b"]
 ///
 /// TV / anime counterpart of movies-compare (audit 07c NS-31). For every tracked show it takes the latest aired
 /// episode(s) and the latest fully aired season, builds the app's queries with the show's own episode / pack
@@ -62,7 +62,15 @@ public static class ShowsCompareCommand
         var cache = new IndexerResponseCache();
         var orchestrator = new SearchOrchestrator(governor, (id, lane, budget) =>
             new GovernedIndexerHttp(http, governor, cache, id, lane, budget.MaxGovernorWait, TimeSpan.FromMinutes(30), "MediaManager/1.0 (+native-search; SearchBench)", budget.PerIndexer));
-        var indexers = NativeIndexerCatalog.Create();
+        // --disable "a,b": leave indexers out (e.g. ones whose daily budget an earlier run already used today).
+        var disabled = (args.GetValueOrDefault("disable") ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var nativeSettings = new NativeSearchSettings();
+        foreach (var id in disabled)
+        {
+            nativeSettings.Indexers[id] = new IndexerSettings { Enabled = false };
+        }
+
+        var indexers = NativeIndexerCatalog.Create(nativeSettings);
         var imdb = new ImdbResolver(state);
         using var qbit = new QbittorrentSearchBackend();
         if (!nativeOnly)

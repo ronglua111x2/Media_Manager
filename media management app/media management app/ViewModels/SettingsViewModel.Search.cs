@@ -106,8 +106,13 @@ public partial class SettingsViewModel
             SearchIndexers.Add(new IndexerHealthRowViewModel(
                 id,
                 unsaved.TryGetValue(id, out var enabled) ? enabled : NativeIndexerCatalog.IsEnabled(search, id),
-                state is null ? "Not used yet" : DescribeState(state),
-                state is null ? $"0 / {policy.DailyBudget} today" : $"{state.RequestsToday} / {policy.DailyBudget} today",
+                NativeSearchHealth.Describe(
+                    state,
+                    policy,
+                    unsaved.TryGetValue(id, out var shownEnabled) ? shownEnabled : NativeIndexerCatalog.IsEnabled(search, id),
+                    _nativeSearch?.PauseAll ?? search.PauseAll,
+                    DateTimeOffset.UtcNow).Text,
+                $"{NativeSearchHealth.UsedToday(state, DateTimeOffset.UtcNow)} / {policy.DailyBudget} today",
                 state?.LastError ?? string.Empty));
         }
     }
@@ -120,16 +125,7 @@ public partial class SettingsViewModel
         }
     }
 
-    private static string DescribeState(IndexerStateSnapshot state) => state.Breaker switch
-    {
-        IndexerBreakerState.Open when state.OpenUntilUtc is { } until && until > DateTimeOffset.UtcNow =>
-            $"Paused until {until.ToLocalTime():HH:mm} (breaker open)",
-        IndexerBreakerState.HalfOpen => "Testing again (half-open)",
-        _ when state.CooldownUntilUtc is { } cooldown && cooldown > DateTimeOffset.UtcNow =>
-            $"Cooling down until {cooldown.ToLocalTime():HH:mm:ss} (rate limited)",
-        _ when state.LastSuccessUtc is { } ok => $"OK (last success {ok.ToLocalTime():dd/MM HH:mm})",
-        _ => "No successful request yet"
-    };
+
 
     private string OverrideFor(NativeSearchSettings search, string kind) =>
         search.BackendByKind.TryGetValue(kind, out var value) &&

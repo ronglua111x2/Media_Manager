@@ -32,6 +32,14 @@ public interface INativeSearchService
 
     IReadOnlyList<IndexerStateSnapshot> HealthSnapshot();
 
+    /// <summary>The rate limits and daily budget that apply to an indexer (defaults, tightened by Settings).</summary>
+    IndexerPolicy PolicyFor(string indexerId);
+
+    bool IsIndexerEnabled(string indexerId);
+
+    /// <summary>Raised (on any thread) when a site's usage, breaker or cooldown changes, or the kill switch is toggled.</summary>
+    event Action? HealthChanged;
+
     bool PauseAll { get; set; }
 }
 
@@ -102,6 +110,7 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
             LoadState());
         _governor.KillSwitch = Settings.PauseAll;
         _governor.StateChanged += ScheduleSave;
+        _governor.StateChanged += () => HealthChanged?.Invoke();
     }
 
     /// <summary>Marks searches in the current async flow as background work (Auto-Track): they get a smaller budget share.</summary>
@@ -119,6 +128,7 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
         {
             _governor.KillSwitch = value;
             Settings.PauseAll = value;
+            HealthChanged?.Invoke();
         }
     }
 
@@ -129,6 +139,12 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
     public bool ComparesWithQbittorrent(MediaKind kind, SearchRecipe? recipe = null) => BackendFor(kind, recipe) == SearchBackends.Both;
 
     public IReadOnlyList<IndexerStateSnapshot> HealthSnapshot() => _governor.Snapshot();
+
+    public IndexerPolicy PolicyFor(string indexerId) => NativeIndexerCatalog.PolicyResolver(Settings)(indexerId);
+
+    public bool IsIndexerEnabled(string indexerId) => NativeIndexerCatalog.IsEnabled(Settings, indexerId);
+
+    public event Action? HealthChanged;
 
     public async Task<IReadOnlyList<TorrentSearchResult>> SearchOrFallbackAsync(
         SearchRecipe recipe,

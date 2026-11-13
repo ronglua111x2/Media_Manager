@@ -65,6 +65,8 @@ public partial class App : System.Windows.Application
 
         var settings = _serviceProvider.GetRequiredService<ISettingsService>();
         settings.Load(launchOptions.StateFolder);
+        // Shared by the search quota pill on the Auto, News and Cart screens ({DynamicResource SearchQuota}).
+        Resources["SearchQuota"] = _serviceProvider.GetRequiredService<SearchQuotaViewModel>();
 
         var logger = _serviceProvider.GetRequiredService<IAppLogger>();
         logger.Info($"Media Manager {AppVersionInfo.Informational} starting (pid {Environment.ProcessId}).", LogTarget.All);
@@ -334,6 +336,7 @@ public partial class App : System.Windows.Application
         services.AddSingleton<IQbittorrentViewerService, QbittorrentViewerService>();
         services.AddSingleton<ShowSearchSnapshotService>();
         services.AddSingleton<INativeSearchService, NativeSearchService>();
+        services.AddSingleton<SearchQuotaViewModel>();
         services.AddSingleton<TmdbMetadataProvider>();
         services.AddSingleton<IMetadataProvider>(provider => provider.GetRequiredService<TmdbMetadataProvider>());
         services.AddSingleton<ITmdbShowCatalogService>(provider => provider.GetRequiredService<TmdbMetadataProvider>());
