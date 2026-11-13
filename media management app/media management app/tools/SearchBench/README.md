@@ -27,6 +27,14 @@ dotnet bin/Release/net8.0/SearchBench.dll movies --diag 1 --only "Coherence,Pred
 
 # Native so với qBittorrent trên bộ tiêu đề đặc thù (../SearchProbe/special_titles.json)
 dotnet bin/Release/net8.0/SearchBench.dll compare --plugins enabled --max-seconds 180
+
+# Movie thật, cả hai backend, đếm ứng viên theo tier (Accepted/Good/Excellent).
+# --native-only 1: bỏ qBittorrent (kiểm tra nhanh luật khớp). --dump f.tsv: ghi phán quyết từng dòng.
+dotnet bin/Release/net8.0/SearchBench.dll movies-compare --max-seconds 45
+
+# TV/anime thật: tập mới nhất (--episodes N) và season pack mới nhất (--packs 0 để bỏ) của mỗi show,
+# query dựng bằng recipe tập/pack của chính show đó, chấm bằng luật của app (pack: không probe metadata).
+dotnet bin/Release/net8.0/SearchBench.dll shows-compare --max-seconds 30 --dump shows.tsv
 ```
 
 Tham số chung: `--state D:\MediaManagerState` (mặc định), `--only "a,b"` lọc theo tên movie.
@@ -34,4 +42,5 @@ Tham số chung: `--state D:\MediaManagerState` (mặc định), `--only "a,b"` 
 ## Đọc kết quả
 
 - **movies**: số ứng viên đạt theo luật cũ và luật mới (sau dedupe theo infohash), cùng bản đứng đầu. Movie có số giảm thì chạy `--diag`: nếu "cũ nhận mà mới loại" bằng 0 thì phần giảm chỉ là bản trùng.
+- **movies-compare / shows-compare**: mỗi dòng là số ứng viên `đạt/tốt/xuất sắc` của từng backend, bản #1 có trùng không, số bản tốt chỉ một bên có, và thời gian. `shows-compare` in thêm bảng tổng theo nhóm (anime episode, tv episode, pack), rồi tới ví dụ các bản tốt chỉ qBittorrent có.
 - **compare**: với mỗi tiêu đề, số bản khác nhau (theo infohash) của native và của qBittorrent, phần giao, phần riêng của mỗi bên, thời gian, và trạng thái từng indexer native (`ok`, `timeout`, `blocked`, `skipped`, `parse-error`).

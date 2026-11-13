@@ -180,7 +180,7 @@ public static class MoviesCompareCommand
         return (accepted, tiers.Where(t => t.Tier >= CandidateTier.Good).Select(t => t.Result).ToList(), tiers.Count(t => t.Tier == CandidateTier.Excellent));
     }
 
-    private static AutoTorrentSettings LoadAutoTorrent(string state)
+    internal static AutoTorrentSettings LoadAutoTorrent(string state)
     {
         using var doc = JsonDocument.Parse(File.ReadAllText(Path.Combine(state, "settings.json")));
         return doc.RootElement.TryGetProperty("AutoTorrent", out var at)
