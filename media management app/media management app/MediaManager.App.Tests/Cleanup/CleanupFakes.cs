@@ -67,15 +67,19 @@ internal sealed class FakeBlacklistService : ITorrentBlacklistService
 
     public int AddCount { get; private set; }
 
+    public List<bool> GlobalFlags { get; } = [];
+
     public Task AddToBlacklistAsync(
         long showId,
         string listingUrl,
         string? infoHash,
         string reason,
         List<SuspiciousFile>? suspiciousFiles = null,
-        string? notes = null)
+        string? notes = null,
+        bool global = false)
     {
         AddCount++;
+        GlobalFlags.Add(global);
         return Task.CompletedTask;
     }
 

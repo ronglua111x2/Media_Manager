@@ -257,15 +257,18 @@ public interface IDatabaseService
 
     IReadOnlyList<TorrentBlacklistEntry> GetTorrentBlacklist(long showId);
 
+    /// <summary>True when an active entry for this show, or a global entry (any show), matches the URL or infohash.</summary>
     bool IsTorrentBlacklisted(long showId, string? listingUrl, string? infoHash);
 
+    /// <param name="isGlobal">The add gate found the torrent malicious: block it for every show and movie (SEC-A07).</param>
     void AddTorrentToBlacklist(
         long showId,
         string listingUrl,
         string infoHash,
         string reason,
         string? suspiciousFilesJson = null,
-        string? notes = null);
+        string? notes = null,
+        bool isGlobal = false);
 
     void RemoveTorrentFromBlacklist(long showId, string? listingUrl, string? infoHash);
 

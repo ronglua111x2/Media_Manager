@@ -3448,6 +3448,7 @@ public sealed class DatabaseService : IDatabaseService
         EnsureColumn(connection, "TorrentBlacklist", "DateAddedUtc", "TEXT NOT NULL DEFAULT ''");
         EnsureColumn(connection, "TorrentBlacklist", "IsActive", "INTEGER NOT NULL DEFAULT 1");
         EnsureColumn(connection, "TorrentBlacklist", "Notes", "TEXT NULL");
+        EnsureColumn(connection, "TorrentBlacklist", "IsGlobal", "INTEGER NOT NULL DEFAULT 0");
     }
 
     public IReadOnlyList<TorrentBlacklistEntry> GetTorrentBlacklist(long showId)
@@ -3501,7 +3502,7 @@ public sealed class DatabaseService : IDatabaseService
         command.CommandText = """
             SELECT COUNT(*)
             FROM TorrentBlacklist
-            WHERE ShowId = @showId
+            WHERE (ShowId = @showId OR IsGlobal = 1)
               AND IsActive = 1
               AND (
                     (@url != '' AND ListingUrl = @url COLLATE NOCASE)
@@ -3522,7 +3523,8 @@ public sealed class DatabaseService : IDatabaseService
         string infoHash,
         string reason,
         string? suspiciousFilesJson = null,
-        string? notes = null)
+        string? notes = null,
+        bool isGlobal = false)
     {
         var url = listingUrl?.Trim() ?? string.Empty;
         var hash = infoHash?.Trim() ?? string.Empty;
@@ -3549,8 +3551,8 @@ public sealed class DatabaseService : IDatabaseService
 
         using var command = connection.CreateCommand();
         command.CommandText = """
-            INSERT INTO TorrentBlacklist (ListingUrl, InfoHash, ShowId, Reason, SuspiciousFilesJson, DateAddedUtc, IsActive, Notes)
-            VALUES (@url, @hash, @showId, @reason, @files, @dateAdded, 1, @notes);
+            INSERT INTO TorrentBlacklist (ListingUrl, InfoHash, ShowId, Reason, SuspiciousFilesJson, DateAddedUtc, IsActive, Notes, IsGlobal)
+            VALUES (@url, @hash, @showId, @reason, @files, @dateAdded, 1, @notes, @isGlobal);
             """;
         command.Parameters.AddWithValue("@url", url);
         command.Parameters.AddWithValue("@hash", hash);
@@ -3559,6 +3561,7 @@ public sealed class DatabaseService : IDatabaseService
         command.Parameters.AddWithValue("@files", (object?)suspiciousFilesJson ?? DBNull.Value);
         command.Parameters.AddWithValue("@dateAdded", DateTime.UtcNow.ToString("O"));
         command.Parameters.AddWithValue("@notes", (object?)notes ?? DBNull.Value);
+        command.Parameters.AddWithValue("@isGlobal", isGlobal ? 1 : 0);
         command.ExecuteNonQuery();
     }
 

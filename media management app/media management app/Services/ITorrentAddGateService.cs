@@ -320,7 +320,8 @@ public sealed class TorrentAddGateService : ITorrentAddGateService
                 torrentHash,
                 blacklistReason,
                 suspiciousFiles,
-                notes);
+                notes,
+                global: true);
         }
         catch (Exception ex)
         {
