@@ -270,12 +270,15 @@ public sealed class GovernedIndexerHttp(
             var status = (int)response.StatusCode;
             var finalUri = response.RequestMessage?.RequestUri ?? request.RequestUri!;
 
-            if (response.StatusCode == HttpStatusCode.TooManyRequests)
+            // 429, or a 503 that says when to come back (doc 03: honour Retry-After for both).
+            if (response.StatusCode == HttpStatusCode.TooManyRequests ||
+                (response.StatusCode == HttpStatusCode.ServiceUnavailable && response.Headers.RetryAfter is not null &&
+                 !ChallengeDetector.LooksLikeChallenge(body, contentType)))
             {
                 var retryAfter = response.Headers.RetryAfter?.Delta
                                  ?? (response.Headers.RetryAfter?.Date is { } date ? date - DateTimeOffset.UtcNow : null);
-                governor.Report(indexerId, IndexerFailureKind.RateLimited, retryAfter, "HTTP 429");
-                throw new IndexerHttpException(indexerId, IndexerFailureKind.RateLimited, "HTTP 429", retryAfter);
+                governor.Report(indexerId, IndexerFailureKind.RateLimited, retryAfter, $"HTTP {status}");
+                throw new IndexerHttpException(indexerId, IndexerFailureKind.RateLimited, $"HTTP {status}", retryAfter);
             }
 
             if (status == 403 || ChallengeDetector.LooksLikeChallenge(body, contentType))

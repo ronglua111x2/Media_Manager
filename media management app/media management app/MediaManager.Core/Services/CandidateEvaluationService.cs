@@ -82,6 +82,18 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
 
         var titleVariants = _titleResolver.ResolveForMatching(recipe, movie.Title, movie.GetSearchableAlternativeTitles());
         var candidateTokens = parsed.TitleTokens.Count > 0 ? parsed.TitleTokens : TorrentCandidateParser.Tokenize(result.FileName).ToList();
+        // The parser strips every 19xx/20xx token from the release title, including title numbers ("1917",
+        // "Wonder Woman 1984", "Blade Runner 2049"): put back the ones a title variant contains (audit 07c NS-11).
+        var titleNumbers = titleVariants
+            .SelectMany(TitleNormalizer.MatchTokens)
+            .Where(token => token.Length == 4 && token.All(char.IsDigit))
+            .ToHashSet(StringComparer.Ordinal);
+        if (titleNumbers.Count > 0)
+        {
+            candidateTokens = candidateTokens
+                .Concat(TorrentCandidateParser.Tokenize(result.FileName).Where(titleNumbers.Contains))
+                .ToList();
+        }
         var yearMatch = YearMatcher.Match(movie.ReleaseYear, result.FileName, titleVariants);
         if (yearMatch.IsRejected)
         {
@@ -175,7 +187,12 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
             var titleTokens = TitleNormalizer.SignificantTitleTokens(candidateTitle);
             if (titleTokens.Count == 0)
             {
-                return (true, 1);
+                if (MatchesShortTitle(candidateTitle, candidateTokens))
+                {
+                    return (true, 1);
+                }
+
+                continue;
             }
 
             var matched = titleTokens.Count(normalizedCandidate.Contains);
@@ -187,6 +204,17 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
         }
 
         return (false, 0);
+    }
+
+    /// <summary>
+    /// A title without a word longer than two letters ("IS", "Us", "86") cannot be matched word by word: the parsed
+    /// release title must then start with exactly that title (audit 07c NS-19; it used to match every release).
+    /// </summary>
+    private static bool MatchesShortTitle(string title, IReadOnlyList<string> candidateTokens)
+    {
+        var titleTokens = TitleNormalizer.MatchTokens(title);
+        var candidate = candidateTokens.Select(TitleNormalizer.NormalizeToken).Where(token => token.Length > 0).ToList();
+        return titleTokens.Count > 0 && candidate.Count >= titleTokens.Count && candidate.Take(titleTokens.Count).SequenceEqual(titleTokens, StringComparer.Ordinal);
     }
 
     private static int EvaluateEpisodeTitleMatch(string? targetTitle, string? candidateTitle)

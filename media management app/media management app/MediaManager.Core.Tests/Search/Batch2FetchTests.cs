@@ -153,4 +153,42 @@ public class Batch2FetchTests
         act.Should().Throw<FormatException>();
         ApibayIndexer.Parse(Fixture("apibay", "empty.json")).Should().BeEmpty();
     }
+    // NS-18: only the movie's own year leaves the query; years that are part of the title stay.
+    [Theory]
+    [InlineData("Blade Runner 2049 2017 1080p", 2017, "Blade Runner 2049")]
+    [InlineData("Blade Runner 2049 1080p", 2017, "Blade Runner 2049")]
+    [InlineData("Wonder Woman 1984 2020", 2020, "Wonder Woman 1984")]
+    [InlineData("Godzilla 2000 1999", 1999, "Godzilla 2000")]
+    [InlineData("Coherence 2013", 2014, "Coherence")]
+    public void Reduce_KeepsYearsThatArePartOfTheTitle(string query, int year, string expected)
+    {
+        NativeQueryText.Reduce(query, MediaKind.Movie, year).Should().Be(expected);
+    }
+
+    // NS-11: title numbers that look like years.
+    [Theory]
+    [InlineData("1917", 2019, "1917.2019.1080p.BluRay.x264-SPARKS")]
+    [InlineData("1917", 2019, "1917 (2019) [1080p] [YTS.MX]")]
+    [InlineData("Wonder Woman 1984", 2020, "Wonder.Woman.1984.2020.1080p.WEB-DL.x264-GROUP")]
+    [InlineData("Wonder Woman 1984", 2020, "Wonder.Woman.1984.1080p.WEBRip.x264-GROUP")]
+    public void MovieTitledWithAYear_IsAccepted(string title, int year, string name)
+    {
+        var evaluator = new CandidateEvaluationService(new SearchTitleResolver());
+
+        var result = evaluator.EvaluateMovie(RecipeBuilder.Movie().Build(), TrackedShowBuilder.Movie(title, year), TorrentResultBuilder.Magnet(name, fileSize: 2_000_000_000));
+
+        result.IsAccepted.Should().BeTrue(result.RejectDetail);
+    }
+
+    // NS-19: a title without a word longer than two letters must be the whole release title.
+    [Fact]
+    public void ShortTitle_OnlyMatchesItself()
+    {
+        var evaluator = new CandidateEvaluationService(new SearchTitleResolver());
+        var movie = TrackedShowBuilder.Movie("Us", 2019);
+        var recipe = RecipeBuilder.Movie().Build();
+
+        evaluator.EvaluateMovie(recipe, movie, TorrentResultBuilder.Magnet("Joker.2019.1080p.BluRay.x264-GROUP", fileSize: 2_000_000_000)).IsAccepted.Should().BeFalse();
+        evaluator.EvaluateMovie(recipe, movie, TorrentResultBuilder.Magnet("Us.2019.1080p.BluRay.x264-GROUP", fileSize: 2_000_000_000)).IsAccepted.Should().BeTrue();
+    }
 }

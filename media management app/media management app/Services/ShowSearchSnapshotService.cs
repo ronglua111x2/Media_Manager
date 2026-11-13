@@ -79,11 +79,29 @@ public sealed class ShowSearchSnapshotService
 
         var searchSource = recipe.Modules.FirstOrDefault(module => module.BlockType == RecipeBlockType.SearchSource && module.IsEnabled);
         var savedPlugins = string.IsNullOrWhiteSpace(searchSource?.Plugins) ? "enabled" : searchSource!.Plugins;
-        // Native-only search needs nothing from qBittorrent's plugin list (it may even be offline).
-        var nativeOnly = _nativeSearch.UsesNative(recipeKind, recipe) && !_nativeSearch.ComparesWithQbittorrent(recipeKind, recipe);
-        var resolved = nativeOnly
-            ? new SearchPluginResolveResult { PluginsForApi = "enabled", RequestedNames = [] }
-            : _searchPluginService.ResolveForSearch(savedPlugins, await _searchPluginService.GetPluginsAsync(cancellationToken), _logger);
+        // Native-only search needs nothing from qBittorrent's plugin list (it may even be offline). In Both mode a
+        // stopped qBittorrent only costs the comparison, not the search (audit 07c NS-17).
+        var usesNative = _nativeSearch.UsesNative(recipeKind, recipe);
+        var nativeOnly = usesNative && !_nativeSearch.ComparesWithQbittorrent(recipeKind, recipe);
+        var nativePlaceholder = new SearchPluginResolveResult { PluginsForApi = "enabled", RequestedNames = [] };
+        SearchPluginResolveResult resolved;
+        try
+        {
+            resolved = nativeOnly
+                ? nativePlaceholder
+                : _searchPluginService.ResolveForSearch(savedPlugins, await _searchPluginService.GetPluginsAsync(cancellationToken), _logger);
+        }
+        catch (Exception ex) when (usesNative && ex is not OperationCanceledException)
+        {
+            _logger.Warning($"qBittorrent plugin list unavailable ({ex.Message}); searching native indexers only.", LogTarget.All);
+            resolved = nativePlaceholder;
+        }
+
+        if (resolved.SkipSearch && usesNative)
+        {
+            resolved = nativePlaceholder;
+        }
+
         if (resolved.SkipSearch)
         {
             _logger.Warning($"Snapshot search skipped for {show.DisplayTitle}: no valid enabled plugins remain.", LogTarget.All);

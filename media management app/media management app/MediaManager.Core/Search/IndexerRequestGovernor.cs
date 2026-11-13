@@ -96,6 +96,10 @@ public sealed class IndexerRequestGovernor
 
     private const int FailuresBeforeOpen = 3;
 
+    private static readonly TimeSpan MinRetryAfter = TimeSpan.FromMinutes(1);
+
+    private static readonly TimeSpan MaxRetryAfter = TimeSpan.FromHours(24);
+
     private readonly object _gate = new();
     private readonly TimeProvider _time;
     private readonly Func<string, IndexerPolicy> _policyFor;
@@ -103,6 +107,7 @@ public sealed class IndexerRequestGovernor
     private readonly Dictionary<string, Queue<DateTimeOffset>> _recent = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, DateTimeOffset> _lastStart = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _disabled = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, int> _interactiveWaiting = new(StringComparer.OrdinalIgnoreCase);
     private bool _killSwitch;
 
     public IndexerRequestGovernor(
@@ -176,6 +181,41 @@ public sealed class IndexerRequestGovernor
     /// </summary>
     public async Task<IDisposable> AcquireAsync(string indexerId, SearchLane lane, TimeSpan maxWait, CancellationToken cancellationToken)
     {
+        if (lane != SearchLane.Interactive)
+        {
+            return await AcquireCoreAsync(indexerId, lane, maxWait, cancellationToken);
+        }
+
+        // While a user search waits for a site, background work (Auto-Track, hunts) must not take its slot
+        // (audit 07c NS-09, doc 03 §1.6).
+        lock (_gate)
+        {
+            _interactiveWaiting[indexerId] = _interactiveWaiting.GetValueOrDefault(indexerId) + 1;
+        }
+
+        try
+        {
+            return await AcquireCoreAsync(indexerId, lane, maxWait, cancellationToken);
+        }
+        finally
+        {
+            lock (_gate)
+            {
+                var waiting = _interactiveWaiting.GetValueOrDefault(indexerId) - 1;
+                if (waiting <= 0)
+                {
+                    _interactiveWaiting.Remove(indexerId);
+                }
+                else
+                {
+                    _interactiveWaiting[indexerId] = waiting;
+                }
+            }
+        }
+    }
+
+    private async Task<IDisposable> AcquireCoreAsync(string indexerId, SearchLane lane, TimeSpan maxWait, CancellationToken cancellationToken)
+    {
         var deadline = _time.GetUtcNow() + maxWait;
         while (true)
         {
@@ -244,8 +284,12 @@ public sealed class IndexerRequestGovernor
                     break;
 
                 case IndexerFailureKind.RateLimited:
-                    var backoff = retryAfter ?? TimeSpan.FromSeconds(30 * Math.Pow(2, Math.Min(state.RateLimitLevel, 6)));
-                    if (backoff > TimeSpan.FromMinutes(30))
+                    // The server's Retry-After wins (bounded to 1 min..24 h: "0" or a past date must not mean
+                    // "hammer again now"); without it, exponential backoff capped at 30 min (audit 07c NS-05).
+                    var backoff = retryAfter is { } serverAsked
+                        ? TimeSpan.FromTicks(Math.Clamp(serverAsked.Ticks, MinRetryAfter.Ticks, MaxRetryAfter.Ticks))
+                        : TimeSpan.FromSeconds(30 * Math.Pow(2, Math.Min(state.RateLimitLevel, 6)));
+                    if (retryAfter is null && backoff > TimeSpan.FromMinutes(30))
                     {
                         backoff = TimeSpan.FromMinutes(30);
                     }
@@ -323,6 +367,12 @@ public sealed class IndexerRequestGovernor
         {
             retryAt = cooldown;
             return $"cooling down after rate limit until {cooldown:HH:mm:ss} UTC";
+        }
+
+        if (lane == SearchLane.Background && _interactiveWaiting.GetValueOrDefault(indexerId) > 0)
+        {
+            retryAt = now + TimeSpan.FromMilliseconds(250);
+            return "interactive search waiting";
         }
 
         if (state.InFlight >= policy.MaxConcurrent)

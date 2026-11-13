@@ -14,7 +14,7 @@ namespace media_management_app.Search;
 /// </summary>
 public static partial class NativeQueryText
 {
-    public static string Reduce(string query, MediaKind kind)
+    public static string Reduce(string query, MediaKind kind, int? movieYear = null)
     {
         if (string.IsNullOrWhiteSpace(query))
         {
@@ -24,8 +24,9 @@ public static partial class NativeQueryText
         var reduced = QualityTokens().Replace(query, " ");
         if (kind == MediaKind.Movie)
         {
-            // Keep a leading number ("2001 A Space Odyssey", "1917"): only drop years after the title.
-            var withoutYear = QueryTemplateRenderer.CollapseSpaces(TrailingYears().Replace(reduced, " "));
+            // Keep a leading number ("2001 A Space Odyssey", "1917"): only drop years after the title, and when the
+            // release year is known only that year (±1): "Blade Runner 2049 2017" → "Blade Runner 2049" (NS-18).
+            var withoutYear = QueryTemplateRenderer.CollapseSpaces(DropYears(reduced, movieYear));
             // Short or common titles ("Dune", "Heat", "Alien") drown in unrelated results without the year, so
             // their year-bearing form stays its own query (plan 08 §Q3); the plain title is searched as well.
             if (!IsShortTitle(withoutYear))
@@ -42,16 +43,35 @@ public static partial class NativeQueryText
     /// The quality-bearing form of a query ("Oppenheimer 2023 1080p" → "Oppenheimer 1080p" for movies), or null
     /// when the query has no quality token. Paged HTML indexers get it in addition to the reduced query.
     /// </summary>
-    public static string? Specific(string query, MediaKind kind)
+    public static string? Specific(string query, MediaKind kind, int? movieYear = null)
     {
         if (string.IsNullOrWhiteSpace(query) || !QualityTokens().IsMatch(query))
         {
             return null;
         }
 
-        var specific = kind == MediaKind.Movie ? TrailingYears().Replace(query, " ") : query;
+        var specific = kind == MediaKind.Movie ? DropYears(query, movieYear) : query;
         specific = QueryTemplateRenderer.CollapseSpaces(specific);
-        return string.Equals(specific, Reduce(query, kind), StringComparison.OrdinalIgnoreCase) ? null : specific;
+        return string.Equals(specific, Reduce(query, kind, movieYear), StringComparison.OrdinalIgnoreCase) ? null : specific;
+    }
+
+    /// <summary>
+    /// Years after the first word: with a known release year only that year ±1 (a year that is part of the title —
+    /// "Blade Runner 2049", "Wonder Woman 1984", "Godzilla 2000" — stays); without it, only a final year.
+    /// </summary>
+    private static string DropYears(string text, int? movieYear)
+    {
+        if (movieYear is { } year)
+        {
+            // The exact year when the query has it ("Godzilla 2000 1999" keeps 2000); otherwise a year one off
+            // (TMDB vs release-name year).
+            var exact = year.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            var hasExact = TrailingYears().Matches(text).Any(match => match.Value == exact);
+            return TrailingYears().Replace(text, match =>
+                int.TryParse(match.Value, out var value) && (hasExact ? value == year : Math.Abs(value - year) <= 1) ? " " : match.Value);
+        }
+
+        return FinalYear().Replace(text, string.Empty);
     }
 
     /// <summary>
@@ -59,9 +79,9 @@ public static partial class NativeQueryText
     /// without one, "title + quality" for the recipe's two best allowed qualities (the qualities that make a
     /// candidate "Good"). Empty when nothing specific applies.
     /// </summary>
-    public static IReadOnlyList<string> SpecificQueries(string query, MediaKind kind, IReadOnlyList<string>? recipeQualities)
+    public static IReadOnlyList<string> SpecificQueries(string query, MediaKind kind, IReadOnlyList<string>? recipeQualities, int? movieYear = null)
     {
-        if (Specific(query, kind) is { } own)
+        if (Specific(query, kind, movieYear) is { } own)
         {
             return [own];
         }
@@ -71,7 +91,7 @@ public static partial class NativeQueryText
             return [];
         }
 
-        var reduced = Reduce(query, kind);
+        var reduced = Reduce(query, kind, movieYear);
         return recipeQualities
             .Where(quality => !string.IsNullOrWhiteSpace(quality))
             .Select(quality => quality.Trim())
@@ -100,4 +120,8 @@ public static partial class NativeQueryText
 
     [GeneratedRegex(@"(?<=\S\s)(19|20)\d{2}\b")]
     private static partial Regex TrailingYears();
+
+    // The last year of the query, followed only by quality tokens ("Oppenheimer 2023 1080p").
+    [GeneratedRegex(@"(?<=\S)\s+(19|20)\d{2}(?=(\s+(2160p|1440p|1080p|720p|576p|480p|4k|uhd|hdr|x264|x265|hevc))*\s*$)", RegexOptions.IgnoreCase)]
+    private static partial Regex FinalYear();
 }

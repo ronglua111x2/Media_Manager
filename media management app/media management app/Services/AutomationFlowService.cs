@@ -148,7 +148,7 @@ public sealed class AutomationFlowService : IAutomationFlowService
                 recipe,
                 queries,
                 cancellationToken,
-                new SearchSubject(IsMovie: true, movie.TmdbId, Evaluate: row => _candidateEvaluationService.EvaluateMovie(recipe, movie, row)));
+                new SearchSubject(IsMovie: true, movie.TmdbId, Evaluate: row => _candidateEvaluationService.EvaluateMovie(recipe, movie, row), Year: movie.ReleaseYear));
             _progressService.Report(0, "Filtering results...");
             var evaluated = results
                 .Select(result => _candidateEvaluationService.EvaluateMovie(recipe, movie, result))
@@ -178,11 +178,29 @@ public sealed class AutomationFlowService : IAutomationFlowService
         var requestLimit = searchSource?.ResultLimit is > 0 ? searchSource.ResultLimit : 100;
         var savedPlugins = string.IsNullOrWhiteSpace(searchSource?.Plugins) ? "enabled" : searchSource!.Plugins;
         var category = string.IsNullOrWhiteSpace(searchSource?.Category) ? "all" : searchSource!.Category;
-        // Native-only search needs nothing from qBittorrent's plugin list (it may even be offline).
-        var nativeOnly = _nativeSearch.UsesNative(recipe.TargetKind, recipe) && !_nativeSearch.ComparesWithQbittorrent(recipe.TargetKind, recipe);
-        var resolved = nativeOnly
-            ? new SearchPluginResolveResult { PluginsForApi = "enabled", RequestedNames = [] }
-            : _searchPluginService.ResolveForSearch(savedPlugins, await _searchPluginService.GetPluginsAsync(cancellationToken), _logger);
+        // Native-only search needs nothing from qBittorrent's plugin list (it may even be offline). In Both mode a
+        // stopped qBittorrent only costs the comparison, not the search (audit 07c NS-17).
+        var usesNative = _nativeSearch.UsesNative(recipe.TargetKind, recipe);
+        var nativeOnly = usesNative && !_nativeSearch.ComparesWithQbittorrent(recipe.TargetKind, recipe);
+        var nativePlaceholder = new SearchPluginResolveResult { PluginsForApi = "enabled", RequestedNames = [] };
+        SearchPluginResolveResult resolved;
+        try
+        {
+            resolved = nativeOnly
+                ? nativePlaceholder
+                : _searchPluginService.ResolveForSearch(savedPlugins, await _searchPluginService.GetPluginsAsync(cancellationToken), _logger);
+        }
+        catch (Exception ex) when (usesNative && ex is not OperationCanceledException)
+        {
+            _logger.Warning($"qBittorrent plugin list unavailable ({ex.Message}); searching native indexers only.", LogTarget.All);
+            resolved = nativePlaceholder;
+        }
+
+        if (resolved.SkipSearch && usesNative)
+        {
+            resolved = nativePlaceholder;
+        }
+
         if (resolved.SkipSearch)
         {
             _logger.Warning($"Recipe search skipped: no valid enabled plugins remain for recipe '{recipe.Name}'.", LogTarget.All);

@@ -40,6 +40,18 @@ public static class GateCommand
 
         Console.WriteLine("| Kind | Searches | Evaluated | Native good ≥ 90% of qBit | #1 not worse | Avg good native / qBit | Median s native / qBit |");
         Console.WriteLine("|---|---|---|---|---|---|---|");
+        // A failed qBittorrent search is no evidence for native (audit 07c NS-16): those records are counted apart.
+        static bool QbitFailed(JsonElement row) =>
+            row.GetProperty("qbittorrent").TryGetProperty("error", out var error) && error.ValueKind == JsonValueKind.String;
+        static bool FromMemo(JsonElement row) =>
+            row.GetProperty("native").TryGetProperty("fromMemo", out var memo) && memo.ValueKind == JsonValueKind.True;
+        var failed = rows.Count(QbitFailed);
+        if (failed > 0)
+        {
+            Console.WriteLine($"{failed} record(s) with a failed qBittorrent search are left out.");
+        }
+
+        rows = rows.Where(row => !QbitFailed(row)).ToList();
         foreach (var group in rows.GroupBy(row => row.GetProperty("kind").GetString() ?? "?"))
         {
             var evaluated = group.Where(row => row.GetProperty("evaluated").GetBoolean()).ToList();
@@ -54,7 +66,8 @@ public static class GateCommand
                 return sorted.Count == 0 ? 0 : sorted[sorted.Count / 2];
             }
 
-            var nativeMs = Median(group.Select(row => row.GetProperty("native").GetProperty("ms").GetDouble()));
+            // Memo answers take ~0 ms and would flatter the median.
+            var nativeMs = Median(group.Where(row => !FromMemo(row)).Select(row => row.GetProperty("native").GetProperty("ms").GetDouble()));
             var qbitMs = Median(group.Select(row => row.GetProperty("qbittorrent").GetProperty("ms").GetDouble()));
             var pct = (int count) => evaluated.Count == 0 ? "-" : $"{100.0 * count / evaluated.Count:0}% ({count}/{evaluated.Count})";
             Console.WriteLine(

@@ -41,7 +41,8 @@ public sealed record SearchSubject(
     int TmdbId,
     int? Season = null,
     int? Episode = null,
-    Func<TorrentSearchResult, RecipeCandidateResult>? Evaluate = null);
+    Func<TorrentSearchResult, RecipeCandidateResult>? Evaluate = null,
+    int? Year = null);
 
 /// <summary>
 /// App side of native search (native-search P2): builds the indexer set from settings, owns the request
@@ -92,7 +93,8 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
             PooledConnectionLifetime = TimeSpan.FromMinutes(5)
         })
         {
-            Timeout = TimeSpan.FromSeconds(20)
+            // Each request gets its own timeout (Settings: 3-60 s) in GovernedIndexerHttp (audit 07c NS-25).
+            Timeout = Timeout.InfiniteTimeSpan
         };
         _governor = new IndexerRequestGovernor(
             TimeProvider.System,
@@ -147,9 +149,10 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
         }
 
         var nativeWatch = System.Diagnostics.Stopwatch.StartNew();
-        var nativeTask = TimedAsync(() => SearchAsync(recipe, query, kind, cancellationToken, subject), nativeWatch);
+        var nativeTask = TimedAsync(() => SearchWithMemoAsync(recipe, query, kind, cancellationToken, subject), nativeWatch);
         var qbitWatch = System.Diagnostics.Stopwatch.StartNew();
         IReadOnlyList<TorrentSearchResult> qbitRows;
+        string? qbitError = null;
         try
         {
             qbitRows = await qbittorrentSearch();
@@ -157,21 +160,27 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             qbitRows = [];
+            qbitError = ex.Message;
             _logger.Warning($"[Search] compare: qBittorrent search failed for '{query}': {ex.Message}", LogTarget.File);
         }
 
         qbitWatch.Stop();
-        var nativeRows = await nativeTask;
-        WriteCompareRecord(recipe, query, kind, subject, nativeRows, nativeWatch.ElapsedMilliseconds, qbitRows, qbitWatch.ElapsedMilliseconds);
+        var (nativeRows, fromMemo) = await nativeTask;
+        WriteCompareRecord(recipe, query, kind, subject, nativeRows, nativeWatch.ElapsedMilliseconds, qbitRows, qbitWatch.ElapsedMilliseconds, qbitError, fromMemo);
         return nativeRows;
     }
 
-    public async Task<IReadOnlyList<TorrentSearchResult>> SearchAsync(SearchRecipe recipe, string query, MediaKind kind, CancellationToken cancellationToken, SearchSubject? subject = null)
+    public async Task<IReadOnlyList<TorrentSearchResult>> SearchAsync(SearchRecipe recipe, string query, MediaKind kind, CancellationToken cancellationToken, SearchSubject? subject = null) =>
+        (await SearchWithMemoAsync(recipe, query, kind, cancellationToken, subject)).Rows;
+
+    /// <summary>The native answer, and whether it came from the 15-minute memo (another caller's search).</summary>
+    private async Task<(IReadOnlyList<TorrentSearchResult> Rows, bool FromMemo)> SearchWithMemoAsync(SearchRecipe recipe, string query, MediaKind kind, CancellationToken cancellationToken, SearchSubject? subject)
     {
         // Recipe templates multiply queries that full-text indexers answer identically ("X 2014 1080p",
         // "X 1080p", "X"): search the reduced text once and reuse it for a while (native-search P4).
-        var reduced = NativeQueryText.Reduce(query, kind);
-        var specifics = NativeQueryText.SpecificQueries(query, kind, RecipeCandidateFilter.GetFilterModule(recipe)?.QualityAllowList);
+        var movieYear = subject is { IsMovie: true } ? subject.Year : null;
+        var reduced = NativeQueryText.Reduce(query, kind, movieYear);
+        var specifics = NativeQueryText.SpecificQueries(query, kind, RecipeCandidateFilter.GetFilterModule(recipe)?.QualityAllowList, movieYear);
         var settings = Settings;
         var lane = LaneScope.Value ?? SearchLane.Interactive;
         var enabled = string.Join(",", NativeIndexerCatalog.AllIds.Where(id => NativeIndexerCatalog.IsEnabled(settings, id)));
@@ -221,7 +230,7 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
                 _recent.TryRemove(new KeyValuePair<string, MemoEntry>(key, entry));
             }
 
-            return outcome.Rows;
+            return (outcome.Rows, !owned);
         }
     }
 
@@ -281,8 +290,8 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
         return new NativeOutcome(outcome.Results, IsComplete(outcome.Indexers) && !imdbFailed);
     }
 
-    private static async Task<IReadOnlyList<TorrentSearchResult>> TimedAsync(
-        Func<Task<IReadOnlyList<TorrentSearchResult>>> search,
+    private static async Task<T> TimedAsync<T>(
+        Func<Task<T>> search,
         System.Diagnostics.Stopwatch watch)
     {
         try
@@ -308,7 +317,9 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
         IReadOnlyList<TorrentSearchResult> nativeRows,
         long nativeMs,
         IReadOnlyList<TorrentSearchResult> qbitRows,
-        long qbitMs)
+        long qbitMs,
+        string? qbitError,
+        bool nativeFromMemo)
     {
         try
         {
@@ -326,8 +337,8 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
                 season = subject?.Season,
                 episode = subject?.Episode,
                 evaluated = subject?.Evaluate is not null,
-                native = new { rows = native.Keys.Count, good = native.Good.Count, excellent = native.Excellent, top = native.TopName, topScore = native.TopScore, ms = nativeMs },
-                qbittorrent = new { rows = qbit.Keys.Count, good = qbit.Good.Count, excellent = qbit.Excellent, top = qbit.TopName, topScore = qbit.TopScore, ms = qbitMs },
+                native = new { rows = native.Keys.Count, good = native.Good.Count, excellent = native.Excellent, top = native.TopName, topScore = native.TopScore, ms = nativeMs, fromMemo = nativeFromMemo },
+                qbittorrent = new { rows = qbit.Keys.Count, good = qbit.Good.Count, excellent = qbit.Excellent, top = qbit.TopName, topScore = qbit.TopScore, ms = qbitMs, error = qbitError },
                 both = native.Keys.Intersect(qbit.Keys).Count(),
                 goodBoth = native.Good.Intersect(qbit.Good).Count(),
                 goodNativeOnly = native.Good.Except(qbit.Good).Count(),
@@ -521,10 +532,26 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
     {
         lock (_saveGate)
         {
-            _saveTimer ??= new System.Threading.Timer(_ => SaveState(), null, Timeout.Infinite, Timeout.Infinite);
-            _saveTimer.Change(TimeSpan.FromSeconds(2), Timeout.InfiniteTimeSpan);
+            _saveTimer ??= new System.Threading.Timer(_ =>
+            {
+                lock (_saveGate)
+                {
+                    _firstUnsavedChange = null;
+                }
+
+                SaveState();
+            }, null, Timeout.Infinite, Timeout.Infinite);
+            var now = DateTimeOffset.UtcNow;
+            _firstUnsavedChange ??= now;
+            // A busy hunt reports every few hundred ms: without a cap the 2 s debounce never fires and a breaker
+            // opened mid-hunt is lost on a crash (audit 07c NS-24).
+            var due = now - _firstUnsavedChange.Value >= MaxSaveDelay ? TimeSpan.Zero : TimeSpan.FromSeconds(2);
+            _saveTimer.Change(due, Timeout.InfiniteTimeSpan);
         }
     }
+
+    private static readonly TimeSpan MaxSaveDelay = TimeSpan.FromSeconds(10);
+    private DateTimeOffset? _firstUnsavedChange;
 
     private void SaveState()
     {

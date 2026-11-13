@@ -82,9 +82,9 @@ public static class MoviesCompareCommand
             var nativeRows = new List<TorrentSearchResult>();
             var qualities = RecipeCandidateFilter.GetFilterModule(recipe)?.QualityAllowList;
             var nativeQueries = queries
-                .SelectMany(query => NativeQueryText.SpecificQueries(query, MediaKind.Movie, qualities)
+                .SelectMany(query => NativeQueryText.SpecificQueries(query, MediaKind.Movie, qualities, movie.ReleaseYear)
                     .Select(specific => new IndexerQuery(specific, MediaKind.Movie, anime, SpecificOnly: true))
-                    .Prepend(new IndexerQuery(NativeQueryText.Reduce(query, MediaKind.Movie), MediaKind.Movie, anime)))
+                    .Prepend(new IndexerQuery(NativeQueryText.Reduce(query, MediaKind.Movie, movie.ReleaseYear), MediaKind.Movie, anime)))
                 .DistinctBy(query => (query.Text.ToLowerInvariant(), query.SpecificOnly))
                 .ToList();
             foreach (var nativeQuery in nativeQueries)

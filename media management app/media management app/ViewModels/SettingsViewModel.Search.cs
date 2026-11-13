@@ -56,9 +56,11 @@ public partial class SettingsViewModel
         SearchBackendMovie = OverrideFor(search, "Movie");
         SearchBackendEpisode = OverrideFor(search, "TvEpisode");
         SearchBackendPack = OverrideFor(search, "TvSeasonPack");
-        SearchPauseAll = search.PauseAll;
+        // The governor's kill switch is the truth: a tick that was not saved is still in force (audit 07c NS-22).
+        SearchPauseAll = _nativeSearch?.PauseAll ?? search.PauseAll;
         SearchPerIndexerTimeoutSeconds = search.PerIndexerTimeoutSeconds;
         SearchOverallTimeoutSeconds = search.OverallTimeoutSeconds;
+        SearchIndexers.Clear();
         RefreshSearchHealth();
     }
 
@@ -94,6 +96,8 @@ public partial class SettingsViewModel
     {
         var search = _settingsService.Current.Search ??= new NativeSearchSettings();
         var health = (_nativeSearch?.HealthSnapshot() ?? []).ToDictionary(state => state.IndexerId, StringComparer.OrdinalIgnoreCase);
+        // Refresh only updates health: ticks the user changed but did not save yet are kept.
+        var unsaved = SearchIndexers.ToDictionary(row => row.Id, row => row.Enabled, StringComparer.OrdinalIgnoreCase);
         SearchIndexers.Clear();
         foreach (var id in NativeIndexerCatalog.AllIds)
         {
@@ -101,7 +105,7 @@ public partial class SettingsViewModel
             var policy = NativeIndexerCatalog.PolicyResolver(search)(id);
             SearchIndexers.Add(new IndexerHealthRowViewModel(
                 id,
-                NativeIndexerCatalog.IsEnabled(search, id),
+                unsaved.TryGetValue(id, out var enabled) ? enabled : NativeIndexerCatalog.IsEnabled(search, id),
                 state is null ? "Not used yet" : DescribeState(state),
                 state is null ? $"0 / {policy.DailyBudget} today" : $"{state.RequestsToday} / {policy.DailyBudget} today",
                 state?.LastError ?? string.Empty));

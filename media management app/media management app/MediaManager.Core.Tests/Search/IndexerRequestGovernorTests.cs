@@ -184,4 +184,33 @@ public class IndexerRequestGovernorTests
         governor.Snapshot().Single(state => state.IndexerId == "site").Breaker.Should().Be(IndexerBreakerState.Open);
         governor.GetAvailability("site").CanRun.Should().BeFalse();
     }
+    // Audit 07c NS-09: a user search waiting for a site keeps background work from taking its slot.
+    [Fact]
+    public async Task BackgroundRequest_WaitsWhileAnInteractiveOneIsQueued()
+    {
+        var (governor, _) = Create(Tight with { RequestsPerMinute = 100, MaxConcurrent = 1 });
+        var held = await governor.AcquireAsync("site", SearchLane.Interactive, TimeSpan.Zero, CancellationToken.None);
+        var waiting = governor.AcquireAsync("site", SearchLane.Interactive, TimeSpan.FromMinutes(1), CancellationToken.None);
+        held.Dispose();
+
+        var background = () => governor.AcquireAsync("site", SearchLane.Background, TimeSpan.Zero, CancellationToken.None);
+
+        (await background.Should().ThrowAsync<IndexerUnavailableException>()).Which.Reason.Should().Contain("interactive");
+        using var lease = await waiting;
+    }
+
+    // Audit 07c NS-05: the server's Retry-After is honoured, within 1 min .. 24 h.
+    [Theory]
+    [InlineData(0, 60)]
+    [InlineData(7200, 7200)]
+    [InlineData(-30, 60)]
+    public void RateLimit_HonoursRetryAfterWithinBounds(int retryAfterSeconds, int expectedSeconds)
+    {
+        var (governor, time) = Create();
+
+        governor.Report("site", IndexerFailureKind.RateLimited, TimeSpan.FromSeconds(retryAfterSeconds), "HTTP 429");
+
+        var state = governor.Snapshot().Single(s => s.IndexerId == "site");
+        state.CooldownUntilUtc.Should().Be(time.Now + TimeSpan.FromSeconds(expectedSeconds));
+    }
 }
