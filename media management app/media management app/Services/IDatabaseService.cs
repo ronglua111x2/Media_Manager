@@ -118,6 +118,35 @@ public interface IDatabaseService
 
     IReadOnlyList<TrackedEpisode> GetTrackedEpisodes(long showId);
 
+    /// <summary>Flags an episode TMDB no longer lists; keeps the first timestamp.</summary>
+    void MarkTrackedEpisodeRemovedUpstream(long episodeId, DateTime removedUtc);
+
+    /// <summary>Deletes an episode row with its cart orders that never got a torrent.</summary>
+    void DeleteTrackedEpisode(long episodeId);
+
+    /// <summary>
+    /// Remembers that the episode was reset from <paramref name="torrentHash"/> (TrackedEpisodes.ResetTorrentHashes,
+    /// migration 013); read it back with <see cref="TrackedEpisode.WasResetFrom"/>.
+    /// </summary>
+    void AddTrackedEpisodeResetTorrentHash(long episodeId, string torrentHash);
+
+    /// <summary>Same for a season row of a pack (TrackedSeasons.ResetTorrentHashes, <see cref="TrackedSeason.WasResetFrom"/>).</summary>
+    void AddTrackedSeasonResetTorrentHash(long showId, int seasonNumber, string torrentHash);
+
+    /// <summary>Same for a movie (TrackedMovies.ResetTorrentHashes, <see cref="TrackedMovie.WasResetFrom"/>).</summary>
+    void AddTrackedMovieResetTorrentHash(long movieId, string torrentHash);
+
+    /// <summary>
+    /// Saves a TMDB renumbering in one transaction (audit L3-09): deletes <paramref name="deleteEpisodeIds"/>, gives each
+    /// moved row its new number (through temporary numbers, so chains and swaps work) and moves its cart orders with it,
+    /// and saves the renumbered link records by id (file path, numbers, link path, state, notes).
+    /// </summary>
+    void ApplyEpisodeRenumbering(
+        long showId,
+        IReadOnlyCollection<long> deleteEpisodeIds,
+        IReadOnlyList<EpisodeRenumber> episodeMoves,
+        IReadOnlyList<SourceItem> movedItems);
+
     void UpdateTrackedEpisodeAvailability(long episodeId, EpisodeAvailability availability);
 
     void UpdateTrackedEpisodeTorrent(
@@ -228,15 +257,18 @@ public interface IDatabaseService
 
     IReadOnlyList<TorrentBlacklistEntry> GetTorrentBlacklist(long showId);
 
+    /// <summary>True when an active entry for this show, or a global entry (any show), matches the URL or infohash.</summary>
     bool IsTorrentBlacklisted(long showId, string? listingUrl, string? infoHash);
 
+    /// <param name="isGlobal">The add gate found the torrent malicious: block it for every show and movie (SEC-A07).</param>
     void AddTorrentToBlacklist(
         long showId,
         string listingUrl,
         string infoHash,
         string reason,
         string? suspiciousFilesJson = null,
-        string? notes = null);
+        string? notes = null,
+        bool isGlobal = false);
 
     void RemoveTorrentFromBlacklist(long showId, string? listingUrl, string? infoHash);
 

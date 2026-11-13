@@ -12,10 +12,12 @@ public interface ITorrentBlacklistService
         string? infoHash,
         string reason,
         List<SuspiciousFile>? suspiciousFiles = null,
-        string? notes = null);
+        string? notes = null,
+        bool global = false);
 
     /// <summary>
-    /// True if listing URL or infohash is blacklisted for this show.
+    /// True if listing URL or infohash is blacklisted for this show, or globally (a torrent the add gate found
+    /// malicious is blocked for every show and movie, SEC-A07).
     /// </summary>
     bool IsBlacklisted(long showId, string? listingUrl, string? infoHash = null);
 
@@ -43,7 +45,8 @@ public sealed class TorrentBlacklistService : ITorrentBlacklistService
         string? infoHash,
         string reason,
         List<SuspiciousFile>? suspiciousFiles = null,
-        string? notes = null)
+        string? notes = null,
+        bool global = false)
     {
         try
         {
@@ -67,10 +70,11 @@ public sealed class TorrentBlacklistService : ITorrentBlacklistService
                 hash,
                 reason,
                 suspiciousJson,
-                notes);
+                notes,
+                global);
 
             _logger.Warning(
-                $"Torrent blacklisted for show {showId}: url='{url}', hash='{hash}', reason={reason}",
+                $"Torrent blacklisted {(global ? "for every show" : $"for show {showId}")}: url='{url}', hash='{hash}', reason={reason}",
                 LogTarget.File | LogTarget.Console);
         }
         catch (Exception ex)

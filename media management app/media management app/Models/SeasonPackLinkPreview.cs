@@ -19,6 +19,9 @@ public sealed class SeasonPackLinkPreview
 
     public bool RequiresReview { get; init; }
 
+    /// <summary>The pack link asked Gemini for the specials (AI link), so a Retry can ask again.</summary>
+    public bool UsedGeminiForSpecials { get; init; }
+
     public int RegularEpisodeCount { get; init; }
 
     public int MatchedSpecialCount { get; init; }

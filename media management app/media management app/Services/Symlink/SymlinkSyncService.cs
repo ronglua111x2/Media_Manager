@@ -1,5 +1,6 @@
 using media_management_app.Common;
 using media_management_app.Models;
+using media_management_app.Services.Events;
 
 namespace media_management_app.Services.Symlink;
 
@@ -127,6 +128,16 @@ public sealed class SymlinkSyncService : ISymlinkSyncService
         }
 
         linkedPath ??= item.LinkedPath;
+        if (!string.IsNullOrWhiteSpace(linkedPath) &&
+            File.Exists(linkedPath) &&
+            IsLinkedPathNowOwnedByAnother(item, linkedPath, _databaseService.GetSourceItems()))
+        {
+            // A re-link moved this library path to another record (two files swapped episodes, or a file became
+            // an orphan and another took its episode). The symlink is that record's now: keep it (audit R2-A-02).
+            result.SkippedCount++;
+            return result;
+        }
+
         linkedGroup = BuildRemovalGroup(item, linkedPath, linkedGroup);
 
         var symlinkPaths = linkedGroup
@@ -146,7 +157,9 @@ public sealed class SymlinkSyncService : ISymlinkSyncService
 
         foreach (var symlinkPath in symlinkPaths)
         {
-            if (!string.IsNullOrWhiteSpace(symlinkPath) && File.Exists(symlinkPath))
+            // A symlink whose target was deleted must still be removed (PARSE-29).
+            if (!string.IsNullOrWhiteSpace(symlinkPath) &&
+                (File.Exists(symlinkPath) || _symlinkService.IsSymlink(symlinkPath)))
             {
                 if (_symlinkService.TryRemoveSymlink(symlinkPath, out var removeError))
                 {
@@ -169,6 +182,110 @@ public sealed class SymlinkSyncService : ISymlinkSyncService
         return result;
     }
 
+    /// <summary>
+    /// Every old symlink is removed before any new one is made: in a chain or a swap (E04 -> E05 while E05 -> E06) the
+    /// old symlink of one record is the new path of another, and removing it afterwards would delete the new one.
+    /// Only symlinks are removed, never a real file in the Jellyfin folder (audit L3-09).
+    /// </summary>
+    public SymlinkSyncResult MoveItems(IReadOnlyList<LibraryLinkMove> moves)
+    {
+        var result = new SymlinkSyncResult();
+        var settings = _settingsService.Current.Symlink;
+        if (!settings.Enabled || moves.Count == 0)
+        {
+            return result;
+        }
+
+        var oldFolders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var removed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var move in moves)
+        {
+            foreach (var symlinkPath in GetPreviousSymlinkPaths(move.Previous))
+            {
+                var folder = Path.GetDirectoryName(symlinkPath);
+                if (!string.IsNullOrWhiteSpace(folder))
+                {
+                    oldFolders.Add(folder);
+                }
+
+                if (!removed.Add(symlinkPath) || !_symlinkService.IsSymlink(symlinkPath))
+                {
+                    continue;
+                }
+
+                if (_symlinkService.TryRemoveSymlink(symlinkPath, out var removeError))
+                {
+                    result.RemovedCount++;
+                }
+                else
+                {
+                    result.ErrorCount++;
+                    result.Messages.Add($"{move.Item.FileName}: {removeError}");
+                }
+            }
+
+            move.Item.SymlinkPath = null;
+            _databaseService.UpdateSourceItemSymlinkPath(move.Item.Id, null);
+        }
+
+        foreach (var move in moves)
+        {
+            Merge(result, SyncItem(move.Item, move.Item.LinkedPath));
+        }
+
+        foreach (var folder in oldFolders)
+        {
+            CleanupEmptyFolders(folder, settings.UnifiedRoot);
+        }
+
+        return result;
+    }
+
+    private IEnumerable<string> GetPreviousSymlinkPaths(SourceItem previous)
+    {
+        var paths = new List<string>();
+        if (!string.IsNullOrWhiteSpace(previous.SymlinkPath))
+        {
+            paths.Add(Path.GetFullPath(previous.SymlinkPath));
+        }
+
+        if (TryResolveSymlinkPath(ApplyTrackedMetadata(previous), out var resolved, out _))
+        {
+            paths.Add(Path.GetFullPath(resolved));
+        }
+
+        return paths.Distinct(StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// True when <paramref name="linkedPath"/> (still on disk) is the current link of another Linked record, so a
+    /// removal event for <paramref name="item"/> is stale for that path. Removed links are deleted from disk first,
+    /// so a normal unlink never matches.
+    /// </summary>
+    internal static bool IsLinkedPathNowOwnedByAnother(SourceItem item, string? linkedPath, IEnumerable<SourceItem> rows)
+    {
+        if (string.IsNullOrWhiteSpace(linkedPath))
+        {
+            return false;
+        }
+
+        string fullPath;
+        try
+        {
+            fullPath = Path.GetFullPath(linkedPath);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return false;
+        }
+
+        return rows.Any(row =>
+            row.Id != item.Id &&
+            row.State == ItemState.Linked &&
+            !string.IsNullOrWhiteSpace(row.LinkedPath) &&
+            string.Equals(Path.GetFullPath(row.LinkedPath), fullPath, StringComparison.OrdinalIgnoreCase));
+    }
+
     public SymlinkSyncResult ReconcileAll()
     {
         var aggregate = new SymlinkSyncResult();
@@ -180,12 +297,28 @@ public sealed class SymlinkSyncService : ISymlinkSyncService
             return aggregate;
         }
 
-        var linkedItems = _databaseService.GetSourceItems()
+        var allItems = _databaseService.GetSourceItems();
+        var linkedItems = allItems
             .Where(item => item.State == ItemState.Linked)
             .ToList();
+
+        // Records that lost their library link (deleted outside the app) still name a symlink that
+        // now dangles; remove it unless a linked record still uses the same symlink path.
+        var linkedSymlinkPaths = linkedItems
+            .Where(item => !string.IsNullOrWhiteSpace(item.SymlinkPath))
+            .Select(item => Path.GetFullPath(item.SymlinkPath!))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in allItems.Where(item =>
+                     item.State != ItemState.Linked &&
+                     !string.IsNullOrWhiteSpace(item.SymlinkPath) &&
+                     !linkedSymlinkPaths.Contains(Path.GetFullPath(item.SymlinkPath!))))
+        {
+            Merge(aggregate, RemoveItem(item, linkedPath: null, linkedGroup: [item]));
+        }
         var linkedGroupsByPath = BuildLinkedGroupsByPath(linkedItems);
 
         var syncedLinkedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var storageProbe = _hardlinkService.CreateLinkStorageProbe() ?? new LinkStorageProbe();
         foreach (var item in linkedItems)
         {
             if (!string.IsNullOrWhiteSpace(item.LinkedPath) && File.Exists(item.LinkedPath))
@@ -201,10 +334,22 @@ public sealed class SymlinkSyncService : ISymlinkSyncService
                 continue;
             }
 
+            if (!storageProbe.IsLinkStorageReachable(item))
+            {
+                // The library drive is not mounted yet (USB, NAS): its links are not gone, so keep their
+                // Jellyfin symlinks instead of tearing them all down (audit L3-03).
+                continue;
+            }
+
             if (!string.IsNullOrWhiteSpace(item.SymlinkPath))
             {
                 Merge(aggregate, RemoveItem(item));
             }
+        }
+
+        foreach (var folder in storageProbe.UnreachableFolders)
+        {
+            _logger.Warning($"Symlink reconcile kept the Jellyfin symlinks of an unreachable library folder: {folder}", LogTarget.All);
         }
 
         _logger.Info($"Symlink startup reconcile finished. {aggregate.Summary}", LogTarget.All);
@@ -368,8 +513,12 @@ public sealed class SymlinkSyncService : ISymlinkSyncService
             MatchedYear = year,
             Provider = source.Provider,
             ProviderId = source.ProviderId,
+            SourceRootFolder = source.SourceRootFolder,
+            ParentFolder = source.ParentFolder,
             SeasonNumber = source.SeasonNumber,
             EpisodeNumber = source.EpisodeNumber,
+            // The path builder names a multi-episode file "S01E01-E02"; without the range Jellyfin sees only E01 (audit L1-H1).
+            LastEpisodeNumber = source.LastEpisodeNumber,
             MappedSeasonNumber = source.MappedSeasonNumber,
             MappedEpisodeNumber = source.MappedEpisodeNumber,
             ParserPattern = source.ParserPattern,

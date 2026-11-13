@@ -39,6 +39,26 @@ public sealed class LibraryManagementService : ILibraryManagementService
     public LibraryDeleteResult DeleteEntireLibrary()
     {
         var result = new LibraryDeleteResult();
+
+        // Deleting media whose links cannot be removed now (drive offline, file open) leaves Linked rows and
+        // Jellyfin symlinks behind with no way to finish later, so check everything first (audit R2-A-04).
+        var blocked = _databaseService.GetTrackedShows()
+            .Select(show => _autoTorrentLinkService.CheckMediaLinksRemovable(MediaKind.TvEpisode, show.Id))
+            .Concat(_databaseService.GetTrackedMovies()
+                .Select(movie => _autoTorrentLinkService.CheckMediaLinksRemovable(MediaKind.Movie, movie.Id)))
+            .Where(check => check.ErrorCount > 0)
+            .ToList();
+        if (blocked.Count > 0)
+        {
+            foreach (var check in blocked)
+            {
+                MergeLinkResult(result, check);
+            }
+
+            result.Messages.Add($"Nothing was deleted: {result.HardlinkErrorCount} library link(s) cannot be removed right now. Fix that and retry.");
+            return result;
+        }
+
         foreach (var show in _databaseService.GetTrackedShows())
         {
             MergeLinkResult(result, _autoTorrentLinkService.RemoveShowLinks(show.Id));
@@ -83,6 +103,11 @@ public sealed class LibraryManagementService : ILibraryManagementService
                 return result;
             }
 
+            if (Blocked(result, MediaKind.Movie, mediaId, movie.Title))
+            {
+                return result;
+            }
+
             MergeLinkResult(result, _autoTorrentLinkService.RemoveMovieLinks(mediaId));
             result.DeletedFetchJobCount = _databaseService.DeleteFetchJobsForMedia(mediaId, MediaKind.Movie);
             _databaseService.DeleteTrackedMovie(mediaId);
@@ -99,6 +124,11 @@ public sealed class LibraryManagementService : ILibraryManagementService
                 return result;
             }
 
+            if (Blocked(result, MediaKind.TvEpisode, mediaId, show.DisplayTitle))
+            {
+                return result;
+            }
+
             MergeLinkResult(result, _autoTorrentLinkService.RemoveShowLinks(mediaId));
             result.DeletedFetchJobCount = _databaseService.DeleteFetchJobsForMedia(mediaId, MediaKind.TvEpisode);
             _databaseService.DeleteTrackedShow(mediaId);
@@ -109,6 +139,20 @@ public sealed class LibraryManagementService : ILibraryManagementService
 
         _logger.Info($"Deleted tracked media {mediaKind} id={mediaId}. {result.Summary}", LogTarget.All);
         return result;
+    }
+
+    private bool Blocked(LibraryDeleteResult result, MediaKind mediaKind, long mediaId, string title)
+    {
+        var check = _autoTorrentLinkService.CheckMediaLinksRemovable(mediaKind, mediaId);
+        if (check.ErrorCount == 0)
+        {
+            return false;
+        }
+
+        MergeLinkResult(result, check);
+        result.Messages.Add($"'{title}' was not deleted: {check.ErrorCount} library link(s) cannot be removed right now. Fix that and retry.");
+        _logger.Warning($"Delete of {mediaKind} id={mediaId} stopped: {check.ErrorCount} link(s) cannot be removed.", LogTarget.All);
+        return true;
     }
 
     private static void MergeLinkResult(LibraryDeleteResult result, AutoTorrentLinkResult linkResult)

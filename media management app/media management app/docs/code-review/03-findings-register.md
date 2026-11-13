@@ -5,14 +5,14 @@
 No Critical defect was verified in the original audit.
 
 AUD-002 was later approved and fixed: failed qBittorrent deletion is retried, verified, paused
-as a fail-safe, and then halts the current add batch. AUD-001 remains an accepted
-trade-off (add-then-validate while running).
+as a fail-safe, and then halts the current add batch. AUD-001 was fixed in 2026-11 (S0 of
+`2026-11/security-intake-audit.md`): the file list is checked before the payload downloads.
 
 ## Summary
 
 | ID | Severity | Finding | Confidence | Status |
 |---|---|---|---|---|
-| AUD-001 | High | Torrent downloads while content validation is pending | High | Open — accepted trade-off |
+| AUD-001 | High | Torrent downloads while content validation is pending | High | Fixed (2026-11, S0) |
 | AUD-002 | High | Failed malicious-torrent deletion is ignored by the add gate | High | Fixed |
 | AUD-003 | High | In-process restore can replace SQLite while writers are active | High | Open |
 | AUD-004 | High | Background lifecycle event updates WPF state off the UI thread | High | Open |
@@ -47,10 +47,14 @@ Impact and preconditions:
 - The application does not execute that payload, and later cleanup requests
   deletion, so this does not meet the Critical code-execution threshold.
 
-Status: accepted trade-off. Pause-on-add previously caused add regressions
-(`search/downloadTorrent` cannot carry pause/stop). The remaining control is
-AUD-002: unverified cleanup must halt and surface the hash. See
-[06-aud-002-cleanup-failure.md](06-aud-002-cleanup-failure.md).
+Status: fixed in 2026-11 (S0 in `2026-11/security-intake-audit.md`). The 2026-08 pause-on-add
+attempt was reverted because a stopped magnet never fetches metadata and
+`search/downloadTorrent` cannot carry pause/stop. The fix avoids both: a magnet's file list is
+read with `torrents/fetchMetadata` before the add (qBittorrent 5.2+) or the magnet is added with
+`stopCondition=MetadataReceived` (4.5+); a `.torrent` is parsed by the app and the same bytes
+are added stopped; a plugin add is stopped as soon as it appears. The torrent starts only after
+the check, with files outside the allow-list at priority 0. qBittorrent older than 4.5 keeps the
+running add. AUD-002 remains the control for unverified cleanup.
 
 ### AUD-002 — Failed malicious-torrent deletion is ignored by the add gate
 

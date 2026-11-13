@@ -19,6 +19,16 @@ public static class TorrentMetadataReader
             };
         }
 
+        if (!info.ContainsKey("files") && !info.ContainsKey("length"))
+        {
+            // BitTorrent v2-only ("file tree"): not read here; qBittorrent lists the files after the add.
+            return new TorrentMetadataProbeResult
+            {
+                IsAvailable = false,
+                Reason = "torrent metadata has no v1 file list"
+            };
+        }
+
         var torrentName = ReadString(info, "name");
         var files = ReadFiles(info, torrentName).ToList();
         return new TorrentMetadataProbeResult
@@ -27,7 +37,11 @@ public static class TorrentMetadataReader
             Reason = "torrent metadata parsed",
             TorrentName = torrentName,
             Files = files,
-            TotalSize = files.Sum(file => file.Length)
+            TotalSize = files.Sum(file => file.Length),
+            InfoHashV1 = parser.InfoEnd > parser.InfoStart
+                ? Convert.ToHexString(System.Security.Cryptography.SHA1.HashData(
+                    torrentBytes.AsSpan(parser.InfoStart, parser.InfoEnd - parser.InfoStart))).ToLowerInvariant()
+                : null
         };
     }
 
@@ -38,6 +52,12 @@ public static class TorrentMetadataReader
         {
             foreach (var entry in fileEntries.OfType<Dictionary<string, object>>())
             {
+                // BEP 47 padding files are not real files; qBittorrent does not list them either.
+                if (ReadString(entry, "attr").Contains('p', StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
                 var path = ReadPath(entry);
                 if (string.IsNullOrWhiteSpace(path))
                 {
@@ -96,6 +116,12 @@ public static class TorrentMetadataReader
     {
         private readonly byte[] _bytes;
         private int _position;
+        private int _depth;
+
+        /// <summary>Byte range of the top-level "info" value (its SHA-1 is the v1 infohash).</summary>
+        public int InfoStart { get; private set; }
+
+        public int InfoEnd { get; private set; }
 
         public BencodeParser(byte[] bytes)
         {
@@ -122,14 +148,22 @@ public static class TorrentMetadataReader
         private Dictionary<string, object> ParseDictionary()
         {
             _position++;
+            _depth++;
             var values = new Dictionary<string, object>(StringComparer.Ordinal);
             while (ReadCurrent() != (byte)'e')
             {
                 var key = Encoding.UTF8.GetString(ParseBytes());
+                var start = _position;
                 values[key] = Parse();
+                if (_depth == 1 && key == "info")
+                {
+                    InfoStart = start;
+                    InfoEnd = _position;
+                }
             }
 
             _position++;
+            _depth--;
             return values;
         }
 

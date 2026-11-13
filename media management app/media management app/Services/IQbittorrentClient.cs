@@ -41,6 +41,27 @@ public interface IQbittorrentClient
 
     Task ResumeTorrentsAsync(IEnumerable<string> hashes, CancellationToken cancellationToken = default);
 
+    /// <summary><c>app/webapiVersion</c>; 0.0 when it cannot be read (no optional add feature is used).</summary>
+    Task<Version> GetWebApiVersionAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// S0: reads the file list of <paramref name="url"/> without adding it. A .torrent served over HTTP(S) is downloaded
+    /// and parsed by the app; a magnet (also one found on a details page) goes through <c>torrents/fetchMetadata</c>
+    /// when <paramref name="useFetchMetadata"/>. Returns null when the list cannot be read before adding.
+    /// </summary>
+    Task<PreAddInspection?> InspectBeforeAddAsync(
+        string url,
+        bool useFetchMetadata,
+        TimeSpan metadataTimeout,
+        CancellationToken cancellationToken = default);
+
+    /// <summary><c>torrents/filePrio</c> for the given file indexes (0 = do not download).</summary>
+    Task SetFilePrioritiesAsync(
+        string hash,
+        IReadOnlyCollection<int> fileIndexes,
+        int priority,
+        CancellationToken cancellationToken = default);
+
     Task<TorrentMetadataProbeResult> ProbeTorrentMetadataAsync(TorrentSearchResult result, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<SearchPluginInfo>> GetSearchPluginsAsync(CancellationToken cancellationToken = default);

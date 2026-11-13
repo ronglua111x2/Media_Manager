@@ -81,6 +81,30 @@ public static class QbittorrentWebApiCompatibility
         return QbittorrentAddApiResult.Ok();
     }
 
+    /// <summary>First WebAPI version whose <c>torrents/add</c> takes <c>stopCondition</c> (qBittorrent 4.5.0).</summary>
+    public static readonly Version StopConditionMinVersion = new(2, 8, 18);
+
+    /// <summary>
+    /// First WebAPI version with <c>torrents/fetchMetadata</c> and adding a fetched torrent with <c>filePriorities</c>
+    /// (changelog 2.11.9; first release qBittorrent 5.2.0 = 2.15.1).
+    /// </summary>
+    public static readonly Version FetchMetadataMinVersion = new(2, 11, 9);
+
+    /// <summary>Parses <c>app/webapiVersion</c> ("2.15.1"); unknown or garbage → 0.0 (no optional feature).</summary>
+    public static Version ParseWebApiVersion(string? text)
+    {
+        return Version.TryParse((text ?? string.Empty).Trim(), out var version) ? version : new Version(0, 0);
+    }
+
+    /// <summary>
+    /// S0: a magnet added with <c>stopCondition=MetadataReceived</c> fetches its file list and then stops before
+    /// downloading (a .torrent with that condition is added stopped).
+    /// </summary>
+    public static bool SupportsStopCondition(Version webApiVersion) => webApiVersion >= StopConditionMinVersion;
+
+    /// <summary>S0: a magnet's file list can be fetched and checked without adding the torrent at all.</summary>
+    public static bool SupportsFetchMetadata(Version webApiVersion) => webApiVersion >= FetchMetadataMinVersion;
+
     private static int GetInt(JsonElement element, string name)
     {
         if (!element.TryGetProperty(name, out var property) || property.ValueKind != JsonValueKind.Number)

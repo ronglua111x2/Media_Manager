@@ -1,0 +1,17 @@
+[
+  { "id": "anime_snapshot_FromFarAway", "query": "From Far Away", "timeout": 60, "idle": 28,
+    "plugins": "bitsearch|eztvx|limetorrents|nekobt|nyaasi|solidtorrents|subsplease|therarbg|torrentdownloads|tsukihime",
+    "note": "Common Anime no Probe Pagination snapshot query (SRCH-01)" },
+  { "id": "anime_snapshot_CommonAnime_idle8", "query": "From Far Away", "timeout": 45, "idle": 8, "plugins": "enabled",
+    "note": "Common Anime recipe: snapshot, idle 8s, all enabled plugins" },
+  { "id": "pack_snapshot_RickAndMorty", "query": "Rick and Morty", "timeout": 60, "idle": 10, "plugins": "enabled",
+    "note": "Default TV Pack: snapshot drops season templates, sends {title} (SRCH-03)" },
+  { "id": "pack_targeted_RickAndMorty_S03", "query": "Rick and Morty S03 1080p", "timeout": 60, "idle": 10, "plugins": "enabled",
+    "note": "targeted season query the snapshot never sends" },
+  { "id": "movie_default_Coherence", "query": "Coherence 2014", "timeout": 30, "idle": 10, "plugins": "enabled",
+    "note": "Default Movie Recipe template {title} {year}: 30s/idle 10, 23 plugins (SRCH-11)" },
+  { "id": "movie_common_SpiderMan", "query": "Spider-Man No Way Home", "timeout": 120, "idle": 30, "plugins": "enabled",
+    "note": "Common Movie {title}; how many encodes exist (SRCH-15)" },
+  { "id": "onepiece_episode", "query": "One Piece 1170 1080p", "timeout": 30, "idle": 8, "plugins": "enabled",
+    "note": "One_Piece recipe: client.SearchAsync reads offset 0 limit 150 (SRCH-05)" }
+]

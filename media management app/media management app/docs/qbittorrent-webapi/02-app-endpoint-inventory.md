@@ -40,6 +40,8 @@ Embedded WebUI ([`QbittorrentViewerService`](../../Services/QbittorrentViewerSer
 | `GetTorrentsAsync` | `GET torrents/info` | Login + `EnsureSuccessStatusCode`; JSON array | Add verify, pre-add existing-hash match (`TryGetExistingByListingUrlAsync`), reconcile, link, cleanup, pack coordinator |
 | `GetTorrentFilesAsync` | `GET torrents/files?hash=` | Login + `EnsureSuccessStatusCode` | Content validation, add gate, pack link, auto-link |
 | `GetCategoriesAsync` | `GET torrents/categories` | `EnsureSuccessStatusCode` | Before `createCategory` |
+| `GetWebApiVersionAsync` | `GET app/webapiVersion` | 2xx, parsed by `QbittorrentWebApiCompatibility.ParseWebApiVersion`; cached 10 min; failure → 0.0 | Add gate (S0): picks the add strategy |
+| `InspectBeforeAddAsync` → `FetchMetadataAsync` | `POST torrents/fetchMetadata` (`source=<magnet>`) | 202 = still fetching (poll 1 s), 200 = JSON with `info.files[]`; other status → no pre-add check | Add gate (S0), WebAPI ≥ 2.11.9 (qBittorrent 5.2+) |
 
 ## Torrents — mutate
 
@@ -50,9 +52,24 @@ Embedded WebUI ([`QbittorrentViewerService`](../../Services/QbittorrentViewerSer
 | `ApplyTorrentPostAddSettingsAsync` | `POST torrents/setLocation`, `setCategory`, `addTags` | Warn if not 2xx or `"Fails."` | After plugin download add; `ApplyManagedTorrentSettingsAsync` when attaching an existing hash |
 | `DeleteTorrentsAsync` | `POST torrents/delete` | Must 2xx; throws on non-success and transport/auth failure | [`TorrentCleanupService`](../../Services/ITorrentCleanupService.cs) |
 | `PauseTorrentsAsync` | `POST torrents/stop`, then `torrents/pause` | Stop 2xx wins; else pause must 2xx | [`TorrentCleanupService`](../../Services/ITorrentCleanupService.cs) fail-safe after unverified delete (AUD-002) |
-| `ResumeTorrentsAsync` | `POST torrents/start` | Must 2xx; **no** `/resume` fallback | **No app callers today** (interface only) |
+| `ResumeTorrentsAsync` | `POST torrents/start`, then `torrents/resume` | Start 2xx wins; else resume must 2xx | Add gate (S0): starts a torrent it added stopped, after the check passed |
+| `SetFilePrioritiesAsync` | `POST torrents/filePrio` (`hash`, `id=i|j|…`, `priority=0`) | Must 2xx | Add gate (S0): files outside the download allow-list are never downloaded |
 
-Add form fields: `urls` or `torrents` file, `savepath`, `category`, `tags`, **`paused`**. Default from add gate / automation: `Paused = false`.
+Add form fields: `urls` or `torrents` file, `savepath`, `category`, `tags`, `paused` + `stopped`, and since S0:
+
+- `stopCondition=MetadataReceived` when `AddTorrentRequest.StopAfterMetadata` (WebAPI ≥ 2.8.18, qBittorrent 4.5+): a magnet fetches its metadata, then stops.
+- `filePriorities=1,0,…` when the metadata was fetched first (`torrents/fetchMetadata`); not allowed with an uploaded `.torrent`.
+- An uploaded `.torrent` (`TorrentBytes`, the exact bytes that were checked) goes with `paused=true`/`stopped=true`.
+
+The add strategy (`TorrentAddGateService`):
+
+| qBittorrent | Magnet | `.torrent` over HTTP(S) | Search plugin |
+|---|---|---|---|
+| 5.2+ (WebAPI ≥ 2.11.9) | `fetchMetadata` → check → add with `filePriorities` (starts) | app downloads + parses → check → add same bytes stopped → `filePrio` → start | add with stop request; stopped as soon as it appears; check → `filePrio` → start |
+| 4.5 – 5.1 | add with `stopCondition=MetadataReceived` → check → `filePrio` → start | as above | as above |
+| < 4.5 | add running (pre-S0 behaviour) | as above | add running |
+
+An add that ends before the check finished (cancel, exception) stops the torrent it added.
 
 After add, the client **polls** `torrents/info` for a new hash (`AddVerifyTimeoutSeconds = 20`). It does not parse add-response ids.
 

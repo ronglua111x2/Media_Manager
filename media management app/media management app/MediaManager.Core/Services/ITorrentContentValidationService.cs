@@ -1,3 +1,4 @@
+using media_management_app.Common;
 using media_management_app.Models;
 
 namespace media_management_app.Services;
@@ -13,7 +14,8 @@ public interface ITorrentContentValidationService
         IReadOnlyList<TorrentContentFile> files,
         CancellationToken cancellationToken = default,
         string? listingName = null,
-        bool isPack = false);
+        bool isPack = false,
+        MediaKind? targetKind = null);
 }
 
 public interface ITorrentContentValidationLogger

@@ -730,6 +730,11 @@
                                                               SelectedItem="{Binding SearchMode, Mode=TwoWay}"
                                                               Margin="0,0,0,0" />
                                                 </StackPanel>
+                                                <TextBlock Text="Search backend" Style="{StaticResource RecipeLabelStyle}" />
+                                                <ComboBox ItemsSource="{Binding SearchBackendOptions}"
+                                                          SelectedItem="{Binding SearchBackend, Mode=TwoWay}"
+                                                          ToolTip="Default follows Settings → Search engines. Native: the app's own indexers. Both: native results plus a comparison with qBittorrent in the log."
+                                                          Margin="0,0,0,12" />
                                                 <TextBlock Text="Plugins" Style="{StaticResource RecipeLabelStyle}" />
                                                 <Grid Margin="0,0,0,8">
                                                     <Grid.ColumnDefinitions>

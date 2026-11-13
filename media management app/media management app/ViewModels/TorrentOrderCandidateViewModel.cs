@@ -1,4 +1,5 @@
 using media_management_app.Models;
+using media_management_app.Services;
 
 namespace media_management_app.ViewModels;
 
@@ -82,6 +83,24 @@ public sealed class TorrentOrderCandidateViewModel
     public string QualityLabel => QualityDisplay;
 
     public string StatsLine => $"{FileSizeDisplay} · {Seeders} seeders · score {TotalScore}";
+
+    /// <summary>Encode attributes for comparing many releases (source, codec, HDR/DV, audio, group, indexer).</summary>
+    public string AttributesLine
+    {
+        get
+        {
+            var tags = ReleaseAttributes.Describe(Name).ToList();
+            if (!string.IsNullOrWhiteSpace(PluginName))
+            {
+                tags.Add($"via {PluginName}");
+            }
+
+            return string.Join(" · ", tags);
+        }
+    }
+
+    /// <summary>Text the picker's quick filter matches against (all words must appear).</summary>
+    public string FilterText => $"{Name} {QualityDisplay} {AttributesLine}";
 
     public string DisplayText => IsMultiSeason
         ? $"#{Rank} {Name} | {QualityDisplay} | {FileSizeDisplay} | {Seeders} seeders | score {TotalScore} | covers {CoveredSeasonsDisplay}"

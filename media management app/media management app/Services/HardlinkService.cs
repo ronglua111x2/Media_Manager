@@ -40,7 +40,17 @@ public sealed class HardlinkService : IHardlinkService
         if (item.IsOrphanPackSpecial)
         {
             var orphanFileName = SanitizeFileName(item.FileName);
-            return Path.Combine(outputRoot, showName, AppConstants.OrphanExtrasFolderName, orphanFileName);
+            // "Vol.1/NCOP.mkv" and "Vol.2/NCOP.mkv" (Disc, Part, ...) would share one extras path and the second
+            // failed with "Output already exists" on every re-link: keep the container in the name (audit L3-10).
+            if (FindOrphanContainerFolder(item) is { } container)
+            {
+                orphanFileName = $"{Sanitize(container)} - {orphanFileName}";
+            }
+
+            var orphanSeason = FindOrphanSeasonFolder(item);
+            return orphanSeason is > 0
+                ? Path.Combine(outputRoot, showName, $"Season {orphanSeason.Value:00}", AppConstants.OrphanExtrasFolderName, orphanFileName)
+                : Path.Combine(outputRoot, showName, AppConstants.OrphanExtrasFolderName, orphanFileName);
         }
 
         var episodeNumber = item.MappedEpisodeNumber ?? item.EpisodeNumber.GetValueOrDefault();
@@ -49,7 +59,11 @@ public sealed class HardlinkService : IHardlinkService
                             !string.IsNullOrWhiteSpace(item.EpisodeTitle)
             ? $" - {Sanitize(item.EpisodeTitle)}"
             : string.Empty;
-        var fileName = $"{fileTitle} - S{seasonNumber:00}E{episodeNumber:00}{episodeSuffix}{Path.GetExtension(item.FilePath)}";
+        // Multi-episode file: "Show - S01E01-E02.ext", the form Jellyfin reads as one item for both episodes.
+        var rangeSuffix = item.MappedEpisodeNumber is null && item.LastEpisodeNumber is { } lastEpisode && lastEpisode > episodeNumber
+            ? $"-E{lastEpisode:00}"
+            : string.Empty;
+        var fileName = $"{fileTitle} - S{seasonNumber:00}E{episodeNumber:00}{rangeSuffix}{episodeSuffix}{Path.GetExtension(item.FilePath)}";
         return Path.Combine(outputRoot, showName, seasonFolder, fileName);
     }
 
@@ -124,6 +138,54 @@ public sealed class HardlinkService : IHardlinkService
         return true;
     }
 
+    public bool CanRemoveHardLink(SourceItem item, out string? reason)
+    {
+        reason = null;
+        if (string.IsNullOrWhiteSpace(item.LinkedPath) ||
+            string.Equals(Path.GetFullPath(item.LinkedPath), Path.GetFullPath(item.FilePath), StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (!File.Exists(item.LinkedPath))
+        {
+            if (CreateLinkStorageProbe().IsLinkStorageReachable(item))
+            {
+                return true;
+            }
+
+            reason = $"The library folder of '{item.LinkedPath}' is not reachable (drive offline or not mounted). Reconnect it and retry.";
+            return false;
+        }
+
+        if (!_libraryPathResolver.TryResolveGeneratedLibraryRoot(item, out var libraryRoot, out reason))
+        {
+            return false;
+        }
+
+        if (ResolveCleanupRoot(item.LinkedPath, libraryRoot) is null)
+        {
+            reason =
+                $"'{item.LinkedPath}' is outside the current library folder ({libraryRoot}), probably because the library folder setting changed. " +
+                "The app does not delete files there: move or delete that file yourself, then retry.";
+            return false;
+        }
+
+        try
+        {
+            using var exclusive = new FileStream(item.LinkedPath, FileMode.Open, FileAccess.Read, FileShare.None);
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            reason = $"'{Path.GetFileName(item.LinkedPath)}' is in use ({ex.Message.Trim()}). Close any player using it and retry.";
+            return false;
+        }
+    }
+
+    public LinkStorageProbe CreateLinkStorageProbe() =>
+        new(item => _libraryPathResolver.TryResolveGeneratedLibraryRoot(item, out var libraryRoot, out _) ? libraryRoot : null);
+
     public bool RemoveHardLink(SourceItem item, out string? removedPath, out string? errorMessage)
     {
         removedPath = null;
@@ -144,6 +206,16 @@ public sealed class HardlinkService : IHardlinkService
         }
 
         removedPath = item.LinkedPath;
+        var linkExists = File.Exists(item.LinkedPath);
+        if (!linkExists && !CreateLinkStorageProbe().IsLinkStorageReachable(item))
+        {
+            // A missing file on an offline drive is not a deleted file: reporting success would let the
+            // caller drop the record and orphan the file when the drive returns (audit L3-02).
+            errorMessage = $"The library folder of '{item.LinkedPath}' is not reachable (drive offline or not mounted). Reconnect it and retry.";
+            _logger.Warning($"Hardlink not removed because its library folder is unreachable: {item.LinkedPath}", LogTarget.All);
+            return false;
+        }
+
         if (!_libraryPathResolver.TryResolveGeneratedLibraryRoot(item, out var libraryRoot, out errorMessage))
         {
             _logger.Warning($"Could not resolve generated library root while removing hardlink: {errorMessage}", LogTarget.All);
@@ -151,20 +223,28 @@ public sealed class HardlinkService : IHardlinkService
         }
 
         var cleanupRoot = ResolveCleanupRoot(item.LinkedPath, libraryRoot);
-        if (cleanupRoot is null)
-        {
-            errorMessage = "Linked path is outside the configured output library. Refusing to delete.";
-            _logger.Error($"Refusing to delete linked path outside output root. LinkedPath={item.LinkedPath}; LibraryRoot={libraryRoot}", targets: LogTarget.All);
-            return false;
-        }
-
         var linkedDirectory = Path.GetDirectoryName(item.LinkedPath);
-        if (!File.Exists(item.LinkedPath))
+        if (!linkExists)
         {
+            // Nothing to delete, wherever it was: clear the state, so a link left in an old library
+            // folder does not block reset or renumbering forever (audit L3-05).
             _logger.Warning($"Linked path no longer exists, clearing state only: {item.LinkedPath}", LogTarget.All);
-            CleanupEmptyLibraryFolders(linkedDirectory, cleanupRoot);
+            if (cleanupRoot is not null)
+            {
+                CleanupEmptyLibraryFolders(linkedDirectory, cleanupRoot);
+            }
+
             _eventHub.PublishHardlinkRemoved(item, removedPath);
             return true;
+        }
+
+        if (cleanupRoot is null)
+        {
+            errorMessage =
+                $"'{item.LinkedPath}' is outside the current library folder ({libraryRoot}), probably because the library folder setting changed. " +
+                "The app does not delete files there: move or delete that file yourself, then retry.";
+            _logger.Error($"Refusing to delete linked path outside output root. LinkedPath={item.LinkedPath}; LibraryRoot={libraryRoot}", targets: LogTarget.All);
+            return false;
         }
 
         try
@@ -180,6 +260,97 @@ public sealed class HardlinkService : IHardlinkService
             errorMessage = ex.Message;
             _logger.Error($"Could not remove hardlink path: {item.LinkedPath}", ex, LogTarget.All);
             return false;
+        }
+    }
+
+    public bool TryBuildLibraryPath(SourceItem item, out string libraryPath, out string? errorMessage)
+    {
+        libraryPath = string.Empty;
+        if (!_libraryPathResolver.TryResolveMediaRoot(item, out var mediaRoot, out errorMessage))
+        {
+            return false;
+        }
+
+        libraryPath = BuildOutputPath(item, mediaRoot);
+        return true;
+    }
+
+    public bool MoveHardLinks(IReadOnlyList<HardLinkRename> renames, out string? errorMessage)
+    {
+        errorMessage = null;
+        var staged = new List<(HardLinkRename Rename, string TempPath)>();
+        var placed = new List<(HardLinkRename Rename, string TempPath)>();
+        try
+        {
+            foreach (var rename in renames)
+            {
+                var tempPath = $"{rename.FromPath}.mm-move-{Guid.NewGuid():N}.tmp";
+                File.Move(rename.FromPath, tempPath);
+                staged.Add((rename, tempPath));
+            }
+
+            foreach (var (rename, tempPath) in staged)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(rename.ToPath)!);
+                File.Move(tempPath, rename.ToPath);
+                placed.Add((rename, tempPath));
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            errorMessage = ex.Message;
+            _logger.Warning($"Library links were not moved, every file is put back: {ex.Message}", LogTarget.All);
+            PutBack(staged, placed);
+            CleanupAfterMove(renames.Select(rename => (rename.Item, rename.ToPath)));
+            return false;
+        }
+
+        foreach (var rename in renames)
+        {
+            _logger.Info($"Moved library link {rename.FromPath} -> {rename.ToPath}", LogTarget.File | LogTarget.Console);
+        }
+
+        CleanupAfterMove(renames.Select(rename => (rename.Item, rename.FromPath)));
+        return true;
+    }
+
+    private void PutBack(
+        List<(HardLinkRename Rename, string TempPath)> staged,
+        List<(HardLinkRename Rename, string TempPath)> placed)
+    {
+        foreach (var (rename, tempPath) in Enumerable.Reverse(placed))
+        {
+            TryMoveBack(rename.ToPath, tempPath);
+        }
+
+        foreach (var (rename, tempPath) in Enumerable.Reverse(staged))
+        {
+            TryMoveBack(tempPath, rename.FromPath);
+        }
+    }
+
+    private void TryMoveBack(string fromPath, string toPath)
+    {
+        try
+        {
+            File.Move(fromPath, toPath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // The file is still in the library under the other name; say where so it can be found.
+            _logger.Error($"Could not put library file back: {fromPath} -> {toPath}", ex, LogTarget.All);
+        }
+    }
+
+    private void CleanupAfterMove(IEnumerable<(SourceItem Item, string Path)> paths)
+    {
+        foreach (var (item, path) in paths)
+        {
+            if (_libraryPathResolver.TryResolveGeneratedLibraryRoot(item, out var libraryRoot, out _) &&
+                ResolveCleanupRoot(path, libraryRoot) is { } cleanupRoot)
+            {
+                CleanupEmptyLibraryFolders(Path.GetDirectoryName(path), cleanupRoot);
+            }
         }
     }
 
@@ -235,6 +406,67 @@ public sealed class HardlinkService : IHardlinkService
         }
 
         return string.Join(' ', value.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+    }
+
+    /// <summary>
+    /// Season of the pack folder an orphan extra came from (<c>Pack/Season 2/NCOP.mkv</c> or
+    /// <c>Pack/Season 2/Extras/NCOP.mkv</c> give 2), looking only at folders inside the download
+    /// save path. Null when the file is not under a season folder; it then goes to the show's
+    /// extras folder. Separate season folders also keep same-named extras apart (PARSE-14).
+    /// </summary>
+    private static readonly System.Text.RegularExpressions.Regex OrphanContainerRegex = new(
+        @"\b(?:vol(?:ume)?|disc|disk|dvd|bd|cd|part)[\s._-]*\d{1,3}\b",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>The nearest volume/disc/part folder above an orphan extra, or null.</summary>
+    private static string? FindOrphanContainerFolder(SourceItem item) =>
+        GetFolderSegmentsBelowSourceRoot(item)
+            .Reverse()
+            .FirstOrDefault(segment => !string.IsNullOrWhiteSpace(segment) && OrphanContainerRegex.IsMatch(segment));
+
+    // Folder names between the torrent's save path and the file. Both sides are normalized first, so a save path
+    // with forward slashes ("D:/Downloads/TV") still matches (audit L3-10).
+    private static IReadOnlyList<string> GetFolderSegmentsBelowSourceRoot(SourceItem item)
+    {
+        var directory = Path.GetDirectoryName(item.FilePath);
+        if (string.IsNullOrWhiteSpace(directory))
+        {
+            return [];
+        }
+
+        try
+        {
+            var fullDirectory = Path.GetFullPath(directory);
+            if (!string.IsNullOrWhiteSpace(item.SourceRootFolder))
+            {
+                var root = Path.GetFullPath(item.SourceRootFolder).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                if (fullDirectory.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                {
+                    return Path.GetRelativePath(root, fullDirectory)
+                        .Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                }
+            }
+
+            return [Path.GetFileName(fullDirectory)];
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return [Path.GetFileName(directory)];
+        }
+    }
+
+    private static int? FindOrphanSeasonFolder(SourceItem item)
+    {
+        foreach (var segment in GetFolderSegmentsBelowSourceRoot(item).Reverse())
+        {
+            if (!string.IsNullOrWhiteSpace(segment) &&
+                TorrentCandidateParser.TryParseSeasonFolderSegment(segment) is > 0 and var season)
+            {
+                return season;
+            }
+        }
+
+        return null;
     }
 
     private static string SanitizeFileName(string fileName)

@@ -633,7 +633,8 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
 
     public bool UseLibraryEnglishTitles
     {
-        get => GetExtensionBool(RecipeRuntimeSettings.UseLibraryEnglishTitlesKey, false);
+        // Same default as RecipeRuntimeSettings.GetUseLibraryEnglishTitles(recipe): on for movies.
+        get => GetExtensionBool(RecipeRuntimeSettings.UseLibraryEnglishTitlesKey, _recipeTargetKind == MediaKind.Movie);
         set
         {
             SetExtensionValue(RecipeRuntimeSettings.UseLibraryEnglishTitlesKey, value.ToString());
@@ -1065,6 +1066,22 @@ public sealed partial class RecipeModuleEditorViewModel : ObservableObject
     }
 
     public bool IsFuzzyDeduplicateEnabled => DeduplicateCandidates && FuzzyDeduplicate;
+
+    public IReadOnlyList<string> SearchBackendOptions { get; } = ["Default", "Qbittorrent", "Native", "Both"];
+
+    /// <summary>Per-recipe search backend (native-search plan 08 §Q4); "Default" follows Settings → Search engines.</summary>
+    public string SearchBackend
+    {
+        get
+        {
+            var value = GetExtensionValue(RecipeRuntimeSettings.SearchBackendKey);
+            return SearchBackendOptions.FirstOrDefault(option => string.Equals(option, value, StringComparison.OrdinalIgnoreCase))
+                   ?? RecipeRuntimeSettings.DefaultSearchBackend;
+        }
+        set => SetExtensionValue(
+            RecipeRuntimeSettings.SearchBackendKey,
+            string.Equals(value, RecipeRuntimeSettings.DefaultSearchBackend, StringComparison.OrdinalIgnoreCase) ? string.Empty : value);
+    }
 
     public bool UseShowSnapshotSearch
     {

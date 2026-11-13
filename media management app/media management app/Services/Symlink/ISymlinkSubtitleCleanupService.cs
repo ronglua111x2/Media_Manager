@@ -13,4 +13,10 @@ public interface ISymlinkSubtitleCleanupService
     /// </summary>
     /// <param name="symlinkPath">Full path to the symlink file (e.g., "C:\JellyfinLibrary\Shows\Show Title\Season 01\Episode.mkv")</param>
     void DeleteSubtitleFiles(string symlinkPath);
+
+    /// <summary>
+    /// The subtitle files next to a symlink, matched by its name: "Episode.srt", "Episode.eng.srt" (same rules as
+    /// <see cref="DeleteSubtitleFiles"/>). Empty when its folder does not exist.
+    /// </summary>
+    IReadOnlyList<string> FindSubtitleFiles(string symlinkPath);
 }

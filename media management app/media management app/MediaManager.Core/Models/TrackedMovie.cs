@@ -45,6 +45,15 @@ public sealed class TrackedMovie
 
     public string? TorrentHash { get; set; }
 
+    /// <summary>
+    /// Comma-separated, lower-case hashes of the torrents this movie was reset from ("Reset for redownload", migration 013).
+    /// Reconcile never adopts them for it again; read with <see cref="WasResetFrom"/> or
+    /// <see cref="media_management_app.Services.ResetTorrentHashList"/>.
+    /// </summary>
+    public string ResetTorrentHashes { get; set; } = string.Empty;
+
+    public bool WasResetFrom(string? hash) => media_management_app.Services.ResetTorrentHashList.Contains(ResetTorrentHashes, hash);
+
     public string? TorrentName { get; set; }
 
     public string? TorrentState { get; set; }

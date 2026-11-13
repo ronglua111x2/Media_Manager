@@ -1,11 +1,7 @@
-using System.Text.RegularExpressions;
-
 namespace media_management_app.Services;
 
 public static class QueryTemplateRenderer
 {
-    private static readonly Regex NonSearchSafeCharacters = new(@"[^\p{L}\p{N}\s-]", RegexOptions.Compiled);
-
     public static string Render(string template, IReadOnlyDictionary<string, string> values)
     {
         var rendered = template;
@@ -22,28 +18,40 @@ public static class QueryTemplateRenderer
         return string.Join(' ', query.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
     }
 
-    public static string Sanitize(string query)
-    {
-        var sanitized = NonSearchSafeCharacters.Replace(query, " ");
-        return CollapseSpaces(sanitized);
-    }
+    /// <summary>
+    /// Primary sanitized search form (see <see cref="TitleNormalizer.ToSearchText"/>): diacritics folded,
+    /// apostrophes joined ("Schindler's" → "Schindlers"), other punctuation turned into spaces.
+    /// </summary>
+    public static string Sanitize(string query) => TitleNormalizer.ToSearchText(query);
 
+    /// <summary>
+    /// Sanitizes and de-duplicates rendered queries. When <paramref name="sanitize"/> is on, every query
+    /// also yields its <see cref="TitleNormalizer.QueryVariants"/>: the primary forms keep their original
+    /// order and the extra variants (apostrophe split, accented spelling) are appended after all of them,
+    /// so callers that stop early once they have enough candidates still try the main queries first.
+    /// </summary>
     public static IReadOnlyList<string> Normalize(IEnumerable<string> queries, bool sanitize)
     {
         var seenKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var result = new List<string>();
+        var primary = new List<string>();
+        var extra = new List<string>();
 
-        foreach (var query in queries
-                     .Select(query => sanitize ? Sanitize(query) : query)
-                     .Select(CollapseSpaces)
-                     .Where(query => !string.IsNullOrWhiteSpace(query)))
+        foreach (var raw in queries.Where(query => !string.IsNullOrWhiteSpace(query)))
         {
-            if (seenKeys.Add(EnglishAlternativeTitleFilter.NormalizeForSearchKey(query)))
+            var forms = sanitize ? TitleNormalizer.QueryVariants(raw) : [CollapseSpaces(raw)];
+            for (var index = 0; index < forms.Count; index++)
             {
-                result.Add(query);
+                var query = CollapseSpaces(forms[index]);
+                if (string.IsNullOrWhiteSpace(query) || !seenKeys.Add(EnglishAlternativeTitleFilter.NormalizeForSearchKey(query)))
+                {
+                    continue;
+                }
+
+                (index == 0 ? primary : extra).Add(query);
             }
         }
 
-        return result;
+        primary.AddRange(extra);
+        return primary;
     }
 }

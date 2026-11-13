@@ -35,7 +35,13 @@ public class MigrationRunnerTests
             "005_cart_recipe_max_candidate_overrides",
             "006_cart_recipe_override_sets",
             "007_auto_track_episode_overrides",
-            "008_torrentcart_pending_validation_hash");
+            "008_torrentcart_pending_validation_hash",
+            "009_trackedepisodes_removed_upstream",
+            "010_sourceitems_last_episode",
+            "011_trackedepisodes_tmdb_episode_id",
+            "012_trackedepisodes_download_number",
+            "013_reset_torrent_hashes",
+            "014_torrentblacklist_global");
         GetUserTableNames(db.Connection).Should().Contain(ApplicationTables);
         HasColumn(db.Connection, "TrackedEpisodes", "UserRating").Should().BeTrue();
         HasColumn(db.Connection, "TrackedEpisodes", "Thought").Should().BeTrue();
@@ -47,6 +53,14 @@ public class MigrationRunnerTests
         HasColumn(db.Connection, "TrackedMovies", "CartOverridesJson").Should().BeTrue();
         HasColumn(db.Connection, "TrackedShows", "AutoTrackEpisodeOverridesJson").Should().BeTrue();
         HasColumn(db.Connection, "TorrentCartOrders", "PendingValidationHash").Should().BeTrue();
+        HasColumn(db.Connection, "TrackedEpisodes", "RemovedUpstreamUtc").Should().BeTrue();
+        HasColumn(db.Connection, "SourceItems", "LastEpisodeNumber").Should().BeTrue();
+        HasColumn(db.Connection, "TrackedEpisodes", "TmdbEpisodeId").Should().BeTrue();
+        HasColumn(db.Connection, "TrackedEpisodes", "DownloadSeasonNumber").Should().BeTrue();
+        HasColumn(db.Connection, "TrackedEpisodes", "DownloadEpisodeNumber").Should().BeTrue();
+        HasColumn(db.Connection, "TrackedEpisodes", "ResetTorrentHashes").Should().BeTrue();
+        HasColumn(db.Connection, "TrackedSeasons", "ResetTorrentHashes").Should().BeTrue();
+        HasColumn(db.Connection, "TrackedMovies", "ResetTorrentHashes").Should().BeTrue();
         GetUserTableNames(db.Connection).Should().Contain(MigrationRunner.HistoryTableName);
         GetAppliedUtcValues(db.Connection).Should().OnlyContain(value => IsRoundtripDateTime(value));
     }
@@ -87,7 +101,55 @@ public class MigrationRunnerTests
             "005_cart_recipe_max_candidate_overrides",
             "006_cart_recipe_override_sets",
             "007_auto_track_episode_overrides",
-            "008_torrentcart_pending_validation_hash");
+            "008_torrentcart_pending_validation_hash",
+            "009_trackedepisodes_removed_upstream",
+            "010_sourceitems_last_episode",
+            "011_trackedepisodes_tmdb_episode_id",
+            "012_trackedepisodes_download_number",
+            "013_reset_torrent_hashes",
+            "014_torrentblacklist_global");
+    }
+
+    [Fact]
+    public void ApplyPending_GateRejections_BecomeGlobalButManualRejectsStayPerShow()
+    {
+        // SEC-A07: a malware verdict from the add gate is about the torrent, not the show; a manual reject is not.
+        using var db = TemporaryDatabase.Create();
+        using (var create = db.Connection.CreateCommand())
+        {
+            create.CommandText = """
+                CREATE TABLE TorrentBlacklist (
+                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ListingUrl TEXT NOT NULL DEFAULT '',
+                    InfoHash TEXT NOT NULL DEFAULT '',
+                    ShowId INTEGER NOT NULL,
+                    Reason TEXT NOT NULL,
+                    SuspiciousFilesJson TEXT NULL,
+                    DateAddedUtc TEXT NOT NULL,
+                    IsActive INTEGER NOT NULL DEFAULT 1,
+                    Notes TEXT NULL
+                );
+                INSERT INTO TorrentBlacklist (ListingUrl, InfoHash, ShowId, Reason, DateAddedUtc) VALUES
+                    ('u1', 'aaaa000000000000000000000000000000000001', 1, 'Malware: 1 suspicious file', '2026-11-01'),
+                    ('u2', 'aaaa000000000000000000000000000000000002', 2, 'Blacklisted infohash', '2026-11-01'),
+                    ('u3', 'aaaa000000000000000000000000000000000003', 3, 'Manual reject', '2026-11-01');
+                """;
+            create.ExecuteNonQuery();
+        }
+
+        MigrationRunner.ApplyPendingMigrations(db.Connection);
+
+        HasColumn(db.Connection, "TorrentBlacklist", "IsGlobal").Should().BeTrue();
+        using var read = db.Connection.CreateCommand();
+        read.CommandText = "SELECT ListingUrl, IsGlobal FROM TorrentBlacklist ORDER BY ListingUrl;";
+        using var reader = read.ExecuteReader();
+        var flags = new Dictionary<string, long>();
+        while (reader.Read())
+        {
+            flags[reader.GetString(0)] = reader.GetInt64(1);
+        }
+
+        flags.Should().Equal(new Dictionary<string, long> { ["u1"] = 1, ["u2"] = 1, ["u3"] = 0 });
     }
 
     [Fact]

@@ -7,7 +7,7 @@ flowchart TB
   subgraph disk [Disk - D MediaManagerState]
     SJ["settings.json"]
     GM["gemini-models.json"]
-    GQ["gemini-quota.json"]
+    GQ["gemini-router-state.json"]
     OAUTH["GoogleDrive/token/"]
   end
 
@@ -104,7 +104,7 @@ Everything for all tabs lives in one type. Section switch is **only** `SelectedS
 | Asset | Path | Used by tab |
 |-------|------|-------------|
 | Gemini model catalog | `{StateFolder}/gemini-models.json` | Integrations |
-| Gemini quota state | `{StateFolder}/gemini-quota.json` | Integrations (display) |
+| Gemini router state | `{StateFolder}/gemini-router-state.json` | Integrations (display) |
 | Google OAuth token | `{StateFolder}/GoogleDrive/token/` | Backup |
 | OAuth client JSON | user-selected or default `{StateFolder}/GoogleDrive/credentials.json` | Backup |
 

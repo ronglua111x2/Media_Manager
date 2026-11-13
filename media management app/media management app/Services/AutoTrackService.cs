@@ -24,6 +24,10 @@ public sealed class AutoTrackService : IAutoTrackService
     private readonly IAppLogger _logger;
     private readonly SemaphoreSlim _discoveryLock = new(1, 1);
     private readonly SemaphoreSlim _huntLock = new(1, 1);
+
+    // GOV-04: when each show was last given a hunt slot (rotation), and when the last scheduled hunt ran.
+    private readonly Dictionary<long, DateTime> _lastHuntedUtc = [];
+    private DateTime? _lastScheduledHuntUtc;
     private readonly SemaphoreSlim _reconcileLock = new(1, 1);
     private readonly SemaphoreSlim _interruptedRecoveryLock = new(1, 1);
     private readonly DateTime _sessionStartUtc = DateTime.UtcNow;
@@ -464,6 +468,20 @@ public sealed class AutoTrackService : IAutoTrackService
         bool resumeOnly,
         bool bypassSchedule)
     {
+        // Settings → Auto-Track "torrent hunt interval": TMDB checks run every 30 min, hunts only this often
+        // (it used to be saved but never read; audit 07d GOV-04). Run Now and resume runs are not gated.
+        if (!bypassSchedule && !resumeOnly)
+        {
+            var interval = TimeSpan.FromMinutes(Math.Clamp(GetAutoTrackSettings().TorrentHuntIntervalMinutes, 15, 1440));
+            var now = DateTime.UtcNow;
+            if (_lastScheduledHuntUtc is { } last && now - last < interval - TimeSpan.FromMinutes(1))
+            {
+                return SkippedResult($"Next torrent hunt after {(last + interval).ToLocalTime():HH:mm} (hunt interval {interval.TotalMinutes:0} min).");
+            }
+
+            _lastScheduledHuntUtc = now;
+        }
+
         // Before the hunt queue is built: orders a previous session left in Searching/Approved block their episode.
         await RecoverInterruptedOrdersOnceAsync(cancellationToken);
 
@@ -487,6 +505,10 @@ public sealed class AutoTrackService : IAutoTrackService
 
         var batchSize = Math.Clamp(settings.Search.MaxShowsPerHuntCycle, 1, 20);
         var batch = huntQueue.Take(batchSize).ToList();
+        foreach (var (show, _) in batch)
+        {
+            _lastHuntedUtc[show.Id] = DateTime.UtcNow;
+        }
 
         var preflight = await EnsureHuntPreflightAsync(cancellationToken);
         if (!preflight.Ok)
@@ -590,6 +612,8 @@ public sealed class AutoTrackService : IAutoTrackService
 
         try
         {
+            // Unattended hunt: native searches use the background lane (smaller share of each site's budget).
+            using var backgroundSearch = NativeSearchService.BackgroundScope();
             await RunFetchAndAddPhaseAsync(
                 pendingOrdersByShow,
                 settings,
@@ -808,6 +832,15 @@ public sealed class AutoTrackService : IAutoTrackService
                 IsAutoTrackHuntBlocked,
                 nowLocal,
                 resumeOnly ? 0 : huntDelayHours);
+            if (!resumeOnly && !bypassSchedule)
+            {
+                // A hunt that found nothing waits before the next try (1 h for a new episode, up to 24 h).
+                var nowUtc = DateTime.UtcNow;
+                pending = pending
+                    .Where(episode => AutoTrackHuntBackoff.NextAttemptUtc(
+                        _torrentCartService.GetAutoTrackEpisodeOrder(episode.Id), episode.AirDate, nowUtc) is null)
+                    .ToList();
+            }
             if (!bypassSchedule &&
                 !resumeOnly &&
                 AutoTrackWeekAnchor.IsWeeklyScheduleEnforced(show, settings))
@@ -846,7 +879,11 @@ public sealed class AutoTrackService : IAutoTrackService
             queue.Add((show, batch));
         }
 
-        return queue;
+        // Rotation: the show that waited longest gets the next slot (alphabetical order starved later shows).
+        return queue
+            .OrderBy(entry => _lastHuntedUtc.TryGetValue(entry.Show.Id, out var last) ? last : DateTime.MinValue)
+            .ThenBy(entry => entry.Show.Title, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     private static string FormatHuntBatchStage(IReadOnlyList<TrackedEpisode> episodes)
@@ -953,8 +990,28 @@ public sealed class AutoTrackService : IAutoTrackService
                         var searchRows = _fetchJobService.GetSearchRowCount(order.EpisodeId.Value);
                         var overrideRejects = _fetchJobService.GetOverrideRejectCounts(order.EpisodeId.Value);
 
-                        if (!candidatesByEpisodeId.TryGetValue(order.EpisodeId.Value, out var candidates) ||
-                            candidates.Count == 0)
+                        if ((!candidatesByEpisodeId.TryGetValue(order.EpisodeId.Value, out var candidates) || candidates.Count == 0) &&
+                            _fetchJobService.GetSearchSourceProblem(order.EpisodeId.Value) is { } sourceProblem)
+                        {
+                            // Nothing was searched (every native site paused, breaker open or out of budget): say so, and
+                            // do not start the NoCandidates back-off, so the next hunt tries again once a site is back.
+                            result.Failed++;
+                            _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.Failed, sourceProblem);
+                            RecordAndLogEpisodeOutcome(
+                                result,
+                                BuildEpisodeOutcome(
+                                    order,
+                                    show.DisplayTitle,
+                                    episodeLabel,
+                                    searchRows,
+                                    recipeMatched: 0,
+                                    policyKept: 0,
+                                    HuntEpisodeStage.Search,
+                                    sourceProblem));
+                            continue;
+                        }
+
+                        if (candidates is null || candidates.Count == 0)
                         {
                             result.Failed++;
                             var rejectedByOverride = searchRows > 0 && overrideRejects.Count > 0;
@@ -1235,7 +1292,13 @@ public sealed class AutoTrackService : IAutoTrackService
             {
                 failedCandidateUrls.Add(candidate.Url);
                 order.FailedCandidateUrls = SerializeFailedCandidateUrls(failedCandidateUrls);
-                order.PendingValidationHash = string.Empty;
+                // SEC-A02: the gate stops a torrent whose check did not finish but leaves it in qBittorrent. Keep its
+                // hash while it is there, so reconcile does not adopt it and recovery can re-check it.
+                if (!await IsPendingTorrentStillPresentAsync(order.PendingValidationHash))
+                {
+                    order.PendingValidationHash = string.Empty;
+                }
+
                 order.LastFailureReason = ex.Message;
                 order.StatusDetail = $"Candidate failed: {candidate.Name} — {ex.Message}";
                 _torrentCartService.SaveOrder(order);
@@ -1430,6 +1493,25 @@ public sealed class AutoTrackService : IAutoTrackService
                 order.Id,
                 keepCandidates: false,
                 $"Recovered torrent rejected after restart: {ex.Message}; will search again.");
+            return true;
+        }
+    }
+
+    /// <summary>True when qBittorrent still lists <paramref name="hash"/>, or when that cannot be checked (keep the hash).</summary>
+    private async Task<bool> IsPendingTorrentStillPresentAsync(string? hash)
+    {
+        if (string.IsNullOrWhiteSpace(hash))
+        {
+            return false;
+        }
+
+        try
+        {
+            return await _addGateService.TryGetExistingByHashAsync(hash, CancellationToken.None) is not null;
+        }
+        catch (Exception ex)
+        {
+            _logger.Debug($"Could not check pending torrent {hash}: {ex.Message}; keeping its hash.", LogTarget.File);
             return true;
         }
     }
@@ -1689,7 +1771,8 @@ public sealed class AutoTrackService : IAutoTrackService
             {
                 order.PendingValidationHash = torrent.Hash;
                 _torrentCartService.SaveOrder(order);
-            });
+            },
+            isResetHash: ResetTorrentGuard.For(order, _databaseService));
 
         if (order.EpisodeId is null)
         {

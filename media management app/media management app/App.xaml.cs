@@ -13,6 +13,7 @@ using media_management_app.Services;
 using media_management_app.Services.Backup;
 using media_management_app.Services.Events;
 using media_management_app.Services.Gemini;
+using media_management_app.Services.Gemini.Routing;
 using media_management_app.Services.Symlink;
 using media_management_app.Migrations;
 using media_management_app.ViewModels;
@@ -65,6 +66,8 @@ public partial class App : System.Windows.Application
 
         var settings = _serviceProvider.GetRequiredService<ISettingsService>();
         settings.Load(launchOptions.StateFolder);
+        // Shared by the search quota pill on the Auto, News and Cart screens ({DynamicResource SearchQuota}).
+        Resources["SearchQuota"] = _serviceProvider.GetRequiredService<SearchQuotaViewModel>();
 
         var logger = _serviceProvider.GetRequiredService<IAppLogger>();
         logger.Info($"Media Manager {AppVersionInfo.Informational} starting (pid {Environment.ProcessId}).", LogTarget.All);
@@ -333,11 +336,16 @@ public partial class App : System.Windows.Application
         services.AddSingleton<IJellyfinMediaNavigationService, JellyfinMediaNavigationService>();
         services.AddSingleton<IQbittorrentViewerService, QbittorrentViewerService>();
         services.AddSingleton<ShowSearchSnapshotService>();
+        services.AddSingleton<INativeSearchService, NativeSearchService>();
+        services.AddSingleton<SearchQuotaViewModel>();
         services.AddSingleton<TmdbMetadataProvider>();
         services.AddSingleton<IMetadataProvider>(provider => provider.GetRequiredService<TmdbMetadataProvider>());
         services.AddSingleton<ITmdbShowCatalogService>(provider => provider.GetRequiredService<TmdbMetadataProvider>());
         services.AddSingleton<ITmdbMovieCatalogService>(provider => provider.GetRequiredService<TmdbMetadataProvider>());
-        services.AddSingleton<GeminiQuotaTracker>();
+        services.AddSingleton(TimeProvider.System);
+        services.AddSingleton<GeminiModelAvailabilityStore>();
+        services.AddSingleton<GeminiModelRouter>();
+        services.AddSingleton<ITmdbExternalIdService>(provider => provider.GetRequiredService<TmdbMetadataProvider>());
         services.AddSingleton<IGeminiModelCatalogService, GeminiModelCatalogService>();
         services.AddSingleton<IGeminiApiClient, GeminiApiClient>();
         services.AddSingleton<GeminiSpecialMappingProvider>();
@@ -557,6 +565,20 @@ public partial class App : System.Windows.Application
     {
         settings.Current.Gemini ??= new GeminiSettings();
         settings.Current.Gemini.Model = modelCatalog.Normalize(settings.Current.Gemini.Model);
+
+        // 45 s was the old default; Gemini 3 Flash-Lite took 45 s on a small prompt under load (12 Nov 2026).
+        if (settings.Current.Gemini.TimeoutSeconds is 45 or <= 0)
+        {
+            settings.Current.Gemini.TimeoutSeconds = AppConstants.GeminiDefaultTimeoutSeconds;
+        }
+
+        // Fallbacks that point at models Google shut down (2.0 Flash) are replaced by the catalog's list.
+        if (settings.Current.Gemini.FallbackModels.Any(model =>
+                modelCatalog.Current.Models.Any(entry =>
+                    entry.Deprecated && string.Equals(entry.Id, model, StringComparison.OrdinalIgnoreCase))))
+        {
+            settings.Current.Gemini.FallbackModels = [];
+        }
         if (settings.Current.Gemini.FallbackModels.Length == 0)
         {
             settings.Current.Gemini.FallbackModels = modelCatalog.FallbackModels
