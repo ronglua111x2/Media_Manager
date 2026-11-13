@@ -54,11 +54,11 @@
 | NS-23 | Thấp | G | Một request thành công đang chạy dở đóng lại breaker vừa mở vì 403 (apibay chạy 2 request song song) | R | Đã sửa |
 | NS-24 | Thấp | G | Trạng thái governor chỉ lưu khi có 2 s không có hoạt động, nên crash giữa lượt hunt làm mất breaker | R | Đã sửa |
 | NS-25 | Thấp | A, G | Timeout từng indexer đặt trên 20 s không có tác dụng (`HttpClient.Timeout` = 20 s) | R | Đã sửa |
-| NS-26 | Thấp | G, P | Policy LimeTorrents được nới hai lần mà không có số đo; `FullPageRows = 20` trong khi một trang thật có 40 dòng | R | Sửa một phần |
-| NS-27 | Thấp | P | Không lọc theo category: sách, nhạc và app chiếm chỗ trong 4 trang LimeTorrents | R | Sửa một phần |
+| NS-26 | Thấp | G, P | Policy LimeTorrents được nới hai lần mà không có số đo; `FullPageRows = 20` trong khi một trang thật có 40 dòng | R | Đã sửa (policy: ghi số đo, xem 6.4) |
+| NS-27 | Thấp | P | Không lọc theo category: sách, nhạc và app chiếm chỗ trong 4 trang LimeTorrents | R | Đã sửa Nyaa, apibay; LimeTorrents giữ `all` (6.4) |
 | NS-28 | Thấp | P, G | Dedupe fuzzy: dung lượng trôi dần theo bản được giữ; merge giữ size 0 dù bản khác có size | R | Đã sửa |
 | NS-29 | Thấp | P | TsukiHime không đọc `is_adult` | R | Đã sửa |
-| NS-30 | Thấp | nhiều | Các lỗi nhỏ khác, xem mục 3 | R | Sửa một phần |
+| NS-30 | Thấp | nhiều | Các lỗi nhỏ khác, xem mục 3 | R | Đã sửa (6.4) |
 | NS-31 | TB | đo | Bench chỉ đo movie; TV, anime và pack chưa được đo theo recipe | K | Đã đo |
 | NS-32 | TB | P | Tên từ LimeTorrents và TorrentDownloads bị mojibake (UTF-8 bị đọc thành Windows-1252), nên bản Nga/Trung bị loại nhầm | K | Đã sửa |
 
@@ -426,6 +426,36 @@ Kết quả: 609 test Core, 150 test App pass.
 - Số "tốt" của qBittorrent có cả bản giả: `Rick and Morty S09E10 1080p WEB h264-EDITH scr` (3 037 seed) và `… exe` được tính là tốt vì plugin đổi dấu chấm thành khoảng trắng. Đã sửa ở junk filter (`8eeee01`).
 - Các bản tốt chỉ qBittorrent có: chủ yếu từ torrentdownloads (khi native đã tắt nó), kickass (native tắt vì trang danh sách không có hash), TPB vượt 100 dòng của apibay, và vài bản native có nhưng số seed lúc đo thấp hơn ngưỡng.
 - Pack sinh 8–12 query mỗi pack, làm hết quota của bitsearch/torrentdownloads; đã gộp còn 2 dạng mỗi tên (07d GOV-03, `a4b6f71`).
+
+## 6.4 Đợt sửa 3 (ngày 2026-11-13, chiều)
+
+Phiên sửa mọi việc còn lại trừ cổng P6. Kiểm chứng: 679 test Core và 156 test App pass; luật khớp được chấm lại offline bằng `reeval-movies` (3 709 dòng của dump9) và lệnh mới `reeval-shows` (13 083 dòng của hai dump TV/anime 13/11); thêm hai bench nhỏ native-only trên state của sandbox.
+
+| Mục | Đã làm | Commit |
+|---|---|---|
+| Pack chỉ khớp tên chính | **Xác nhận bằng dữ liệu:** các pack thật chỉ mang tên romaji bị loại `TitleMismatch` ở cả hai backend ("[AniPlague] Honzuki no Gekokujou S04", "[DKB] Urasekai Picnic (Season 1) [batch]", "Watashi wo Tabetai, Hitodenashi (Season 1)"). `SeasonPackIdentity` giờ khớp mọi tên thay thế (cùng bộ tên với bước chấm tập). | `f973281` |
+| Tập lẻ bị coi là pack | Sửa tên thay thế làm lộ lỗi parser: "Hibike! Euphonium S3 - 13", "Honzuki no Gekokujou S4 - 17v2" bị đọc là pack mùa 3–13 / 4–17 và chỉ bị chặn nhờ sai tên. Giờ "S<n> - <NN>" và "Season <n> - <NN>" là tập NN của mùa n, "3rd season 03", "[Title][17]", "第02集" là tập lẻ; "S4 - 01-12", "Season 02 - 04", "[全13集]" vẫn là pack. Từ dính ngoặc được tách ("[Ex-torrenty.org]BoJack"). | `f973281`, `5a1cbe9` |
+| NS-30 từ lặp | "Hunter x Hunter" cần "hunter" hai lần, nên không còn nhận "Monster Hunter Stories"; "Kill la Kill" không nhận "Kill Me Baby" (ở bước chấm pack, tập và snapshot). | `f973281` |
+| Kết quả (offline) | `reeval-shows`: số dòng được nhận từ 906 lên 989, mọi dòng mới đều đúng (các bản "S4 - 15" của Ascendance of a Bookworm S04E15, "S3 - 12" của JJK S03E12, pack Watashi wo Tabetai, BoJack S06); 4 tập lẻ trước đây được nhận làm pack S04 giờ bị loại; không mất dòng đúng nào. | |
+| Kết quả (bench pack, 4 show, native) | Ascendance of a Bookworm S04: 6 pack tốt (trước 4); Otherside Picnic: 7 (trước 3); This Monster Wants to Eat Me: 1 (trước 0); Bloom Into You: 4 (như trước). | |
+| Movie: nhóm không ngoặc | Một từ CamelCase đứng đầu ("AnimeKaizoku Kimi no Na wa Your Name") hoặc dính sau tên ngay trước marker ("Chou.Kaguya.hime.GoLTFilm.1080p") là tên nhóm; từ thường ("Skutecny", "The Real", "Call Me by") và từ phần tiếp ("Two", "II", "PartTwo") thì không. | `42746f6` |
+| Movie: cùng năm | Với tên phim 1–2 từ, phần đứng trước tên vẫn bị kiểm cả khi năm khớp: "Taxi Whats Your Name 2016", "Burn Your Name 2016" không còn được nhận cho "Your Name.", "The Real Oppenheimer (2023)" không được nhận cho "Oppenheimer". Chữ trong cùng ngoặc với tên phim không còn là metadata ("[Kimi no Na wa X Tenki no Ko]" là hai phim); "Libretto ver." là phiên bản; "A.K.A" tách tên. `reeval-movies`: thêm 16 bản đúng, bỏ 4 bản sai, không mất bản đúng; bench 3 phim: Coherence 21, Your Name 76 (trước 74), Oppenheimer 100 (13 dòng bị loại đều là phim khác). | `42746f6` |
+| GOV-03 B, GOV-02, GOV-06, GOV-07, GOV-08 | Xem 07d §6. | `aea8248` |
+| Không có nguồn search | Khi mọi site của một target bị bỏ qua (Pause all, breaker, hết quota) hoặc lỗi, order trong cart và Auto-Track là **Failed** "No search source available: <lý do từng site>" thay vì "No candidates"; Auto-Track không bắt đầu thời gian chờ `NoCandidates`; chế độ Both dùng kết quả qBittorrent. Telemetry của orchestrator đi tới nơi gọi qua `SearchSession`. | `aea8248` |
+| Backend mỗi lượt | Backend được chốt một lần cho cả session (tập, pack, movie, snapshot, dry-run), không đổi giữa chừng khi Settings đổi (doc 06 §1). Dòng log `Run Cart … Backend='Native|qBittorrent|Both'`. | `aea8248` |
+| Kickass | Trang danh sách không có hash: orchestrator mở trang chi tiết của tối đa 3 dòng mỗi lượt mà recipe có thể nhận (chấm với magnet giả, nhiều seed trước), qua governor và trần mỗi lượt; các dòng không có magnet bị bỏ (trước đây chúng trông như "HTTP URL" add được). Vẫn tắt mặc định. | `917203c` |
+| torrents-csv | Server trả tối đa 10 dòng mỗi request dù `size=100`; theo con trỏ `next` (`&after=`) tối đa 3 trang khi trang đầy. Probe 13/11: server nhận `after` (trang sau không lặp trang đầu). | `917203c` |
+| apibay | q.php trả tối đa 100 dòng, không có phân trang (trang TPB cũng chỉ hiện 100). Giờ tìm trong mục Video (`cat=200`; probe "Coherence": giữ đúng 61 dòng mục 201/202/207/208, bỏ nhạc, sách nói, e-book) và nhận cả bản "+chất lượng" như các site phân trang để vượt 100 dòng đầu. Bench phim: query "Oppenheimer 1080p" giờ cũng tới apibay (75 dòng). | `917203c` |
+| NS-27 LimeTorrents | **Giữ `/search/all/`.** Probe "Coherence": `/movies/` và `/all/` cho cùng 40 dòng trang 1, nên chưa thấy lợi; ranh giới anime/TV/other của site không chắc chắn, mà category sai thì mất bản đúng. | |
+| NS-30 dung lượng | "1,5 GB" là 1,5 GB (dấu phẩy thập phân khi chỉ có 1–2 chữ số sau); "1,024.5 MB", "1,234 MB" vẫn là phân cách hàng nghìn. | `1657e5f` |
+| NS-30 nhóm "DL" | "WEB-DL", "Blu-Ray", "DTS-HD" ở cuối tên không còn được đọc thành nhóm. | `1657e5f` |
+| NS-30 header TMDB | Header Bearer/Accept đặt trên từng request thay vì sửa `DefaultRequestHeaders` của `HttpClient` dùng chung. | `1657e5f` |
+| NS-30 cart picker | Khi danh sách candidate được nạp lại (search lại, blacklist), bộ lọc nhanh được xóa trước; candidate đang chọn của order luôn qua bộ lọc, nên binding hai chiều không còn xóa lựa chọn. Chưa kiểm trên UI thật. | `1657e5f` |
+| Ngày quota UTC | **Giữ UTC, có chủ đích** (doc 03 §1 dòng 2): quota chỉ là cầu chì; pill hiện giờ reset theo giờ máy (07:00 giờ Việt Nam). | |
+| LimeTorrents 10/phút, 3 s | **Ghi số đo, không đo dồn** (doc 03 §2): hai ngày dùng thật không bị chặn; log giờ có số request thật để 7 ngày Both cho số đo. | |
+| GOV-01 jitter | **Không làm, có chủ đích** (doc 03 §1 dòng 1). | |
+
+**Còn lại:** cổng P6 (bỏ qBittorrent) cần số liệu dùng thật ở chế độ Both, do user quyết định. Bộ lọc cart picker và trạng thái "No search source available" chưa được kiểm trên UI thật (bản publish nằm ở `D:\MediaManagerSandbox\app_next`). Category theo loại của LimeTorrents không làm (xem trên).
 
 ## 7. Thứ tự sửa đề xuất
 
