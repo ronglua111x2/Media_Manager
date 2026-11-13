@@ -290,7 +290,8 @@ public class TorrentCandidateParserTests
     [InlineData(10, "[SubsPlease] Show - 05 (1080p) [ABCD1234].mkv", null, null, null, 5, false, false, null, false, null)]
     [InlineData(11, "[Group] Show - 05v2 [1080p].mkv", null, null, null, 5, false, false, null, false, null)]
     // Rows 12-15: absolute parse used by search/hunt (report section 8), owned by feat/native-search.
-    [InlineData(12, "[SubsPlease] Show S2 - 05 (1080p) [ABCD1234].mkv", null, null, null, 5, false, false, null, false, null, Skip = "Report section 8 (search, feat/native-search)")]
+    // Row 12 is solved by SeasonDashEpisodeRegex ("S2 - 05" -> S02E05); rows 13-15 are still open.
+    [InlineData(12, "[SubsPlease] Show S2 - 05 (1080p) [ABCD1234].mkv", 2, 5, 2, 5, false, false, null, false, null)]
     [InlineData(13, "[SubsPlease] Show 100 - 05 (1080p).mkv", null, null, null, 5, false, false, null, false, null, Skip = "Report section 8 (search, feat/native-search)")]
     [InlineData(14, "[Erai-raws] 86 - Show - 05 [1080p].mkv", null, null, null, 5, false, false, null, false, null, Skip = "Report section 8 (search, feat/native-search)")]
     [InlineData(15, "[SubsPlease] Show No. 8 - 05 (1080p).mkv", null, null, null, 5, false, false, null, false, null, Skip = "Report section 8 (search, feat/native-search)")]
