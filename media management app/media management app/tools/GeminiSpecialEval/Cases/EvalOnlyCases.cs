@@ -7,6 +7,10 @@ namespace GeminiSpecialEval.Cases;
 /// order against the pairs the rules already fixed) and at abstaining. Fictional names only: the repository is
 /// public. Every answer here can be worked out from the payload (titles, order, air dates); a case whose truth a
 /// careful human could not deduce does not belong here.
+/// Since the rules count OVA-titled entries and skip recap/promo titles (<c>SpecialSeasonWindowMapper.MapByKind</c>),
+/// both root-OVA cases and SP01..04 of the blooper case are placed by the rules and no longer reach Gemini; they
+/// stay as regression cases for the rules tier. Measuring Gemini on order in a root folder needs a case whose TMDB
+/// titles do not name the OVAs.
 /// </summary>
 internal static class EvalOnlyCases
 {

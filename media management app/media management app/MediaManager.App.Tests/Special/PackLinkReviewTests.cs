@@ -50,10 +50,10 @@ public class PackLinkReviewTests
         var viewModel = new PackLinkReviewViewModel(preview);
 
         // A Gemini pair that differs from the season-window suggestion: with the TMDB title and air date next to
-        // the file, S2S07 to "Harbor Brass Movie: Recap Part 1 (2017-09-13)" stands out, and the row is flagged.
+        // the file, S2S07 to "Harbor Brass Movie: Encore, Part 1 (2017-09-13)" stands out, and the row is flagged.
         var row = viewModel.Rows.Single(item => item.FileName == "[Grp] Harbor Brass - S2S07.mkv");
         Assert.Equal("S00E16", row.TargetLabel);
-        Assert.Equal("Harbor Brass Movie: Recap Part 1", row.TmdbTitle);
+        Assert.Equal("Harbor Brass Movie: Encore, Part 1", row.TmdbTitle);
         Assert.Equal("2017-09-13", row.AirDateLabel);
         Assert.Equal("Gemini AI", row.SourceLabel);
         Assert.True(row.NeedsAttention);
@@ -89,6 +89,25 @@ public class PackLinkReviewTests
 
         Assert.False(viewModel.CanRetry);
         Assert.StartsWith("Review special/OVA mappings", viewModel.WindowTitle, StringComparison.Ordinal);
+    }
+
+    /// <summary>A pair placed by skipping a recap is labelled as such and still flagged: it is a count, not a name.</summary>
+    [Fact]
+    public async Task LoadPreview_RecapSkippedRule_LabelledAndFlagged()
+    {
+        var pack = SpecialCases.ByName("rail-untitled");
+        using var host = new SpecialOrchestratorHost(_ => throw new InvalidOperationException("Gemini must not be called."), geminiEnabled: false);
+        var service = SpecialPackPrepareHost.Create(pack, host.Orchestrator);
+        var preview = await service.PrepareSeasonPackLinkAsync(SpecialPackPrepareHost.ShowId, 1, useGeminiForSpecials: false);
+
+        var viewModel = new PackLinkReviewViewModel(preview);
+
+        var row = viewModel.Rows.Single(item => item.FileName == "Night Rail - SP09.mkv");
+        Assert.Equal("S00E10", row.TargetLabel);
+        Assert.Equal("Window, recaps skipped", row.SourceLabel);
+        Assert.Equal("Mini Anime 09 - Do You Think We Arrive", row.TmdbTitle);
+        Assert.True(row.NeedsAttention);
+        Assert.True(preview.RequiresReview);
     }
 
     internal static SeasonPackLinkPreview Preview(params PackFileEntry[] files)

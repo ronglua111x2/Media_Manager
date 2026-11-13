@@ -49,7 +49,7 @@ public sealed class SpecialMappingCacheTests
         using var host = new SpecialOrchestratorHost(FakeGeminiResponses.CorrectTwoSeasonPack);
         host.Orchestrator.RememberAccepted(await ResolveWithCacheAsync(host, pack));
 
-        pack.Specials.Single(episode => episode.EpisodeNumber == 19).Title = "Season 3 Countdown Promo (renamed)";
+        pack.Specials.Single(episode => episode.EpisodeNumber == 19).Title = "Harbor Brass Season 3 Starts Now! (renamed)";
         await ResolveWithCacheAsync(host, pack);
 
         Assert.Equal(2, host.Gemini.Calls);

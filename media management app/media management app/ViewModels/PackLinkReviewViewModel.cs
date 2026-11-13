@@ -173,6 +173,8 @@ public sealed partial class PackLinkReviewViewModel : ObservableObject
                 SpecialMappingProposalReason.Inferred => "Inferred",
                 SpecialMappingProposalReason.Title => "Title match",
                 SpecialMappingProposalReason.OvaNumber => "OVA number",
+                SpecialMappingProposalReason.OvaOrder => "OVA order",
+                SpecialMappingProposalReason.WindowWithoutAsides => "Window, recaps skipped",
                 SpecialMappingProposalReason.Flatten => "Rules (flatten)",
                 SpecialMappingProposalReason.Ordinal => "Rules (ordinal)",
                 _ => "Rules"

@@ -31,7 +31,18 @@ public enum SpecialMappingProposalReason
     Inferred,
 
     /// <summary><c>OVA - N</c> whose TMDB S00EN title also names OVA N.</summary>
-    OvaNumber
+    OvaNumber,
+
+    /// <summary>
+    /// k-th OVA file of a season → k-th TMDB entry of its window whose title names an OVA/OAD (exact count only).
+    /// </summary>
+    OvaOrder,
+
+    /// <summary>
+    /// k-th special of a season → k-th entry of its window once recap/preview/promo-type titles are left out
+    /// (exact count only).
+    /// </summary>
+    WindowWithoutAsides
 }
 
 public enum SpecialMappingSource
