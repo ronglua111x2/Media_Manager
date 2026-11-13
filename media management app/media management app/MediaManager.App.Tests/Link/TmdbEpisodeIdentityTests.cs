@@ -240,6 +240,63 @@ public sealed class TmdbEpisodeIdentityTests : IDisposable
         Assert.Equal(901, Episode(showId, 0, 2).TmdbEpisodeId);
     }
 
+    // "Import Existing" records are the library file itself (FilePath = LinkedPath): a swap renames both files and
+    // both records must point at their new file.
+    [Fact]
+    public async Task ImportedLibraryFiles_Swapped_FollowTheirIds()
+    {
+        var showId = _host.AddShow(6111, "Demo Show", (1, 1, "Episode 151"), (1, 2, "Episode 152"));
+        _host.Db.UpdateSourceItem(ImportedLibraryItem(6111, 1, 1));
+        _host.Db.UpdateSourceItem(ImportedLibraryItem(6111, 1, 2));
+        _host.Symlinks.ReconcileAll();
+        _host.TmdbDetails = Details(6111, Ep(1, 1, 151), Ep(1, 2, 152));
+        await RefreshAsync(showId);
+
+        _host.TmdbDetails = Details(6111, Ep(1, 1, 152), Ep(1, 2, 151));
+        await RefreshAsync(showId);
+
+        AssertLibrary(("S01E01", "S01E02"), ("S01E02", "S01E01"));
+        AssertJellyfinFollowsLibrary("S01E01", "S01E02");
+        Assert.All(_host.Items(), item =>
+        {
+            Assert.Equal(item.FilePath, item.LinkedPath);
+            Assert.Equal(item.EpisodeNumber == 1 ? "video Demo.S01E02.1080p.mkv" : "video Demo.S01E01.1080p.mkv", File.ReadAllText(item.FilePath));
+        });
+        Assert.All(Episodes(showId), item => Assert.Equal(EpisodeAvailability.Available, item.Availability));
+    }
+
+    /// <summary>A library file at the app's name for that episode, recorded as imported (its own record's file).</summary>
+    private SourceItem ImportedLibraryItem(int tmdbId, int season, int episode)
+    {
+        var item = new SourceItem
+        {
+            FilePath = Path.Combine(_host.Downloads, "placeholder.mkv"),
+            ScanText = "x",
+            MediaKind = MediaKind.TvEpisode,
+            ParserPattern = ParserPattern.StandardTv,
+            ShowTitle = "Demo Show",
+            SeasonNumber = season,
+            EpisodeNumber = episode,
+            MatchedTitle = "Demo Show",
+            MatchedYear = 2015,
+            Provider = "tmdb",
+            ProviderId = tmdbId.ToString(),
+            MatchAccepted = true,
+            IsExternalImport = true,
+            State = ItemState.Linked,
+            LastSeenUtc = DateTime.UtcNow
+        };
+        Assert.True(_host.Hardlinks.TryBuildLibraryPath(item, out var libraryPath, out _));
+        Directory.CreateDirectory(Path.GetDirectoryName(libraryPath)!);
+        File.WriteAllText(libraryPath, $"video Demo.S{season:00}E{episode:00}.1080p.mkv");
+        item.FilePath = libraryPath;
+        item.LinkedPath = libraryPath;
+        item.FileName = Path.GetFileName(libraryPath);
+        item.ParentFolder = Path.GetDirectoryName(libraryPath)!;
+        item.SourceRootFolder = item.ParentFolder;
+        return item;
+    }
+
     /// <summary>
     /// Show whose episodes are each linked from a single-episode torrent named after the episode
     /// ("Demo.S01E04.1080p.mkv"); the first refresh stores the TMDB ids at the same numbers.

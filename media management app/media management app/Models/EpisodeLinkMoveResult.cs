@@ -16,3 +16,9 @@ public sealed class EpisodeLinkMoveResult
 
     public List<string> Messages { get; } = [];
 }
+
+/// <summary>A tracked episode row (by id) that TMDB moved from one number to another (audit L3-09).</summary>
+public sealed record EpisodeRenumber(
+    long EpisodeId,
+    (int SeasonNumber, int EpisodeNumber) From,
+    (int SeasonNumber, int EpisodeNumber) To);

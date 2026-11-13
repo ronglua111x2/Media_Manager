@@ -534,9 +534,10 @@ public sealed class TrackedShowService : ITrackedShowService
                 return plan;
             }
 
-            var links = _autoTorrentLinkService.MoveEpisodeLinks(
+            var links = _autoTorrentLinkService.RenumberEpisodes(
                 show.Id,
-                plan.Moves.ToDictionary(move => move.From, move => move.To));
+                plan.Moves.Select(move => new EpisodeRenumber(move.Row.Id, move.From, move.To)).ToList(),
+                plan.DeleteRowIds);
             if (links.Failed || links.BlockedKeys.Count > 0)
             {
                 foreach (var message in links.Messages)
@@ -549,10 +550,6 @@ public sealed class TrackedShowService : ITrackedShowService
                 continue;
             }
 
-            _databaseService.MoveTrackedEpisodes(
-                show.Id,
-                plan.DeleteRowIds,
-                plan.Moves.Select(move => (move.Row.Id, move.To.SeasonNumber, move.To.EpisodeNumber)).ToList());
             foreach (var move in plan.Moves)
             {
                 _logger.Info(

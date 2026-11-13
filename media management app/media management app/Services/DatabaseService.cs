@@ -363,24 +363,6 @@ public sealed class DatabaseService : IDatabaseService
         command.ExecuteNonQuery();
     }
 
-    public void UpdateSourceItemFilePath(long id, string filePath)
-    {
-        using var connection = new SqliteConnection(_connectionString);
-        connection.Open();
-
-        using var command = connection.CreateCommand();
-        command.CommandText = """
-            UPDATE SourceItems
-            SET FilePath = $FilePath, FileName = $FileName, ParentFolder = $ParentFolder
-            WHERE Id = $Id;
-            """;
-        command.Parameters.AddWithValue("$FilePath", filePath);
-        command.Parameters.AddWithValue("$FileName", Path.GetFileName(filePath));
-        command.Parameters.AddWithValue("$ParentFolder", Path.GetDirectoryName(filePath) ?? string.Empty);
-        command.Parameters.AddWithValue("$Id", id);
-        command.ExecuteNonQuery();
-    }
-
     private static void AddParameters(SqliteCommand command, SourceItem item)
     {
         command.Parameters.AddWithValue("$SourceRootFolder", item.SourceRootFolder);
@@ -1362,55 +1344,101 @@ public sealed class DatabaseService : IDatabaseService
         command.ExecuteNonQuery();
     }
 
-    public void MoveTrackedEpisodes(
+    public void ApplyEpisodeRenumbering(
         long showId,
         IReadOnlyCollection<long> deleteEpisodeIds,
-        IReadOnlyList<(long EpisodeId, int SeasonNumber, int EpisodeNumber)> moves)
+        IReadOnlyList<EpisodeRenumber> episodeMoves,
+        IReadOnlyList<SourceItem> movedItems)
     {
         using var connection = new SqliteConnection(_connectionString);
         connection.Open();
         using var transaction = connection.BeginTransaction();
         var now = DateTime.UtcNow.ToString("O");
 
+        void Execute(string sql, params (string Name, object? Value)[] parameters)
+        {
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = sql;
+            foreach (var (name, value) in parameters)
+            {
+                command.Parameters.AddWithValue(name, value ?? DBNull.Value);
+            }
+
+            command.ExecuteNonQuery();
+        }
+
         foreach (var episodeId in deleteEpisodeIds)
         {
-            using var delete = connection.CreateCommand();
-            delete.Transaction = transaction;
-            delete.CommandText = "DELETE FROM TrackedEpisodes WHERE Id = $Id AND ShowId = $ShowId;";
-            delete.Parameters.AddWithValue("$Id", episodeId);
-            delete.Parameters.AddWithValue("$ShowId", showId);
-            delete.ExecuteNonQuery();
+            Execute("DELETE FROM TrackedEpisodes WHERE Id = $Id AND ShowId = $ShowId;", ("$Id", episodeId), ("$ShowId", showId));
         }
 
         // (Season, -Id) is free for every row: no real episode number is negative.
-        foreach (var move in moves)
+        foreach (var move in episodeMoves)
         {
-            using var park = connection.CreateCommand();
-            park.Transaction = transaction;
-            park.CommandText = "UPDATE TrackedEpisodes SET EpisodeNumber = -Id WHERE Id = $Id AND ShowId = $ShowId;";
-            park.Parameters.AddWithValue("$Id", move.EpisodeId);
-            park.Parameters.AddWithValue("$ShowId", showId);
-            park.ExecuteNonQuery();
+            Execute(
+                "UPDATE TrackedEpisodes SET EpisodeNumber = -Id WHERE Id = $Id AND ShowId = $ShowId;",
+                ("$Id", move.EpisodeId),
+                ("$ShowId", showId));
         }
 
-        foreach (var move in moves)
+        foreach (var move in episodeMoves)
         {
-            using var place = connection.CreateCommand();
-            place.Transaction = transaction;
-            place.CommandText = """
+            Execute(
+                """
                 UPDATE TrackedEpisodes
                 SET SeasonNumber = $SeasonNumber, EpisodeNumber = $EpisodeNumber, UpdatedUtc = $UpdatedUtc
                 WHERE Id = $Id AND ShowId = $ShowId;
                 UPDATE TorrentCartOrders
                 SET SeasonNumber = $SeasonNumber, EpisodeNumber = $EpisodeNumber, UpdatedUtc = $UpdatedUtc
                 WHERE EpisodeId = $Id;
-                """;
-            place.Parameters.AddWithValue("$SeasonNumber", move.SeasonNumber);
-            place.Parameters.AddWithValue("$EpisodeNumber", move.EpisodeNumber);
-            place.Parameters.AddWithValue("$UpdatedUtc", now);
-            place.Parameters.AddWithValue("$Id", move.EpisodeId);
-            place.Parameters.AddWithValue("$ShowId", showId);
-            place.ExecuteNonQuery();
+                """,
+                ("$SeasonNumber", move.To.SeasonNumber),
+                ("$EpisodeNumber", move.To.EpisodeNumber),
+                ("$UpdatedUtc", now),
+                ("$Id", move.EpisodeId),
+                ("$ShowId", showId));
+        }
+
+        // FilePath is unique and two imported library files can swap names: park every changing path first.
+        foreach (var item in movedItems)
+        {
+            Execute(
+                "UPDATE SourceItems SET FilePath = FilePath || '|renumbering|' || Id WHERE Id = $Id AND FilePath <> $FilePath;",
+                ("$Id", item.Id),
+                ("$FilePath", item.FilePath));
+        }
+
+        foreach (var item in movedItems)
+        {
+            Execute(
+                """
+                UPDATE SourceItems
+                SET FilePath = $FilePath,
+                    FileName = $FileName,
+                    ParentFolder = $ParentFolder,
+                    SeasonNumber = $SeasonNumber,
+                    EpisodeNumber = $EpisodeNumber,
+                    LastEpisodeNumber = $LastEpisodeNumber,
+                    MappedSeasonNumber = $MappedSeasonNumber,
+                    MappedEpisodeNumber = $MappedEpisodeNumber,
+                    State = $State,
+                    Notes = $Notes,
+                    LinkedPath = $LinkedPath
+                WHERE Id = $Id;
+                """,
+                ("$FilePath", item.FilePath),
+                ("$FileName", item.FileName),
+                ("$ParentFolder", item.ParentFolder),
+                ("$SeasonNumber", item.SeasonNumber),
+                ("$EpisodeNumber", item.EpisodeNumber),
+                ("$LastEpisodeNumber", item.LastEpisodeNumber),
+                ("$MappedSeasonNumber", item.MappedSeasonNumber),
+                ("$MappedEpisodeNumber", item.MappedEpisodeNumber),
+                ("$State", (int)item.State),
+                ("$Notes", item.Notes),
+                ("$LinkedPath", item.LinkedPath),
+                ("$Id", item.Id));
         }
 
         transaction.Commit();

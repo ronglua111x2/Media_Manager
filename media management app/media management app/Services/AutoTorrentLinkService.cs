@@ -173,16 +173,19 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
         return result;
     }
 
-    public EpisodeLinkMoveResult MoveEpisodeLinks(
+    public EpisodeLinkMoveResult RenumberEpisodes(
         long showId,
-        IReadOnlyDictionary<(int SeasonNumber, int EpisodeNumber), (int SeasonNumber, int EpisodeNumber)> moves)
+        IReadOnlyList<EpisodeRenumber> episodeMoves,
+        IReadOnlyCollection<long> deleteEpisodeIds)
     {
         var result = new EpisodeLinkMoveResult();
         var providerId = _databaseService.GetTrackedShow(showId)?.TmdbId.ToString();
-        if (string.IsNullOrWhiteSpace(providerId) || moves.Count == 0)
+        if (string.IsNullOrWhiteSpace(providerId) || episodeMoves.Count == 0)
         {
             return result;
         }
+
+        var moves = episodeMoves.ToDictionary(move => move.From, move => move.To);
 
         var allItems = _databaseService.GetSourceItems();
         var planned = new List<(SourceItem Previous, SourceItem Moved)>();
@@ -236,11 +239,32 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
                     moved.FilePath = rename.ToPath;
                     moved.FileName = Path.GetFileName(rename.ToPath);
                     moved.ParentFolder = Path.GetDirectoryName(rename.ToPath) ?? moved.ParentFolder;
-                    _databaseService.UpdateSourceItemFilePath(previous.Id, rename.ToPath);
                 }
             }
+        }
 
-            _databaseService.UpdateSourceItem(moved);
+        try
+        {
+            // Rows and link records in one transaction: a crash or error never leaves links on new numbers with rows
+            // on old ones, which the next refresh would shift a second time.
+            _databaseService.ApplyEpisodeRenumbering(showId, deleteEpisodeIds, episodeMoves, planned.Select(pair => pair.Moved).ToList());
+        }
+        catch
+        {
+            var back = renames.Values.Select(rename => new HardLinkRename(rename.Item, rename.ToPath, rename.FromPath)).ToList();
+            if (!_hardlinkService.MoveHardLinks(back, out var backError))
+            {
+                _logger.Error(
+                    $"Renumbering was not saved and the library files could not all be put back ({backError}). Renamed: " +
+                    string.Join("; ", renames.Values.Select(rename => $"{rename.FromPath} -> {rename.ToPath}")),
+                    targets: LogTarget.All);
+            }
+
+            throw;
+        }
+
+        foreach (var (previous, moved) in planned)
+        {
             result.MovedCount++;
             _logger.Info(
                 $"TMDB renumbered {moved.DisplayTitle} {DescribeLinkTarget(previous)}: its link {previous.FileName} now is {DescribeLinkTarget(moved)}.",

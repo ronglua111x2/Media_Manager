@@ -23,9 +23,6 @@ public interface IDatabaseService
 
     void UpdateSourceItemSymlinkPath(long id, string? symlinkPath);
 
-    /// <summary>Points a record at its renamed file (an imported library file that was moved to a new episode number).</summary>
-    void UpdateSourceItemFilePath(long id, string filePath);
-
     int MarkMissingSourceItems(IEnumerable<string> sourceFolders, IEnumerable<string> seenFilePaths);
 
     int DeleteSourceItemsByState(ItemState state);
@@ -127,13 +124,15 @@ public interface IDatabaseService
     void DeleteTrackedEpisode(long episodeId);
 
     /// <summary>
-    /// In one transaction: deletes <paramref name="deleteEpisodeIds"/>, then gives each moved row its new number (through
-    /// temporary numbers, so chains and swaps work) and moves the cart orders of those rows with them (audit L3-09).
+    /// Saves a TMDB renumbering in one transaction (audit L3-09): deletes <paramref name="deleteEpisodeIds"/>, gives each
+    /// moved row its new number (through temporary numbers, so chains and swaps work) and moves its cart orders with it,
+    /// and saves the renumbered link records by id (file path, numbers, link path, state, notes).
     /// </summary>
-    void MoveTrackedEpisodes(
+    void ApplyEpisodeRenumbering(
         long showId,
         IReadOnlyCollection<long> deleteEpisodeIds,
-        IReadOnlyList<(long EpisodeId, int SeasonNumber, int EpisodeNumber)> moves);
+        IReadOnlyList<EpisodeRenumber> episodeMoves,
+        IReadOnlyList<SourceItem> movedItems);
 
     void UpdateTrackedEpisodeAvailability(long episodeId, EpisodeAvailability availability);
 
