@@ -485,3 +485,24 @@ Khuyến nghị: bật H1 và H3 ngay (rẻ, không thấy báo nhầm). Bật H
 | SEC-A14 | Low | Search không dùng cờ tin cậy hay dấu hiệu listing giả; đề xuất H1–H7 | S2 |
 
 Tổng: 0 Critical, 3 High, 6 Medium, 5 Low.
+
+## 12. Trạng thái sửa (13/11/2026)
+
+User duyệt đợt S1 và S2 (mục 10). Đợt S0 (`stopCondition`, `Paused`, đường add trong `QbittorrentClient`) tạm hoãn: user từng gặp lỗi khi add ở trạng thái dừng, cần bàn thêm.
+
+| Finding | Commit | Thay đổi | Test mới |
+|---|---|---|---|
+| SEC-A07 | `10d9423` | Migration `014_torrentblacklist_global` thêm `TorrentBlacklist.IsGlobal` và đánh dấu global cho mọi entry gate đã ghi (`Malware: …`, `Blacklisted infohash`). `IsTorrentBlacklisted` khớp entry của show **hoặc** entry global. Gate ghi global. Entry thủ công vẫn theo show; `ResetTorrentHashes` giữ riêng. Migration recipe v2 dự kiến đổi sang 015. | `MigrationRunnerTests` (1 mới, 2 sửa), `TorrentBlacklistGlobalTests` (4) |
+| SEC-A01 | `5e0eabf` | Reconcile kiểm blacklist (show + global) và chạy cùng bộ kiểm file-list của gate trước khi adopt. Bị từ chối thì **không xóa**: giữ trong qBittorrent, không gắn, không link, cảnh báo một lần mỗi phiên (`LogTarget.All`), summary có `Unsafe (not attached, see log)=N`. Chưa có metadata hoặc không lấy được file list thì chờ lượt sau. | `AdoptSafetyTests` (4) |
+| SEC-A04 | `13c3683` | Thêm vào `AlwaysDangerousExtensions`: `.iso .img .vhd .vhdx .library-ms .searchconnector-ms .settingcontent-ms .website .application .appref-ms .xll .wsc .sct .diagcab .msp`. | `AlwaysDangerousExtensionsTests` (15 ca) |
+| SEC-A09 | `63874d3` | `TorrentValidationConfig.BuiltInDangerousExtensions` là sàn: validator luôn chặn, list trong `settings.json` chỉ được thêm. List lưu thiếu entry mặc định thì log Warning một lần (kèm tên). Tắt kiểm thì log Warning một lần ở validator và mỗi lần add ở gate. Công tắc vẫn giữ. | `ValidationSettingsFloorTests` (11) |
+| SEC-A05 | `5c5aa24` | Byte không phải media (không phải video hay file đi kèm quen thuộc: phụ đề, ảnh, nfo, audio rời, font, cấu trúc đĩa) > 50 MB, hoặc > 5 MB mà > 10 % torrent, thì từ chối. Khi biết loại đích (gate, reconcile): video lớn nhất phải ≥ 10 MB (tập, pack) hoặc ≥ 100 MB (movie). | `DecoyPayloadTests` (10) |
+| SEC-A12 | `5a379cf` | Trước khi lấy đuôi: bỏ ký tự điều khiển hướng, NFC, cắt dấu chấm và khoảng trắng cuối. Tên có override `U+202D`/`U+202E` bị từ chối. | `FileNameNormalizationTests` (8) |
+
+Còn mở hoặc hoãn:
+
+- **`.url`:** vẫn là file phụ bỏ qua, theo quyết định user đã duyệt ở `9db1e5e`. Đang chờ user chọn giữa chặn luôn (dễ báo nhầm với file quảng cáo của site upload) hoặc xử lý bằng `filePrio` khi làm S0.
+- **`filePrio` (không tải file phụ):** hoãn cùng S0. Đến lúc đó, archive nhỏ dưới ngưỡng SEC-A05 vẫn nằm lại thư mục tải.
+- **Fail-open khi DB lỗi (AUD-006):** chưa đổi; kiểm blacklist (cả global) vẫn trả "không bị chặn" khi lỗi.
+- **Ngưỡng SEC-A05** chọn thấp để tránh báo nhầm (anime tập ngắn, movie encode nhỏ). Nên đo lại trên bench TV và anime trước khi nâng.
+- Chưa test tay trên sandbox.
