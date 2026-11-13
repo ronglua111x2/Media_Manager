@@ -29,6 +29,28 @@ public static class AppGeneratedPaths
         return paths;
     }
 
+    /// <summary>
+    /// Download files a torrent record already links into the library. Importing one again overwrote that record
+    /// (the upsert is keyed on the file path): the library hardlink lost its record and later blocked every re-link
+    /// with "Output already exists" (audit R2-A-06).
+    /// </summary>
+    public static HashSet<string> CollectLinkedDownloads(IEnumerable<SourceItem> items)
+    {
+        var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in items)
+        {
+            if (!item.IsExternalImport &&
+                !string.IsNullOrWhiteSpace(item.FilePath) &&
+                !string.IsNullOrWhiteSpace(item.LinkedPath) &&
+                !string.Equals(Normalize(item.LinkedPath), Normalize(item.FilePath), StringComparison.OrdinalIgnoreCase))
+            {
+                paths.Add(Normalize(item.FilePath));
+            }
+        }
+
+        return paths;
+    }
+
     public static bool IsGenerated(IReadOnlySet<string> generatedPaths, string path) =>
         !string.IsNullOrWhiteSpace(path) && generatedPaths.Contains(Normalize(path));
 

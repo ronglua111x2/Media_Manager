@@ -31,4 +31,23 @@ public sealed class AppGeneratedPathsTests
         Assert.False(AppGeneratedPaths.IsGenerated(generated, @"C:\lib\Movies\M\M.mkv"));
         Assert.False(AppGeneratedPaths.IsGenerated(generated, @"C:\dl\a.mkv"));
     }
+
+    // Audit R2-A-06: a download a torrent record already links is not offered for import (it would overwrite that
+    // record); an imported original is.
+    [Fact]
+    public void CollectLinkedDownloads_HasTorrentDownloads_ButNotImportedOriginals()
+    {
+        var items = new[]
+        {
+            new SourceItem { FilePath = @"C:\dl\a.mkv", LinkedPath = @"C:\lib\Shows\A\Season 01\A - S01E01.mkv" },
+            new SourceItem { FilePath = @"C:\media\b.mkv", LinkedPath = @"C:\media\b.mkv", IsExternalImport = true },
+            new SourceItem { FilePath = @"C:\dl\unlinked.mkv" }
+        };
+
+        var linked = AppGeneratedPaths.CollectLinkedDownloads(items);
+
+        Assert.True(AppGeneratedPaths.IsGenerated(linked, @"c:\DL\a.mkv"));
+        Assert.False(AppGeneratedPaths.IsGenerated(linked, @"C:\media\b.mkv"));
+        Assert.False(AppGeneratedPaths.IsGenerated(linked, @"C:\dl\unlinked.mkv"));
+    }
 }
