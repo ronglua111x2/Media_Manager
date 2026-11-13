@@ -39,6 +39,58 @@ public class PackScenarioTests
         }
     }
 
+    // Cross-review 2 (P1): TMDB keeps both cours in season 1 (24 episodes) and the release names the second cour
+    // "S2 - 01".."S2 - 12". Numbers from 1 in a season TMDB does not have cannot be placed: counted through season 1
+    // they would land on S01E01..E12, the first cour. Nothing is linked; the files go to review.
+    [Fact]
+    public void P1_MergedCour_SeasonTmdbLacksNumberedFromOne_GoesToReview()
+    {
+        var files = Enumerable.Range(1, 12).Select(e => $"Show (1080p)/[Grp] Show S2 - {e:00} (1080p).mkv").ToArray();
+
+        var inventory = PackScenario.RunInspectThenLink(new PackScenarioDefinition(1, [1], new() { [1] = 24 }, files));
+
+        Assert.Equal(0, inventory.RegularEpisodeCount);
+        Assert.All(files, path =>
+        {
+            var entry = PackScenario.Entry(inventory, path);
+            Assert.Equal(PackFileClassification.Skipped, entry.Classification);
+            Assert.Contains("review", entry.MatchReason, StringComparison.OrdinalIgnoreCase);
+        });
+
+        // Linked with a coverage of season 1 only, nothing lands in season 1 either.
+        Assert.Equal(0, PackScenario.Run(new PackScenarioDefinition(1, [1], new() { [1] = 24 }, files)).RegularEpisodeCount);
+    }
+
+    // P2: the same release numbered on from season 1 ("S2 - 13".."S2 - 24") is counted through season 1, as before.
+    [Fact]
+    public void P2_MergedCour_SeasonTmdbLacksContinuedNumbers_AreCounted()
+    {
+        var files = Enumerable.Range(13, 12).Select(e => $"Show (1080p)/[Grp] Show S2 - {e:00} (1080p).mkv").ToArray();
+
+        var inventory = PackScenario.RunInspectThenLink(new PackScenarioDefinition(1, [1], new() { [1] = 24 }, files));
+
+        Assert.Equal(12, inventory.RegularEpisodeCount);
+        foreach (var episode in Enumerable.Range(13, 12))
+        {
+            PackScenario.AssertRegular(inventory, $"Show (1080p)/[Grp] Show S2 - {episode:00} (1080p).mkv", 1, episode);
+        }
+    }
+
+    // P3: TMDB has season 2 and the release numbers it from 1: each file keeps its number.
+    [Fact]
+    public void P3_SeasonTmdbHas_NumberedFromOne_KeepsNumbers()
+    {
+        var files = Enumerable.Range(1, 12).Select(e => $"Show S2 (1080p)/[Grp] Show S2 - {e:00} (1080p).mkv").ToArray();
+
+        var inventory = PackScenario.Run(new PackScenarioDefinition(2, [2], new() { [1] = 12, [2] = 12 }, files));
+
+        Assert.Equal(12, inventory.RegularEpisodeCount);
+        foreach (var episode in Enumerable.Range(1, 12))
+        {
+            PackScenario.AssertRegular(inventory, $"Show S2 (1080p)/[Grp] Show S2 - {episode:00} (1080p).mkv", 2, episode);
+        }
+    }
+
     [Fact]
     public void C_ShowTitleContainsSpecial_EpisodesStayRegular()
     {

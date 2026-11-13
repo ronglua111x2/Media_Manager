@@ -104,7 +104,8 @@ public static class PackEpisodeResolver
     {
         SeasonRelative,
         ContinuedFromEarlierSeasons,
-        Unclear
+        Unclear,
+        SeasonNotOnTmdbNumberedFromOne
     }
 
     private sealed record AbsoluteScheme(AbsoluteSchemeKind Kind, int Offset, int Lowest, int Highest);
@@ -118,6 +119,9 @@ public static class PackEpisodeResolver
     /// from earlier seasons, every file is counted.</item>
     /// <item>Lowest inside this season otherwise: season-relative, every file keeps its own number.</item>
     /// <item>Anything else (or a range that fits both readings): unclear, review.</item>
+    /// <item>A season TMDB does not have, numbered from 1: review. TMDB may keep it inside an earlier season (two
+    /// cours as S01E01..E24 while the release names the second "S2 - 01"); counted through the earlier seasons its
+    /// files would land on the first episodes of the show (cross-review 2, P1). Other numbers are counted.</item>
     /// </list>
     /// Season 1 needs no decision: there both readings give the same episode.
     /// </summary>
@@ -127,7 +131,7 @@ public static class PackEpisodeResolver
         IReadOnlySet<int> validEpisodeNumbers,
         AbsoluteEpisodeMapper? absoluteMapper)
     {
-        if (absoluteMapper is null || seasonNumber <= 1 || validEpisodeNumbers.Count == 0)
+        if (absoluteMapper is null || seasonNumber <= 1)
         {
             return null;
         }
@@ -144,6 +148,13 @@ public static class PackEpisodeResolver
 
         var lowest = numbers.Min();
         var highest = numbers.Max();
+        if (validEpisodeNumbers.Count == 0)
+        {
+            return lowest == 1
+                ? new AbsoluteScheme(AbsoluteSchemeKind.SeasonNotOnTmdbNumberedFromOne, offset, lowest, highest)
+                : null;
+        }
+
         var seasonCount = validEpisodeNumbers.Max();
         var kind = lowest == offset + 1
             ? highest > seasonCount ? AbsoluteSchemeKind.ContinuedFromEarlierSeasons : AbsoluteSchemeKind.Unclear
@@ -180,6 +191,12 @@ public static class PackEpisodeResolver
                 }
 
                 failure = $"Episode {absoluteEpisode} is above season {seasonNumber}'s TMDB episodes in a season numbered from 1; not linked, review (a bonus or a special?).";
+                return null;
+
+            case AbsoluteSchemeKind.SeasonNotOnTmdbNumberedFromOne:
+                failure = $"Season {seasonNumber} is not on TMDB and its files are numbered {scheme.Lowest}-{scheme.Highest}: counted after the " +
+                          $"{scheme.Offset} episodes of the earlier seasons they would be the show's first episodes. TMDB may list this " +
+                          "season inside an earlier one; not linked, review which episodes they are.";
                 return null;
 
             default:
