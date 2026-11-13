@@ -27,7 +27,7 @@ public sealed class AutoTrackService : IAutoTrackService
 
     // GOV-04: when each show was last given a hunt slot (rotation), and when the last scheduled hunt ran.
     private readonly Dictionary<long, DateTime> _lastHuntedUtc = [];
-    private DateTime? _lastScheduledHuntUtc;
+    private readonly AutoTrackHuntSlot _scheduledHuntSlot = new();
     private readonly SemaphoreSlim _reconcileLock = new(1, 1);
     private readonly SemaphoreSlim _interruptedRecoveryLock = new(1, 1);
     private readonly DateTime _sessionStartUtc = DateTime.UtcNow;
@@ -485,16 +485,16 @@ public sealed class AutoTrackService : IAutoTrackService
     {
         // Settings → Auto-Track "torrent hunt interval": TMDB checks run every 30 min, hunts only this often
         // (it used to be saved but never read; audit 07d GOV-04). Run Now and resume runs are not gated.
+        var claimedScheduledSlot = false;
         if (!bypassSchedule && !resumeOnly)
         {
             var interval = TimeSpan.FromMinutes(Math.Clamp(GetAutoTrackSettings().TorrentHuntIntervalMinutes, 15, 1440));
-            var now = DateTime.UtcNow;
-            if (_lastScheduledHuntUtc is { } last && now - last < interval - TimeSpan.FromMinutes(1))
+            if (_scheduledHuntSlot.TryClaim(DateTime.UtcNow, interval) is { } nextHuntUtc)
             {
-                return SkippedResult($"Next torrent hunt after {(last + interval).ToLocalTime():HH:mm} (hunt interval {interval.TotalMinutes:0} min).");
+                return SkippedResult($"Next torrent hunt after {nextHuntUtc.ToLocalTime():HH:mm} (hunt interval {interval.TotalMinutes:0} min).");
             }
 
-            _lastScheduledHuntUtc = now;
+            claimedScheduledSlot = true;
         }
 
         // Before the hunt queue is built: orders a previous session left in Searching/Approved block their episode.
@@ -520,19 +520,27 @@ public sealed class AutoTrackService : IAutoTrackService
 
         var batchSize = Math.Clamp(settings.Search.MaxShowsPerHuntCycle, 1, 20);
         var batch = huntQueue.Take(batchSize).ToList();
-        foreach (var (show, _) in batch)
-        {
-            _lastHuntedUtc[show.Id] = DateTime.UtcNow;
-        }
 
         var preflight = await EnsureHuntPreflightAsync(cancellationToken);
         if (!preflight.Ok)
         {
+            // Nothing was searched (e.g. ForceTunnelForHunt found no tunnel): keep the rotation as it was and let
+            // the next Auto-Track cycle try again rather than waiting a whole hunt interval.
+            if (claimedScheduledSlot)
+            {
+                _scheduledHuntSlot.GiveBack();
+            }
+
             result.Succeeded = false;
             result.Summary = preflight.AbortSummary ?? "Hunt aborted: dependency preflight failed.";
             _logger.Warning($"Auto-track torrent hunt aborted. {result.Summary}", LogTarget.All);
             NotifyHuntBlocked(result.Summary);
             return result;
+        }
+
+        foreach (var (show, _) in batch)
+        {
+            _lastHuntedUtc[show.Id] = DateTime.UtcNow;
         }
 
         var pendingOrdersByShow = new Dictionary<long, (TrackedShow Show, List<TorrentCartOrder> Orders)>();

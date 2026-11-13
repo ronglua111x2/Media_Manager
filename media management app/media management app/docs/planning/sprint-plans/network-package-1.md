@@ -26,7 +26,7 @@
 
 ## Definition of Done
 
-- [x] `TmdbMetadataProvider`: `CreateGetRequest`, `ConfigureHeaders` and `BaseAddress` removed
+- [x] `TmdbMetadataProvider`: `CreateGetRequest`, `ConfigureHeaders` and `BaseAddress` removed (after merging main 2026-11-13: main had already moved the headers into `GetAsyncWithRetryAsync` for native search, NS-30; that version is kept, with the URI built from `NetworkEndpoints`, and `CreateGetRequest` is gone)
 - [x] `WarpCliProcess` used by `WarpCliService`; mode restored when a connect fails on an exception
 - [x] `WarpModePolicy.LeaseNeedsTunnel`, `_tunnelLeases`, `WarpLeaseResult.TunnelActive`, hunt preflight check, Settings checkbox
 - [x] App.Tests 160 passed (+22), Core.Tests 248
@@ -45,6 +45,12 @@ Manual checks:
 4. **Library refresh and Find/Add** still work without `BaseAddress`.
 
 A hung `warp-cli` cannot be reproduced on the machine; that path is unit-tested only.
+
+## Merge with main (2026-11-13)
+
+- **Hunt slot (GOV-04):** main lets a scheduled hunt run once per hunt interval and stamps show rotation before the preflight. A hunt that `ForceTunnelForHunt` aborts (no tunnel) searched nothing, so `AutoTrackHuntSlot` gives the slot back and rotation is stamped only after the preflight passes. The next 30-minute cycle retries, as the Settings hint says.
+- **WARP leases:** native search adds no WARP lease of its own; it runs inside the hunt's `Hunt` lease (background lane). `Hunt` and `TmdbSslRecover` share `_tunnelLeases`, so releasing one never restores the user's mode while the other still needs the tunnel.
+- **Native search HTTP:** `NativeSearchService` builds its own `HttpClient` for `GovernedIndexerHttp` (no client timeout, per-request deadlines), so `NetworkClients` does not touch it. Its IMDb lookup goes through `TmdbMetadataProvider` and so uses `api.tmdb.org`, the per-request token and the classifier; its own deadline stays an `OperationCanceledException` and does not trigger the WARP hint.
 
 ## Risks / rollback
 

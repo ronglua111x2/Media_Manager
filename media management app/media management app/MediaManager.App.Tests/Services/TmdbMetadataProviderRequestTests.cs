@@ -135,6 +135,98 @@ public class TmdbMetadataProviderRequestTests
         Assert.Equal(NetFailure.Timeout, NetworkFailureClassifier.Classify(ex));
     }
 
+    // Merge of PR #12 with native search (main): the IMDb id lookup native search runs from its own threads goes
+    // through the same per-request path, so it gets the api.tmdb.org host and the token without touching the client.
+    [Fact]
+    public async Task NativeSearchImdbLookup_UsesTheApiHost_AndPerRequestToken()
+    {
+        var (provider, client, handler) = Create();
+        handler.Respond = () => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""{"imdb_id":"tt0000001"}""", Encoding.UTF8, "application/json")
+        };
+
+        var imdbId = await provider.GetImdbIdAsync(isMovie: false, 42);
+
+        Assert.Equal("tt0000001", imdbId);
+        var sent = Assert.Single(handler.Sent);
+        Assert.Equal("https://api.tmdb.org/3/tv/42/external_ids", sent.Uri.AbsoluteUri);
+        Assert.Equal("Bearer " + Token, sent.Authorization);
+        Assert.Null(client.DefaultRequestHeaders.Authorization);
+    }
+
+    [Fact]
+    public async Task ImdbLookupsAndShowSearches_RunningTogether_AllCarryTheToken()
+    {
+        var (provider, _, handler) = Create();
+
+        await Task.WhenAll(Enumerable.Range(0, 32).SelectMany(index => new Task[]
+        {
+            Task.Run(() => provider.SearchTvShowsLightweightAsync($"Show {index}")),
+            Task.Run(() => provider.GetImdbIdAsync(index % 2 == 0, index))
+        }));
+
+        Assert.Equal(64, handler.Sent.Count);
+        Assert.All(handler.Sent, item =>
+        {
+            Assert.Equal("Bearer " + Token, item.Authorization);
+            Assert.Equal("api.tmdb.org", item.Uri.Host);
+        });
+    }
+
+    [Fact]
+    public async Task NativeSearchLookupDeadline_StaysACancellation_AndDoesNotWarnAboutWarp()
+    {
+        // Native search gives the lookup a linked token with its own deadline (07c NS-03) and treats an
+        // OperationCanceledException as "lookup timed out". PR #12 turns HttpClient timeouts into TimeoutException;
+        // that must not apply when the caller's own token fired, and the WARP hint must stay quiet.
+        var handler = new DelayHandler();
+        var settings = new FakeSettingsService();
+        settings.Current.TmdbReadAccessToken = Token;
+        var advisor = new CountingBlockAdvisor();
+        var provider = new TmdbMetadataProvider(settings, new FakeAppLogger(), new HttpClient(handler), advisor);
+        using var lookup = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => provider.GetImdbIdAsync(false, 42, lookup.Token));
+
+        Assert.Equal(0, advisor.Count);
+        Assert.Equal(1, handler.Calls);
+    }
+
+    [Fact]
+    public async Task TmdbClientTimeout_DuringImdbLookup_IsNotMistakenForTheCallersCancel()
+    {
+        // A TMDB HttpClient timeout (caller token not cancelled) surfaces as TimeoutException, which native search
+        // logs as a failed lookup (retried sooner) rather than as the user pressing Cancel.
+        var (provider, _, handler) = Create();
+        handler.Respond = () => throw new TaskCanceledException("timeout", new TimeoutException());
+
+        await Assert.ThrowsAsync<TimeoutException>(() => provider.GetImdbIdAsync(false, 42, CancellationToken.None));
+    }
+
+    private sealed class DelayHandler : HttpMessageHandler
+    {
+        private int _calls;
+
+        public int Calls => Volatile.Read(ref _calls);
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref _calls);
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            throw new InvalidOperationException("unreachable");
+        }
+    }
+
+    private sealed class CountingBlockAdvisor : ITmdbBlockAdvisor
+    {
+        private int _count;
+
+        public int Count => Volatile.Read(ref _count);
+
+        public void Warn(Exception exception, CancellationToken cancellationToken = default) => Interlocked.Increment(ref _count);
+    }
+
     private sealed record SentRequest(Uri Uri, string? Authorization, string? Accept);
 
     private sealed class RecordingHandler : HttpMessageHandler
