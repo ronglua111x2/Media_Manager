@@ -426,6 +426,7 @@ Exhaustive list of user-facing and background features. Each entry includes purp
 - **User interaction:** Tab selection; edit fields; Save Recipe
 - **Code:** `ViewModels/RecipeWorkspaceViewModel.cs` (nested module editors)
 - **Schema:** [RECIPE_SCHEMA.md](./RECIPE_SCHEMA.md)
+- **Search backend (per recipe):** the Search module picks **Qbittorrent** (qBittorrent's plugins), **Native** (the app's own indexers) or **Both** (native results plus a qBittorrent comparison logged to `logs/search-compare.jsonl`). New recipes start on Qbittorrent. With Native, Plugins, Category, Result limit, pagination, timeouts and idle timeouts are dimmed with a "qBittorrent only" note; with Both the note says they only apply to the comparison search. A note lists what native still uses: the query list, Parallel searches, the episode numbering mode (Anime absolute also asks anime sites) and the filter/scoring modules. A recipe set to Native/Both while native search is off or paused (Settings → Search engines) searches with qBittorrent; the log and the order status line say so, so hunts do not stall.
 - **DB:** None
 
 ### 7.3 Engine Picker Dialog
@@ -488,6 +489,7 @@ Settings organized in seven sections (`SettingsSection` enum). All saved to `set
 | Jellyfin | URL, API key, test | `Services/JellyfinClient.cs` |
 | WARP CLI | Path, test, auto-recover (switches DNS-only mode to warp+doh for TMDB, §10.21), route Auto-Track search through a tunnel | `Services/WarpCliService.cs` |
 | Flush Jellyfin queue | Manual | `Services/JellyfinLibraryRefreshService.cs` |
+| Search engines | **Enable native search** (master switch), **Pause all native searches** (kill switch), timeout per request, budget per search, per-site enable and health. The backend itself is chosen per recipe (§7.2). At first start of this version, recipes still on "Default" get the backend they were using (old per-kind override, else the old Settings backend; each change is logged) and native search is enabled if it was in use | `ViewModels/SettingsViewModel.Search.cs`, `Services/Search/NativeSearchService.cs`, `Services/Search/SearchBackendMigrator.cs`, `MediaManager.Core/Search/SearchBackendResolver.cs` |
 
 ### 8.5 Torrent Storage Section
 | Feature | Interaction | Code |

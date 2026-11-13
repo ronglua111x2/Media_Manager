@@ -1547,18 +1547,11 @@
                                         <iconPacks:PackIconLucide Kind="Search" Width="20" Height="20" Margin="0,0,8,0" VerticalAlignment="Center" />
                                         <TextBlock Text="Search engines" Style="{StaticResource SettingsSectionTitleStyle}" Margin="0" />
                                     </StackPanel>
-                                    <TextBlock Text="Search backend" Style="{StaticResource SettingsLabelStyle}" />
-                                    <ComboBox ItemsSource="{Binding SearchBackendOptions}"
-                                              SelectedItem="{Binding SearchBackend, Mode=TwoWay}"
-                                              Margin="0,0,0,4" />
+                                    <CheckBox IsChecked="{Binding SearchNativeEnabled, Mode=TwoWay}"
+                                              Margin="0,0,0,4"
+                                              Content="Enable native search" />
                                     <TextBlock Style="{StaticResource SettingsHintStyle}" Margin="0,0,0,8"
-                                               Text="Qbittorrent: search through qBittorrent's plugins (current behaviour). Native: the app's own indexers with per-site rate limits. Both: use native results and log a comparison with qBittorrent." />
-                                    <TextBlock Text="Override for movies / TV episodes / season packs" Style="{StaticResource SettingsLabelStyle}" />
-                                    <UniformGrid Columns="3" Margin="0,0,0,8">
-                                        <ComboBox ItemsSource="{Binding SearchBackendOverrideOptions}" SelectedItem="{Binding SearchBackendMovie, Mode=TwoWay}" Margin="0,0,6,0" ToolTip="Movies" />
-                                        <ComboBox ItemsSource="{Binding SearchBackendOverrideOptions}" SelectedItem="{Binding SearchBackendEpisode, Mode=TwoWay}" Margin="3,0,3,0" ToolTip="TV episodes" />
-                                        <ComboBox ItemsSource="{Binding SearchBackendOverrideOptions}" SelectedItem="{Binding SearchBackendPack, Mode=TwoWay}" Margin="6,0,0,0" ToolTip="Season packs" />
-                                    </UniformGrid>
+                                               Text="Each recipe chooses its backend in its Search module: Qbittorrent (qBittorrent's plugins), Native (the app's own indexers with per-site rate limits) or Both (native results plus a comparison with qBittorrent in the log). While native search is off or paused, a recipe set to Native or Both searches with qBittorrent and says so in the log and on the order." />
                                     <TextBlock Text="Timeout per request / budget per search incl. waiting for rate limits (seconds)" Style="{StaticResource SettingsLabelStyle}" />
                                     <UniformGrid Columns="2" Margin="0,0,0,8">
                                         <Border Style="{StaticResource SettingsNumericChromeStyle}" Margin="0,0,6,0">

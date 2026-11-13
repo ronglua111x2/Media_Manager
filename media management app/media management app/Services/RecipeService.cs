@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using media_management_app.Common;
 using media_management_app.Models;
+using media_management_app.Search;
 
 namespace media_management_app.Services;
 
@@ -235,6 +236,8 @@ public sealed class RecipeService : IRecipeService
                     ResultLimit = Math.Max(1, settings.MaxCandidatesPerFetch * 25),
                     ExtensionData = new Dictionary<string, string>
                     {
+                        // A new recipe searches with qBittorrent until the user picks Native or Both.
+                        [RecipeRuntimeSettings.SearchBackendKey] = SearchBackends.Qbittorrent,
                         [RecipeRuntimeSettings.ParallelSearchCountKey] = Math.Clamp(settings.MaxParallelSearches, 1, 8).ToString(),
                         [RecipeRuntimeSettings.MaxCandidatesPerFetchKey] = Math.Clamp(settings.MaxCandidatesPerFetch, 1, 10).ToString(),
                         [RecipeRuntimeSettings.UseShowSnapshotSearchKey] = settings.UseShowSnapshotSearch.ToString(),

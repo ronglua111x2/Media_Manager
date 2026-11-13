@@ -27,6 +27,12 @@ public interface IFetchJobService
     /// <summary>The same for the last season pack search of <paramref name="showId"/> season <paramref name="seasonNumber"/>.</summary>
     string? GetPackSearchSourceProblem(long showId, int seasonNumber) => null;
 
+    /// <summary>Why the last search of this episode used qBittorrent although its recipe chose Native/Both; null otherwise.</summary>
+    string? GetSearchBackendNote(long episodeId) => null;
+
+    /// <summary>Why the last pack search of this season used qBittorrent although its recipe chose Native/Both; null otherwise.</summary>
+    string? GetPackSearchBackendNote(long showId, int seasonNumber) => null;
+
     CartCandidateDebugSession? TakeHuntDebugSession();
 
     Task<IReadOnlyDictionary<long, IReadOnlyList<EpisodeFetchCandidate>>> FetchEpisodeCandidatesAsync(

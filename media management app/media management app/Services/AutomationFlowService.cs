@@ -122,7 +122,7 @@ public sealed class AutomationFlowService : IAutomationFlowService
                 recipe,
                 _settingsService.Current.AutoTorrent,
                 request.Overrides);
-            return BuildDryRunResult(_settingsService.Current.AutoTorrent, recipe, show.DisplayTitle, queries, evaluated, maxCandidates, session.Session.NoSourceReason);
+            return BuildDryRunResult(_settingsService.Current.AutoTorrent, recipe, show.DisplayTitle, queries, evaluated, maxCandidates, session.Session.NoSourceReason, session.Session.BackendNote);
         }
         finally
         {
@@ -162,7 +162,7 @@ public sealed class AutomationFlowService : IAutomationFlowService
                 request.Overrides);
             // native-search P5 / SRCH-15: movies often have hundreds of encodes; keep up to 40 ranked by the
             // recipe score so the cart picker can compare them (the recipe's own count still decides the top).
-            return BuildDryRunResult(_settingsService.Current.AutoTorrent, recipe, movie.DisplayTitle, queries, evaluated, Math.Max(maxCandidates, MovieCandidateListCap), session.Session.NoSourceReason);
+            return BuildDryRunResult(_settingsService.Current.AutoTorrent, recipe, movie.DisplayTitle, queries, evaluated, Math.Max(maxCandidates, MovieCandidateListCap), session.Session.NoSourceReason, session.Session.BackendNote);
         }
         finally
         {
@@ -524,10 +524,12 @@ public sealed class AutomationFlowService : IAutomationFlowService
         IReadOnlyList<string> queries,
         IReadOnlyList<RecipeCandidateResult> evaluated,
         int maxCandidates,
-        string? searchSourceProblem = null)
+        string? searchSourceProblem = null,
+        string? searchBackendNote = null)
     {
         return new RecipeDryRunResult
         {
+            SearchBackendNote = searchBackendNote,
             Recipe = recipe,
             TargetTitle = title,
             Queries = queries.ToList(),

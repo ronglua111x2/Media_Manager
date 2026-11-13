@@ -25,8 +25,15 @@ internal sealed class FakeAppLogger : IAppLogger
     {
     }
 
+    /// <summary>Every warning logged, for tests that check what the user is told.</summary>
+    public List<string> Warnings { get; } = [];
+
     public void Warning(string message, LogTarget targets = LogTarget.All, string filePath = "", string memberName = "")
     {
+        lock (Warnings)
+        {
+            Warnings.Add(message);
+        }
     }
 
     public void Error(string message, Exception? exception = null, LogTarget targets = LogTarget.All, string filePath = "", string memberName = "")

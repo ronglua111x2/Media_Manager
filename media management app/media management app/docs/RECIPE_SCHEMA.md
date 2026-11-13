@@ -161,7 +161,8 @@ All values are **strings** in JSON (parsed to int/bool at runtime). Keys defined
 
 | Key | Default (from AutoTorrent settings) | Range | Description |
 |-----|-------------------------------------|-------|-------------|
-| `parallelSearchCount` | `MaxParallelSearches` | 1–8 | Concurrent plugin searches |
+| `searchBackend` | `Qbittorrent` for new recipes | `Qbittorrent` / `Native` / `Both` | Which backend searches. Decided by the recipe only; Settings → Search engines just enables or pauses native search, and a Native/Both recipe searches with qBittorrent (with a log and order-status warning) while native is off or paused. `Default` (older versions: "follow Settings") is replaced once at startup by the backend the recipe was effectively using; one still found later (an imported file) searches with qBittorrent. Native ignores `plugins`, `category`, `resultLimit`, pagination, timeout and idle-timeout keys |
+| `parallelSearchCount` | `MaxParallelSearches` | 1–8 | Concurrent searches (plugin and native) |
 | `maxCandidatesPerFetch` | `MaxCandidatesPerFetch` | 1–10 | Top N candidates kept |
 | `useShowSnapshotSearch` | setting | bool | Bulk snapshot search mode |
 | `snapshotTargetResults` | 2000 | 100–5000 | Target hits for snapshot |

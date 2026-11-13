@@ -9,29 +9,16 @@ namespace media_management_app.ViewModels;
 /// <summary>Settings → Integrations → Search engines (native-search P2).</summary>
 public partial class SettingsViewModel
 {
-    public const string SameAsDefaultBackend = "(same as default)";
-
     private INativeSearchService? _nativeSearch;
-
-    public IReadOnlyList<string> SearchBackendOptions { get; } =
-        [SearchBackends.Qbittorrent, SearchBackends.Native, SearchBackends.Both];
-
-    public IReadOnlyList<string> SearchBackendOverrideOptions { get; } =
-        [SameAsDefaultBackend, SearchBackends.Qbittorrent, SearchBackends.Native, SearchBackends.Both];
 
     public ObservableCollection<IndexerHealthRowViewModel> SearchIndexers { get; } = [];
 
+    /// <summary>
+    /// Master switch of native search. Each recipe chooses its backend (Search module); while this is off a recipe
+    /// set to Native or Both searches with qBittorrent and says so in the log and on the order.
+    /// </summary>
     [ObservableProperty]
-    private string searchBackend = SearchBackends.Qbittorrent;
-
-    [ObservableProperty]
-    private string searchBackendMovie = SameAsDefaultBackend;
-
-    [ObservableProperty]
-    private string searchBackendEpisode = SameAsDefaultBackend;
-
-    [ObservableProperty]
-    private string searchBackendPack = SameAsDefaultBackend;
+    private bool searchNativeEnabled;
 
     [ObservableProperty]
     private bool searchPauseAll;
@@ -51,11 +38,7 @@ public partial class SettingsViewModel
     private void LoadSearchSettings()
     {
         var search = _settingsService.Current.Search ??= new NativeSearchSettings();
-        SearchBackend = SearchBackendOptions.FirstOrDefault(option => string.Equals(option, search.Backend, StringComparison.OrdinalIgnoreCase))
-                        ?? SearchBackends.Qbittorrent;
-        SearchBackendMovie = OverrideFor(search, "Movie");
-        SearchBackendEpisode = OverrideFor(search, "TvEpisode");
-        SearchBackendPack = OverrideFor(search, "TvSeasonPack");
+        SearchNativeEnabled = search.NativeEnabled;
         // The governor's kill switch is the truth: a tick that was not saved is still in force (audit 07c NS-22).
         SearchPauseAll = _nativeSearch?.PauseAll ?? search.PauseAll;
         SearchPerIndexerTimeoutSeconds = search.PerIndexerTimeoutSeconds;
@@ -67,10 +50,8 @@ public partial class SettingsViewModel
     private void ApplySearchSettings()
     {
         var search = _settingsService.Current.Search ??= new NativeSearchSettings();
-        search.Backend = SearchBackend;
-        SetOverride(search, "Movie", SearchBackendMovie);
-        SetOverride(search, "TvEpisode", SearchBackendEpisode);
-        SetOverride(search, "TvSeasonPack", SearchBackendPack);
+        // Search.Backend / BackendByKind are legacy (moved into the recipes once) and are no longer written.
+        search.NativeEnabled = SearchNativeEnabled;
         search.PerIndexerTimeoutSeconds = Math.Clamp(SearchPerIndexerTimeoutSeconds, 3, 60);
         search.OverallTimeoutSeconds = Math.Clamp(SearchOverallTimeoutSeconds, 10, 600);
         foreach (var row in SearchIndexers)
@@ -122,26 +103,6 @@ public partial class SettingsViewModel
         if (_nativeSearch is not null && !_isLoadingSettings)
         {
             _nativeSearch.PauseAll = value;
-        }
-    }
-
-
-
-    private string OverrideFor(NativeSearchSettings search, string kind) =>
-        search.BackendByKind.TryGetValue(kind, out var value) &&
-        SearchBackendOptions.FirstOrDefault(option => string.Equals(option, value, StringComparison.OrdinalIgnoreCase)) is { } match
-            ? match
-            : SameAsDefaultBackend;
-
-    private static void SetOverride(NativeSearchSettings search, string kind, string value)
-    {
-        if (string.IsNullOrWhiteSpace(value) || value == SameAsDefaultBackend)
-        {
-            search.BackendByKind.Remove(kind);
-        }
-        else
-        {
-            search.BackendByKind[kind] = value;
         }
     }
 }
