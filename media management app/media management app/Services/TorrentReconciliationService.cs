@@ -439,8 +439,10 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
         {
             var matches = new List<Func<Task>>();
 
+            // A torrent the user reset an episode, pack or movie from is never adopted for it again (cross-review 2, B).
             foreach (var (show, episode) in episodes.Where(item =>
                          string.IsNullOrWhiteSpace(item.Episode.TorrentHash) &&
+                         !item.Episode.WasResetFrom(torrent.Hash) &&
                          !adoptedEpisodeIds.Contains(item.Episode.Id)))
             {
                 if (MatchesEpisode(torrent.Name, show, episode))
@@ -457,6 +459,7 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
 
             foreach (var (show, season) in seasons.Where(item =>
                          string.IsNullOrWhiteSpace(item.Season.PackTorrentHash) &&
+                         !item.Season.WasResetFrom(torrent.Hash) &&
                          !adoptedSeasons.Contains((item.Show.Id, item.Season.SeasonNumber))))
             {
                 if (MatchesSeasonPack(torrent.Name, show, season))
@@ -479,6 +482,7 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
 
             foreach (var movie in movies.Where(movie =>
                          string.IsNullOrWhiteSpace(movie.TorrentHash) &&
+                         !movie.WasResetFrom(torrent.Hash) &&
                          !adoptedMovieIds.Contains(movie.Id)))
             {
                 if (MatchesMovie(torrent.Name, movie))

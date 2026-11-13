@@ -656,14 +656,24 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
         string.Equals(item.ProviderId, providerId, StringComparison.OrdinalIgnoreCase);
 
     // Torrent hash, download state, stored search candidate and open cart orders: the episode becomes Missing
-    // and is searched again.
+    // and is searched again. The torrent stays in qBittorrent; its hash is remembered on the episode so reconcile
+    // does not adopt it again and undo the reset (cross-review 2, B).
     private void ClearEpisodeDownloadState(long showId, TrackedEpisode episode)
     {
+        var orders = _databaseService.GetTorrentCartOrders(MediaKind.TvEpisode, showId)
+            .Where(order => order.EpisodeId == episode.Id)
+            .ToList();
+        foreach (var hash in orders.Select(order => order.TorrentHash).Append(episode.TorrentHash))
+        {
+            if (!string.IsNullOrWhiteSpace(hash))
+            {
+                _databaseService.AddTrackedEpisodeResetTorrentHash(episode.Id, hash);
+            }
+        }
+
         _databaseService.UpdateTrackedEpisodeTorrent(episode.Id, string.Empty, string.Empty, string.Empty, 0);
         _databaseService.ClearTrackedEpisodeSelectedCandidate(episode.Id);
-        foreach (var order in _databaseService.GetTorrentCartOrders(MediaKind.TvEpisode, showId)
-                     .Where(order => order.EpisodeId == episode.Id)
-                     .ToList())
+        foreach (var order in orders)
         {
             _databaseService.DeleteTorrentCartOrder(order.Id);
         }
@@ -748,11 +758,29 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             deletedCount++;
         }
 
-        _databaseService.ClearTrackedSeasonSelectedPack(showId, ownerSeasonNumber);
-
+        // The pack torrent stays in qBittorrent: remember its hash on every season it was selected for, so reconcile
+        // does not adopt it again and undo the reset (cross-review 2, B).
         var packOrders = _databaseService.GetTorrentCartOrders(MediaKind.TvEpisode, showId)
             .Where(order => order.EpisodeId is null && order.SeasonNumber == ownerSeasonNumber)
             .ToList();
+        var resetHashes = scope.TorrentHashes
+            .Concat(packOrders.Select(order => order.TorrentHash))
+            .Where(hash => !string.IsNullOrWhiteSpace(hash))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var packSeasons = _databaseService.GetTrackedSeasons(showId)
+            .Where(season => season.SeasonNumber == ownerSeasonNumber || season.SelectedPackOwnerSeasonNumber == ownerSeasonNumber)
+            .ToList();
+        foreach (var season in packSeasons)
+        {
+            foreach (var hash in resetHashes.Append(season.PackTorrentHash).Where(hash => !string.IsNullOrWhiteSpace(hash)))
+            {
+                _databaseService.AddTrackedSeasonResetTorrentHash(showId, season.SeasonNumber, hash!);
+            }
+        }
+
+        _databaseService.ClearTrackedSeasonSelectedPack(showId, ownerSeasonNumber);
+
         foreach (var order in packOrders)
         {
             _databaseService.DeleteTorrentCartOrder(order.Id);
@@ -804,10 +832,19 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             result.Messages.Add($"Removed source item: {item.FileName}");
         }
 
+        // The torrent stays in qBittorrent: remember its hash so reconcile does not adopt it again (cross-review 2, B).
+        var movieOrders = _databaseService.GetTorrentCartOrders(MediaKind.Movie, movieId).ToList();
+        foreach (var hash in movieOrders.Select(order => order.TorrentHash).Append(movie.TorrentHash))
+        {
+            if (!string.IsNullOrWhiteSpace(hash))
+            {
+                _databaseService.AddTrackedMovieResetTorrentHash(movieId, hash);
+            }
+        }
+
         _databaseService.UpdateTrackedMovieTorrent(movieId, string.Empty, string.Empty, string.Empty, 0);
         _databaseService.ClearTrackedMovieSelectedCandidate(movieId);
 
-        var movieOrders = _databaseService.GetTorrentCartOrders(MediaKind.Movie, movieId).ToList();
         foreach (var order in movieOrders)
         {
             _databaseService.DeleteTorrentCartOrder(order.Id);

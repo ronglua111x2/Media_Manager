@@ -125,6 +125,18 @@ public interface IDatabaseService
     void DeleteTrackedEpisode(long episodeId);
 
     /// <summary>
+    /// Remembers that the episode was reset from <paramref name="torrentHash"/> (TrackedEpisodes.ResetTorrentHashes,
+    /// migration 013); read it back with <see cref="TrackedEpisode.WasResetFrom"/>.
+    /// </summary>
+    void AddTrackedEpisodeResetTorrentHash(long episodeId, string torrentHash);
+
+    /// <summary>Same for a season row of a pack (TrackedSeasons.ResetTorrentHashes, <see cref="TrackedSeason.WasResetFrom"/>).</summary>
+    void AddTrackedSeasonResetTorrentHash(long showId, int seasonNumber, string torrentHash);
+
+    /// <summary>Same for a movie (TrackedMovies.ResetTorrentHashes, <see cref="TrackedMovie.WasResetFrom"/>).</summary>
+    void AddTrackedMovieResetTorrentHash(long movieId, string torrentHash);
+
+    /// <summary>
     /// Saves a TMDB renumbering in one transaction (audit L3-09): deletes <paramref name="deleteEpisodeIds"/>, gives each
     /// moved row its new number (through temporary numbers, so chains and swaps work) and moves its cart orders with it,
     /// and saves the renumbered link records by id (file path, numbers, link path, state, notes).

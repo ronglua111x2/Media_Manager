@@ -39,7 +39,8 @@ public class MigrationRunnerTests
             "009_trackedepisodes_removed_upstream",
             "010_sourceitems_last_episode",
             "011_trackedepisodes_tmdb_episode_id",
-            "012_trackedepisodes_download_number");
+            "012_trackedepisodes_download_number",
+            "013_reset_torrent_hashes");
         GetUserTableNames(db.Connection).Should().Contain(ApplicationTables);
         HasColumn(db.Connection, "TrackedEpisodes", "UserRating").Should().BeTrue();
         HasColumn(db.Connection, "TrackedEpisodes", "Thought").Should().BeTrue();
@@ -56,6 +57,9 @@ public class MigrationRunnerTests
         HasColumn(db.Connection, "TrackedEpisodes", "TmdbEpisodeId").Should().BeTrue();
         HasColumn(db.Connection, "TrackedEpisodes", "DownloadSeasonNumber").Should().BeTrue();
         HasColumn(db.Connection, "TrackedEpisodes", "DownloadEpisodeNumber").Should().BeTrue();
+        HasColumn(db.Connection, "TrackedEpisodes", "ResetTorrentHashes").Should().BeTrue();
+        HasColumn(db.Connection, "TrackedSeasons", "ResetTorrentHashes").Should().BeTrue();
+        HasColumn(db.Connection, "TrackedMovies", "ResetTorrentHashes").Should().BeTrue();
         GetUserTableNames(db.Connection).Should().Contain(MigrationRunner.HistoryTableName);
         GetAppliedUtcValues(db.Connection).Should().OnlyContain(value => IsRoundtripDateTime(value));
     }
@@ -100,7 +104,8 @@ public class MigrationRunnerTests
             "009_trackedepisodes_removed_upstream",
             "010_sourceitems_last_episode",
             "011_trackedepisodes_tmdb_episode_id",
-            "012_trackedepisodes_download_number");
+            "012_trackedepisodes_download_number",
+            "013_reset_torrent_hashes");
     }
 
     [Fact]

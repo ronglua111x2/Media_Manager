@@ -73,6 +73,15 @@ public sealed class TrackedEpisode
 
     public bool IsRemovedUpstream => RemovedUpstreamUtc is not null;
 
+    /// <summary>
+    /// Comma-separated, lower-case hashes of the torrents this episode was reset from ("Reset for redownload", migration 013).
+    /// Reconcile never adopts them for it again; read with <see cref="WasResetFrom"/> or
+    /// <see cref="media_management_app.Services.ResetTorrentHashList"/>.
+    /// </summary>
+    public string ResetTorrentHashes { get; set; } = string.Empty;
+
+    public bool WasResetFrom(string? hash) => media_management_app.Services.ResetTorrentHashList.Contains(ResetTorrentHashes, hash);
+
     public DateTime CreatedUtc { get; set; } = DateTime.UtcNow;
 
     public DateTime UpdatedUtc { get; set; } = DateTime.UtcNow;

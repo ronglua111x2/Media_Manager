@@ -937,7 +937,7 @@ public sealed class DatabaseService : IDatabaseService
                    SelectedPackCandidateFileSize, SelectedPackCandidateSeeders, SelectedPackCandidateQuality,
                    SelectedPackCandidateAudioCodec, SelectedPackCoveredSeasons, SelectedPackContentProfile, SelectedPackOwnerSeasonNumber,
                    PackTorrentHash, PackTorrentName, PackTorrentState, PackTorrentProgress, IsHidden,
-                   LastPackLinkTorrentHash, LastPackLinkUtc
+                   LastPackLinkTorrentHash, LastPackLinkUtc, ResetTorrentHashes
             FROM TrackedSeasons
             WHERE ShowId = $ShowId
             ORDER BY SeasonNumber;
@@ -972,7 +972,8 @@ public sealed class DatabaseService : IDatabaseService
                 LastPackLinkTorrentHash = reader.IsDBNull(21) ? null : reader.GetString(21),
                 LastPackLinkUtc = reader.IsDBNull(22)
                     ? null
-                    : DateTime.Parse(reader.GetString(22), null, System.Globalization.DateTimeStyles.RoundtripKind)
+                    : DateTime.Parse(reader.GetString(22), null, System.Globalization.DateTimeStyles.RoundtripKind),
+                ResetTorrentHashes = reader.IsDBNull(23) ? string.Empty : reader.GetString(23)
             });
         }
 
@@ -1522,6 +1523,48 @@ public sealed class DatabaseService : IDatabaseService
         WHERE EpisodeId = $Id AND TorrentHash = '' AND PendingValidationHash = '';
         """;
 
+    public void AddTrackedEpisodeResetTorrentHash(long episodeId, string torrentHash) =>
+        AddResetTorrentHash("TrackedEpisodes", "Id = $Id", torrentHash, ("$Id", episodeId));
+
+    public void AddTrackedSeasonResetTorrentHash(long showId, int seasonNumber, string torrentHash) =>
+        AddResetTorrentHash(
+            "TrackedSeasons",
+            "ShowId = $ShowId AND SeasonNumber = $SeasonNumber",
+            torrentHash,
+            ("$ShowId", showId),
+            ("$SeasonNumber", seasonNumber));
+
+    public void AddTrackedMovieResetTorrentHash(long movieId, string torrentHash) =>
+        AddResetTorrentHash("TrackedMovies", "Id = $Id", torrentHash, ("$Id", movieId));
+
+    /// <summary>Appends a hash to a ResetTorrentHashes list (migration 013) once, lower-case.</summary>
+    private void AddResetTorrentHash(string table, string where, string torrentHash, params (string Name, object Value)[] keys)
+    {
+        if (string.IsNullOrWhiteSpace(torrentHash))
+        {
+            return;
+        }
+
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            UPDATE {table}
+            SET ResetTorrentHashes = CASE
+                WHEN COALESCE(ResetTorrentHashes, '') = '' THEN $Hash
+                WHEN instr(',' || ResetTorrentHashes || ',', ',' || $Hash || ',') > 0 THEN ResetTorrentHashes
+                ELSE ResetTorrentHashes || ',' || $Hash END
+            WHERE {where};
+            """;
+        command.Parameters.AddWithValue("$Hash", ResetTorrentHashList.Normalize(torrentHash));
+        foreach (var (name, value) in keys)
+        {
+            command.Parameters.AddWithValue(name, value);
+        }
+
+        command.ExecuteNonQuery();
+    }
+
     public void DeleteTrackedEpisode(long episodeId)
     {
         using var connection = new SqliteConnection(_connectionString);
@@ -1556,7 +1599,7 @@ public sealed class DatabaseService : IDatabaseService
                    SelectedCandidateName, SelectedCandidateUrl, SelectedCandidatePlugin, SelectedCandidateFileSize,
                    SelectedCandidateSeeders, SelectedCandidateQuality, SelectedCandidateAudioCodec,
                    CreatedUtc, UpdatedUtc, Overview, VoteAverage, StillPath, UserRating, Thought, RemovedUpstreamUtc,
-                   TmdbEpisodeId, DownloadSeasonNumber, DownloadEpisodeNumber
+                   TmdbEpisodeId, DownloadSeasonNumber, DownloadEpisodeNumber, ResetTorrentHashes
             FROM TrackedEpisodes
             WHERE ShowId = $ShowId
             ORDER BY SeasonNumber, EpisodeNumber;
@@ -1983,7 +2026,8 @@ public sealed class DatabaseService : IDatabaseService
                    MinimumSeeders, Availability, WatchStatus, TorrentHash, TorrentName, TorrentState,
                    TorrentProgress, TorrentUpdatedUtc, SelectedCandidateName, SelectedCandidateUrl,
                    SelectedCandidatePlugin, SelectedCandidateFileSize, SelectedCandidateSeeders,
-                   SelectedCandidateQuality, SelectedCandidateAudioCodec, AlternativeTitlesJson, ExcludedAlternativeTitlesJson, CreatedUtc, UpdatedUtc, Rating, Thought, CartOverridesJson
+                   SelectedCandidateQuality, SelectedCandidateAudioCodec, AlternativeTitlesJson, ExcludedAlternativeTitlesJson, CreatedUtc, UpdatedUtc, Rating, Thought, CartOverridesJson,
+                   ResetTorrentHashes
             FROM TrackedMovies
             ORDER BY Title;
             """;
@@ -2758,6 +2802,7 @@ public sealed class DatabaseService : IDatabaseService
         EnsureColumn(connection, "TrackedSeasons", "IsHidden", "INTEGER NOT NULL DEFAULT 0");
         EnsureColumn(connection, "TrackedSeasons", "LastPackLinkTorrentHash", "TEXT NULL");
         EnsureColumn(connection, "TrackedSeasons", "LastPackLinkUtc", "TEXT NULL");
+        EnsureColumn(connection, "TrackedSeasons", "ResetTorrentHashes", "TEXT NOT NULL DEFAULT ''");
 
         using var episodes = connection.CreateCommand();
         episodes.CommandText = """
@@ -2810,6 +2855,7 @@ public sealed class DatabaseService : IDatabaseService
         EnsureColumn(connection, "TrackedEpisodes", "TmdbEpisodeId", "INTEGER NULL");
         EnsureColumn(connection, "TrackedEpisodes", "DownloadSeasonNumber", "INTEGER NULL");
         EnsureColumn(connection, "TrackedEpisodes", "DownloadEpisodeNumber", "INTEGER NULL");
+        EnsureColumn(connection, "TrackedEpisodes", "ResetTorrentHashes", "TEXT NOT NULL DEFAULT ''");
     }
 
     private static void InitializeTrackedMovies(SqliteConnection connection)
@@ -2849,6 +2895,7 @@ public sealed class DatabaseService : IDatabaseService
         EnsureColumn(connection, "TrackedMovies", "RecipeId", "TEXT NULL");
         EnsureColumn(connection, "TrackedMovies", "CartMaxCandidatesOverride", "INTEGER NULL");
         EnsureColumn(connection, "TrackedMovies", "CartOverridesJson", "TEXT NULL");
+        EnsureColumn(connection, "TrackedMovies", "ResetTorrentHashes", "TEXT NOT NULL DEFAULT ''");
         EnsureColumn(connection, "TrackedMovies", "SelectedCandidateName", "TEXT NULL");
         EnsureColumn(connection, "TrackedMovies", "SelectedCandidateUrl", "TEXT NULL");
         EnsureColumn(connection, "TrackedMovies", "SelectedCandidatePlugin", "TEXT NULL");
@@ -3090,7 +3137,8 @@ public sealed class DatabaseService : IDatabaseService
                 : null,
             TmdbEpisodeId = reader.FieldCount > 27 && !reader.IsDBNull(27) ? reader.GetInt32(27) : null,
             DownloadSeasonNumber = reader.FieldCount > 28 && !reader.IsDBNull(28) ? reader.GetInt32(28) : null,
-            DownloadEpisodeNumber = reader.FieldCount > 29 && !reader.IsDBNull(29) ? reader.GetInt32(29) : null
+            DownloadEpisodeNumber = reader.FieldCount > 29 && !reader.IsDBNull(29) ? reader.GetInt32(29) : null,
+            ResetTorrentHashes = reader.FieldCount > 30 && !reader.IsDBNull(30) ? reader.GetString(30) : string.Empty
         };
     }
 
@@ -3104,7 +3152,8 @@ public sealed class DatabaseService : IDatabaseService
                    MinimumSeeders, Availability, WatchStatus, TorrentHash, TorrentName, TorrentState,
                    TorrentProgress, TorrentUpdatedUtc, SelectedCandidateName, SelectedCandidateUrl,
                    SelectedCandidatePlugin, SelectedCandidateFileSize, SelectedCandidateSeeders,
-                   SelectedCandidateQuality, SelectedCandidateAudioCodec, AlternativeTitlesJson, ExcludedAlternativeTitlesJson, CreatedUtc, UpdatedUtc, Rating, Thought, CartOverridesJson
+                   SelectedCandidateQuality, SelectedCandidateAudioCodec, AlternativeTitlesJson, ExcludedAlternativeTitlesJson, CreatedUtc, UpdatedUtc, Rating, Thought, CartOverridesJson,
+                   ResetTorrentHashes
             FROM TrackedMovies
             WHERE {whereClause}
             LIMIT 1;
@@ -3148,7 +3197,8 @@ public sealed class DatabaseService : IDatabaseService
             UpdatedUtc = DateTime.Parse(reader.GetString(27), null, System.Globalization.DateTimeStyles.RoundtripKind),
             Rating = reader.IsDBNull(28) ? null : reader.GetDouble(28),
             Thought = reader.IsDBNull(29) ? null : reader.GetString(29),
-            CartOverridesJson = reader.IsDBNull(30) ? null : reader.GetString(30)
+            CartOverridesJson = reader.IsDBNull(30) ? null : reader.GetString(30),
+            ResetTorrentHashes = reader.FieldCount > 31 && !reader.IsDBNull(31) ? reader.GetString(31) : string.Empty
         };
     }
 
