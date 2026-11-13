@@ -42,11 +42,11 @@ public sealed class TorrentCandidateParseResult
 public static class TorrentCandidateParser
 {
     /// <summary>
-    /// "S3 - 13", "S4 - 17v2": one episode of a season as SubsPlease and Erai-raws name it. Not when an episode range
+    /// "S3 - 13", "S4 - 17v2", "Season 3 - 04": one episode of a season as SubsPlease, Erai-raws and Anime Time name it. Not when an episode range
     /// follows ("S4 - 01-12" is a batch of season 4), and not a year.
     /// </summary>
     internal const string SeasonDashEpisodePattern =
-        @"\bS(?<season3>\d{1,2})\s+-\s+(?!(?:19|20)\d{2}\b)(?<episode3>\d{2,4})(?:v\d{1,2})?\b(?!\s*(?:-|~|to)\s*\d)";
+        @"\b(?:S(?<season3>\d{1,2})|Season\s*(?<season3>[1-9]))\s+-\s+(?!(?:19|20)\d{2}\b)(?<episode3>\d{2,4})(?:v\d{1,2})?\b(?!\s*(?:-|~|to)\s*\d)";
 
     /// <summary>
     /// Season ranges: "S01-S03", "S1-3", "S01 - S03", "S1 to 3", "S1 - 3". A spaced dash before a number of two or more
@@ -66,7 +66,9 @@ public static class TorrentCandidateParser
     private static readonly Regex YearRangeRegex = new(@"\b(?<from>(?:19|20)\d{2})\s*(?:-|to)\s*(?<to>(?:19|20)\d{2})\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex SeasonRangeRegex = new(SeasonRangePattern, RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex SeasonDashEpisodeRegex = new(SeasonDashEpisodePattern, RegexOptions.IgnoreCase | RegexOptions.Compiled);
-    private static readonly Regex SeasonWordRangeRegex = new(@"\bSeasons?\s*(?<from>\d{1,3})(?:\s*(?:-|to)\s*(?<to>\d{1,3}))?(?!\s*\+)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    // "Seasons 1-3", "Season 1 - 3", "Season 1 to 10", "Seasons 1 - Season 3", "Season 02 - 04"; not "Season 3 - 04"
+    // (Anime Time's episode 4 of season 3).
+    private static readonly Regex SeasonWordRangeRegex = new(@"\bSeasons?\s*(?:(?<from>0\d)\s*(?:-|to)\s*(?<to>\d{1,3})|(?<from>\d{1,3})(?:(?:-|to)(?<to>\d{1,3})|\s*-\s*S(?:eason\s*)?(?<to>\d{1,3})|\s+(?:-|to)\s+(?<to>\d)(?!\d)|\s+to\s+(?<to>\d{1,3}))?)(?!\s*\+)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex SeasonPlusListRegex = new(
         @"\bSeasons?\s+(?<list>\d{1,3}(?:\s*\+\s*\d{1,3})+(?:\s*\+\s*(?:OVA|OVAs?|Specials?|Movies?))?)\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);

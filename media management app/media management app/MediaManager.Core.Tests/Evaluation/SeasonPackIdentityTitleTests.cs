@@ -21,6 +21,7 @@ public class SeasonPackIdentityTitleTests
     [InlineData("BoJack Horseman", "", "[47BT][马男波杰克 第六季]BoJack.Horseman.S06.1080p.WEB-DL.HEVC.AAC", 6)]
     [InlineData("Hunter x Hunter", "", "Hunter x Hunter (2011) S01 1080p", 1)]
     [InlineData("Kill la Kill", "", "Kill la Kill S01 1080p BD", 1)]
+    [InlineData("This Monster Wants to Eat Me", "", "【高清剧集网发布 www.TTHDTT.com】想吃掉我的非人少女[全13集][中文字幕].This.Monster.Wants.to.Eat.Me.S01.1080p.WEB-DL.AAC2.0.H.264-BlackTV", 1)]
     public void PackNamedByAnyTitle_IsAccepted(string title, string alternative, string name, int season)
     {
         var reject = Evaluate(title, alternative, name, season);
@@ -37,6 +38,10 @@ public class SeasonPackIdentityTitleTests
     [InlineData("Ascendance of a Bookworm", "Honzuki no Gekokujou", "[SubsPlease] Honzuki no Gekokujou S4 - 17 (1080p) [E56B1187] mkv", 4, CandidateRejectReason.WrongReleaseKind)]
     [InlineData("Ascendance of a Bookworm", "Honzuki no Gekokujou", "[Erai-raws] Honzuki no Gekokujou S4 - 17v2 [1080p CR WEB-DL AVC AAC][MultiSub][BC7A5FC1] mkv", 4, CandidateRejectReason.WrongReleaseKind)]
     [InlineData("My Teen Romantic Comedy SNAFU", "OreGairu", "[JAM CLUB] OreGairu 3rd season 03 (1080p)[RUS][DUB]", 3, CandidateRejectReason.WrongReleaseKind)]
+    // Episodes of another season or bracketed episode numbers, accepted as S04 packs before (shows-compare 13/11)
+    [InlineData("Ascendance of a Bookworm", "Honzuki no Gekokujou", "[Anime Time] Ascendance of a Bookworm Season 3 - 04 (1080p)[HEVC 10bit x265][AAC]", 4, CandidateRejectReason.WrongReleaseKind)]
+    [InlineData("Ascendance of a Bookworm", "Honzuki no Gekokujou", "[SweetSub][Honzuki no Gekokujou S04][17][WebRip][1080P][AVC 8bit]", 4, CandidateRejectReason.WrongReleaseKind)]
+    [InlineData("This Monster Wants to Eat Me", "", "【高清剧集网发布 www.BBHDTV.com】想吃掉我的非人少女[第02集][中文字幕].This.Monster.Wants.to.Eat.Me.S01.1080p.WEB-DL.AAC2.0.H.264-BlackTV", 1, CandidateRejectReason.WrongReleaseKind)]
     public void OtherShowOrSingleEpisode_IsRejected(string title, string alternative, string name, int season, CandidateRejectReason expected)
     {
         var reject = Evaluate(title, alternative, name, season);
@@ -57,6 +62,7 @@ public class SeasonPackIdentityTitleTests
     [InlineData("[SubsPlease] Hibike! Euphonium S3 - 13 (1080p)", 3, 13)]
     [InlineData("[Erai-raws] Honzuki no Gekokujou S4 - 17v2 [1080p CR WEB-DL AVC AAC]", 4, 17)]
     [InlineData("[Judas] Jujutsu Kaisen S3 - 01 [1080p]", 3, 1)]
+    [InlineData("[Anime Time] Ascendance of a Bookworm Season 3 - 04 (1080p)", 3, 4)]
     public void SeasonDashEpisode_IsThatEpisode(string name, int season, int episode)
     {
         var parsed = TorrentCandidateParser.Parse(name);
@@ -72,6 +78,8 @@ public class SeasonPackIdentityTitleTests
     [InlineData("Breaking Bad S1-3 1080p", new[] { 1, 2, 3 })]
     [InlineData("Breaking Bad S01 - S03 1080p", new[] { 1, 2, 3 })]
     [InlineData("Breaking Bad S1 - 3 1080p", new[] { 1, 2, 3 })]
+    [InlineData("The Legend of Korra Season 02 - 04 (720p) x264", new[] { 2, 3, 4 })]
+    [InlineData("Show Seasons 1-3 1080p", new[] { 1, 2, 3 })]
     public void SeasonRanges_StillCoverEverySeason(string name, int[] seasons)
     {
         TorrentCandidateParser.Parse(name).CoveredSeasons.Should().Equal(seasons);
