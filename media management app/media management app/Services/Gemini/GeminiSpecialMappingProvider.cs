@@ -59,7 +59,7 @@ public sealed class GeminiSpecialMappingProvider
 
 
     /// <summary>Version of the prompt and payload format; part of the cache key (PR-15).</summary>
-    public const int SpecialPromptVersion = 2;
+    public const int SpecialPromptVersion = 3;
 
     private const string SystemPrompt =
         """
@@ -73,13 +73,18 @@ public sealed class GeminiSpecialMappingProvider
           parentSeason 0 = unknown. localIndex = the number in the file name, 0 = none.
           patternCode: s = SnSnn (n-th special of season n), o = "OVA - N", 0 = S00Exx in the name, ? = no clear number.
         ctx.e TMDB S00 episodes: [[episode, airDate, title]].
-        ctx.fx episodes already given to other files: [[episode, fileName]]. Never use these.
+        ctx.fx episodes already given to other files: [[episode, fileName, parentSeason, localIndex, patternCode]]. Never use these episodes.
         ctx.free the only episode numbers you may use.
 
         Rules:
         - Map a file only when you are confident; leave it out otherwise.
         - Prefer the episodes in the window of the file's parentSeason.
-        - Within one season keep the order of localIndex: a higher localIndex never gets a lower episode.
+        - Keep the order. Files with the same parentSeason (0 included: a folder outside any season) and the same
+          patternCode are numbered in airing order: a higher localIndex never gets a lower episode. This also holds
+          against the files in ctx.fx with the same parentSeason and patternCode.
+          Example: OVA 1, OVA 2, OVA 3 in one folder may become 5, 6, 8 but never 5, 8, 6. If ctx.fx has OVA 2 = 6,
+          OVA 1 must get an episode below 6 and OVA 3 one above 6.
+        - If one file does not fit the order, leave that file out rather than breaking the order.
         - Use titleFromName against the TMDB titles when it has words.
         - Each candidateIndex and each episode at most once.
 

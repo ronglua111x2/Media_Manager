@@ -32,12 +32,12 @@ public static class SpecialMappingCompactJson
             var context = request.Context;
             var fixedPairs = request.Proposals
                 .Where(proposal => proposal.CandidateIndex >= 0 && proposal.CandidateIndex < context.Candidates.Count)
-                .Select(proposal => (Episode: proposal.ProposedS00E, File: context.Candidates[proposal.CandidateIndex].FileName))
+                .Select(proposal => (Episode: proposal.ProposedS00E, Candidate: context.Candidates[proposal.CandidateIndex]))
                 .ToList();
             var fixedEpisodes = fixedPairs.Select(pair => pair.Episode).ToHashSet();
 
             writer.WriteStartObject();
-            writer.WriteNumber("v", 2);
+            writer.WriteNumber("v", 3);
             writer.WritePropertyName("ctx");
             writer.WriteStartObject();
             writer.WriteString("t", context.ShowTitle);
@@ -94,11 +94,16 @@ public static class SpecialMappingCompactJson
 
             writer.WritePropertyName("fx");
             writer.WriteStartArray();
-            foreach (var (episode, file) in fixedPairs.OrderBy(pair => pair.Episode))
+            // v3: a fixed pair carries parentSeason, localIndex and patternCode too, so the order rule can be kept
+            // against the files the rules already placed (audit L2-03).
+            foreach (var (episode, candidate) in fixedPairs.OrderBy(pair => pair.Episode))
             {
                 writer.WriteStartArray();
                 writer.WriteNumberValue(episode);
-                writer.WriteStringValue(file);
+                writer.WriteStringValue(candidate.FileName);
+                writer.WriteNumberValue(candidate.ParentSeason ?? 0);
+                writer.WriteNumberValue(candidate.LocalIndex);
+                writer.WriteStringValue(ToPatternCode(candidate.NamingPattern));
                 writer.WriteEndArray();
             }
 

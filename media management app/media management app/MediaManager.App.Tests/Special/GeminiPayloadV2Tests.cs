@@ -28,7 +28,7 @@ public sealed class GeminiPayloadV2Tests
         Assert.NotNull(sent);
         using var document = JsonDocument.Parse(sent!);
         var root = document.RootElement;
-        Assert.Equal(2, root.GetProperty("v").GetInt32());
+        Assert.Equal(3, root.GetProperty("v").GetInt32());
         Assert.False(root.TryGetProperty("p", out _));
 
         var context = root.GetProperty("ctx");
@@ -42,6 +42,12 @@ public sealed class GeminiPayloadV2Tests
 
         var fixedEpisodes = context.GetProperty("fx").EnumerateArray().Select(pair => pair[0].GetInt32()).ToList();
         Assert.Equal(Enumerable.Range(1, 8), fixedEpisodes);
+        // v3: each fixed pair carries what the order rule needs (parentSeason, localIndex, patternCode).
+        var firstFixed = context.GetProperty("fx")[0];
+        Assert.Equal(5, firstFixed.GetArrayLength());
+        Assert.Equal(1, firstFixed[2].GetInt32());
+        Assert.Equal(1, firstFixed[3].GetInt32());
+        Assert.Equal("s", firstFixed[4].GetString());
         var free = context.GetProperty("free").EnumerateArray().Select(item => item.GetInt32()).ToList();
         Assert.DoesNotContain(free, episode => episode <= 8);
         Assert.Contains(9, free);
