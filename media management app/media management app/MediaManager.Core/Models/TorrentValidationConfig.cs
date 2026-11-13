@@ -24,6 +24,7 @@ public sealed class TorrentValidationConfig
         ".vbs", ".js", ".jar", ".ps1", ".psm1", ".psd1",
         ".dll", ".sys", ".drv", ".ocx", ".cpl",
         ".msi", ".app", ".dmg",
+        ".lnk", ".hta", ".wsf", ".wsh", ".vbe", ".jse", ".msc", ".reg", ".scf", ".chm", ".msix", ".appx", ".appinstaller",
         ".sh", ".bash", ".ksh", ".csh", ".run",
         ".py", ".pyc", ".pyw", ".pl",
         ".apk", ".deb", ".rpm", ".inf"

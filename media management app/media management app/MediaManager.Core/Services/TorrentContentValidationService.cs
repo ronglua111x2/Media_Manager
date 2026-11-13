@@ -12,8 +12,19 @@ public sealed class TorrentContentValidationService
     {
         ".nfo", ".txt", ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp",
         ".srt", ".ass", ".ssa", ".idx", ".sub", ".sup", ".sfv", ".md5",
-        ".url", ".lnk", ".m3u", ".cue"
+        ".url", ".m3u", ".cue"
     };
+
+    /// <summary>
+    /// Always dangerous, whatever the settings say (cross-review 2, user-approved): Windows shortcuts and script or
+    /// installer launchers run code when opened. settings.json files saved the DangerousExtensions list (without
+    /// .lnk), so changing the config default alone would not reach existing installs. ".url" (a web link) stays an
+    /// ignored extra.
+    /// </summary>
+    internal static readonly IReadOnlyList<string> AlwaysDangerousExtensions =
+    [
+        ".lnk", ".hta", ".wsf", ".wsh", ".vbe", ".jse", ".msc", ".reg", ".scf", ".chm", ".msix", ".appx", ".appinstaller"
+    ];
 
     private const int PackPayloadCount = 3;
 
@@ -254,6 +265,7 @@ public sealed class TorrentContentValidationService
     private static HashSet<string> GetDangerousExtensions(TorrentValidationConfig config)
     {
         return config.GetAllDangerousExtensions()
+            .Concat(AlwaysDangerousExtensions)
             .Select(e => e.StartsWith('.') ? e.ToLowerInvariant() : "." + e.ToLowerInvariant())
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
