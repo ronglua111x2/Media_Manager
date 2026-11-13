@@ -36,6 +36,70 @@ public class KickassSkTorrentIndexerTests
         movie.Leechers.Should().Be(15);
     }
 
+    private sealed class KickassSite(string search, string empty) : HttpMessageHandler
+    {
+        public List<string> DetailPages { get; } = [];
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var path = request.RequestUri!.AbsolutePath;
+            string body;
+            if (path.StartsWith("/search/", StringComparison.Ordinal))
+            {
+                body = path.EndsWith("/1/", StringComparison.Ordinal) ? search : empty;
+            }
+            else
+            {
+                lock (DetailPages)
+                {
+                    DetailPages.Add(path);
+                }
+
+                var hash = Convert.ToHexString(System.Security.Cryptography.SHA1.HashData(System.Text.Encoding.UTF8.GetBytes(path))).ToLowerInvariant();
+                body = $"<html><body><a class=\"kaGiantButton\" href=\"magnet:?xt=urn:btih:{hash}&amp;dn=x&amp;tr=udp%3A%2F%2Ftracker\">Magnet</a></body></html>";
+            }
+
+            return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new StringContent(body, System.Text.Encoding.UTF8, "text/html"),
+                RequestMessage = request
+            });
+        }
+    }
+
+    [Fact]
+    public async Task Kickass_OpensDetailPagesOnlyForRowsThatCouldMatter()
+    {
+        var site = new KickassSite(Fixture("kickass", "coherence.html"), Fixture("kickass", "empty.html"));
+        var governor = new IndexerRequestGovernor(TimeProvider.System, _ => new IndexerPolicy(1000, 2, TimeSpan.Zero, 1000));
+        var cache = new IndexerResponseCache();
+        var client = new HttpClient(site);
+        var orchestrator = new SearchOrchestrator(governor, (id, lane, budget) =>
+            new GovernedIndexerHttp(client, governor, cache, id, lane, budget.MaxGovernorWait, TimeSpan.FromMinutes(45), "test", budget.PerIndexer));
+
+        var outcome = await orchestrator.SearchAsync(
+            [new IndexerQuery("Coherence", media_management_app.Common.MediaKind.Movie)],
+            [new KickassIndexer()],
+            SearchLane.Interactive,
+            SearchBudget.Interactive,
+            CancellationToken.None,
+            row => row.FileUrl.StartsWith("magnet:", StringComparison.Ordinal) && row.FileName.Contains("1080p", StringComparison.Ordinal) && row.FileName.Contains("2013", StringComparison.Ordinal));
+
+        // Only the best-seeded rows the recipe could accept, at most three detail pages; the rest is dropped.
+        site.DetailPages.Should().HaveCount(SearchOrchestrator.MaxDetailLookups);
+        outcome.Results.Should().HaveCount(SearchOrchestrator.MaxDetailLookups);
+        outcome.Results.Should().OnlyContain(row => row.FileUrl.StartsWith("magnet:?xt=urn:btih:", StringComparison.Ordinal) && row.FileName.Contains("1080p"));
+        outcome.Indexers.Single().Requests.Should().Be(2 + SearchOrchestrator.MaxDetailLookups);
+    }
+
+    [Fact]
+    public void Kickass_DetailPageMagnet_IsRead()
+    {
+        KickassIndexer.ParseDetailMagnet("<a href=\"magnet:?xt=urn:btih:0123456789ABCDEF0123456789abcdef01234567&amp;dn=Coherence\">x</a>")
+            .Should().Be("magnet:?xt=urn:btih:0123456789ABCDEF0123456789abcdef01234567&dn=Coherence");
+        KickassIndexer.ParseDetailMagnet("<html>no magnet</html>").Should().BeNull();
+    }
+
     [Fact]
     public void Kickass_DecoyNoResultPage_ReturnsNoRows()
     {

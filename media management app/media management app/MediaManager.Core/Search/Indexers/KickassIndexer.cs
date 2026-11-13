@@ -7,15 +7,31 @@ namespace media_management_app.Search.Indexers;
 /// The search list has NO info-hash and NO magnet: each row only links to its detail page
 /// (<c>/&lt;slug&gt;-t&lt;id&gt;.html</c>) and to <c>/download/&lt;slug&gt;-t&lt;id&gt;.html</c>, which is another HTML page.
 /// The old qBittorrent plugin opened one detail page per row to read the magnet, which is why it was slow
-/// (median 60 s, sometimes hung). This indexer never does that: rows are returned with
-/// <see cref="IndexerResult.DetailsUrl"/> set and <see cref="IndexerResult.InfoHash"/> / <see cref="IndexerResult.MagnetUri"/>
-/// null, so the app skips them until a cheap hash source exists.
+/// (median 60 s, sometimes hung). This indexer returns rows with <see cref="IndexerResult.DetailsUrl"/> set and
+/// <see cref="IndexerResult.InfoHash"/> / <see cref="IndexerResult.MagnetUri"/> null; the orchestrator then opens the
+/// detail pages of at most a few rows the recipe could accept (<see cref="IDetailPageResolver"/>, governed and counted
+/// like any request) and drops the rest, which could not be added anyway.
 /// "No results" is not a message: the site answers an unknown query with a decoy torrent detail page
 /// (<c>id="mainDetailsTable"</c>, a made-up torrent named after the query, unrelated magnet). That page is treated
 /// as an empty result and its magnet is never read.
 /// </summary>
-public sealed partial class KickassIndexer(string baseUrl = "https://katcr.to") : ITorrentIndexer
+public sealed partial class KickassIndexer(string baseUrl = "https://katcr.to") : ITorrentIndexer, IDetailPageResolver
 {
+    public async Task<string?> ResolveMagnetAsync(string detailsUrl, IIndexerHttp http, CancellationToken cancellationToken)
+    {
+        var response = await http.GetAsync(new Uri(detailsUrl), cancellationToken);
+        return ParseDetailMagnet(response.Body);
+    }
+
+    /// <summary>The first magnet link with a valid info-hash on a detail page.</summary>
+    public static string? ParseDetailMagnet(string html)
+    {
+        var match = MagnetRegex().Match(html);
+        return match.Success && IndexerResultNormalizer.IsValidInfoHash(match.Groups["hash"].Value)
+            ? IndexerParsing.Decode(match.Groups["magnet"].Value)
+            : null;
+    }
+
     private const string ResultTableMarker = "class=\"data frontPageWidget\"";
 
     public string Id => "kickass";
@@ -112,6 +128,9 @@ public sealed partial class KickassIndexer(string baseUrl = "https://katcr.to") 
 
         return results;
     }
+
+    [GeneratedRegex(@"href=""(?<magnet>magnet:\?xt=urn:btih:(?<hash>[0-9a-fA-F]{40})[^""]*)""", RegexOptions.IgnoreCase)]
+    private static partial Regex MagnetRegex();
 
     [GeneratedRegex(@"<tr\s+class=""(?:odd|even)""\s*>", RegexOptions.IgnoreCase)]
     private static partial Regex RowStartRegex();

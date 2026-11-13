@@ -21,6 +21,16 @@ public interface ITorrentIndexer
     Task<IReadOnlyList<IndexerResult>> SearchAsync(IndexerQuery query, IIndexerHttp http, CancellationToken cancellationToken);
 }
 
+/// <summary>
+/// An indexer whose search list has no info-hash (Kickass): the magnet is on each row's detail page. The orchestrator
+/// opens detail pages only for the few rows the caller says could be accepted, through the same governed HTTP.
+/// </summary>
+public interface IDetailPageResolver
+{
+    /// <summary>The magnet link of a detail page, or null when the page has none.</summary>
+    Task<string?> ResolveMagnetAsync(string detailsUrl, IIndexerHttp http, CancellationToken cancellationToken);
+}
+
 /// <summary>The only way an indexer talks to the network.</summary>
 public interface IIndexerHttp
 {

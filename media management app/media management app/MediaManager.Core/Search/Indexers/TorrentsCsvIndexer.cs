@@ -5,11 +5,15 @@ namespace media_management_app.Search.Indexers;
 /// <summary>
 /// Torrents-CSV JSON API (https://torrents-csv.com/service/search?q=…&amp;size=…, no key). An open
 /// database of scraped torrents with info-hash, size, seeders, leechers and creation time.
-/// "No results" is <c>{"torrents":[],"next":null}</c>.
+/// "No results" is <c>{"torrents":[],"next":null}</c>. The server answers at most 10 rows per request whatever
+/// <c>size</c> asks, with a <c>next</c> cursor that <c>&amp;after=&lt;next&gt;</c> continues (probe 13/11/2026: the
+/// follow-up page is not a repeat of the first); up to <see cref="MaxPages"/> pages are read (07c NS-30).
 /// </summary>
 public sealed class TorrentsCsvIndexer(string baseUrl = "https://torrents-csv.com") : ITorrentIndexer
 {
     private const int PageSize = 100;
+    private const int ServerPageRows = 10;
+    private const int MaxPages = 3;
 
     public string Id => "torrents-csv";
 
@@ -19,9 +23,44 @@ public sealed class TorrentsCsvIndexer(string baseUrl = "https://torrents-csv.co
 
     public async Task<IReadOnlyList<IndexerResult>> SearchAsync(IndexerQuery query, IIndexerHttp http, CancellationToken cancellationToken)
     {
-        var uri = new Uri($"{baseUrl.TrimEnd('/')}/service/search?q={Uri.EscapeDataString(query.Text)}&size={PageSize}");
-        var response = await http.GetAsync(uri, cancellationToken);
-        return Parse(response.Body);
+        var results = new List<IndexerResult>();
+        string? after = null;
+        for (var page = 1; page <= MaxPages; page++)
+        {
+            var uri = new Uri($"{baseUrl.TrimEnd('/')}/service/search?q={Uri.EscapeDataString(query.Text)}&size={PageSize}{(after is null ? "" : $"&after={Uri.EscapeDataString(after)}")}");
+            var response = await IndexerParsing.NextPageAsync(() => http.GetAsync(uri, cancellationToken), page == 1);
+            if (response is null)
+            {
+                break;
+            }
+
+            var rows = Parse(response.Body);
+            results.AddRange(rows);
+            after = NextCursor(response.Body);
+            if (after is null || rows.Count < ServerPageRows)
+            {
+                break;
+            }
+        }
+
+        return results;
+    }
+
+    /// <summary>The <c>next</c> cursor of a response (a number or a string), or null at the end.</summary>
+    public static string? NextCursor(string json)
+    {
+        using var document = JsonDocument.Parse(json);
+        if (document.RootElement.ValueKind != JsonValueKind.Object || !document.RootElement.TryGetProperty("next", out var next))
+        {
+            return null;
+        }
+
+        return next.ValueKind switch
+        {
+            JsonValueKind.Number => next.GetRawText(),
+            JsonValueKind.String when !string.IsNullOrWhiteSpace(next.GetString()) => next.GetString(),
+            _ => null
+        };
     }
 
     public static IReadOnlyList<IndexerResult> Parse(string json)

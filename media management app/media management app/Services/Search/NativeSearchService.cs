@@ -378,7 +378,9 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
             NativeIndexerCatalog.Create(settings),
             lane,
             budget,
-            cancellationToken);
+            cancellationToken,
+            // Kickass rows carry no hash: only rows the recipe could accept get their detail page opened.
+            subject?.Evaluate is { } evaluate ? row => evaluate(row).IsAccepted : null);
         _logger.Info($"[Search] native query='{query}' kind={kind}{(isAnime ? " anime" : "")} lane={lane}: {outcome.Summary}", LogTarget.File | LogTarget.Console);
         // Without the IMDb id EZTV (IMDb-only) ran no query but still says "ok": do not memoize that answer.
         return new NativeOutcome(outcome.Results, IsComplete(outcome.Indexers) && !imdbFailed, outcome.Indexers);

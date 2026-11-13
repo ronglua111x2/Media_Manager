@@ -130,12 +130,21 @@ public sealed class SearchOrchestrator(IndexerRequestGovernor governor, Func<str
         _ => IndexerMediaKinds.TvEpisode
     } | (isAnime ? IndexerMediaKinds.Anime : IndexerMediaKinds.None);
 
+    /// <summary>Detail pages one indexer may open per search to read magnets (<see cref="IDetailPageResolver"/>).</summary>
+    public const int MaxDetailLookups = 3;
+
+    /// <param name="couldMatter">
+    /// For indexers without hashes on their list (<see cref="IDetailPageResolver"/>): whether a row, given a placeholder
+    /// magnet, would be accepted by the recipe. Only those rows (best seeded first, at most
+    /// <see cref="MaxDetailLookups"/>) get their detail page opened; rows without a magnet are dropped.
+    /// </param>
     public async Task<OrchestratedSearch> SearchAsync(
         IReadOnlyList<IndexerQuery> queries,
         IReadOnlyList<ITorrentIndexer> indexers,
         SearchLane lane,
         SearchBudget budget,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<TorrentSearchResult, bool>? couldMatter = null)
     {
         var total = Stopwatch.StartNew();
         var distinct = queries
@@ -170,7 +179,7 @@ public sealed class SearchOrchestrator(IndexerRequestGovernor governor, Func<str
                 continue;
             }
 
-            runs.Add(RunIndexerAsync(indexer, distinct, lane, budget, overall.Token, cancellationToken));
+            runs.Add(RunIndexerAsync(indexer, distinct, lane, budget, overall.Token, cancellationToken, couldMatter));
         }
 
         var results = await Task.WhenAll(runs);
@@ -219,13 +228,80 @@ public sealed class SearchOrchestrator(IndexerRequestGovernor governor, Func<str
         };
     }
 
+    /// <summary>
+    /// Opens the detail pages of the rows that could be accepted (best seeded first, at most
+    /// <see cref="MaxDetailLookups"/>) and puts their magnet in place of the page link; every row still without a magnet
+    /// is dropped: a detail page is not something qBittorrent can add.
+    /// </summary>
+    private static async Task<List<TorrentSearchResult>> ResolveDetailRowsAsync(
+        IDetailPageResolver resolver,
+        List<TorrentSearchResult> rows,
+        IIndexerHttp http,
+        Func<TorrentSearchResult, bool>? couldMatter,
+        CancellationToken cancellationToken)
+    {
+        var resolved = new List<TorrentSearchResult>(rows.Count);
+        var lookups = 0;
+        foreach (var row in rows.OrderByDescending(row => row.Seeders))
+        {
+            if (row.FileUrl.StartsWith("magnet:", StringComparison.OrdinalIgnoreCase))
+            {
+                resolved.Add(row);
+                continue;
+            }
+
+            var page = string.IsNullOrWhiteSpace(row.DescriptionUrl) ? row.FileUrl : row.DescriptionUrl;
+            if (couldMatter is null || lookups >= MaxDetailLookups || !Uri.IsWellFormedUriString(page, UriKind.Absolute) ||
+                !couldMatter(WithUrl(row, IndexerResultNormalizer.BuildMagnet(PlaceholderHash(page), row.FileName))))
+            {
+                continue;
+            }
+
+            lookups++;
+            string? magnet;
+            try
+            {
+                magnet = await resolver.ResolveMagnetAsync(page, http, cancellationToken);
+            }
+            catch (IndexerSearchCapException)
+            {
+                break;
+            }
+
+            http.ReportParsed(magnet is not null);
+            if (magnet is not null)
+            {
+                resolved.Add(WithUrl(row, magnet));
+            }
+        }
+
+        return resolved;
+    }
+
+    private static string PlaceholderHash(string seed) =>
+        Convert.ToHexString(System.Security.Cryptography.SHA1.HashData(System.Text.Encoding.UTF8.GetBytes(seed))).ToLowerInvariant();
+
+    private static TorrentSearchResult WithUrl(TorrentSearchResult row, string url) => new()
+    {
+        FileName = row.FileName,
+        FileSize = row.FileSize,
+        FileUrl = url,
+        DescriptionUrl = row.DescriptionUrl,
+        Seeders = row.Seeders,
+        Leechers = row.Leechers,
+        SeedersUnknown = row.SeedersUnknown,
+        EngineName = row.EngineName,
+        SiteUrl = row.SiteUrl
+    };
+
     private async Task<(IndexerRunTelemetry, List<TorrentSearchResult>)> RunIndexerAsync(
         ITorrentIndexer indexer,
         IReadOnlyList<IndexerQuery> queries,
         SearchLane lane,
         SearchBudget budget,
         CancellationToken overallToken,
-        CancellationToken callerToken)
+        CancellationToken callerToken,
+        Func<TorrentSearchResult, bool>? couldMatter = null)
     {
         var watch = Stopwatch.StartNew();
         var rows = new List<TorrentSearchResult>();
@@ -256,6 +332,11 @@ public sealed class SearchOrchestrator(IndexerRequestGovernor governor, Func<str
                     .Select(row => IndexerResultNormalizer.ToSearchResult(
                         row,
                         indexer.Capabilities.IsMetaIndexer ? IndexerResultNormalizer.EngineNameFor(row, indexer.EngineName) : indexer.EngineName)));
+            }
+
+            if (indexer is IDetailPageResolver resolver)
+            {
+                rows = await ResolveDetailRowsAsync(resolver, rows, http, couldMatter, overallToken);
             }
         }
         catch (OperationCanceledException) when (callerToken.IsCancellationRequested)

@@ -65,6 +65,42 @@ public class MovieGeneralIndexerTests
         first.IndexerId.Should().Be("torrents-csv");
     }
 
+    private sealed class ScriptedHttp(Func<Uri, string> body) : IIndexerHttp
+    {
+        public List<Uri> Requests { get; } = [];
+
+        public Task<IndexerHttpResponse> GetAsync(Uri uri, CancellationToken cancellationToken)
+        {
+            Requests.Add(uri);
+            return Task.FromResult(new IndexerHttpResponse(200, body(uri), "application/json", uri));
+        }
+
+        public Task<IndexerHttpResponse> PostJsonAsync(Uri uri, string json, CancellationToken cancellationToken) => GetAsync(uri, cancellationToken);
+    }
+
+    [Fact]
+    public async Task TorrentsCsv_FollowsTheNextCursor_WhileThePageIsFull()
+    {
+        const string secondPage = """{"torrents":[{"infohash":"1111111111111111111111111111111111111111","name":"Coherence 2013 720p","size_bytes":1,"created_unix":1,"seeders":3,"leechers":0}],"next":null}""";
+        var http = new ScriptedHttp(uri => uri.Query.Contains("after=1009213", StringComparison.Ordinal) ? secondPage : Fixture("torrents-csv", "coherence.json"));
+
+        var rows = await new TorrentsCsvIndexer().SearchAsync(new IndexerQuery("Coherence", media_management_app.Common.MediaKind.Movie), http, CancellationToken.None);
+
+        rows.Should().HaveCount(11);
+        http.Requests.Should().HaveCount(2);
+        http.Requests[1].Query.Should().Contain("after=1009213");
+    }
+
+    [Fact]
+    public async Task Apibay_SearchesTheVideoCategory()
+    {
+        var http = new ScriptedHttp(_ => Fixture("apibay", "empty.json"));
+
+        await new ApibayIndexer().SearchAsync(new IndexerQuery("Coherence", media_management_app.Common.MediaKind.Movie), http, CancellationToken.None);
+
+        http.Requests.Single().Query.Should().EndWith("&cat=200");
+    }
+
     [Fact]
     public void TorrentsCsv_Empty_ReturnsNoRows()
     {
