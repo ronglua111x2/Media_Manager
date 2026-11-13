@@ -68,6 +68,13 @@ public class MovieReleaseTitleTests
     [InlineData("Kill.Bill.Volume.1.2004.1080p.BluRay.x264-GROUP", "Kill Bill: Vol. 1")]
     [InlineData("Blade.Runner.H.264.2018.1080p", "Blade Runner")]
     [InlineData("Dune.Extended.Cut.1080p.WEB-DL-GROUP", "Dune")]
+    // Unbracketed group as one CamelCase word before the title, or glued after it (2026-11-13 follow-up, real rows)
+    [InlineData("AnimeKaizoku Kimi no Na wa Your Name 1080p mkv", "Your Name.|Kimi no Na wa.")]
+    [InlineData("LoliHouse Kimi no Na wa BDRip 1920x1080 AVC yuv420p8 AAC PGS chs eng jpn", "Your Name.|Kimi no Na wa.")]
+    [InlineData("Chou.Kaguya.hime.GoLTFilm.1080p.mkv", "Cosmic Princess Kaguya!|Chou Kaguya-hime!")]
+    [InlineData("[UHA-WINGS][Liz to Aoi Tori][BDRip 1920x1080 x264 FLAC][SC_JP].mkv", "Liz and the Blue Bird|Liz to Aoi Tori")]
+    [InlineData("[Airota][Liz and the Blue Bird_Libretto ver.][Movie][BDRip_1080p][x264_AAC][CHS].mp4", "Liz and the Blue Bird|Liz to Aoi Tori")]
+    [InlineData("Kimi.no.na.wa.A.K.A.Your.Name.1080p.BluRay", "Your Name.|Kimi no Na wa.")]
     public void SameFilm_IsAccepted(string name, string variants)
     {
         Match(name, variants).Should().BeTrue();
@@ -96,6 +103,10 @@ public class MovieReleaseTitleTests
     [InlineData("The.Twilight.Saga.New.Moon.2009.1080p.BluRay.x264-GROUP", "Twilight")]
     [InlineData("Star.Wars.Holiday.Special.1978.1080p.WEB-DL-GROUP", "Star Wars")]
     [InlineData("Detective.Conan.The.Black.Iron.Submarine.2023.1080p.BluRay.x264-GROUP", "Detective Conan: The Million-dollar Pentagram")]
+    // Two films in the bracket that holds the title; sequel words are not a CamelCase group
+    [InlineData("[bilibili][Kimi no Na wa  X Tenki no Ko][1080P+][2 0][JPN,CHN][FLV]", "Your Name.|Kimi no Na wa.")]
+    [InlineData("Dune.PartTwo.1080p.WEB-DL", "Dune")]
+    [InlineData("Real Oppenheimer 1080p WEB-DL", "Oppenheimer")]
     public void AnotherFilm_IsRejected(string name, string variants)
     {
         Match(name, variants).Should().BeFalse();
@@ -110,6 +121,12 @@ public class MovieReleaseTitleTests
     [InlineData("To End All War: Oppenheimer & the Atomic Bomb (2023) [1080p] [web] [YTS]", "Oppenheimer", false)]
     [InlineData("Oppenheimer The Real Story 2023 1080p WEBRip DDP5 1 x265 10bit-G", "Oppenheimer", false)]
     [InlineData("Oppenheimer.2023.IMAX.1080p.BluRay.x264-GROUP", "Oppenheimer", true)]
+    // Titles of one or two words: what precedes them is checked even when the year matches
+    [InlineData("Taxi Whats Your Name 2016 VIETNAMESE ENSUBBED 1080p WEBRip x264", "Your Name.|Kimi no Na wa.", false)]
+    [InlineData("Burn Your Name 2016 1080p WEBRip x264-RARBG", "Your Name.|Kimi no Na wa.", false)]
+    [InlineData("Skutečný Oppenheimer / The Real Oppenheimer (2023)(CZ,HU)[HDTV][1080i]", "Oppenheimer", false)]
+    [InlineData("XTC Kimi no Na wa 2016 1080p HEVC 5FF69950 mkv", "Your Name.|Kimi no Na wa.", true)]
+    [InlineData("L'ultima missione Project Hail Mary (2026) WEBRip 1080p x264 EAC3 ITA ENG SUB ITA", "Project Hail Mary", true)]
     public void SameYear_ChecksTitleAndSuffixOnly(string name, string variants, bool expected)
     {
         MovieReleaseTitle.MatchesTitle(name, variants.Split('|'), ignorePrefix: true).Should().Be(expected);

@@ -35,7 +35,7 @@ public static partial class MovieReleaseTitle
         // articles and "movie"
         "the", "a", "an", "movie", "film", "gekijouban", "gekijoban", "eiga", "anime",
         // editions
-        "extended", "remastered", "remaster", "restored", "unrated", "uncut", "uncensored", "censored", "directors",
+        "extended", "extend", "remastered", "remaster", "restored", "unrated", "uncut", "uncensored", "censored", "directors",
         "director", "cut", "theatrical", "imax", "enhanced", "edition", "special", "collectors", "collection",
         "criterion", "proper", "repack", "rerip", "internal", "limited", "complete", "hybrid", "dc", "se", "version",
         "ver", "anniversary", "ultimate", "final", "open", "matte", "colorized", "redux", "3d", "sbs", "hsbs", "hou",
@@ -59,7 +59,8 @@ public static partial class MovieReleaseTitle
         "studio", "ghibli", "disney", "disneys", "pixar", "pixars", "dreamworks", "marvel", "marvels", "dc", "netflix"
     };
 
-    private sealed record Token(string Text, bool Bracketed, int Segment, bool Possessive);
+    /// <param name="BracketGroup">Which top-level bracket the token sits in (-1 outside brackets).</param>
+    private sealed record Token(string Text, bool Bracketed, int Segment, bool Possessive, bool GroupLike, int BracketGroup);
 
     /// <summary>
     /// True when <paramref name="releaseName"/> names the film of one of <paramref name="titleVariants"/> (see the class
@@ -68,7 +69,9 @@ public static partial class MovieReleaseTitle
     /// <param name="ignorePrefix">
     /// For releases whose year already matches: only the title itself and what follows it are checked (a same-year
     /// sequel such as "The Matrix Revolutions" for "The Matrix Reloaded"); words before it are not, because group
-    /// tags and site names there are common and the year already confirms the film.
+    /// tags, site names and titles in other languages ("L'ultima missione Project Hail Mary") are common there and the
+    /// year confirms the film. Except for titles of one or two words: those are what other films' names contain
+    /// ("Taxi Whats Your Name", "Burn Your Name" for "Your Name.", "The Real Oppenheimer"), so their prefix is checked.
     /// </param>
     public static bool MatchesTitle(string? releaseName, IReadOnlyList<string> titleVariants, bool ignorePrefix = false)
     {
@@ -99,11 +102,15 @@ public static partial class MovieReleaseTitle
     /// </summary>
     private static List<Token> Tokenize(string name)
     {
+        // "Kimi.no.na.wa.A.K.A.Your.Name": a dotted "A.K.A" separates names like "aka".
+        name = DottedAka().Replace(name, " aka ");
         var tokens = new List<Token>();
         var current = new StringBuilder();
         var depth = 0;
         var segment = 0;
         var possessive = false;
+        var bracketGroup = -1;
+        var bracketCount = 0;
 
         void Flush()
         {
@@ -112,7 +119,8 @@ public static partial class MovieReleaseTitle
                 return;
             }
 
-            var text = TitleNormalizer.NormalizeToken(current.ToString());
+            var raw = current.ToString();
+            var text = TitleNormalizer.NormalizeToken(raw);
             current.Clear();
             if (text.Length == 0)
             {
@@ -125,7 +133,7 @@ public static partial class MovieReleaseTitle
                 return;
             }
 
-            tokens.Add(new Token(text, depth > 0, segment, possessive));
+            tokens.Add(new Token(text, depth > 0, segment, possessive, depth == 0 && IsGroupLike(raw), depth > 0 ? bracketGroup : -1));
             possessive = false;
         }
 
@@ -160,6 +168,11 @@ public static partial class MovieReleaseTitle
             switch (c)
             {
                 case '[' or '(' or '{' or '【' or '「' or '『' or '（' or '［':
+                    if (depth == 0)
+                    {
+                        bracketGroup = bracketCount++;
+                    }
+
                     depth++;
                     break;
                 case ']' or ')' or '}' or '】' or '」' or '』' or '）' or '］':
@@ -219,7 +232,8 @@ public static partial class MovieReleaseTitle
                 continue;
             }
 
-            if ((ignorePrefix || PrefixIsAllowed(tokens, start, titleWords)) && SuffixIsAllowed(tokens, end, last, titleWords))
+            var checkPrefix = !ignorePrefix || variant.Count(word => !OptionalTitleWords.Contains(word)) <= 2;
+            if ((!checkPrefix || PrefixIsAllowed(tokens, start, titleWords)) && SuffixIsAllowed(tokens, end, last, titleWords))
             {
                 return true;
             }
@@ -323,11 +337,17 @@ public static partial class MovieReleaseTitle
             return true;
         }
 
-        // An unbracketed release group at the start ("AnimeKaizoku Your Name") cannot be told from a real word
-        // ("Skutecny Oppenheimer"), so it is refused: such names are rare and usually carry a bracketed twin.
+        // An unbracketed release group at the very start, written as one CamelCase word ("AnimeKaizoku Kimi no Na wa"):
+        // real words before a title ("Skutecny Oppenheimer", "The Real Oppenheimer", "Call Me by Your Name") are not
+        // written that way (audit 07c §6.1, 2026-11-13).
+        if (prefixStart == 0 && start == 1 && tokens[0].GroupLike)
+        {
+            return true;
+        }
+
         for (var i = prefixStart; i < start; i++)
         {
-            if (!IsHarmless(tokens, i, titleWords) && !PrefixWords.Contains(tokens[i].Text) && !IsYear(tokens[i].Text))
+            if (!IsHarmless(tokens, i, titleWords, tokens[start].BracketGroup) && !PrefixWords.Contains(tokens[i].Text) && !IsYear(tokens[i].Text))
             {
                 return false;
             }
@@ -341,7 +361,15 @@ public static partial class MovieReleaseTitle
         var segment = tokens[last].Segment;
         for (var i = last + 1; i < end && tokens[i].Segment == segment; i++)
         {
-            if (!IsHarmless(tokens, i, titleWords))
+            // A release group glued after the title, right before the quality/year marker that ends the title
+            // ("Chou.Kaguya.hime.GoLTFilm.1080p.mkv"); sequel words ("Two", "II", "Fever") are not CamelCase, and a
+            // CamelCase word that starts like one ("PartTwo") is not a group.
+            if (tokens[i].GroupLike && i == end - 1 && end < tokens.Count && !SequelStart().IsMatch(tokens[i].Text))
+            {
+                continue;
+            }
+
+            if (!IsHarmless(tokens, i, titleWords, tokens[last].BracketGroup))
             {
                 return false;
             }
@@ -350,17 +378,49 @@ public static partial class MovieReleaseTitle
         return true;
     }
 
-    /// <summary>A word that cannot turn the title into another film.</summary>
-    private static bool IsHarmless(List<Token> tokens, int i, HashSet<string> titleWords)
+    /// <summary>
+    /// A release group written as one CamelCase word ("AnimeKaizoku", "GoLTFilm"): a lower-case letter followed by an
+    /// upper-case one inside the word. Ordinary title words ("Real", "Two", "II") never are.
+    /// </summary>
+    private static bool IsGroupLike(string raw)
+    {
+        if (raw.Length < 5)
+        {
+            return false;
+        }
+
+        for (var i = 1; i < raw.Length; i++)
+        {
+            if (raw[i - 1] is >= 'a' and <= 'z' && raw[i] is >= 'A' and <= 'Z')
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// A word that cannot turn the title into another film. Bracketed text is metadata, except inside the bracket that
+    /// holds the title itself (<paramref name="titleBracketGroup"/>): "[Kimi no Na wa X Tenki no Ko]" is two films.
+    /// </summary>
+    private static bool IsHarmless(List<Token> tokens, int i, HashSet<string> titleWords, int titleBracketGroup = -1)
     {
         var token = tokens[i];
         var text = token.Text;
-        if (token.Bracketed || titleWords.Contains(text) || TagWords.Contains(text) || IsNonLatin(text))
+        var metadataBracket = token.Bracketed && (titleBracketGroup < 0 || token.BracketGroup != titleBracketGroup);
+        if (metadataBracket || titleWords.Contains(text) || TagWords.Contains(text) || IsNonLatin(text))
         {
             return true;
         }
 
         if (VersionOrOrdinal().IsMatch(text) || LanguageCombo().IsMatch(text))
+        {
+            return true;
+        }
+
+        // The name of an edition: "Libretto ver.", "Extend ver.", "Snyder Cut".
+        if (i + 1 < tokens.Count && tokens[i + 1].Text is "ver" or "version" or "edition" or "cut")
         {
             return true;
         }
@@ -375,6 +435,12 @@ public static partial class MovieReleaseTitle
 
     private static bool IsYear(string text) =>
         text.Length == 4 && (text.StartsWith("19", StringComparison.Ordinal) || text.StartsWith("20", StringComparison.Ordinal)) && text.All(char.IsDigit);
+
+    [GeneratedRegex(@"(?<![A-Za-z])A\.K\.A(?:\.|(?![A-Za-z]))", RegexOptions.IgnoreCase)]
+    private static partial Regex DottedAka();
+
+    [GeneratedRegex(@"^(part|pt|vol|chapter|chap|book|episode|season|the|two|three|four|ii|iii|iv|\d)")]
+    private static partial Regex SequelStart();
 
     [GeneratedRegex(@"^(v\d{1,2}|\d{1,3}(st|nd|rd|th))$")]
     private static partial Regex VersionOrOrdinal();
