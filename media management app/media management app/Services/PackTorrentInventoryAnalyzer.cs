@@ -421,7 +421,7 @@ public static class PackTorrentInventoryAnalyzer
                 // A restart is part 2 numbered from 1 again inside the folder's own season. Files that absolute
                 // numbering placed in the next TMDB season (where part 2 is its own season) are not (audit L1-L6).
                 var restarts = linked.Any(mainLinked.Contains) ||
-                               linked.Any(item => item.SeasonNumber == group.SeasonNumber && item.Episode == 1);
+                               linked.Any(item => item.SeasonNumber == partSeason && item.Episode == 1);
                 foreach (var (path, resolution) in partResolutions)
                 {
                     resolutions[path] = restarts

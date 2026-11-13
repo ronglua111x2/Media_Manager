@@ -224,6 +224,84 @@ public class PackScenarioTests
         }
     }
 
+    // Audit R2-B-01 A: TMDB S2 has 24 episodes, the release continues from S1 (12): "- 13".."- 36" are S02E01..E24.
+    // Per-file mapping kept "- 13".."- 24" as their own numbers and counted "- 25".."- 36" onto the same episodes.
+    [Fact]
+    public void AbsoluteSeasonTwo_ContinuedNumbering_LongSeason_AllCounted()
+    {
+        var inventory = PackScenario.Run(Scenarios["abs-s2-continued-long"]);
+
+        for (var absolute = 13; absolute <= 36; absolute++)
+        {
+            PackScenario.AssertRegular(inventory, $"Show/Season 2/[Group] Show - {absolute:00} [1080p].mkv", 2, absolute - 12);
+        }
+    }
+
+    // R2-B-01 B: TMDB S2 = 13, the pack holds "- 13".."- 24" so far. "- 13" is S02E01, not S02E13.
+    [Fact]
+    public void AbsoluteSeasonTwo_ContinuedNumbering_PartialSeason_AllCounted()
+    {
+        var inventory = PackScenario.Run(Scenarios["abs-s2-continued-partial"]);
+
+        for (var absolute = 13; absolute <= 24; absolute++)
+        {
+            PackScenario.AssertRegular(inventory, $"Show/Season 2/[Group] Show - {absolute:00} [1080p].mkv", 2, absolute - 12);
+        }
+    }
+
+    // R2-B-01 C: numbered from 1 with a 13th bonus file: "- 13" is not counted onto S02E01.
+    [Fact]
+    public void AbsoluteSeasonTwo_SeasonRelativeWithBonus_KeepsOwnNumbers()
+    {
+        var inventory = PackScenario.Run(Scenarios["abs-s2-relative-bonus"]);
+
+        for (var episode = 1; episode <= 12; episode++)
+        {
+            PackScenario.AssertRegular(inventory, $"Show/Season 2/[Group] Show - {episode:00} [1080p].mkv", 2, episode);
+        }
+
+        Assert.Equal(PackFileClassification.Skipped, PackScenario.Entry(inventory, "Show/Season 2/[Group] Show - 13 [1080p].mkv").Classification);
+    }
+
+    // R2-B-06: one bonus file past TMDB's last episode no longer holds back an aligned season folder.
+    [Fact]
+    public void AbsoluteSeasonTwo_ContinuedNumberingWithBonus_OnlyTheBonusIsSkipped()
+    {
+        var inventory = PackScenario.Run(Scenarios["abs-s2-continued-bonus"]);
+
+        for (var absolute = 13; absolute <= 24; absolute++)
+        {
+            PackScenario.AssertRegular(inventory, $"Show/Season 2/[Group] Show - {absolute:00} [1080p].mkv", 2, absolute - 12);
+        }
+
+        Assert.Equal(PackFileClassification.Skipped, PackScenario.Entry(inventory, "Show/Season 2/[Group] Show - 25 [1080p].mkv").Classification);
+    }
+
+    // Both readings fit ("- 13".."- 20" in a 24-episode season after a 12-episode one): review, never guess.
+    [Fact]
+    public void AbsoluteSeasonTwo_RangeFitsBothReadings_HeldForReview()
+    {
+        var inventory = PackScenario.Run(Scenarios["abs-s2-unclear"]);
+
+        for (var absolute = 13; absolute <= 20; absolute++)
+        {
+            var entry = PackScenario.Entry(inventory, $"Show/Season 2/[Group] Show - {absolute:00} [1080p].mkv");
+            Assert.Equal(PackFileClassification.Skipped, entry.Classification);
+        }
+    }
+
+    // R2-B-05: "Season 1 Part 2" owned by season 2: "- 13".."- 24" are S02E01..E12, not a restart of season 1.
+    [Fact]
+    public void SeasonPartTwoFolder_InASeasonTwoPack_IsNotARestart()
+    {
+        var inventory = PackScenario.Run(Scenarios["part2-owned-by-s2"]);
+
+        for (var absolute = 13; absolute <= 24; absolute++)
+        {
+            PackScenario.AssertRegular(inventory, $"Show/Season 1 Part 2/[Group] Show - {absolute:00} [1080p].mkv", 2, absolute - 12);
+        }
+    }
+
     [Fact]
     public void AbsoluteNumberBeyondShow_IsSkippedWithReason()
     {
@@ -543,6 +621,24 @@ public class PackScenarioTests
             ["absolute-folder-release-longer"] = new(
                 Owner: 2, Covered: [2], EpisodesPerSeason: new() { [1] = 12, [2] = 12 },
                 Files: Enumerable.Range(14, 12).Select(e => $"Show/Season 2/[Group] Show - {e:00} [1080p].mkv").ToArray()),
+            ["abs-s2-continued-long"] = new(
+                Owner: 2, Covered: [2], EpisodesPerSeason: new() { [1] = 12, [2] = 24 },
+                Files: Enumerable.Range(13, 24).Select(e => $"Show/Season 2/[Group] Show - {e:00} [1080p].mkv").ToArray()),
+            ["abs-s2-continued-partial"] = new(
+                Owner: 2, Covered: [2], EpisodesPerSeason: new() { [1] = 12, [2] = 13 },
+                Files: Enumerable.Range(13, 12).Select(e => $"Show/Season 2/[Group] Show - {e:00} [1080p].mkv").ToArray()),
+            ["abs-s2-relative-bonus"] = new(
+                Owner: 2, Covered: [2], EpisodesPerSeason: new() { [1] = 12, [2] = 12 },
+                Files: Enumerable.Range(1, 13).Select(e => $"Show/Season 2/[Group] Show - {e:00} [1080p].mkv").ToArray()),
+            ["abs-s2-continued-bonus"] = new(
+                Owner: 2, Covered: [2], EpisodesPerSeason: new() { [1] = 12, [2] = 12 },
+                Files: Enumerable.Range(13, 13).Select(e => $"Show/Season 2/[Group] Show - {e:00} [1080p].mkv").ToArray()),
+            ["abs-s2-unclear"] = new(
+                Owner: 2, Covered: [2], EpisodesPerSeason: new() { [1] = 12, [2] = 24 },
+                Files: Enumerable.Range(13, 8).Select(e => $"Show/Season 2/[Group] Show - {e:00} [1080p].mkv").ToArray()),
+            ["part2-owned-by-s2"] = new(
+                Owner: 2, Covered: [1, 2], EpisodesPerSeason: new() { [1] = 12, [2] = 12 },
+                Files: Enumerable.Range(13, 12).Select(e => $"Show/Season 1 Part 2/[Group] Show - {e:00} [1080p].mkv").ToArray()),
             ["absolute-beyond"] = new(
                 Owner: 1, Covered: [1], EpisodesPerSeason: new() { [1] = 12 },
                 Files: Enumerable.Range(1, 12).Select(e => $"[Grp] Show/[Grp] Show - {e:00} [1080p].mkv")

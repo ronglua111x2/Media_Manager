@@ -20,16 +20,34 @@ public static class PackEpisodeResolver
         var unresolved = new List<(string RelativePath, string Reason)>();
         var shiftedInFolder = new List<PackEpisodeCandidate>();
         var folderNumberingMismatch = false;
+        var parsedFiles = files
+            .Where(file => !PackSeasonFileGrouper.IsExcludedFromEpisodeGroup(file.RelativePath, file.FileName))
+            .Select(file => (file.RelativePath, file.FileName, Parsed: ParsePackFile(file.RelativePath, file.FileName)))
+            .ToList();
+        var scheme = DecideAbsoluteScheme(
+            parsedFiles.Select(file => file.Parsed).ToList(),
+            seasonNumber,
+            validEpisodeNumbers,
+            absoluteMapper);
 
-        foreach (var (relativePath, fileName) in files)
+        foreach (var (relativePath, fileName, parsed) in parsedFiles)
         {
-            if (PackSeasonFileGrouper.IsExcludedFromEpisodeGroup(relativePath, fileName))
+            var stem = Path.GetFileNameWithoutExtension(fileName);
+            if (scheme is not null && IsAbsoluteOnly(parsed) && !parsed!.IsDaily)
             {
+                var placed = PlaceByScheme(scheme, parsed.AbsoluteEpisodeNumbers[0], seasonNumber, validEpisodeNumbers, out var schemeFailure);
+                if (placed is { } episode)
+                {
+                    candidates.Add(new PackEpisodeCandidate(relativePath, fileName, seasonNumber, episode));
+                }
+                else
+                {
+                    unresolved.Add((relativePath, schemeFailure!));
+                }
+
                 continue;
             }
 
-            var stem = Path.GetFileNameWithoutExtension(fileName);
-            var parsed = ParsePackFile(relativePath, fileName);
             var resolved = TryResolve(parsed, seasonNumber, validEpisodeNumbers, stem, fallbackPattern, absoluteMapper, episodesByAirDate, out var failure);
             var absoluteInSeasonFolder = absoluteMapper is not null &&
                                          IsAbsoluteOnly(parsed) &&
@@ -80,6 +98,95 @@ public static class PackEpisodeResolver
         }
 
         return resolutions;
+    }
+
+    private enum AbsoluteSchemeKind
+    {
+        SeasonRelative,
+        ContinuedFromEarlierSeasons,
+        Unclear
+    }
+
+    private sealed record AbsoluteScheme(AbsoluteSchemeKind Kind, int Offset, int Lowest, int Highest);
+
+    /// <summary>
+    /// One numbering scheme for all absolute-numbered files of a season after the first, decided from the group's
+    /// lowest and highest number (audit R2-B-01). Deciding per file mixed a file's own number with numbers counted
+    /// through earlier seasons in one season: "- 13" kept as S02E13 next to "- 25" counted to S02E13.
+    /// <list type="bullet">
+    /// <item>Lowest = episodes of earlier seasons + 1 and highest above this season's count: numbering continues
+    /// from earlier seasons, every file is counted.</item>
+    /// <item>Lowest inside this season otherwise: season-relative, every file keeps its own number.</item>
+    /// <item>Anything else (or a range that fits both readings): unclear, review.</item>
+    /// </list>
+    /// Season 1 needs no decision: there both readings give the same episode.
+    /// </summary>
+    private static AbsoluteScheme? DecideAbsoluteScheme(
+        IReadOnlyList<ParsedEpisodeInfo?> parsedFiles,
+        int seasonNumber,
+        IReadOnlySet<int> validEpisodeNumbers,
+        AbsoluteEpisodeMapper? absoluteMapper)
+    {
+        if (absoluteMapper is null || seasonNumber <= 1 || validEpisodeNumbers.Count == 0)
+        {
+            return null;
+        }
+
+        var numbers = parsedFiles
+            .Where(parsed => IsAbsoluteOnly(parsed) && !parsed!.IsDaily && parsed.AbsoluteEpisodeNumbers[0] > 0)
+            .Select(parsed => parsed!.AbsoluteEpisodeNumbers[0])
+            .ToList();
+        var offset = absoluteMapper.EpisodesBefore(seasonNumber);
+        if (numbers.Count == 0 || offset <= 0)
+        {
+            return null;
+        }
+
+        var lowest = numbers.Min();
+        var highest = numbers.Max();
+        var seasonCount = validEpisodeNumbers.Max();
+        var kind = lowest == offset + 1
+            ? highest > seasonCount ? AbsoluteSchemeKind.ContinuedFromEarlierSeasons : AbsoluteSchemeKind.Unclear
+            : lowest <= seasonCount
+                ? AbsoluteSchemeKind.SeasonRelative
+                : AbsoluteSchemeKind.Unclear;
+        return new AbsoluteScheme(kind, offset, lowest, highest);
+    }
+
+    private static int? PlaceByScheme(
+        AbsoluteScheme scheme,
+        int absoluteEpisode,
+        int seasonNumber,
+        IReadOnlySet<int> validEpisodeNumbers,
+        out string? failure)
+    {
+        failure = null;
+        switch (scheme.Kind)
+        {
+            case AbsoluteSchemeKind.ContinuedFromEarlierSeasons:
+                var counted = absoluteEpisode - scheme.Offset;
+                if (validEpisodeNumbers.Contains(counted))
+                {
+                    return counted;
+                }
+
+                failure = $"Absolute episode {absoluteEpisode} counts past season {seasonNumber}'s TMDB episodes (numbering continues from earlier seasons); not linked.";
+                return null;
+
+            case AbsoluteSchemeKind.SeasonRelative:
+                if (validEpisodeNumbers.Contains(absoluteEpisode))
+                {
+                    return absoluteEpisode;
+                }
+
+                failure = $"Episode {absoluteEpisode} is above season {seasonNumber}'s TMDB episodes in a season numbered from 1; not linked, review (a bonus or a special?).";
+                return null;
+
+            default:
+                failure = $"Absolute episode numbers {scheme.Lowest}-{scheme.Highest} in season {seasonNumber} do not line up with TMDB's episode counts " +
+                          $"(neither numbered from 1 nor continued after the {scheme.Offset} earlier episodes); not linked, review which episodes they are.";
+                return null;
+        }
     }
 
     /// <summary>
