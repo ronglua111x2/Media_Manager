@@ -154,7 +154,7 @@ public class NativeQueryTextTests
     [InlineData("2001 A Space Odyssey 1968", media_management_app.Common.MediaKind.Movie, "2001 A Space Odyssey")]
     [InlineData("1917 2019 2160p", media_management_app.Common.MediaKind.Movie, "1917")]
     [InlineData("Rick and Morty S03E05 1080p", media_management_app.Common.MediaKind.TvEpisode, "Rick and Morty S03E05")]
-    [InlineData("Rick and Morty 2013 season 3 1080p", media_management_app.Common.MediaKind.TvSeasonPack, "Rick and Morty 2013 season 3")]
+    [InlineData("Rick and Morty 2013 season 3 1080p", media_management_app.Common.MediaKind.TvSeasonPack, "Rick and Morty season 3")]
     [InlineData("Kanata Kara 06 1080p", media_management_app.Common.MediaKind.TvEpisode, "Kanata Kara 06")]
     [InlineData("Dune 2021 1080p", media_management_app.Common.MediaKind.Movie, "Dune 2021")]
     [InlineData("Dune 1080p", media_management_app.Common.MediaKind.Movie, "Dune")]

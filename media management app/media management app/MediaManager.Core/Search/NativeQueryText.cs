@@ -36,7 +36,33 @@ public static partial class NativeQueryText
         }
 
         reduced = QueryTemplateRenderer.CollapseSpaces(reduced);
+        if (kind == MediaKind.TvSeasonPack)
+        {
+            reduced = CanonicalPack(reduced);
+        }
+
         return reduced.Length == 0 ? QueryTemplateRenderer.CollapseSpaces(query) : reduced;
+    }
+
+    /// <summary>
+    /// Season pack queries collapse to two forms per title (audit 07d GOV-03): "Show S01 complete" and "Show S01 pack"
+    /// become "Show S01", "Show season 1" and "Show 2013 season 1" become "Show season 1". The pack templates sent up
+    /// to 12 queries per pack; on the bench the dropped forms found almost nothing the kept ones did not (only
+    /// torrentdownloads, whose RSS matches any word). Identical texts then share the memo and the HTTP cache.
+    /// The qBittorrent path keeps the recipe's queries unchanged.
+    /// </summary>
+    public static string CanonicalPack(string query)
+    {
+        var match = PackQuery().Match(query);
+        if (!match.Success)
+        {
+            return query;
+        }
+
+        var title = match.Groups["title"].Value.Trim();
+        return match.Groups["s"].Success
+            ? $"{title} S{int.Parse(match.Groups["s"].Value, System.Globalization.CultureInfo.InvariantCulture):00}"
+            : $"{title} season {int.Parse(match.Groups["n"].Value, System.Globalization.CultureInfo.InvariantCulture)}";
     }
 
     /// <summary>
@@ -52,6 +78,12 @@ public static partial class NativeQueryText
 
         var specific = kind == MediaKind.Movie ? DropYears(query, movieYear) : query;
         specific = QueryTemplateRenderer.CollapseSpaces(specific);
+        if (kind == MediaKind.TvSeasonPack)
+        {
+            // "Show S01 complete 1080p" → "Show S01 1080p": the same canonical forms as Reduce, plus the quality.
+            var qualities = string.Join(" ", QualityTokens().Matches(specific).Select(token => token.Value));
+            specific = QueryTemplateRenderer.CollapseSpaces($"{Reduce(query, kind)} {qualities}");
+        }
         return string.Equals(specific, Reduce(query, kind, movieYear), StringComparison.OrdinalIgnoreCase) ? null : specific;
     }
 
@@ -120,6 +152,10 @@ public static partial class NativeQueryText
 
     [GeneratedRegex(@"(?<=\S\s)(19|20)\d{2}\b")]
     private static partial Regex TrailingYears();
+
+    // "<title> [year] S01|season 1 [complete|pack|batch|full]" (the pack templates).
+    [GeneratedRegex(@"^(?<title>.+?)\s+(?:(?:19|20)\d{2}\s+)?(?:S(?<s>\d{1,3})|season\s+(?<n>\d{1,3}))(?:\s+(?:complete|pack|batch|full))*$", RegexOptions.IgnoreCase)]
+    private static partial Regex PackQuery();
 
     // The last year of the query, followed only by quality tokens ("Oppenheimer 2023 1080p").
     [GeneratedRegex(@"(?<=\S)\s+(19|20)\d{2}(?=(\s+(2160p|1440p|1080p|720p|576p|480p|4k|uhd|hdr|x264|x265|hevc))*\s*$)", RegexOptions.IgnoreCase)]

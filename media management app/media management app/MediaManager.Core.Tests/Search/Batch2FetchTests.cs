@@ -210,4 +210,23 @@ public class Batch2FetchTests
         TitleNormalizer.FoldDiacritics("ダンジョン飯").Should().Be("ダンジョン飯");
         TitleNormalizer.FoldDiacritics("Amélie").Should().Be("Amelie");
     }
+    // 07d GOV-03: pack query forms collapse to "<title> Sxx" and "<title> season N" for native search.
+    [Theory]
+    [InlineData("Rick and Morty S03 complete 1080p", "Rick and Morty S03")]
+    [InlineData("Rick and Morty S03 pack", "Rick and Morty S03")]
+    [InlineData("Rick and Morty season 3 1080p", "Rick and Morty season 3")]
+    [InlineData("Rick and Morty 2013 season 3", "Rick and Morty season 3")]
+    [InlineData("Mob Psycho 100 season 2", "Mob Psycho 100 season 2")]
+    [InlineData("The Complete Works S01 complete", "The Complete Works S01")]
+    [InlineData("Some Show 1080p", "Some Show")]
+    public void PackQueries_CollapseToTwoForms(string query, string expected)
+    {
+        NativeQueryText.Reduce(query, MediaKind.TvSeasonPack).Should().Be(expected);
+    }
+
+    [Fact]
+    public void PackSpecificQuery_KeepsQualityOnTheCanonicalForm()
+    {
+        NativeQueryText.Specific("Rick and Morty S03 complete 1080p", MediaKind.TvSeasonPack).Should().Be("Rick and Morty S03 1080p");
+    }
 }
