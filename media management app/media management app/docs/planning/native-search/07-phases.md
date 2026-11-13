@@ -20,8 +20,8 @@ Quy ước:
 
 **Nghiệm thu:**
 - Test fixture cho mọi quy tắc ở [04 §1–2](./04-query-and-matching.md).
-- Bộ golden lấy từ JSON `engine_probe` thật: *Coherence* nhận các bản 2013; *Léon* khớp bản không dấu; *Schindler's List* khớp `Schindlers.List`; *2001* không nhầm năm; *Dune* 1984 không nhận bản 2021.
-- Chạy dry-run thật với *Coherence*, *Liz and the Blue Bird*, *Your Name.*: có ứng viên đạt.
+- Bộ golden lấy từ JSON `engine_probe` thật: *Movie 01* nhận các bản 2013; *Léon* khớp bản không dấu; *Schindler's List* khớp `Schindlers.List`; *2001* không nhầm năm; *Dune* 1984 không nhận bản 2021.
+- Chạy dry-run thật với *Movie 01*, *Movie 04*, *Movie Two*: có ứng viên đạt.
 
 ---
 
@@ -69,7 +69,7 @@ Quy ước:
 | P4-3 | Snapshot cả show cộng **query nhắm đích bổ sung** cho tập hoặc season chưa có ứng viên đạt (thay cho việc lọc âm thầm template, SRCH-03) |
 | P4-4 | Recipe editor cảnh báo template không áp dụng |
 
-**Nghiệm thu:** pack *Rick and Morty* S03 tìm ra ≥ 100 pack S03 (số đo: query nhắm đích 111, query chỉ tên show 7). Tập anime đang chiếu có ứng viên đạt nhanh như hiện nay hoặc nhanh hơn.
+**Nghiệm thu:** pack *Show 16* S03 tìm ra ≥ 100 pack S03 (số đo: query nhắm đích 111, query chỉ tên show 7). Tập anime đang chiếu có ứng viên đạt nhanh như hiện nay hoặc nhanh hơn.
 
 ---
 
@@ -82,7 +82,7 @@ Quy ước:
 | P5-3 | Recipe: `Require` / `Prefer` / `Avoid`, trừ điểm thay vì loại cứng; profile "movie cũ" |
 | P5-4 | UI chọn bản encode: hiện mọi bản đạt, gom nhóm, chip lọc, lý do điểm, nguồn |
 
-**Nghiệm thu:** *Spider-Man No Way Home* hiện hàng trăm bản, lọc được theo codec, HDR và âm thanh. Không còn rác trong top N của bộ tiêu đề đặc thù.
+**Nghiệm thu:** *Movie 08* hiện hàng trăm bản, lọc được theo codec, HDR và âm thanh. Không còn rác trong top N của bộ tiêu đề đặc thù.
 
 ---
 
@@ -116,7 +116,7 @@ P1 và P2-1/P2-2 có thể làm song song ở hai phiên khác nhau, vì chúng 
 
 | Giai đoạn | Ngày | Infohash khác nhau (bộ đặc thù) | p90 mỗi query | Movie cũ có ứng viên | Ghi chú |
 |---|---|---|---|---|---|
-| Baseline (qBittorrent) | 12/11/2026 | xem [07b §5c](../../code-review/2026-11/07b-hunt-search.md) | 45–180s (bị engine treo giữ) | *Coherence*: 0 bản đạt (năm 2014 so với 2013) | 10/23 engine hoạt động |
-| P1 | 12/11/2026 | (P1 không đổi nguồn search) | như baseline | 15/15 movie có ứng viên đạt (*Coherence* 2 → **27**, *Your Name.* 206 → **531**, *Jujutsu Kaisen 0* 12 → **168**, *Euphonium – Our Promise* 9 → **48**, *Liz and the Blue Bird* 44 → **67**) | `tools/SearchBench movies`: không bản nào luật cũ nhận mà luật mới loại. Các movie giảm (*Project Hail Mary* 131 → 85) là do dedupe theo infohash; số thô trước dedupe vẫn tăng (131 → 134) |
-| P2–P5 (native) | 12/11/2026 | `compare` (10 tiêu đề, trước khi có phân trang): native nhiều hơn với anime/romaji (`Kanata Kara 06` 58 so với 25, `Liz to Aoi Tori` 119 so với 96), ngang với season pack (162 so với 166), ít hơn 2–3 lần với movie phương Tây | Native **~1 s/query** khi chưa phải chờ lượt; khi xếp hàng chờ governor (15 movie liên tiếp) trung bình ~12 s/query. qBittorrent 96–181 s/query | **15/15 movie có ứng viên đạt** qua native (`movies --backend native`), bản đứng đầu giống đường qBittorrent ở *Oppenheimer*, *Spider-Verse*, *Predestination*, *Project Hail Mary*. Số ứng viên ít hơn đường qBittorrent khoảng 30–70% (ví dụ *Your Name.* 148 so với 531) | Không site nào chặn, không breaker nào mở. **Cổng P6 chưa đạt** tiêu chí "số infohash ≥ qBittorrent trên ≥ 90% case" với movie phương Tây; cần thêm nguồn hoặc thêm trang (kickass, sktorrent chưa có bản native) |
+| Baseline (qBittorrent) | 12/11/2026 | xem [07b §5c](../../code-review/2026-11/07b-hunt-search.md) | 45–180s (bị engine treo giữ) | *Movie 01*: 0 bản đạt (năm 2014 so với 2013) | 10/23 engine hoạt động |
+| P1 | 12/11/2026 | (P1 không đổi nguồn search) | như baseline | 15/15 movie có ứng viên đạt (*Movie 01* 2 → **27**, *Movie Two* 206 → **531**, *Movie J0* 12 → **168**, *Show E – Movie Subtitle* 9 → **48**, *Movie 04* 44 → **67**) | `tools/SearchBench movies`: không bản nào luật cũ nhận mà luật mới loại. Các movie giảm (*Movie 06* 131 → 85) là do dedupe theo infohash; số thô trước dedupe vẫn tăng (131 → 134) |
+| P2–P5 (native) | 12/11/2026 | `compare` (10 tiêu đề, trước khi có phân trang): native nhiều hơn với anime/romaji (`Alt Title D 06` 58 so với 25, `Alt Title A` 119 so với 96), ngang với season pack (162 so với 166), ít hơn 2–3 lần với movie phương Tây | Native **~1 s/query** khi chưa phải chờ lượt; khi xếp hàng chờ governor (15 movie liên tiếp) trung bình ~12 s/query. qBittorrent 96–181 s/query | **15/15 movie có ứng viên đạt** qua native (`movies --backend native`), bản đứng đầu giống đường qBittorrent ở *Movie Three*, *Hero-Verse*, *Movie 05*, *Movie 06*. Số ứng viên ít hơn đường qBittorrent khoảng 30–70% (ví dụ *Movie Two* 148 so với 531) | Không site nào chặn, không breaker nào mở. **Cổng P6 chưa đạt** tiêu chí "số infohash ≥ qBittorrent trên ≥ 90% case" với movie phương Tây; cần thêm nguồn hoặc thêm trang (kickass, sktorrent chưa có bản native) |
 | P6 | | | | | |

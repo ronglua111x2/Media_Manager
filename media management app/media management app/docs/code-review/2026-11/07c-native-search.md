@@ -77,7 +77,7 @@
   - "Kill Bill: Vol. 2" (2004) nhận `Kill.Bill.Vol.1.2003.1080p…`.
   - "Harry Potter and the Deathly Hallows: Part 1" (2010) nhận `…Part.2.2011.1080p…`.
   - "Detective Conan: The Million-dollar Pentagram" (2024) nhận `Detective.Conan.The.Black.Iron.Submarine.2023…`.
-  - "Your Name." (alt "Kimi no Na wa.") nhận `[Group] Kimi no Koe wo Todoketai (2017) [BD 1080p]`.
+  - "Movie Two" (alt "Alt Title B") nhận `[Group] Kimi no Koe wo Todoketai (2017) [BD 1080p]`.
 - **Hướng sửa:** khi năm lệch 1 thì bắt buộc khớp tên đầy đủ (`IsCompleteTitleMatch`). Nếu tên phim và tên bản có số khác nhau (Part, Vol, số phần) thì loại.
 
 ### NS-02 — Bản không có năm nhận nhầm phần tiếp theo (Cao)
@@ -185,7 +185,7 @@
   - "1917" (2019) loại `1917.2019.1080p.BluRay…` vì sai tên.
   - "Wonder Woman 1984" loại `Wonder.Woman.1984.1080p…` vì sai năm.
   - `YearMatcher` xử lý đúng trường hợp này; chỉ bước khớp tên là sai.
-- **NS-12:** regex số tập tuyệt đối `\b(\d{2,4})\b` không khớp "06v2", nên `[SubsPlease] Kanata kara - 06v2 (1080p)` bị loại vì sai tập. Fixture `01v2` có sẵn nhưng chỉ được dùng trong test parser của indexer.
+- **NS-12:** regex số tập tuyệt đối `\b(\d{2,4})\b` không khớp "06v2", nên `[SubsPlease] Alt Title D - 06v2 (1080p)` bị loại vì sai tập. Fixture `01v2` có sẵn nhưng chỉ được dùng trong test parser của indexer.
 
 ### NS-13 — Indexer hỏng im lặng (TB)
 
@@ -195,7 +195,7 @@
 
 ### NS-14 — SubsPlease không bao giờ có kết quả cho tập (TB)
 
-- `SubsPleaseIndexer.cs:27` gửi nguyên `query.Text`, ví dụ "Kanata Kara S01E06". Comment của chính indexer và doc 02/04 (P4-2) ghi rằng API chỉ khớp tên show.
+- `SubsPleaseIndexer.cs:27` gửi nguyên `query.Text`, ví dụ "Alt Title D S01E06". Comment của chính indexer và doc 02/04 (P4-2) ghi rằng API chỉ khớp tên show.
 - **Hướng sửa:** gửi tên show (bỏ marker tập), rồi lọc dòng theo `query.Episode`. Phần biến đổi query riêng cho từng indexer như doc dự kiến chưa được làm.
 
 ### NS-15 — Một exception lạ làm mất cả lượt search (TB)
@@ -253,7 +253,7 @@ Trên indexer HTML có phân trang, các phim cùng tên khác sẽ chiếm hế
 | Common Anime no Probe Pagination / Parallel | 6 / 4 |
 | Common Anime Pack | 16 |
 | Default TV Pack Recipe | 15 |
-| Các recipe riêng (Korra, Rick_And_Morty, One_Piece, oregairu…) | 1–2 mỗi cái |
+| Các recipe riêng (Show K, Show 16, One_Piece, oregairu…) | 1–2 mỗi cái |
 
 - **Hướng sửa:** thêm lệnh `shows-compare`.
   - Với mỗi show đang theo dõi, lấy vài tập và pack còn thiếu hoặc mới nhất.
@@ -307,7 +307,7 @@ Trên indexer HTML có phân trang, các phim cùng tên khác sẽ chiếm hế
 
 ## 5. Đã sửa trong lúc audit
 
-- **TorrentDownloads lọc mất season pack.** Commit `a106389` vừa thêm bộ lọc "đủ mọi từ" để chặn feed khớp bất kỳ từ nào. Nhưng nó bắt buộc cả các từ template như `season`, `3`, `complete`, `1x06`, nên `Rick.and.Morty.S03.1080p…` bị loại với query `Rick and Morty season 3`. Reviewer mảng P phát hiện lỗi này.
+- **TorrentDownloads lọc mất season pack.** Commit `a106389` vừa thêm bộ lọc "đủ mọi từ" để chặn feed khớp bất kỳ từ nào. Nhưng nó bắt buộc cả các từ template như `season`, `3`, `complete`, `1x06`, nên `Show.16.S03.1080p…` bị loại với query `Show 16 season 3`. Reviewer mảng P phát hiện lỗi này.
 - **Đã sửa:** năm, số, marker tập/mùa (`S03`, `S03E05`, `1x06`) và các từ `season`, `complete`, `pack`, `batch`, `episode`, `ep` giờ là tùy chọn. Tên chỉ gồm số ("1917") vẫn bắt buộc phải có số đó. Đã thêm test cho các ca này, và 443 test Core đều pass.
 
 ---
@@ -316,7 +316,7 @@ Trên indexer HTML có phân trang, các phim cùng tên khác sẽ chiếm hế
 
 | ID | Đã làm | Test mới |
 |---|---|---|
-| NS-01, NS-02 | Thêm `MovieReleaseTitle`, chỉ lấy phần tên của bản phát hành: phần đứng trước năm, ngoặc, hoặc token chất lượng/nguồn/codec/audio, và bỏ qua `[Group]` ở đầu. Khi năm lệch 1 hoặc không có năm, phần tên này phải chứa đủ mọi từ của một tên phim (`the`/`a`/`an`/`and` là tùy chọn). Nó cũng không được có marker phần tiếp theo (số, số La Mã, `part`, `vol`, `two`…) mà tên phim không có. Bản không có năm còn bị từ chối nếu có từ thừa, trừ các từ phiên bản như Extended, Remastered, The Movie. | 15 ca trong `MovieMatchingTests` (Kill Bill, Deathly Hallows, Detective Conan, Your Name/Kimi no…, Dune Part Two, Frozen II, Frozen Fever, DD5.1, kèm các ca phải được nhận) |
+| NS-01, NS-02 | Thêm `MovieReleaseTitle`, chỉ lấy phần tên của bản phát hành: phần đứng trước năm, ngoặc, hoặc token chất lượng/nguồn/codec/audio, và bỏ qua `[Group]` ở đầu. Khi năm lệch 1 hoặc không có năm, phần tên này phải chứa đủ mọi từ của một tên phim (`the`/`a`/`an`/`and` là tùy chọn). Nó cũng không được có marker phần tiếp theo (số, số La Mã, `part`, `vol`, `two`…) mà tên phim không có. Bản không có năm còn bị từ chối nếu có từ thừa, trừ các từ phiên bản như Extended, Remastered, The Movie. | 15 ca trong `MovieMatchingTests` (Kill Bill, Deathly Hallows, Detective Conan, Movie Two/Kimi no…, Dune Part Two, Frozen II, Frozen Fever, DD5.1, kèm các ca phải được nhận) |
 | NS-10 | Junk filter đọc độ phân giải từ token đứng riêng. Độ phân giải pixel thắng "4K"/"UHD", nên `4K Remastered 1080p` được hiểu là 1080p, và `384kbps` không còn bị coi là 4K. `.scr`/`.bat`/`.cmd` chỉ bị coi là file thực thi khi nằm ở cuối tên. | `QueryPlanAndJunkTests` (Lawrence of Arabia 4K, 384kbps, The Bat Whispers, `.SCR.`) |
 | NS-04 | Chỉ báo "thành công" cho governor sau khi indexer parse xong (`IIndexerHttp.ReportParsed`). Response không parse được bị báo `BadResponse` và bị xóa khỏi cache. Trúng cache thì không báo gì. | `GovernedHttpAndOrchestratorTests`: 3 trang lạ trả 200 làm mở breaker; trúng cache không bị tính lỗi |
 | NS-15 | Orchestrator có nhánh bắt mọi lỗi: một indexer lỗi thì ghi `parse-error` cho riêng nó. Timestamp được parse an toàn (`IndexerParsing.FromUnix*`). | indexer ném `ArgumentOutOfRangeException` mà vẫn giữ được dòng của indexer khác |
@@ -341,20 +341,20 @@ Hai reviewer mới, không biết kết luận của người sửa, đọc lạ
   - tag ngôn ngữ (FRENCH, VOSTFR);
   - "Criterion Collection";
   - "Movie 01 - …" (đánh số phim anime);
-  - nhóm Trung Quốc `【…】彗星来的那一夜[中文字幕].Coherence.2013…`;
-  - `[Judas] Jujutsu Kaisen - Movie 01 - Jujutsu Kaisen 0`;
+  - nhóm Trung Quốc `【…】彗星来的那一夜[中文字幕].Movie 01.2013…`;
+  - `[Judas] Show J - Movie 01 - Movie J0`;
   - "Charlotte's Web" (chữ "web" bị coi là tag nguồn);
   - "(500) Days of Summer".
 
   Ngược lại, phim lệch 1 năm mà thêm phụ đề vẫn lọt: "The Hunger Games Catching Fire" được nhận cho "The Hunger Games".
 - **Bản viết lại** (`MovieReleaseTitle`) dựa trên vị trí:
-  - Một tên phim phải xuất hiện đủ và đúng thứ tự. Chấp nhận cách viết gộp/tách ("Spiderman", "C era"), và coi "Vol" bằng "Volume".
+  - Một tên phim phải xuất hiện đủ và đúng thứ tự. Chấp nhận cách viết gộp/tách ("Heroman", "C era"), và coi "Vol" bằng "Volume".
   - Chữ đứng **trước** tên chỉ được là: tên nhóm trong ngoặc, chữ không phải Latin, tag, tên của studio, hoặc sở hữu cách ("Satoshi Kon's").
   - Chữ đứng **sau** tên (tới hết đoạn tên) chỉ được là: tag ngôn ngữ, phiên bản hoặc nguồn; nội dung trong ngoặc; chữ không phải Latin; một tên khác của phim; "Movie 01"; hoặc `v2`/`25th`.
   - Các dấu " - ", "/", "|" và "aka" tách các tên khác nhau.
   - Từ của chính tên phim không kết thúc phần tên, nên "Charlotte's Web" không bị cắt ở chữ "web".
-- **Test:** `MovieReleaseTitleTests` có 71 ca: 51 tên phải nhận và 20 tên phải loại (Call Me by Your Name, The Real Oppenheimer, Extra Scenes, tập lẻ JJK, Dune Part Two, Frozen II/Fever, Catching Fire, Twilight New Moon…). Phần lớn là tên thật lấy từ bench.
-- **Vẫn còn:** phần tiếp theo **cùng năm** ("Matrix Revolutions" 2003 cho "Matrix Reloaded" 2003) vẫn đi qua luật khớp lỏng cũ, vì bước kiểm tra này chỉ chạy khi năm lệch hoặc không có năm. Tên có nhóm không ngoặc ở đầu ("AnimeKaizoku Your Name") bị loại.
+- **Test:** `MovieReleaseTitleTests` có 71 ca: 51 tên phải nhận và 20 tên phải loại (Call Me by Movie Two, The Real Movie Three, Extra Scenes, tập lẻ JJK, Dune Part Two, Frozen II/Fever, Catching Fire, Twilight New Moon…). Phần lớn là tên thật lấy từ bench.
+- **Vẫn còn:** phần tiếp theo **cùng năm** ("Matrix Revolutions" 2003 cho "Matrix Reloaded" 2003) vẫn đi qua luật khớp lỏng cũ, vì bước kiểm tra này chỉ chạy khi năm lệch hoặc không có năm. Tên có nhóm không ngoặc ở đầu ("AnimeKaizoku Movie Two") bị loại.
 
 **Junk filter (NS-10):** giờ đọc được `1920x1080`/`3840x2160`, `FHD` và "1080" đứng riêng. Khi tên ghi nhiều độ phân giải thì lấy độ phân giải **cao nhất**, nên bản giả `2160p 4K 1080p 720p` dung lượng 300 MB vẫn bị loại.
 
@@ -369,17 +369,17 @@ Hai reviewer mới, không biết kết luận của người sửa, đọc lạ
 Kết quả: 552 test Core và 140 test App đều pass.
 
 **Kiểm chứng trên dữ liệu thật** (bench `movies-compare --native-only 1 --dump`, 15 movie):
-- Your Name: số bản tốt giảm từ 88 xuống 74. Các bản **"Call Me by Your Name" (2017)** trước đây bị nhận nhầm cho "Your Name." (2016, lệch 1 năm), giờ bị loại đúng.
-- Liz tăng từ 13 lên 17, Euphonium từ 14 lên 16, Coherence từ 18 lên 19. Các movie khác giữ nguyên số.
+- Movie Two: số bản tốt giảm từ 88 xuống 74. Các bản **"Call Me by Movie Two" (2017)** trước đây bị nhận nhầm cho "Movie Two" (2016, lệch 1 năm), giờ bị loại đúng.
+- Alt tăng từ 13 lên 17, Show E từ 14 lên 16, Movie 01 từ 18 lên 19. Các movie khác giữ nguyên số.
 - Trong 154 dòng còn bị bước kiểm tra tên loại, chỉ có 2 ca nên nhận:
-  - `Chou.Kaguya.hime.GoLTFilm.1080p.mkv` (tên nhóm dính sau tên phim);
-  - `AnimeKaizoku Kimi no Na wa Your Name` (tên nhóm không có ngoặc ở đầu).
+  - `Alt.Title.C.GoLTFilm.1080p.mkv` (tên nhóm dính sau tên phim);
+  - `AnimeKaizoku Alt Title B Movie Two` (tên nhóm không có ngoặc ở đầu).
 
   Còn lại là phim khác, tập lẻ hoặc bản tổng hợp, bị loại đúng.
 
-**NS-32 (mới, phát hiện khi kiểm chứng):** 30 dòng từ LimeTorrents và TorrentDownloads có tên bị mojibake. Ví dụ `Ð¡Ð²ÑÐ·ÑŒ Coherence (2013)` thay vì `Связь Coherence (2013)`, và `å½—æ˜Ÿæ¥çš„… Coherence 2013`. Chữ rác trông như chữ Latin đứng trước tên phim, nên bản đúng bị loại. `MojibakeRepair` khôi phục tên khi nó đổi ngược lại được thành UTF-8 hợp lệ; chữ Latin-1 thật như "Amélie" giữ nguyên. Bước này chạy cho mọi indexer, ngay lúc chuẩn hóa kết quả.
+**NS-32 (mới, phát hiện khi kiểm chứng):** 30 dòng từ LimeTorrents và TorrentDownloads có tên bị mojibake. Ví dụ `Ð¡Ð²ÑÐ·ÑŒ Movie 01 (2013)` thay vì `Связь Movie 01 (2013)`, và `å½—æ˜Ÿæ¥çš„… Movie 01 2013`. Chữ rác trông như chữ Latin đứng trước tên phim, nên bản đúng bị loại. `MojibakeRepair` khôi phục tên khi nó đổi ngược lại được thành UTF-8 hợp lệ; chữ Latin-1 thật như "Amélie" giữ nguyên. Bước này chạy cho mọi indexer, ngay lúc chuẩn hóa kết quả.
 
-Chạy lại bench sau khi sửa: các bản Nga/Trung của Coherence đã được nhận (19 lên 21 bản tốt). Chỉ còn 1 dòng mojibake không khôi phục được; các movie khác giữ nguyên số. Tổng số bản tốt của native là 565 trên 15 movie.
+Chạy lại bench sau khi sửa: các bản Nga/Trung của Movie 01 đã được nhận (19 lên 21 bản tốt). Chỉ còn 1 dòng mojibake không khôi phục được; các movie khác giữ nguyên số. Tổng số bản tốt của native là 565 trên 15 movie.
 
 **Còn lại, chấp nhận được:** nếu một lượt chạy kết thúc giữa chừng (timeout, lỗi HTTP ở trang sau) thì các trang đã thành công không được báo. Lúc đó breaker đang ở HalfOpen sẽ mở lại sớm hơn. Hướng này an toàn với site, và site không bao giờ bị chặn vĩnh viễn.
 
@@ -403,7 +403,7 @@ Chạy lại bench sau khi sửa: các bản Nga/Trung của Coherence đã đư
 | NS-16, NS-17 | Record Both có `qbittorrent.error`, `native.fromMemo`; gate bỏ các record đó. Snapshot/dry-run ở chế độ Both vẫn chạy native khi qBittorrent tắt. | `fbd7c5c` |
 | NS-22, NS-30 (Refresh) | Settings hiện kill switch thật; Refresh giữ các ô tick chưa lưu. | `fbd7c5c` |
 | NS-30 (dấu nháy, dakuten), NS-27 (Nyaa) | "Schindler s List" khớp "Schindler's"; giữ dakuten tiếng Nhật; Nyaa tìm trong mục Anime (`c=1_0`). | `5e2b411` |
-| Phim khác cùng năm | Bản đúng năm vẫn phải có tên phim (và phần sau tên) khớp. Kiểm chứng offline trên 3 709 dòng thật (`SearchBench reeval-movies`): chỉ loại 11 dòng, đều là phim khác (phim tài liệu "To End All War: Oppenheimer…", "Oppenheimer The Real Story"). Tách từ ở chỗ đổi hệ chữ ("绝命毒师电影El Camino"). | `8eeee01` |
+| Phim khác cùng năm | Bản đúng năm vẫn phải có tên phim (và phần sau tên) khớp. Kiểm chứng offline trên 3 709 dòng thật (`SearchBench reeval-movies`): chỉ loại 11 dòng, đều là phim khác (phim tài liệu "To End All War: Movie Three…", "Movie Three The Real Story"). Tách từ ở chỗ đổi hệ chữ ("中文片名Spinoff Movie"). | `8eeee01` |
 | Bản giả `… exe` / `… scr` | Junk filter nhận đuôi thực thi cả khi dấu chấm bị đổi thành khoảng trắng (plugin torrentdownloads của qBittorrent). Bench TV/anime đã tính các bản này là "tốt" cho qBittorrent. | `8eeee01` |
 | Quota | Quota ngày của mọi site là 1000: chỉ là cầu chì chống vòng lặp; chống ban vẫn là giới hạn mỗi phút, khoảng cách, số request song song (quyết định của user). | `96460b6` |
 | Hiển thị quota | Pill "Search n/m" ở màn Auto, News, Cart; bấm vào xem trạng thái từng site (sẵn sàng, hết phần Auto-Track, hết quota + giờ reset, bị chặn tới, rate limit, tạm dừng, tắt). Settings dùng cùng cách mô tả. | `96460b6` |
@@ -423,7 +423,7 @@ Kết quả: 609 test Core, 150 test App pass.
 | Tập TV | 5 | 25 | 23 | 92% | 1 | 1 | 3 | 55 s / 15 s |
 
 - 29 mục đầu chạy đủ nguồn. Sau đó bitsearch và torrentdownloads hết quota 200/ngày của bench, rồi bị tắt ở phần sau, nên các mục sau thiệt cho native. Riêng nhóm đủ nguồn: tập anime 123%, pack 122%, tập TV 250% (ít mẫu).
-- Số "tốt" của qBittorrent có cả bản giả: `Rick and Morty S09E10 1080p WEB h264-EDITH scr` (3 037 seed) và `… exe` được tính là tốt vì plugin đổi dấu chấm thành khoảng trắng. Đã sửa ở junk filter (`8eeee01`).
+- Số "tốt" của qBittorrent có cả bản giả: `Show 16 S09E10 1080p WEB h264-EDITH scr` (3 037 seed) và `… exe` được tính là tốt vì plugin đổi dấu chấm thành khoảng trắng. Đã sửa ở junk filter (`8eeee01`).
 - Các bản tốt chỉ qBittorrent có: chủ yếu từ torrentdownloads (khi native đã tắt nó), kickass (native tắt vì trang danh sách không có hash), TPB vượt 100 dòng của apibay, và vài bản native có nhưng số seed lúc đo thấp hơn ngưỡng.
 - Pack sinh 8–12 query mỗi pack, làm hết quota của bitsearch/torrentdownloads; đã gộp còn 2 dạng mỗi tên (07d GOV-03, `a4b6f71`).
 
@@ -433,20 +433,20 @@ Phiên sửa mọi việc còn lại trừ cổng P6. Kiểm chứng: 679 test C
 
 | Mục | Đã làm | Commit |
 |---|---|---|
-| Pack chỉ khớp tên chính | **Xác nhận bằng dữ liệu:** các pack thật chỉ mang tên romaji bị loại `TitleMismatch` ở cả hai backend ("[AniPlague] Honzuki no Gekokujou S04", "[DKB] Urasekai Picnic (Season 1) [batch]", "Watashi wo Tabetai, Hitodenashi (Season 1)"). `SeasonPackIdentity` giờ khớp mọi tên thay thế (cùng bộ tên với bước chấm tập). | `f973281` |
-| Tập lẻ bị coi là pack | Sửa tên thay thế làm lộ lỗi parser: "Hibike! Euphonium S3 - 13", "Honzuki no Gekokujou S4 - 17v2" bị đọc là pack mùa 3–13 / 4–17 và chỉ bị chặn nhờ sai tên. Giờ "S<n> - <NN>" và "Season <n> - <NN>" là tập NN của mùa n, "3rd season 03", "[Title][17]", "第02集" là tập lẻ; "S4 - 01-12", "Season 02 - 04", "[全13集]" vẫn là pack. Từ dính ngoặc được tách ("[Ex-torrenty.org]BoJack"). | `f973281`, `5a1cbe9` |
+| Pack chỉ khớp tên chính | **Xác nhận bằng dữ liệu:** các pack thật chỉ mang tên romaji bị loại `TitleMismatch` ở cả hai backend ("[GroupA] Alt Title AB S04", "[DKB] Urasekai Show O (Season 1) [batch]", "Watashi wo Tabetai, Hitodenashi (Season 1)"). `SeasonPackIdentity` giờ khớp mọi tên thay thế (cùng bộ tên với bước chấm tập). | `f973281` |
+| Tập lẻ bị coi là pack | Sửa tên thay thế làm lộ lỗi parser: "Show E S3 - 13", "Alt Title AB S4 - 17v2" bị đọc là pack mùa 3–13 / 4–17 và chỉ bị chặn nhờ sai tên. Giờ "S<n> - <NN>" và "Season <n> - <NN>" là tập NN của mùa n, "3rd season 03", "[Title][17]", "第02集" là tập lẻ; "S4 - 01-12", "Season 02 - 04", "[全13集]" vẫn là pack. Từ dính ngoặc được tách ("[Ex-torrenty.org]Show H"). | `f973281`, `5a1cbe9` |
 | NS-30 từ lặp | "Hunter x Hunter" cần "hunter" hai lần, nên không còn nhận "Monster Hunter Stories"; "Kill la Kill" không nhận "Kill Me Baby" (ở bước chấm pack, tập và snapshot). | `f973281` |
-| Kết quả (offline) | `reeval-shows`: số dòng được nhận từ 906 lên 989, mọi dòng mới đều đúng (các bản "S4 - 15" của Ascendance of a Bookworm S04E15, "S3 - 12" của JJK S03E12, pack Watashi wo Tabetai, BoJack S06); 4 tập lẻ trước đây được nhận làm pack S04 giờ bị loại; không mất dòng đúng nào. | |
-| Kết quả (bench pack, 4 show, native) | Ascendance of a Bookworm S04: 6 pack tốt (trước 4); Otherside Picnic: 7 (trước 3); This Monster Wants to Eat Me: 1 (trước 0); Bloom Into You: 4 (như trước). | |
-| Movie: nhóm không ngoặc | Một từ CamelCase đứng đầu ("AnimeKaizoku Kimi no Na wa Your Name") hoặc dính sau tên ngay trước marker ("Chou.Kaguya.hime.GoLTFilm.1080p") là tên nhóm; từ thường ("Skutecny", "The Real", "Call Me by") và từ phần tiếp ("Two", "II", "PartTwo") thì không. | `42746f6` |
-| Movie: cùng năm | Với tên phim 1–2 từ, phần đứng trước tên vẫn bị kiểm cả khi năm khớp: "Taxi Whats Your Name 2016", "Burn Your Name 2016" không còn được nhận cho "Your Name.", "The Real Oppenheimer (2023)" không được nhận cho "Oppenheimer". Chữ trong cùng ngoặc với tên phim không còn là metadata ("[Kimi no Na wa X Tenki no Ko]" là hai phim); "Libretto ver." là phiên bản; "A.K.A" tách tên. `reeval-movies`: thêm 16 bản đúng, bỏ 4 bản sai, không mất bản đúng; bench 3 phim: Coherence 21, Your Name 76 (trước 74), Oppenheimer 100 (13 dòng bị loại đều là phim khác). | `42746f6` |
+| Kết quả (offline) | `reeval-shows`: số dòng được nhận từ 906 lên 989, mọi dòng mới đều đúng (các bản "S4 - 15" của Show AB S04E15, "S3 - 12" của JJK S03E12, pack Watashi wo Tabetai, Show H S06); 4 tập lẻ trước đây được nhận làm pack S04 giờ bị loại; không mất dòng đúng nào. | |
+| Kết quả (bench pack, 4 show, native) | Show AB S04: 6 pack tốt (trước 4); Show 15: 7 (trước 3); Show 21: 1 (trước 0); Show 04: 4 (như trước). | |
+| Movie: nhóm không ngoặc | Một từ CamelCase đứng đầu ("AnimeKaizoku Alt Title B Movie Two") hoặc dính sau tên ngay trước marker ("Alt.Title.C.GoLTFilm.1080p") là tên nhóm; từ thường ("Skutecny", "The Real", "Call Me by") và từ phần tiếp ("Two", "II", "PartTwo") thì không. | `42746f6` |
+| Movie: cùng năm | Với tên phim 1–2 từ, phần đứng trước tên vẫn bị kiểm cả khi năm khớp: "Taxi Whats Movie Two 2016", "Burn Movie Two 2016" không còn được nhận cho "Movie Two", "The Real Movie Three (2023)" không được nhận cho "Movie Three". Chữ trong cùng ngoặc với tên phim không còn là metadata ("[Alt Title B X Other Film]" là hai phim); "Libretto ver." là phiên bản; "A.K.A" tách tên. `reeval-movies`: thêm 16 bản đúng, bỏ 4 bản sai, không mất bản đúng; bench 3 phim: Movie 01 21, Movie Two 76 (trước 74), Movie Three 100 (13 dòng bị loại đều là phim khác). | `42746f6` |
 | GOV-03 B, GOV-02, GOV-06, GOV-07, GOV-08 | Xem 07d §6. | `aea8248` |
 | Không có nguồn search | Khi mọi site của một target bị bỏ qua (Pause all, breaker, hết quota) hoặc lỗi, order trong cart và Auto-Track là **Failed** "No search source available: <lý do từng site>" thay vì "No candidates"; Auto-Track không bắt đầu thời gian chờ `NoCandidates`; chế độ Both dùng kết quả qBittorrent. Telemetry của orchestrator đi tới nơi gọi qua `SearchSession`. | `aea8248` |
 | Backend mỗi lượt | Backend được chốt một lần cho cả session (tập, pack, movie, snapshot, dry-run), không đổi giữa chừng khi Settings đổi (doc 06 §1). Dòng log `Run Cart … Backend='Native|qBittorrent|Both'`. | `aea8248` |
 | Kickass | Trang danh sách không có hash: orchestrator mở trang chi tiết của tối đa 3 dòng mỗi lượt mà recipe có thể nhận (chấm với magnet giả, nhiều seed trước), qua governor và trần mỗi lượt; các dòng không có magnet bị bỏ (trước đây chúng trông như "HTTP URL" add được). Vẫn tắt mặc định. | `917203c` |
 | torrents-csv | Server trả tối đa 10 dòng mỗi request dù `size=100`; theo con trỏ `next` (`&after=`) tối đa 3 trang khi trang đầy. Probe 13/11: server nhận `after` (trang sau không lặp trang đầu). | `917203c` |
-| apibay | q.php trả tối đa 100 dòng, không có phân trang (trang TPB cũng chỉ hiện 100). Giờ tìm trong mục Video (`cat=200`; probe "Coherence": giữ đúng 61 dòng mục 201/202/207/208, bỏ nhạc, sách nói, e-book) và nhận cả bản "+chất lượng" như các site phân trang để vượt 100 dòng đầu. Bench phim: query "Oppenheimer 1080p" giờ cũng tới apibay (75 dòng). | `917203c` |
-| NS-27 LimeTorrents | **Giữ `/search/all/`.** Probe "Coherence": `/movies/` và `/all/` cho cùng 40 dòng trang 1, nên chưa thấy lợi; ranh giới anime/TV/other của site không chắc chắn, mà category sai thì mất bản đúng. | |
+| apibay | q.php trả tối đa 100 dòng, không có phân trang (trang TPB cũng chỉ hiện 100). Giờ tìm trong mục Video (`cat=200`; probe "Movie 01": giữ đúng 61 dòng mục 201/202/207/208, bỏ nhạc, sách nói, e-book) và nhận cả bản "+chất lượng" như các site phân trang để vượt 100 dòng đầu. Bench phim: query "Movie Three 1080p" giờ cũng tới apibay (75 dòng). | `917203c` |
+| NS-27 LimeTorrents | **Giữ `/search/all/`.** Probe "Movie 01": `/movies/` và `/all/` cho cùng 40 dòng trang 1, nên chưa thấy lợi; ranh giới anime/TV/other của site không chắc chắn, mà category sai thì mất bản đúng. | |
 | NS-30 dung lượng | "1,5 GB" là 1,5 GB (dấu phẩy thập phân khi chỉ có 1–2 chữ số sau); "1,024.5 MB", "1,234 MB" vẫn là phân cách hàng nghìn. | `1657e5f` |
 | NS-30 nhóm "DL" | "WEB-DL", "Blu-Ray", "DTS-HD" ở cuối tên không còn được đọc thành nhóm. | `1657e5f` |
 | NS-30 header TMDB | Header Bearer/Accept đặt trên từng request thay vì sửa `DefaultRequestHeaders` của `HttpClient` dùng chung. | `1657e5f` |
@@ -455,7 +455,7 @@ Phiên sửa mọi việc còn lại trừ cổng P6. Kiểm chứng: 679 test C
 | LimeTorrents 10/phút, 3 s | **Ghi số đo, không đo dồn** (doc 03 §2): hai ngày dùng thật không bị chặn; log giờ có số request thật để 7 ngày Both cho số đo. | |
 | GOV-01 jitter | **Không làm, có chủ đích** (doc 03 §1 dòng 1). | |
 
-**Còn lại:** cổng P6 (bỏ qBittorrent) cần số liệu dùng thật ở chế độ Both, do user quyết định. Bộ lọc cart picker và trạng thái "No search source available" chưa được kiểm trên UI thật (bản publish nằm ở `D:\MediaManagerSandbox\app_next`). Category theo loại của LimeTorrents không làm (xem trên).
+**Còn lại:** cổng P6 (bỏ qBittorrent) cần số liệu dùng thật ở chế độ Both, do user quyết định. Bộ lọc cart picker và trạng thái "No search source available" chưa được kiểm trên UI thật (bản publish nằm ở `<SandboxFolder>\app_next`). Category theo loại của LimeTorrents không làm (xem trên).
 
 ## 7. Thứ tự sửa đề xuất
 

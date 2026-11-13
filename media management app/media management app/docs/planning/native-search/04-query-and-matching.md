@@ -11,11 +11,11 @@ Một bộ chuẩn hoá duy nhất, dùng cho cả ba việc: **sinh query**, **
 | Bỏ dấu thanh (Unicode NFD, bỏ dấu kết hợp) | `Léon` → `Leon`, `Amélie` → `Amelie` | `Léon The Professional` 207 dòng, `Leon …` **458** |
 | Dấu nháy `'` `’` `` ` ``: sinh **cả hai** biến thể nối liền và tách rời | `Schindler's List` → `Schindlers List` **và** `Schindler s List` | 361/5 engine so với 413/7 engine: mỗi engine hợp một dạng |
 | `&` ↔ `and` | `Fast & Furious` ↔ `Fast and Furious` | |
-| Ranh giới phụ đề `:` hoặc ` - `: thêm biến thể chỉ lấy phần trước | `Spider-Man: No Way Home` → thêm `Spider-Man` (chỉ khi phần trước đủ đặc trưng) | |
+| Ranh giới phụ đề `:` hoặc ` - `: thêm biến thể chỉ lấy phần trước | `Movie 08` → thêm `Hero-Man` (chỉ khi phần trước đủ đặc trưng) | |
 | Số La Mã ↔ số thường (chỉ cho token đứng riêng) | `Part II` ↔ `Part 2` | |
 | Mạo từ đầu tên được phép lược khi khớp | `The Matrix` khớp `Matrix` | |
 | Token hoá tên bản phát hành: `.` `_` `-` `[]` `()` là ranh giới | `Schindlers.List.1993.1080p` | |
-| Dấu gạch nối trong tên giữ ở query, khi khớp thì coi như tuỳ chọn | `Spider-Man` khớp `Spider Man`, `SpiderMan` | |
+| Dấu gạch nối trong tên giữ ở query, khi khớp thì coi như tuỳ chọn | `Hero-Man` khớp `Hero Man`, `HeroMan` | |
 
 API: `IReadOnlyList<string> QueryVariants(string title)`, `TitleKey Key(string title)`, `TokenMatch Match(TitleKey expected, string releaseName)`.
 
@@ -31,7 +31,7 @@ Thay `FileName.Contains(ReleaseYear)` trong `CandidateEvaluationService.Evaluate
    - lệch ±1: trừ nhẹ;
    - không ghi năm: chỉ nhận khi tiêu đề khớp **mạnh** (đủ token, không thừa token lạ), trừ vừa;
    - lệch ≥ 2: **loại**, vì nhiều khả năng là bản khác hoặc remake (*Dune* 1984 và 2021).
-5. **Áp dụng cho cả bước search:** template `{title} {year}` phải sinh thêm biến thể **không năm**. Số đo: `Coherence 2014` chỉ ra **12** dòng, `Coherence` ra **479** dòng, trong đó 322 bản ghi 2013.
+5. **Áp dụng cho cả bước search:** template `{title} {year}` phải sinh thêm biến thể **không năm**. Số đo: `Movie 01 2014` chỉ ra **12** dòng, `Movie 01` ra **479** dòng, trong đó 322 bản ghi 2013.
 
 ## 3. Tên thay thế (SRCH-12)
 
@@ -39,7 +39,7 @@ Thay `FileName.Contains(ReleaseYear)` trong `CandidateEvaluationService.Evaluate
 - Tách hai việc:
   - **search bằng tên thay thế** (giới hạn số tên, theo ưu tiên của `EnglishAlternativeTitleFilter.ScoreTitleForSearch`);
   - **chấp nhận tên thay thế khi khớp**: luôn bật, vì có thêm tên để khớp không làm mất kết quả đúng.
-- Ví dụ trong DB đang chưa có ứng viên: *Liz and the Blue Bird* (`Liz to Aoi Tori`, 113 dòng / 8 engine), *Your Name.* (`Kimi no Na wa.`), *Sound! Euphonium the Movie – Our Promise* (`Hibike! Euphonium Chikai no Finale`).
+- Ví dụ trong DB đang chưa có ứng viên: *Movie 04* (`Alt Title A`, 113 dòng / 8 engine), *Movie Two* (`Alt Title B`), *Show E the Movie – Movie Subtitle* (`Show E Chikai no Finale`).
 
 ## 4. Đánh giá hết rồi mới lấy top N (SRCH-04)
 
@@ -54,7 +54,7 @@ Thay `FileName.Contains(ReleaseYear)` trong `CandidateEvaluationService.Evaluate
 | **Movie** | `title year` → `title` → `title (năm ±1)` nếu cần → tên thay thế → biến thể dấu nháy/dấu thanh/`&`/phụ đề |
 | **TV, tập** | EZTV: `imdb_id` (cộng lọc season/tập phía app). Text: `title SxxEyy` → `title xxXyy` → `title Sxx` (để bắt pack) |
 | **Anime, tập** | nyaa, AnimeTosho, TsukiHime: `title - 05` (có đệm số 0), `title 05`. SubsPlease: chỉ `title`. Tên romaji và tên tiếng Anh. Tập tuyệt đối khi recipe dùng `Anime absolute` |
-| **Season pack** | `title S03`, `title Season 3`, `title S03 1080p`, `title complete` (show đã kết thúc). Số đo: `Rick and Morty S03 1080p` ra 111 pack S03, query chỉ có tên show chỉ ra 7 |
+| **Season pack** | `title S03`, `title Season 3`, `title S03 1080p`, `title complete` (show đã kết thúc). Số đo: `Show 16 S03 1080p` ra 111 pack S03, query chỉ có tên show chỉ ra 7 |
 | **Snapshot cả show** (Auto-Track nhiều tập) | `title` cùng tên thay thế, sau đó **query nhắm đích bổ sung** cho các tập hoặc season chưa có ứng viên đạt. Thay cho cơ chế hiện nay là bỏ template `{season}`/`{episode}` (SRCH-03) |
 
 - **Biến đổi theo indexer** do capability quyết định: indexer không hỗ trợ tìm theo tập thì chỉ nhận query cấp show; indexer DHT nhận ít biến thể hơn.
@@ -64,4 +64,4 @@ Thay `FileName.Contains(ReleaseYear)` trong `CandidateEvaluationService.Evaluate
 ## 6. Test
 
 - Fixture tên bản phát hành thật cho từng quy tắc: dấu nháy, dấu thanh, `&`, số La Mã, phụ đề, năm lệch ±1, không năm, số trong tiêu đề, remake trùng tên.
-- Bộ "golden" lấy từ kết quả `engine_probe.py` thật (đã lưu JSON): *Coherence*, *Léon*, *Schindler's List*, *2001*, *Liz to Aoi Tori*, *Spider-Man No Way Home*. Test khẳng định số bản được chấp nhận tăng mà không nhận nhầm.
+- Bộ "golden" lấy từ kết quả `engine_probe.py` thật (đã lưu JSON): *Movie 01*, *Léon*, *Schindler's List*, *2001*, *Alt Title A*, *Movie 08*. Test khẳng định số bản được chấp nhận tăng mà không nhận nhầm.

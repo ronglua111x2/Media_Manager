@@ -2,7 +2,7 @@
 
 - **Baseline:** commit `ff2caa3` (`main`), ngày 2026-11-12.
 - **Phạm vi:** cách hunt gọi search của qBittorrent (Web API `search/*`), cách recipe quyết định tham số search, cách sinh query, và bước lọc ngay sau search.
-- **Phương pháp:** đọc code, đọc 22 recipe thật trong `D:\MediaManagerState\Recipes`, `settings.json` (khối `AutoTorrent`, `Warp`), DB (recipe nào đang gán cho show/movie), và log `D:\MediaManagerState\logs` (33 systemlog, 29/10 → 12/11/2026).
+- **Phương pháp:** đọc code, đọc 22 recipe thật trong `<StateFolder>\Recipes`, `settings.json` (khối `AutoTorrent`, `Warp`), DB (recipe nào đang gán cho show/movie), và log `<StateFolder>\logs` (33 systemlog, 29/10 → 12/11/2026).
 - **Chưa làm:** chạy search A/B thật trên qBittorrent. Bước này cần user cho phép (xem mục 7).
 - **Bối cảnh mạng:** user ở Việt Nam, tracker bị chặn, nên **mọi lần search (hunt và UI) đều chạy qua WARP**. Đây là thiết kế có chủ đích (`Warp.ForceTunnelForHunt=true`), không phải finding.
 - **Thang mức độ:** theo [00-method-and-scope.md](../00-method-and-scope.md). ID tạm `SRCH-xx`.
@@ -46,9 +46,9 @@ Settings fallback hiện tại: `MaxParallelSearches=3`, `ParallelSearchTimeoutS
 | Default TV Pack Recipe | Pack | 15 (+1 NULL) | Snapshot | 60s | 10sˢ | 5000 | 1 | 3 | enabled | Mặc định snapshot. **Cả 4 template `S{season:00} complete…`, `season {season}…` bị bỏ.** |
 | Common Anime no Probe Pagination | Ep | 6 (AT 5) | Snapshot | 60s | 28s | 2000 | 1 | 5 | 10 chọn tay | `{title}`. Tên recipe có "Pagination" nhưng **hunt không phân trang**. |
 | Common Anime no Probe Parallel | Ep | 4 (AT 4) | Per-episode + phân trang FJS | 35s | 12s | tối đa 2×500 | 3 tập | 5 | 10 chọn tay | `{title} {episode} {quality}`, `{title} - {episode} {quality}` |
-| Rick_And_Morty | Ep | 2 | Snapshot | 40s | 20s | 3000 | 1 | 6 | enabled | Mặc định snapshot (cả `{season}x{episode:00}` lẫn `S{season:00}E{episode:00}` đều bị bỏ) |
+| Show 16 | Ep | 2 | Snapshot | 40s | 20s | 3000 | 1 | 6 | enabled | Mặc định snapshot (cả `{season}x{episode:00}` lẫn `S{season:00}E{episode:00}` đều bị bỏ) |
 | Common TV no Probe Pagi High Quality | Ep | 2 | Snapshot | 60s | 28s | 2000 | 1 | 7 | enabled | `{title}` |
-| Korra | Ep | 2 | Snapshot | 40s | 15s | 2000 | 1 | 3 | enabled | Mặc định snapshot |
+| Show K | Ep | 2 | Snapshot | 40s | 15s | 2000 | 1 | 3 | enabled | Mặc định snapshot |
 | Korra_Pack | Pack | 2 | Snapshot | 60s | 20s | 2000 | 1 | 3 | enabled | `{title} {quality}` |
 | TV Recipe Pack High Quality | Pack | 1 | Snapshot | 120s | 10s | 2000 | 1 | 10 | enabled | `{title}` |
 | Common Anime no Probe | Ep | 1 | Snapshot | 45s | **8s** | 2000 | 1 | 3 | enabled | Mặc định snapshot |
@@ -77,16 +77,16 @@ Trong cửa sổ log còn giữ, hunt chỉ chạy 4 lần, tất cả cho recip
 
 | Ngày | Query | Status lúc dừng | Dừng vì | Dòng | Engine 0 dòng |
 |---|---|---|---|---|---|
-| 31/10 | A Certain Dark Item | **Running** | timeout 60s | 169 | bitsearch, solidtorrents, subsplease, therarbg, tsukihime |
+| 31/10 | Show 01 | **Running** | timeout 60s | 169 | bitsearch, solidtorrents, subsplease, therarbg, tsukihime |
 | 31/10 | To Aru Anbu no ITEM | **Running** | idle 28s | 41 | 5 engine trên + eztvx |
 | 31/10 | Toaru Anbu no Shoujo Kyousei | **Running** | idle 28s | 27 | 5 engine trên + eztvx, limetorrents |
-| 03/11 | From Far Away | **Running** | timeout 60s | 268 | 5 engine trên |
-| 03/11 | Kanata Kara | **Running** | idle 28s | 259 | 5 engine trên + eztvx |
-| 07/11 | A Certain Dark Item | **Running** | timeout 60s | 231 | 5 engine trên |
+| 03/11 | Show 08 | **Running** | timeout 60s | 268 | 5 engine trên |
+| 03/11 | Alt Title D | **Running** | idle 28s | 259 | 5 engine trên + eztvx |
+| 07/11 | Show 01 | **Running** | timeout 60s | 231 | 5 engine trên |
 | 07/11 | To Aru Anbu no ITEM | **Running** | idle 28s | 49 | 5 engine trên + eztvx |
 | 07/11 | Toaru Anbu no Shoujo Kyousei | **Running** | idle 28s | 48 | 5 engine trên + eztvx |
-| 10/11 | From Far Away | **Running** | timeout 60s | 268 | 5 engine trên |
-| 10/11 | Kanata Kara | **Running** | timeout 60s | 302 | 5 engine trên |
+| 10/11 | Show 08 | **Running** | timeout 60s | 268 | 5 engine trên |
+| 10/11 | Alt Title D | **Running** | timeout 60s | 302 | 5 engine trên |
 
 - **10/10 lần search kết thúc khi job vẫn `Running`.** Không lần nào engine chạy xong. 4 lần chạm timeout cứng, 6 lần chạm idle.
 - **5/10 plugin (bitsearch, solidtorrents, subsplease, therarbg, tsukihime) trả 0 dòng ở mọi lần search.** Trên thực tế chỉ 4–5 engine hoạt động: nyaasi, nekobt, limetorrents, torrentdownloads, eztvx.
@@ -130,9 +130,9 @@ Không có log nào cho One_Piece, oregairu, Common Anime, recipe pack hay movie
 
 ### SRCH-03 — High — Chế độ snapshot âm thầm bỏ mọi template có `{season}`/`{episode}`
 
-- **Recipe bị ảnh hưởng:** mọi recipe **pack** (Default TV Pack 15 show, Common Anime Pack 16, Korra_Pack, TV Recipe Pack HQ) và các recipe tập TV snapshot có template theo tập (Common Anime 15 show, Common Anime no Probe, Korra, Rick_And_Morty).
+- **Recipe bị ảnh hưởng:** mọi recipe **pack** (Default TV Pack 15 show, Common Anime Pack 16, Korra_Pack, TV Recipe Pack HQ) và các recipe tập TV snapshot có template theo tập (Common Anime 15 show, Common Anime no Probe, Show K, Show 16).
 - **Bằng chứng:** `QueryTemplateSelection.cs:24-31` dùng `showLevelOnly: true` để lọc mọi template có token season/episode (`QueryTokenCatalog.cs:137-176`). Nếu không còn template nào thì dùng `{title} {year}`, `{title} {quality}`, `{title}`. `FetchSeasonPacksAsync` luôn gọi snapshot (`FetchJobService.cs:291-296`). Vì vậy các template như `{title} S{season:00} complete {quality}` trong Default TV Pack **chưa bao giờ được dùng**. UI không báo gì về việc này.
-- **Hệ quả:** với show dài tập (Rick and Morty, Korra, One Piece hay anime nhiều mùa), query "Tên show" sinh ra rất nhiều trang. Plugin phải lật qua nhiều trang (nyaasi lật hết; số khác dừng ở 4–6 trang) trong khi timeout/idle cắt ngang (SRCH-01). Vì vậy season pack cũ hoặc một tập cụ thể có thể không lọt vào được. Query nhắm đích kiểu "Tên show S02 1080p" thì ít trang hơn và trúng ngay. Đó là cách user search tay trên UI.
+- **Hệ quả:** với show dài tập (Show 16, Show K, Show L hay anime nhiều mùa), query "Tên show" sinh ra rất nhiều trang. Plugin phải lật qua nhiều trang (nyaasi lật hết; số khác dừng ở 4–6 trang) trong khi timeout/idle cắt ngang (SRCH-01). Vì vậy season pack cũ hoặc một tập cụ thể có thể không lọt vào được. Query nhắm đích kiểu "Tên show S02 1080p" thì ít trang hơn và trúng ngay. Đó là cách user search tay trên UI.
 - **Hướng sửa:** trong snapshot, cho phép template `{season}` khi biết season đích (với pack là các season đang chọn; với tập là season của các tập trong lô). Hoặc thêm một lượt "search nhắm đích" theo tập hay season khi snapshot không có ứng viên đạt. Recipe editor cần cảnh báo template nào sẽ bị bỏ trong chế độ snapshot.
 
 ### SRCH-04 — Medium — Search theo từng tập chỉ chấm điểm N kết quả nhiều seed nhất
@@ -145,7 +145,7 @@ Không có log nào cho One_Piece, oregairu, Common Anime, recipe pack hay movie
 ### SRCH-05 — Medium — Khi tắt phân trang chỉ đọc `ResultLimit` dòng đầu buffer
 
 - **Recipe bị ảnh hưởng:** One_Piece (150), oregairu (150), Default TV Recipe (75). Ngoài ra mọi recipe tập TV không đặt `enableSearchPagination` (mặc định `false` cho TvEpisode, `RecipeRuntimeSettings.cs:208-209`).
-- **Bằng chứng:** mỗi lần poll, `QbittorrentClient.cs:153` đều đọc `GetSearchResultsAsync(id, request.Limit, request.Offset=0)`. Buffer của qBittorrent xếp theo thứ tự kết quả về, nên các engine nhanh chiếm hết slot. Comment ở `AutomationFlowService.cs:326-329` đã mô tả đúng vấn đề này cho nhánh có phân trang. One Piece là show có rất nhiều bản phát hành cho mỗi tập.
+- **Bằng chứng:** mỗi lần poll, `QbittorrentClient.cs:153` đều đọc `GetSearchResultsAsync(id, request.Limit, request.Offset=0)`. Buffer của qBittorrent xếp theo thứ tự kết quả về, nên các engine nhanh chiếm hết slot. Comment ở `AutomationFlowService.cs:326-329` đã mô tả đúng vấn đề này cho nhánh có phân trang. Show L là show có rất nhiều bản phát hành cho mỗi tập.
 - **Hướng sửa:** bỏ đường không phân trang, hoặc cho nó dùng con trỏ đọc tiếp như `AutomationFlowService`. Đổi mặc định phân trang của TvEpisode sang `true`.
 
 ### SRCH-06 — Medium — Retry một order đi đường search khác với chạy theo lô
@@ -189,7 +189,7 @@ Không có log nào cho One_Piece, oregairu, Common Anime, recipe pack hay movie
 
 ## 5b. Findings riêng cho movie
 
-User xác nhận: anime nổi tiếng và đang chiếu đã tìm khá nhanh. Điểm đau thật sự nằm ở **movie cũ** (các thập niên trước) và **movie có nhiều bản encode cần lựa**. Trong 15 movie đang theo dõi, các movie chưa có ứng viên gồm: Coherence, Your Name., Liz and the Blue Bird, Sound! Euphonium the Movie – Our Promise, Spider-Man: No Way Home, Jujutsu Kaisen 0, Oppenheimer, The Lego Movie 2 và Project Hail Mary. Số này có cả phim user chưa từng chạy hunt.
+User xác nhận: anime nổi tiếng và đang chiếu đã tìm khá nhanh. Điểm đau thật sự nằm ở **movie cũ** (các thập niên trước) và **movie có nhiều bản encode cần lựa**. Trong 15 movie đang theo dõi, các movie chưa có ứng viên gồm: Movie 01, Movie Two, Movie 04, Show E the Movie – Movie Subtitle, Movie 08, Movie J0, Movie Three, Movie One và Movie 06. Số này có cả phim user chưa từng chạy hunt.
 
 Đường search của movie là `AutomationFlowService.DryRunMovieAsync` → `SearchAsync` (phân trang con trỏ, 3 query song song). Đường này đọc buffer đầy đủ, nên **vấn đề của movie nằm ở query và bộ lọc**, không phải ở cách đọc buffer.
 
@@ -198,7 +198,7 @@ User xác nhận: anime nổi tiếng và đang chiếu đã tìm khá nhanh. Đ
 > **User xác nhận (12/11/2026): cần sửa lớn.** Không chỉ nới thành ±1 năm, mà phải làm lại toàn bộ cách khớp năm của movie (xem "Phạm vi sửa lớn" bên dưới).
 
 - **Bằng chứng:** `CandidateEvaluationService.EvaluateMovie` (khoảng dòng 84) dùng `!result.FileName.Contains(movie.ReleaseYear.ToString())` để trả `YearMismatch`. Tức là phải có **đúng** năm đó, không lệch ±1 và không chấp nhận tên không ghi năm.
-- **Hệ quả với movie cũ:** TMDB thường lấy năm công chiếu sớm nhất (liên hoan phim), còn bản phát hành hay dùng năm ra rạp, hoặc ngược lại. Một số bản (đặc biệt là bản cũ, remux, bản từ cộng đồng) không ghi năm. Ví dụ cần xác minh bằng A/B: *Coherence* (TMDB 2014, bản phát hành thường ghi 2013), hiện chưa có ứng viên nào.
+- **Hệ quả với movie cũ:** TMDB thường lấy năm công chiếu sớm nhất (liên hoan phim), còn bản phát hành hay dùng năm ra rạp, hoặc ngược lại. Một số bản (đặc biệt là bản cũ, remux, bản từ cộng đồng) không ghi năm. Ví dụ cần xác minh bằng A/B: *Movie 01* (TMDB 2014, bản phát hành thường ghi 2013), hiện chưa có ứng viên nào.
 - **Recipe bị ảnh hưởng:** mọi recipe movie.
 - **Hướng sửa:** chấp nhận lệch ±1 năm (trừ điểm nhẹ). Khi tên không có năm, chỉ chấp nhận nếu tiêu đề khớp mạnh, và đánh dấu cho user kiểm.
 - **Phạm vi sửa lớn:**
@@ -213,7 +213,7 @@ User xác nhận: anime nổi tiếng và đang chiếu đã tìm khá nhanh. Đ
 ### SRCH-12 — High — Recipe movie phổ biến không dùng tên thay thế (romaji, tên gốc)
 
 - **Bằng chứng:** `SearchTitleResolver.CreateRequest` chỉ thêm tên thay thế khi `useLibraryEnglishTitles=true`. Mặc định là `false` (`RecipeRuntimeSettings.cs:595-596`). *Default Movie Recipe* (2 movie, cộng 3 movie để NULL) không đặt key này. *Common Movie* và *Common Movie No TV* đặt `False`. Hệ quả kép: tên thay thế **không được search**, và **cũng không được dùng khi khớp tiêu đề** (`EvaluateMovie` gọi cùng resolver), nên bản phát hành ghi tên gốc bị loại vì `TitleMismatch`.
-- **Ví dụ trong DB:** *Liz and the Blue Bird* có sẵn `Liz to aoi tori`, `Rizu to aoi tori`…; *Your Name.* có `Kimi no Na wa.`; *Sound! Euphonium … Our Promise* có `Hibike! Euphonium Chikai no Finale`. Cả ba đều chưa có ứng viên.
+- **Ví dụ trong DB:** *Movie 04* có sẵn `Alt Title A`, `Alt Title A2`…; *Movie Two* có `Alt Title B`; *Show E … Movie Subtitle* có `Show E Chikai no Finale`. Cả ba đều chưa có ứng viên.
 - **Hướng sửa:** bật tên thay thế cho các recipe movie, hoặc đổi default thành `true` cho Movie. Tách hai việc "search bằng tên thay thế" và "chấp nhận tên thay thế khi khớp".
 
 ### SRCH-13 — High (nâng từ Medium theo user) — Làm sạch query thay dấu nháy đơn bằng dấu cách
@@ -266,7 +266,7 @@ Công cụ: `tools/SearchProbe/engine_probe.py` (23 engine đang bật × 10 ti�
 | **eztvx** | 0 dòng, **8/10 lần treo tới 120s** | — | Cloudflare challenge. **Treo, nên giữ cả job ở trạng thái `Running`.** Đây là nguyên nhân trực tiếp của SRCH-01 với recipe anime 10 plugin |
 | **therarbg** | 0 | 8–14s | Cloudflare challenge, trả trang không có kết quả |
 | **bitsearch**, **solidtorrents**, **torlock** | 0 | 1–22s | Python báo `CERTIFICATE_VERIFY_FAILED: certificate has expired`, trong khi curl (Windows schannel) thấy hợp lệ, tức là lỗi chuỗi chứng chỉ phía Python. `bitsearch.to` và `solidtorrents.to` đều redirect về `bitsearch.eu`, nên **là cùng một site** |
-| **tsukihime**, **torrentscsv** | 0 | ~1s | Plugin nhận trang chống bot thay vì JSON. **Gọi thẳng API (`api.tsukihime.org`, `torrents-csv.com/service/search`) thì có dữ liệu** (tsukihime: 67 kết quả cho *Kanata Kara*) |
+| **tsukihime**, **torrentscsv** | 0 | ~1s | Plugin nhận trang chống bot thay vì JSON. **Gọi thẳng API (`api.tsukihime.org`, `torrents-csv.com/service/search`) thì có dữ liệu** (tsukihime: 67 kết quả cho *Alt Title D*) |
 | **animetosho** | 0 | ~1s | `feed.animetosho.org` không phân giải DNS được (site chính `animetosho.org` vẫn vào được) |
 | **yourbittorrent** | 0 | ~1s | 403 "One moment" (trang chống bot) |
 | **cloudtorrents** | 0 | ~1s | Site chết (HTTP 526) |
@@ -284,14 +284,14 @@ Hệ quả cho thiết kế B/D:
 
 | Tiêu đề | Kết quả | Kết luận |
 |---|---|---|
-| `Coherence` (TMDB 2014) | 479 dòng; năm trong tên: **2013 ×322**, 2014 ×11 | **Xác nhận SRCH-11**: luật khớp năm chính xác hiện tại loại khoảng **97%** số bản. Template `{title} {year}` (= `Coherence 2014`) còn lọc hụt ngay từ lúc search |
+| `Movie 01` (TMDB 2014) | 479 dòng; năm trong tên: **2013 ×322**, 2014 ×11 | **Xác nhận SRCH-11**: luật khớp năm chính xác hiện tại loại khoảng **97%** số bản. Template `{title} {year}` (= `Movie 01 2014`) còn lọc hụt ngay từ lúc search |
 | `Léon The Professional` so với `Leon The Professional` | **207** so với **458** dòng; torrentdownloads 0 so với 100, piratebay 10 so với 99 | **Xác nhận SRCH-13 về dấu thanh**: bỏ dấu tăng gấp đôi kết quả. App hiện **giữ dấu** (`\p{L}`) |
 | `Schindler s List` (app gửi) so với `Schindlers List` | 413 dòng / 7 engine so với 361 dòng / 5 engine | **Điều chỉnh SRCH-13 về dấu nháy**: không có biến thể nào thắng tuyệt đối. Kickass và sktorrent chỉ ra kết quả với `Schindler s`, còn limetorrents nhiều hơn với `Schindlers`. Cách sửa đúng là **gửi cả hai biến thể** và khớp tiêu đề bằng bộ chuẩn hoá chung |
 | `2001 A Space Odyssey` | 552 dòng; năm trong tên: 2001 ×596, 1968 ×419 | Parser năm (SRCH-11) **phải bỏ qua số nằm trong tiêu đề** |
-| `Liz to Aoi Tori` (romaji) | 113 dòng / 8 engine (nyaasi 63) | Tên thay thế mang lại kết quả, ủng hộ SRCH-12 |
-| `Rick and Morty S03` | 214 dòng / 6 engine | Query nhắm đích theo season có kết quả, ủng hộ SRCH-03 |
-| `Kanata Kara 06` | 38 dòng / 6 engine | Anime đang chiếu ổn, khớp nhận xét của user |
-| `Spider-Man No Way Home` | 574 dòng, **554 URL khác nhau** | Hàng trăm bản để lựa, trong khi app chỉ giữ tối đa 10 (SRCH-15) |
+| `Alt Title A` (romaji) | 113 dòng / 8 engine (nyaasi 63) | Tên thay thế mang lại kết quả, ủng hộ SRCH-12 |
+| `Show 16 S03` | 214 dòng / 6 engine | Query nhắm đích theo season có kết quả, ủng hộ SRCH-03 |
+| `Alt Title D 06` | 38 dòng / 6 engine | Anime đang chiếu ổn, khớp nhận xét của user |
+| `Movie 08` | 574 dòng, **554 URL khác nhau** | Hàng trăm bản để lựa, trong khi app chỉ giữ tối đa 10 (SRCH-15) |
 
 ---
 
@@ -301,18 +301,18 @@ Công cụ: `tools/SearchProbe/ab_timeline.py` với 7 case trong `ab_cases.json
 
 | Case | Chờ tới khi xong | App giữ được | Ghi chú |
 |---|---|---|---|
-| Anime snapshot *From Far Away* (10 plugin, 60s/idle 28) | 312 dòng, 180s | **312 (100%)**, dừng ở 60s | Mọi dòng về trong 60s đầu; 120s sau chỉ là chờ engine treo |
+| Anime snapshot *Show 08* (10 plugin, 60s/idle 28) | 312 dòng, 180s | **312 (100%)**, dừng ở 60s | Mọi dòng về trong 60s đầu; 120s sau chỉ là chờ engine treo |
 | Anime, cấu hình *Common Anime* (mọi plugin, 45s/idle 8) | 454, 180s | **437 (96%)** | |
-| Pack *Rick and Morty* (query snapshot) | 884, 180s | **803 (91%)** | 782 dòng đã có ở giây 30 |
-| Pack `Rick and Morty S03 1080p` (nhắm đích) | 131, 180s | 123 (94%) | Xem SRCH-03 bên dưới |
-| Movie `Coherence 2014` (Default Movie, 30s/idle 10) | **12**, 180s | 12 (100%) | Cả 12 đều ghi 2014; **không có bản 2013 nào** |
-| Movie *Spider-Man No Way Home* (Common Movie, 120s/idle 30) | 616, 180s | 576 (94%) | 515 dòng đã có ở giây 30 |
-| *One Piece 1170 1080p* | 73, **23s** | 73 (100%) | Buffer < 150 dòng, nên SRCH-05 không xảy ra với query này |
+| Pack *Show 16* (query snapshot) | 884, 180s | **803 (91%)** | 782 dòng đã có ở giây 30 |
+| Pack `Show 16 S03 1080p` (nhắm đích) | 131, 180s | 123 (94%) | Xem SRCH-03 bên dưới |
+| Movie `Movie 01 2014` (Default Movie, 30s/idle 10) | **12**, 180s | 12 (100%) | Cả 12 đều ghi 2014; **không có bản 2013 nào** |
+| Movie *Movie 08* (Common Movie, 120s/idle 30) | 616, 180s | 576 (94%) | 515 dòng đã có ở giây 30 |
+| *Show L 1170 1080p* | 73, **23s** | 73 (100%) | Buffer < 150 dòng, nên SRCH-05 không xảy ra với query này |
 
 Kết luận:
 - **SRCH-01 được điều chỉnh: thiệt hại chủ yếu là _thời gian_, không phải mất kết quả.** App vẫn giữ 91–100% số dòng. Nhưng 6/7 job kéo **đúng 180s**, vì qBittorrent tự cắt search sau 3 phút và có engine treo (eztvx, kickasstorrents) giữ job tới lúc đó. Hệ quả: mỗi query của hunt luôn tốn trọn timeout của recipe (45–120s). Một show snapshot có 3 query mất 2–3 phút. **Lời khuyên cũ "tăng idle lên ~30s" bị rút lại**, vì nó chỉ làm chậm thêm. Cách sửa đúng là cắt hoặc tắt engine treo và đặt timeout riêng cho từng engine.
-- **SRCH-03 được xác nhận bằng số liệu:** query pack thực tế (`Rick and Morty`) chỉ chứa **7** season pack S03. Query nhắm đích `Rick and Morty S03 1080p` ra **111**, trong đó **105 bản mà query tên show không có**. Gấp khoảng 15 lần.
-- **SRCH-11 nặng hơn dự kiến:** template `{title} {year}` của Default Movie gửi `Coherence 2014`, nên chỉ thu được 12 dòng. Trong khi đó `Coherence` (mục 5c) ra 479 dòng, 322 bản ghi 2013. Năm TMDB sai làm hỏng **cả bước search lẫn bước lọc**.
+- **SRCH-03 được xác nhận bằng số liệu:** query pack thực tế (`Show 16`) chỉ chứa **7** season pack S03. Query nhắm đích `Show 16 S03 1080p` ra **111**, trong đó **105 bản mà query tên show không có**. Gấp khoảng 15 lần.
+- **SRCH-11 nặng hơn dự kiến:** template `{title} {year}` của Default Movie gửi `Movie 01 2014`, nên chỉ thu được 12 dòng. Trong khi đó `Movie 01` (mục 5c) ra 479 dòng, 322 bản ghi 2013. Năm TMDB sai làm hỏng **cả bước search lẫn bước lọc**.
 
 ---
 
@@ -321,7 +321,7 @@ Kết luận:
 0. **Movie (ưu tiên theo user): SRCH-12, SRCH-11, SRCH-13, rồi SRCH-14, SRCH-15.** SRCH-12 có thể thử ngay mà chưa cần sửa code: bật `useLibraryEnglishTitles` trong recipe movie. **SRCH-11 (khớp năm) và SRCH-13 (chuẩn hoá tiêu đề) được user đánh dấu là "cần sửa lớn"**: làm lại toàn bộ, có bộ fixture test riêng, không chỉ vá nhỏ. Hai việc này nên làm chung một nhánh vì đều đụng tới bước khớp tiêu đề của movie.
 1. **SRCH-02 + SRCH-01: dọn engine và cắt engine treo** (A/B đã xong, mục 5c và 5d). Làm được ngay mà chưa cần sửa code: **tắt** trong qBittorrent hoặc bỏ khỏi recipe các engine hỏng (eztvx, therarbg, bitsearch, solidtorrents, torlock, tsukihime, torrentscsv, animetosho, yourbittorrent, cloudtorrents, yts_mx, onlinefix, redetorrent), và bỏ một trong hai plugin piratebay vì trùng nguồn. **Không** tăng idle; A/B cho thấy làm vậy chỉ chậm thêm.
 2. **SRCH-03: snapshot dùng template season/episode, hoặc có lượt search nhắm đích.** Ảnh hưởng lớn nhất tới pack (31+ show).
-3. **SRCH-04: đánh giá hết rồi mới lấy top N.** Sửa nhỏ, ảnh hưởng 4 show có Auto-Track và One Piece.
+3. **SRCH-04: đánh giá hết rồi mới lấy top N.** Sửa nhỏ, ảnh hưởng 4 show có Auto-Track và Show L.
 4. **SRCH-05, SRCH-06, SRCH-07, SRCH-08: gom về một `SearchRunner`.** Đây là refactor lớn hơn và nên làm sau khi có số liệu A/B.
 5. **SRCH-09, SRCH-10:** dọn cấu hình và bổ sung log.
 
@@ -375,7 +375,7 @@ Công cụ: `tools/SearchProbe/site_probe.py` cùng danh sách `site_candidates.
 
 | Site | Loại | Giao diện | Kết quả thử | Đánh giá |
 |---|---|---|---|---|
-| **Knaben** | Meta (gom nhiều tracker) | **API JSON** `api.knaben.org/v1` | 150 kết quả trong 1.7s cho `Coherence`, tổng ≥ 10000. Nguồn: TPB, TokyoTosho, Nyaa, **1337x** | **Ứng viên số 1.** Có sẵn `hash`, `magnetUrl`, `seeders`, `bytes`, `date`, `tracker`, kể cả trường `virusDetection`. Lấy được nội dung 1337x mà không chạm vào trang 1337x bị challenge |
+| **Knaben** | Meta (gom nhiều tracker) | **API JSON** `api.knaben.org/v1` | 150 kết quả trong 1.7s cho `Movie 01`, tổng ≥ 10000. Nguồn: TPB, TokyoTosho, Nyaa, **1337x** | **Ứng viên số 1.** Có sẵn `hash`, `magnetUrl`, `seeders`, `bytes`, `date`, `tracker`, kể cả trường `virusDetection`. Lấy được nội dung 1337x mà không chạm vào trang 1337x bị challenge |
 | **BT4G** | Chỉ mục DHT | RSS `bt4gprx.com/search?q=…&page=rss` | 15 kết quả trong 0.4s | Phủ rộng nội dung cũ (tốt cho movie cũ), nhưng bản DHT nhiều rác, nên phải qua bộ lọc rác |
 | The Pirate Bay | Tổng hợp | API JSON `apibay.org` | 77 kết quả trong 0.2s | Đã có (thay cho 2 plugin piratebay trùng nhau) |
 | EZTV | TV | API JSON tra theo IMDb id | 50 kết quả trong 0.5s | Đã có trong kế hoạch |

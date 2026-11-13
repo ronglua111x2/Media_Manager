@@ -8,7 +8,7 @@ Dùng để đo trước/sau mỗi thay đổi search, và làm **cổng A/B tr�
 
 - .NET SDK theo `global.json`. qBittorrent WebUI tại `localhost:8080` với localhost bypass (không cần mật khẩu).
 - Cloudflare WARP phải bật (ở Việt Nam tracker bị chặn nếu không có WARP).
-- **Ngân sách dùng chung với app (07d GOV-07):** các lệnh search native đọc `<state>/indexer-state.json` (số request hôm nay, breaker, cooldown) và ghi phần của mình vào đó khi kết thúc. Khi app đang chạy (giữ `indexer-state.lock`), hoặc một bench khác đang chạy, bench từ chối chạy; `--force 1` chạy với ngân sách riêng không được lưu (site khi đó nhận request của cả hai). Muốn thử mà không đụng state thật thì dùng `--state D:\MediaManagerSandbox\state`.
+- **Ngân sách dùng chung với app (07d GOV-07):** các lệnh search native đọc `<state>/indexer-state.json` (số request hôm nay, breaker, cooldown) và ghi phần của mình vào đó khi kết thúc. Khi app đang chạy (giữ `indexer-state.lock`), hoặc một bench khác đang chạy, bench từ chối chạy; `--force 1` chạy với ngân sách riêng không được lưu (site khi đó nhận request của cả hai). Muốn thử mà không đụng state thật thì dùng `--state <SandboxFolder>\state`.
 - Mỗi target (tập, pack, movie) là một search session như trong app: có trần request mỗi lượt (07d GOV-03 B), nên bench đo đúng số request app sẽ gửi.
 
 ## Lệnh
@@ -24,7 +24,7 @@ dotnet bin/Release/net8.0/SearchBench.dll movies --max-seconds 45 --plugins "lim
 dotnet bin/Release/net8.0/SearchBench.dll movies --backend native
 
 # Chẩn đoán: liệt kê bản luật cũ nhận mà luật mới loại (kèm lý do)
-dotnet bin/Release/net8.0/SearchBench.dll movies --diag 1 --only "Coherence,Predestination"
+dotnet bin/Release/net8.0/SearchBench.dll movies --diag 1 --only "Movie 01,Movie 05"
 
 # Native so với qBittorrent trên bộ tiêu đề đặc thù (../SearchProbe/special_titles.json)
 dotnet bin/Release/net8.0/SearchBench.dll compare --plugins enabled --max-seconds 180
@@ -44,7 +44,7 @@ dotnet bin/Release/net8.0/SearchBench.dll reeval-movies --dump movies.tsv
 dotnet bin/Release/net8.0/SearchBench.dll reeval-shows --dump shows.tsv [--kind pack|episode] [--out verdicts.tsv]
 ```
 
-Tham số chung: `--state D:\MediaManagerState` (mặc định), `--only "a,b"` lọc theo tên movie/show, `--force 1` (xem trên).
+Tham số chung: `--state <StateFolder>` (mặc định), `--only "a,b"` lọc theo tên movie/show, `--force 1` (xem trên).
 
 ## Đọc kết quả
 

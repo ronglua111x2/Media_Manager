@@ -11,7 +11,7 @@ Hiện tại hunt search qua Web API của qBittorrent, tức là chạy các pl
 - **Chỉ 10/23 engine đang bật trả được kết quả.** 13 engine còn lại hỏng vì một trong các lý do: lỗi chứng chỉ của Python, trang chống bot, domain chết, cần OMDb key, hoặc ngoài chuyên môn.
 - **Engine treo giữ cả job tới mức trần 180s của qBittorrent.** Mỗi query của hunt vì thế luôn tốn trọn timeout của recipe (45–120s). Thiệt hại chủ yếu là **thời gian**: app vẫn giữ được 91–100% số dòng.
 - **Query và bước khớp làm hụt kết quả, nặng nhất với movie cũ:**
-  - năm TMDB lệch với năm trong tên bản phát hành loại khoảng 97% số bản của *Coherence*;
+  - năm TMDB lệch với năm trong tên bản phát hành loại khoảng 97% số bản của *Movie 01*;
   - giữ dấu thanh làm mất một nửa kết quả (`Léon`);
   - không dùng tên thay thế (romaji);
   - query pack chỉ có tên show bỏ lỡ 105/111 season pack.

@@ -45,11 +45,11 @@ Mọi lần loại đều ghi lý do vào telemetry và debug log, để chỉnh
 - **Gom nhóm và chip lọc nhanh:** độ phân giải, nguồn, codec, HDR/DV, âm thanh, release group, dung lượng (thanh trượt), số nguồn.
 - Mỗi dòng hiện: điểm và **lý do điểm** (vì sao cộng hay trừ), các nguồn, seed, ngày đăng, cờ `Suspicious` nếu có.
 - Auto-Track vẫn tự chọn top 1 (hoặc top N để thử lần lượt khi add thất bại) như hiện nay.
-- Số đo: *Spider-Man No Way Home* có **554** URL khác nhau qua 7 engine, trong khi app hiện chỉ giữ tối đa 10.
+- Số đo: *Movie 08* có **554** URL khác nhau qua 7 engine, trong khi app hiện chỉ giữ tối đa 10.
 
 ## 6. Test
 
 - Fixture cho `ResultNormalizer`: magnet base32 và hex, tên đủ loại thuộc tính.
 - `ResultMerger`: cùng infohash từ Knaben và TPB, khác số seed.
 - `JunkFilter`: bộ tên rác thật (lấy từ log `engine_probe`), dung lượng phi lý.
-- Snapshot test cho thứ tự chấm điểm của các case *Spider-Man*, *Coherence*, *Rick and Morty S03*.
+- Snapshot test cho thứ tự chấm điểm của các case *Hero-Man*, *Movie 01*, *Show 16 S03*.

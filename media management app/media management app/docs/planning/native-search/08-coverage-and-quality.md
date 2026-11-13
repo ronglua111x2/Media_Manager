@@ -5,9 +5,9 @@
 
 ## 1. Bối cảnh (số đo 12/11/2026)
 
-- Native tìm ra ứng viên cho **15/15 movie**, nhanh hơn qBittorrent rất nhiều. Nhưng với **movie phương Tây phổ biến**, native có ít ứng viên đạt hơn khoảng 30–70% (*Oppenheimer* 120 so với 258, *Lego Movie 2* 65 so với 179).
+- Native tìm ra ứng viên cho **15/15 movie**, nhanh hơn qBittorrent rất nhiều. Nhưng với **movie phương Tây phổ biến**, native có ít ứng viên đạt hơn khoảng 30–70% (*Movie Three* 120 so với 258, *Movie One* 65 so với 179).
 - **"Nhiều ứng viên đạt" không có nghĩa là "nhiều ứng viên tốt"**:
-  - *Jujutsu Kaisen 0* từng ra 168 ứng viên với qBittorrent. Gần hết là tập TV bị nhận nhầm; lỗi đã sửa ở `46fbbd4`.
+  - *Movie J0* từng ra 168 ứng viên với qBittorrent. Gần hết là tập TV bị nhận nhầm; lỗi đã sửa ở `46fbbd4`.
   - Sau khi sửa, qBittorrent ra **21** còn native ra **22**.
   - Bench hiện chỉ đếm "đạt bộ lọc", nên chưa trả lời được "ngon hơn hay không".
 - User muốn: (a) thêm nguồn và trang để native phủ ngang qBittorrent với movie phương Tây; (b) đo được **ứng viên tốt**; (c) chọn backend (`Qbittorrent`, `Native`, `Both`) được **cả trong Settings lẫn trong từng recipe**.
@@ -81,21 +81,21 @@ Ràng buộc giữ nguyên: mọi request đi qua governor; không vượt chall
 
 | Movie | qBittorrent | Native | Bản #1 |
 |---|---|---|---|
-| Coherence | 25 | 21 | native điểm cao hơn |
-| Predestination | 25 | 24 | giống nhau |
-| Your Name. | 129 | 96 | giống nhau |
-| Liz and the Blue Bird | 20 | 15 | giống nhau |
-| The Lego Movie 2 | 50 | 35 | giống nhau |
-| Euphonium – Our Promise | 16 | 14 | giống nhau |
-| El Camino | 31 | 24 | giống nhau |
-| Spider-Man: No Way Home | 90 | 80 | giống nhau |
-| Jujutsu Kaisen 0 | 1 | 2 | qBittorrent điểm cao hơn |
-| Oppenheimer | 126 | 100 | giống nhau |
-| Euphonium: Ensemble Contest | 0 | 0 | giống nhau |
-| Spider-Man: Across the Spider-Verse | 59 | 51 | native điểm cao hơn |
-| Golam | 0 | 5 | native điểm cao hơn |
-| Cosmic Princess Kaguya! | 0 | 1 | giống nhau |
-| Project Hail Mary | 88 | 70 | giống nhau |
+| Movie 01 | 25 | 21 | native điểm cao hơn |
+| Movie 05 | 25 | 24 | giống nhau |
+| Movie Two | 129 | 96 | giống nhau |
+| Movie 04 | 20 | 15 | giống nhau |
+| Movie One | 50 | 35 | giống nhau |
+| Show E – Movie Subtitle | 16 | 14 | giống nhau |
+| Spinoff Movie | 31 | 24 | giống nhau |
+| Movie 08 | 90 | 80 | giống nhau |
+| Movie J0 | 1 | 2 | qBittorrent điểm cao hơn |
+| Movie Three | 126 | 100 | giống nhau |
+| Show E: Short Subtitle | 0 | 0 | giống nhau |
+| Movie 07 | 59 | 51 | native điểm cao hơn |
+| Movie 03 | 0 | 5 | native điểm cao hơn |
+| Movie 02 | 0 | 1 | giống nhau |
+| Movie 06 | 88 | 70 | giống nhau |
 | **Tổng** | **660** | **538 (82%)** | **Native bằng hoặc cao hơn ở 14/15** |
 
 Thời gian mỗi movie: native 2–26 s, qBittorrent 13–242 s.
@@ -110,37 +110,37 @@ Bước tiếp theo:
 
 ### Lần đo 2 (sau `09fda5f`: query `title + chất lượng`)
 
-`09fda5f` gửi thêm query `title + 2 chất lượng cao nhất của recipe` (ví dụ `Oppenheimer 1080p`, `Oppenheimer 2160p`) tới các indexer có phân trang hoặc trả ít dòng: LimeTorrents, Bitsearch, TorrentDownloads. Hash cũng được lấy từ link tải của YTS.
+`09fda5f` gửi thêm query `title + 2 chất lượng cao nhất của recipe` (ví dụ `Movie Three 1080p`, `Movie Three 2160p`) tới các indexer có phân trang hoặc trả ít dòng: LimeTorrents, Bitsearch, TorrentDownloads. Hash cũng được lấy từ link tải của YTS.
 
 | Movie | qBittorrent | Native | Chỉ qBit có | Chỉ native có |
 |---|---|---|---|---|
-| Coherence | 20 | 21 | 2 | 3 |
-| Predestination | 23 | 24 | 3 | 4 |
-| Your Name. | 108 | 100 | 18 | 10 |
-| Liz and the Blue Bird | 16 | 15 | 6 | 5 |
-| The Lego Movie 2 | 41 | 35 | 6 | 0 |
-| Euphonium – Our Promise | 15 | 19 | 2 | 6 |
-| El Camino | 27 | 24 | 4 | 1 |
-| Spider-Man: No Way Home | 79 | 94 | 4 | 19 |
-| Jujutsu Kaisen 0 | 1 | 12 | 0 | 11 |
-| Oppenheimer | 106 | 103 | 17 | 14 |
-| Euphonium: Ensemble Contest | 0 | 0 | 0 | 0 |
-| Spider-Man: Across the Spider-Verse | 54 | 68 | 12 | 26 |
-| Golam | 0 | 8 | 0 | 8 |
-| Cosmic Princess Kaguya! | 0 | 3 | 0 | 3 |
-| Project Hail Mary | 70 | 81 | 4 | 15 |
+| Movie 01 | 20 | 21 | 2 | 3 |
+| Movie 05 | 23 | 24 | 3 | 4 |
+| Movie Two | 108 | 100 | 18 | 10 |
+| Movie 04 | 16 | 15 | 6 | 5 |
+| Movie One | 41 | 35 | 6 | 0 |
+| Show E – Movie Subtitle | 15 | 19 | 2 | 6 |
+| Spinoff Movie | 27 | 24 | 4 | 1 |
+| Movie 08 | 79 | 94 | 4 | 19 |
+| Movie J0 | 1 | 12 | 0 | 11 |
+| Movie Three | 106 | 103 | 17 | 14 |
+| Show E: Short Subtitle | 0 | 0 | 0 | 0 |
+| Movie 07 | 54 | 68 | 12 | 26 |
+| Movie 03 | 0 | 8 | 0 | 8 |
+| Movie 02 | 0 | 3 | 0 | 3 |
+| Movie 06 | 70 | 81 | 4 | 15 |
 | **Tổng** | **560** | **607 (108%)** | **78** | **125** |
 
 - **Cổng 90% đạt.** Native có 607 bản tốt, bằng 108% của qBittorrent trong cùng lần chạy. Nếu so với tổng của lần đo 1 (qBittorrent 660, vì kết quả của các site thay đổi giữa các lần chạy), tỉ lệ là 92%.
 - **Độ phủ trên tập hợp chung** (685 bản tốt mà ít nhất một bên tìm được): native 89%, qBittorrent 82%.
-- **Bản #1:** giống nhau ở 8/15 movie. Ở 7 movie còn lại, bản #1 của native có điểm cao hơn ở 6, thấp hơn ở 1 (Jujutsu Kaisen 0: bản của qBittorrent không phải bản tốt).
-- **Thời gian:** native mất 15–76 s mỗi movie (lần đo 1: 2–26 s), vì mỗi tên được search thêm 2 query chất lượng và bench chạy tuần tự từng query. qBittorrent mất 11–242 s. Movie nhỏ có lúc native chậm hơn: Ensemble Contest 41 s so với 14 s, Golam 28 s so với 11 s.
+- **Bản #1:** giống nhau ở 8/15 movie. Ở 7 movie còn lại, bản #1 của native có điểm cao hơn ở 6, thấp hơn ở 1 (Movie J0: bản của qBittorrent không phải bản tốt).
+- **Thời gian:** native mất 15–76 s mỗi movie (lần đo 1: 2–26 s), vì mỗi tên được search thêm 2 query chất lượng và bench chạy tuần tự từng query. qBittorrent mất 11–242 s. Movie nhỏ có lúc native chậm hơn: Short Subtitle 41 s so với 14 s, Movie 03 28 s so với 11 s.
 - **78 bản chỉ qBittorrent có**, chủ yếu từ:
   - kickass, vẫn tắt vì trang danh sách không có hash;
   - thepiratebay: apibay chỉ trả 100 dòng đầu;
   - vài bản native có nhưng loại do seed thấp hơn ngưỡng ở thời điểm đo.
 
-**Sửa sau lần đo.** RSS search của TorrentDownloads khớp **bất kỳ từ nào**: `Golam 1440p` trả về 50 bản 1440p không liên quan. Indexer giờ chỉ giữ dòng có đủ mọi từ trong tên; năm và token chất lượng là tùy chọn.
+**Sửa sau lần đo.** RSS search của TorrentDownloads khớp **bất kỳ từ nào**: `Movie 03 1440p` trả về 50 bản 1440p không liên quan. Indexer giờ chỉ giữ dòng có đủ mọi từ trong tên; năm và token chất lượng là tùy chọn.
 
 ### Lần đo 3: TV/anime theo recipe thật (13/11/2026)
 

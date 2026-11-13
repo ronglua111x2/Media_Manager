@@ -113,7 +113,7 @@
 
   Ngày tính theo UTC, nên quota reset lúc **07:00 giờ Việt Nam**.
 
-"Tập kẹt" là tập đã chiếu, vẫn `Missing`, mà recipe không nhận bản nào: bản chưa lên tracker, recipe quá chặt, hoặc show ít người seed. Bench có vài ca như vậy, ví dụ Avatar S03E21 (recipe Korra) và Oregairu S03E12. Mỗi tập kẹt tốn khoảng 2 lượt × 1,9 request, tức **khoảng 3,8 request** cho bitsearch (torrentdownloads cũng vậy) trong mỗi vòng ra mạng.
+"Tập kẹt" là tập đã chiếu, vẫn `Missing`, mà recipe không nhận bản nào: bản chưa lên tracker, recipe quá chặt, hoặc show ít người seed. Bench có vài ca như vậy, ví dụ Show V S03E21 (recipe Show K) và Oregairu S03E12. Mỗi tập kẹt tốn khoảng 2 lượt × 1,9 request, tức **khoảng 3,8 request** cho bitsearch (torrentdownloads cũng vậy) trong mỗi vòng ra mạng.
 
 | Kịch bản | bitsearch/ngày (torrentdownloads tương tự) | Ngân sách nền 140 hết sau | LimeTorrents/ngày (nền 350) |
 |---|---|---|---|
@@ -185,8 +185,8 @@ Ngoài chuyện ngân sách: khi 3 show đầu bảng chữ cái có tập kẹt
   - `QueryTemplateRenderer.Normalize` thêm biến thể tách dấu nháy vào cuối danh sách (`QueryTemplateRenderer.cs:33-55`, có từ `5e2b411`).
   - Bench có 3 pack với 12 query:
     - Mangaka: "A Mangakas…", "Egao no…", "A Mangaka s…";
-    - Gals Can't Be Kind to Otaku;
-    - I'm in Love with the Villainess.
+    - Show 2G;
+    - Show 12.
 - **Số đo dạng query pack (B).** Dòng của mọi indexer trừ EZTV (EZTV không phụ thuộc chữ), cộng theo lượt, chưa khử trùng giữa các lượt:
 
   | Dạng | Lượt | Dòng | Lượt có dòng | Nguồn chính |
@@ -401,7 +401,7 @@ Ngoài chuyện ngân sách: khi 3 show đầu bảng chữ cái có tập kẹt
 | ID | Trạng thái |
 |---|---|
 | GOV-04 | **Đã sửa** (`db1bf2e`): tập `NoCandidates` của Auto-Track chờ 1 giờ (tập chiếu < 12 giờ), 3 giờ (< 2 ngày), 6 giờ (< 7 ngày), rồi 24 giờ; Run Now bỏ qua chờ. Show được xoay vòng theo lần hunt gần nhất. `TorrentHuntIntervalMinutes` có tác dụng. |
-| GOV-03 A | **Đã sửa** (`a4b6f71`): query pack của native gộp còn `<tên> Sxx` và `<tên> season N`. Thử 3 show: Bloom Into You 8 → 4 query, không mất bản tốt. |
+| GOV-03 A | **Đã sửa** (`a4b6f71`): query pack của native gộp còn `<tên> Sxx` và `<tên> season N`. Thử 3 show: Show 04 8 → 4 query, không mất bản tốt. |
 | GOV-05 | **Đổi theo quyết định của user** (`96460b6`): quota ngày của mọi site là 1000, chỉ làm cầu chì; LimeTorrents giữ 10/phút, 3 s. |
 | GOV-09 | **Đã sửa doc 03** (cùng đợt này). |
 | GOV-03 B | **Đã sửa** (`aea8248`): `SearchSession` (AsyncLocal) cho mỗi target (tập, pack, movie, snapshot show). Mỗi site tối đa `MaxRequestsPerSearch` request mạng cho một target: lane nền 6 (LimeTorrents 12 trang, EZTV 4), lane tay gấp đôi. Khi lane còn dưới 20% ngân sách ngày của site (`Remaining(id, lane)`): mỗi lượt chỉ 1 request (query chính, trang 1, không bản "+chất lượng"). Trạng thái `trimmed` giữ dòng đã có và được tính là đủ cho memo; trúng cache không bị tính; indexer phân trang giữ các trang đã đọc. Test: `SearchSessionTests`. Bench pack 4 show (13/11, lane tay): không lượt nào chạm trần (bitsearch/torrentdownloads 8 request cho 4 query, LimeTorrents tối đa 6 trang). |
