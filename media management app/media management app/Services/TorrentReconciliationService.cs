@@ -573,7 +573,8 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
                 files,
                 cancellationToken,
                 torrent.Name,
-                isPack: match.Kind == MediaKind.TvSeasonPack);
+                isPack: match.Kind == MediaKind.TvSeasonPack,
+                targetKind: match.Kind);
             if (!validation.IsValid)
             {
                 var suspicious = string.Join(", ", validation.SuspiciousFiles.Select(file => file.FileName).Distinct().Take(5));

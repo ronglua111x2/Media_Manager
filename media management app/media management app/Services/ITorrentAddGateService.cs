@@ -222,7 +222,8 @@ public sealed class TorrentAddGateService : ITorrentAddGateService
             files,
             cancellationToken,
             listingName,
-            isPack);
+            isPack,
+            order.TargetKind);
 
         if (!validation.IsValid && validation.Recommendation == TorrentHandleRecommendation.Delete)
         {

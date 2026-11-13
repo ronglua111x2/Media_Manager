@@ -1,3 +1,4 @@
+using media_management_app.Common;
 using media_management_app.Models;
 
 namespace media_management_app.Services;
@@ -34,6 +35,34 @@ public sealed class TorrentContentValidationService
 
     private const int PackPayloadCount = 3;
 
+    /// <summary>
+    /// SEC-A05: files that can belong to a real release besides the video: subtitles, artwork, info files, external
+    /// audio, fonts for styled subtitles, disc structure. Everything else counts as non-media bytes.
+    /// </summary>
+    private static readonly HashSet<string> CompanionExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".srt", ".ass", ".ssa", ".idx", ".sub", ".sup", ".vtt", ".mks", ".smi", ".ttml",
+        ".nfo", ".txt", ".sfv", ".md5", ".sha1", ".srr", ".srs", ".log", ".cue", ".m3u", ".url", ".xml", ".json",
+        ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tif", ".tiff",
+        ".mka", ".flac", ".mp3", ".m4a", ".aac", ".ac3", ".eac3", ".dts", ".thd", ".opus", ".ogg", ".wav", ".wv", ".ape",
+        ".ttf", ".otf", ".ttc", ".woff", ".woff2",
+        ".ifo", ".bup", ".bdmv", ".clpi", ".mpls"
+    };
+
+    /// <summary>Non-media bytes above this are never a side file of a film or episode release.</summary>
+    internal const long MaxNonMediaBytes = 50L * 1024 * 1024;
+
+    /// <summary>Non-media bytes above this and above <see cref="MaxNonMediaShare"/> of the torrent are rejected.</summary>
+    internal const long NonMediaShareFloorBytes = 5L * 1024 * 1024;
+
+    internal const double MaxNonMediaShare = 0.10;
+
+    /// <summary>
+    /// The largest video must reach this size when the target is known. Kept low on purpose: decoys are a few KB,
+    /// while short anime episodes in small encodes can be 15-40 MB and small movie encodes 250 MB or more.
+    /// </summary>
+    internal static long VideoFloorBytes(MediaKind kind) => kind == MediaKind.Movie ? 100L * 1024 * 1024 : 10L * 1024 * 1024;
+
     private readonly Func<TorrentValidationConfig> _getConfig;
     private readonly ITorrentContentValidationLogger? _logger;
     private int _warnedDisabled;
@@ -52,7 +81,8 @@ public sealed class TorrentContentValidationService
         IReadOnlyList<TorrentContentFile> files,
         CancellationToken cancellationToken = default,
         string? listingName = null,
-        bool isPack = false)
+        bool isPack = false,
+        MediaKind? targetKind = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -92,6 +122,11 @@ public sealed class TorrentContentValidationService
         }
 
         ValidatePayloadMismatch(files, listingName, isPack, result, config);
+        ValidateNonMediaShare(files, result, config);
+        if (targetKind is { } kind)
+        {
+            ValidateVideoFloor(files, kind, result, config);
+        }
 
         if (!result.IsValid)
         {
@@ -192,6 +227,92 @@ public sealed class TorrentContentValidationService
             _logger?.Debug(
                 $"Payload mismatch details: path='{payload.Name}', size={payload.Size}, pack={isPack}.");
         }
+    }
+
+    /// <summary>
+    /// SEC-A05: a decoy video named like the release hid a large archive or disk image from the payload check, which
+    /// looks only at the best-named file(s). Limit what is neither video nor a known companion file.
+    /// </summary>
+    private void ValidateNonMediaShare(
+        IReadOnlyList<TorrentContentFile> files,
+        TorrentContentValidationResult result,
+        TorrentValidationConfig config)
+    {
+        var mediaExts = MediaExtensions(config);
+        var nonMedia = files
+            .Where(file => !IsMediaOrCompanion(file.Name, mediaExts))
+            .ToList();
+        var nonMediaBytes = nonMedia.Sum(file => Math.Max(0, file.Size));
+        var totalBytes = files.Sum(file => Math.Max(0, file.Size));
+        var share = totalBytes == 0 ? 0 : (double)nonMediaBytes / totalBytes;
+        if (nonMediaBytes <= MaxNonMediaBytes && (nonMediaBytes <= NonMediaShareFloorBytes || share <= MaxNonMediaShare))
+        {
+            return;
+        }
+
+        var reason = $"Non-media files are {nonMediaBytes / (1024 * 1024)} MB ({share:P0}) of the torrent";
+        foreach (var file in nonMedia.OrderByDescending(file => file.Size).Take(5))
+        {
+            var fileName = Path.GetFileName(file.Name);
+            if (result.SuspiciousFiles.Any(item => string.Equals(item.FileName, fileName, StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            result.SuspiciousFiles.Add(new SuspiciousFile
+            {
+                FileName = fileName,
+                Extension = Path.GetExtension(fileName).ToLowerInvariant(),
+                Reason = reason,
+                FileSizeBytes = file.Size,
+                SuspicionLevel = SuspicionLevel.High
+            });
+        }
+
+        result.IsValid = false;
+        _logger?.Warning($"{reason} in torrent {result.TorrentHash}.");
+    }
+
+    /// <summary>SEC-A05: the largest video of a decoy release is a few KB; a real episode or film is not.</summary>
+    private void ValidateVideoFloor(
+        IReadOnlyList<TorrentContentFile> files,
+        MediaKind kind,
+        TorrentContentValidationResult result,
+        TorrentValidationConfig config)
+    {
+        var mediaExts = MediaExtensions(config);
+        var largest = files
+            .Where(file => mediaExts.Contains(Path.GetExtension(file.Name)))
+            .OrderByDescending(file => file.Size)
+            .FirstOrDefault();
+        var floor = VideoFloorBytes(kind);
+        if (largest is null || largest.Size >= floor)
+        {
+            return;
+        }
+
+        var fileName = Path.GetFileName(largest.Name);
+        result.SuspiciousFiles.Add(new SuspiciousFile
+        {
+            FileName = fileName,
+            Extension = Path.GetExtension(fileName).ToLowerInvariant(),
+            Reason = $"Largest video is {largest.Size / 1024} KB, below the {floor / (1024 * 1024)} MB floor for {kind}",
+            FileSizeBytes = largest.Size,
+            SuspicionLevel = SuspicionLevel.High
+        });
+        result.IsValid = false;
+        _logger?.Warning($"Decoy-sized video '{fileName}' ({largest.Size} bytes) for {kind} in torrent {result.TorrentHash}.");
+    }
+
+    private static HashSet<string> MediaExtensions(TorrentValidationConfig config) =>
+        config.AllowedMediaExtensions
+            .Select(e => e.StartsWith('.') ? e.ToLowerInvariant() : "." + e.ToLowerInvariant())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+    private static bool IsMediaOrCompanion(string path, HashSet<string> mediaExts)
+    {
+        var extension = Path.GetExtension(path);
+        return mediaExts.Contains(extension) || CompanionExtensions.Contains(extension);
     }
 
     private static IReadOnlyList<TorrentContentFile> SelectPayloadFiles(

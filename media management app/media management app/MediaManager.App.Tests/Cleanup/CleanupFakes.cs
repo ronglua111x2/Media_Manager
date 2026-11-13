@@ -116,7 +116,8 @@ internal sealed class FakeValidationService : ITorrentContentValidationService
         IReadOnlyList<TorrentContentFile> files,
         CancellationToken cancellationToken = default,
         string? listingName = null,
-        bool isPack = false)
+        bool isPack = false,
+        MediaKind? targetKind = null)
     {
         OnValidateFiles?.Invoke();
         return Task.FromResult(Result);
