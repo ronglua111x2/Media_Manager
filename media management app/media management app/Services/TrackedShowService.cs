@@ -126,7 +126,7 @@ public sealed class TrackedShowService : ITrackedShowService
             throw new InvalidOperationException(
                 $"Episode organization was not changed: {onlyCopies} library file(s) of this show no longer have their download, " +
                 "so the library file is the only copy and renumbering would delete it. " +
-                "Re-download those episodes, or import the library folder with Import Existing, then retry.");
+                "Keep the current organization, or re-add those torrents in qBittorrent (same files) so their downloads exist again, then retry.");
         }
 
         // Library links carry the old numbering: remove them before the rebuild, as the confirmation
