@@ -21,6 +21,12 @@ public static class TorrentFileRules
 
     // Scene naming: "<release>-sample", "<release>.sample", "sample-<release>", "<release>-proof".
     // A bare word inside the title ("Proof.S01E01", "The.Sample.Case") is not enough.
+    // "S01E01-E24", "S01E01E02", "S01E01-24" anywhere in a path, with no limit on the range length: the parser
+    // drops ranges longer than 20 (a year, a resolution), but a folder still names several episodes (R2-B-04).
+    private static readonly Regex PathEpisodeRangeRegex = new(
+        @"(?<![A-Za-z0-9])S(?<season>\d{1,3})E(?<first>\d{1,4})(?:[-_.]?E|-)(?<last>\d{1,4})(?![0-9])",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     private static readonly Regex SampleStemRegex = new(
         @"[\s._\-]sample$|^sample-|-proof$",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -115,14 +121,16 @@ public static class TorrentFileRules
         var byPath = candidates
             .Where(file => !HasSeasonEpisode(ParseName(file.Name)))
             .Select(file => (File: file, Parsed: TorrentCandidateParser.Parse(file.Name)))
-            .Where(item => IsEpisode(item.Parsed, seasonNumber, episodeNumber))
+            .Where(item => IsEpisode(item.Parsed, seasonNumber, episodeNumber) ||
+                           FolderRangeCovers(item.File.Name, seasonNumber, episodeNumber))
             .ToList();
         if (byPath.Count == 0)
         {
             return null;
         }
 
-        if (byPath.Any(item => item.Parsed.LastEpisodeNumber is not null))
+        if (byPath.Any(item => item.Parsed.LastEpisodeNumber is not null ||
+                               PathEpisodeRangeRegex.IsMatch(Path.GetDirectoryName(item.File.Name.Replace('\\', '/')) ?? string.Empty)))
         {
             var byOwnNumber = byPath
                 .Select(item => item.File)
@@ -134,6 +142,16 @@ public static class TorrentFileRules
         }
 
         return OrderByPreference(byPath.Select(item => item.File).ToList(), file => file.Name, file => file.Size).First();
+    }
+
+    private static bool FolderRangeCovers(string relativePath, int seasonNumber, int episodeNumber)
+    {
+        var folder = Path.GetDirectoryName(relativePath.Replace('\\', '/')) ?? string.Empty;
+        return PathEpisodeRangeRegex.Matches(folder).Any(match =>
+            int.TryParse(match.Groups["season"].Value, out var season) && season == seasonNumber &&
+            int.TryParse(match.Groups["first"].Value, out var first) &&
+            int.TryParse(match.Groups["last"].Value, out var last) &&
+            last > first && episodeNumber >= first && episodeNumber <= last);
     }
 
     private static TorrentCandidateParseResult ParseName(string relativePath) =>

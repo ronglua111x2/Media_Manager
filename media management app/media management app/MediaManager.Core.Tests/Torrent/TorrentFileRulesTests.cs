@@ -125,6 +125,19 @@ public class TorrentFileRulesTests
         TorrentFileRules.SelectEpisodeFile(files, 1, episode)!.Name.Should().Be(expected);
     }
 
+    // Audit R2-B-04: a folder range longer than 20 episodes (the parser drops it as "not a range") is still a range.
+    [Theory]
+    [InlineData(1, "[Group] Show S01E01-E24 [1080p]/[Group] Show - 01 [1080p].mkv")]
+    [InlineData(17, "[Group] Show S01E01-E24 [1080p]/[Group] Show - 17 [1080p].mkv")]
+    public void SelectEpisodeFile_LongRangeOnlyInFolderName_PicksByTheFilesOwnNumber(int episode, string expected)
+    {
+        var files = Enumerable.Range(1, 24)
+            .Select(number => File($"[Group] Show S01E01-E24 [1080p]/[Group] Show - {number:00} [1080p].mkv", number == 17 ? 1_500_000_000 : 1_000_000_000))
+            .ToArray();
+
+        TorrentFileRules.SelectEpisodeFile(files, 1, episode)!.Name.Should().Be(expected);
+    }
+
     [Fact]
     public void SelectEpisodeFile_RangeOnlyInFolderName_NoFileNumber_ReturnsNull()
     {
