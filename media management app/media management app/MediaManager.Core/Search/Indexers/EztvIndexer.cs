@@ -39,7 +39,12 @@ public sealed class EztvIndexer(string baseUrl = "https://eztvx.to") : ITorrentI
         for (var page = 1; page <= MaxPages; page++)
         {
             var uri = new Uri($"{baseUrl.TrimEnd('/')}/api/get-torrents?imdb_id={imdbDigits}&limit={PageSize}&page={page}");
-            var response = await http.GetAsync(uri, cancellationToken);
+            var response = await IndexerParsing.NextPageAsync(() => http.GetAsync(uri, cancellationToken), page == 1);
+            if (response is null)
+            {
+                break;
+            }
+
             var parsed = ParsePage(response.Body, query.Season, query.Episode);
             results.AddRange(parsed.Rows);
 

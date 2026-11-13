@@ -74,6 +74,88 @@ public sealed class NativeSearchServiceTests : IDisposable
         ]));
     }
 
+    [Fact]
+    public void TrimmedAnswer_IsComplete()
+    {
+        Assert.True(NativeSearchService.IsComplete(
+        [
+            new IndexerRunTelemetry("bitsearch", "trimmed", 4, 1, 100, "per-search cap of 6 request(s) reached"),
+            new IndexerRunTelemetry("knaben", "ok", 10, 1, 100, null)
+        ]));
+    }
+
+    [Fact]
+    public async Task EveryNativeSiteSkipped_IsReportedAsNoSearchSource()
+    {
+        using var service = Create(new TimingOutExternalIds());
+        var recipe = new SearchRecipe { Name = "Movie", TargetKind = MediaKind.Movie };
+
+        using var session = NativeSearchService.BeginSession();
+        var rows = await service.SearchAsync(recipe, "Coherence 2013", MediaKind.Movie, CancellationToken.None);
+
+        Assert.Empty(rows);
+        Assert.True(session.Session.NoSourceAvailable);
+        Assert.Contains("paused", session.Session.NoSourceReason);
+    }
+
+    [Fact]
+    public async Task BothMode_UsesTheQbittorrentRows_WhenNoNativeSiteCouldBeAsked()
+    {
+        Directory.CreateDirectory(_stateFolder);
+        var settings = new FakeSettingsService();
+        settings.Current.StateFolder = _stateFolder;
+        settings.Current.Search.Backend = SearchBackends.Both;
+        settings.Current.Search.PauseAll = true;
+        using var service = new NativeSearchService(settings, new FakeAppLogger(), new TimingOutExternalIds());
+        var recipe = new SearchRecipe { Name = "Movie", TargetKind = MediaKind.Movie };
+        IReadOnlyList<TorrentSearchResult> qbitRows = [new TorrentSearchResult { FileName = "Coherence.2013.1080p", FileUrl = "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567" }];
+
+        var rows = await service.SearchOrFallbackAsync(recipe, "Coherence 2013", MediaKind.Movie, () => Task.FromResult(qbitRows), CancellationToken.None);
+
+        Assert.Single(rows);
+    }
+
+    [Fact]
+    public void Backend_IsChosenOncePerSession()
+    {
+        Directory.CreateDirectory(_stateFolder);
+        var settings = new FakeSettingsService();
+        settings.Current.StateFolder = _stateFolder;
+        settings.Current.Search.Backend = SearchBackends.Native;
+        using var service = new NativeSearchService(settings, new FakeAppLogger(), new TimingOutExternalIds());
+
+        using (NativeSearchService.BeginSession())
+        {
+            Assert.True(service.UsesNative(MediaKind.TvEpisode));
+            settings.Current.Search.Backend = SearchBackends.Qbittorrent;
+            Assert.True(service.UsesNative(MediaKind.TvEpisode));
+            Assert.Equal("Native", ((INativeSearchService)service).BackendName(MediaKind.TvEpisode));
+        }
+
+        Assert.False(service.UsesNative(MediaKind.TvEpisode));
+    }
+
+    [Fact]
+    public void UnreadableStateFile_StartsCautiously()
+    {
+        Directory.CreateDirectory(_stateFolder);
+        File.WriteAllText(Path.Combine(_stateFolder, IndexerStateFile.FileName), "{ broken");
+        var settings = new FakeSettingsService();
+        settings.Current.StateFolder = _stateFolder;
+        using var service = new NativeSearchService(settings, new FakeAppLogger(), new TimingOutExternalIds());
+
+        var knaben = service.HealthSnapshot().Single(state => state.IndexerId == "knaben");
+        Assert.Equal(700, knaben.RequestsToday);
+    }
+
+    [Fact]
+    public void EztvKeepsItsAnswerLongerForBackgroundHunts()
+    {
+        Assert.Equal(TimeSpan.FromHours(2), NativeSearchService.CacheTtlFor("eztv", SearchLane.Background));
+        Assert.Equal(TimeSpan.FromMinutes(45), NativeSearchService.CacheTtlFor("eztv", SearchLane.Interactive));
+        Assert.Equal(TimeSpan.FromMinutes(45), NativeSearchService.CacheTtlFor("knaben", SearchLane.Background));
+    }
+
     public void Dispose()
     {
         try

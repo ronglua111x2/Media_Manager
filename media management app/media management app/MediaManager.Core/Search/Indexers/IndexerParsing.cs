@@ -6,6 +6,22 @@ namespace media_management_app.Search.Indexers;
 internal static class IndexerParsing
 {
     /// <summary>
+    /// A further page of results, or null when the per-search request cap (07d GOV-03 B) stops the paging: the pages
+    /// already read are kept. The first page is never swallowed: a capped first request trims the whole query.
+    /// </summary>
+    public static async Task<IndexerHttpResponse?> NextPageAsync(Func<Task<IndexerHttpResponse>> fetch, bool firstPage)
+    {
+        try
+        {
+            return await fetch();
+        }
+        catch (IndexerSearchCapException) when (!firstPage)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
     /// The response had result items but none could be read (a field was renamed, the layout changed): that is a
     /// parse error for the breaker, not "no results" (audit 07c NS-13).
     /// </summary>

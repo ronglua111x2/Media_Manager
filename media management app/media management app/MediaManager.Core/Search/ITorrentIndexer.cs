@@ -36,6 +36,12 @@ public interface IIndexerHttp
     void ReportParsed(bool parsed)
     {
     }
+
+    /// <summary>Requests this instance sent to the site (cache misses), for telemetry (07d GOV-08).</summary>
+    int NetworkRequests => 0;
+
+    /// <summary>Answers this instance took from the response cache (or from a request another caller had in flight).</summary>
+    int CacheHits => 0;
 }
 
 public sealed record IndexerHttpResponse(int StatusCode, string Body, string? ContentType, Uri FinalUri);

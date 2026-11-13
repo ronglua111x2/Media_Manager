@@ -39,7 +39,12 @@ public sealed partial class SkTorrentIndexer(string baseUrl = "https://sktorrent
         for (var page = 0; page < MaxPages; page++)
         {
             var uri = new Uri($"{baseUrl.TrimEnd('/')}/torrent/torrents_v2.php?search={search}&category=0&zaner=&jazyk=&active=0&page={page}");
-            var response = await http.GetAsync(uri, cancellationToken);
+            var response = await IndexerParsing.NextPageAsync(() => http.GetAsync(uri, cancellationToken), page == 0);
+            if (response is null)
+            {
+                break;
+            }
+
             var rows = Parse(response.Body, $"{response.FinalUri.Scheme}://{response.FinalUri.Authority}");
             results.AddRange(rows);
             if (rows.Count < FullPageRows)

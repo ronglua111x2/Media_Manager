@@ -29,7 +29,8 @@ public static class CompareCommand
         {
             Timeout = TimeSpan.FromSeconds(20)
         };
-        var governor = new IndexerRequestGovernor();
+        using var benchState = BenchState.Open(args);
+        var governor = benchState.Governor;
         var cache = new IndexerResponseCache();
         var orchestrator = new SearchOrchestrator(governor, (id, lane, budget) =>
             new GovernedIndexerHttp(http, governor, cache, id, lane, budget.MaxGovernorWait, TimeSpan.FromMinutes(30), "MediaManager/1.0 (+native-search; SearchBench)", budget.PerIndexer));

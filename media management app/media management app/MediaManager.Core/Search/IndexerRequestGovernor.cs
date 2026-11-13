@@ -17,13 +17,21 @@ public enum IndexerBreakerState
 }
 
 /// <summary>Per-site request policy. Defaults are deliberately conservative: free sites ban IPs fast.</summary>
+/// <param name="MaxRequestsPerSearch">
+/// Network requests one search target (an episode, a pack, a movie) may send to the site in the background lane;
+/// the interactive lane gets twice as many. Cache hits are free (audit 07d GOV-03 B).
+/// </param>
 public sealed record IndexerPolicy(
     int RequestsPerMinute,
     int MaxConcurrent,
     TimeSpan MinInterval,
     int DailyBudget,
-    double BackgroundBudgetShare = 0.7)
+    double BackgroundBudgetShare = 0.7,
+    int MaxRequestsPerSearch = 6)
 {
+    /// <summary>Below this share of a lane's daily budget, every search only sends its first request to the site.</summary>
+    public const double LowBudgetShare = 0.2;
+
     /// <summary>
     /// Daily budget of every site (13/11/2026, user decision). Sites block bursts, not daily totals: the
     /// per-minute limit, minimum interval and concurrency protect against bans. The daily budget is a fuse
@@ -39,8 +47,10 @@ public sealed record IndexerPolicy(
         "knaben" => new IndexerPolicy(10, 1, TimeSpan.FromSeconds(2), DefaultDailyBudget),
         "apibay" => new IndexerPolicy(15, 2, TimeSpan.FromSeconds(1), DefaultDailyBudget),
         "nyaa" => new IndexerPolicy(10, 1, TimeSpan.FromSeconds(2), DefaultDailyBudget),
-        "limetorrents" => new IndexerPolicy(10, 1, TimeSpan.FromSeconds(3), DefaultDailyBudget),
-        "eztv" => new IndexerPolicy(10, 1, TimeSpan.FromSeconds(2), DefaultDailyBudget),
+        // Up to 4 pages for the reduced query and 2 for each quality form.
+        "limetorrents" => new IndexerPolicy(10, 1, TimeSpan.FromSeconds(3), DefaultDailyBudget, MaxRequestsPerSearch: 12),
+        // One URL per show (IMDb id) shared by every query: 2 pages is a full answer.
+        "eztv" => new IndexerPolicy(10, 1, TimeSpan.FromSeconds(2), DefaultDailyBudget, MaxRequestsPerSearch: 4),
         _ => Conservative
     };
 
@@ -78,6 +88,9 @@ public sealed class IndexerStateSnapshot
     public DateTimeOffset? LastErrorUtc { get; set; }
 
     public DateTimeOffset? LastSuccessUtc { get; set; }
+
+    /// <summary>Start of the last request: keeps the minimum interval across an app restart (07d GOV-06).</summary>
+    public DateTimeOffset? LastRequestUtc { get; set; }
 
     public int InFlight { get; set; }
 
@@ -129,7 +142,32 @@ public sealed class IndexerRequestGovernor
             var copy = snapshot.Clone();
             copy.InFlight = 0;
             _states[copy.IndexerId] = copy;
+            if (copy.LastRequestUtc is { } last)
+            {
+                _lastStart[copy.IndexerId] = last;
+            }
         }
+    }
+
+    /// <summary>
+    /// After the saved state was lost (file and backup unreadable, 07d GOV-06): counts today's background budget of
+    /// every site as used, so Auto-Track waits for the next day instead of starting from zero on sites that may have
+    /// been hammered before the crash. Searches the user starts keep the rest of the budget.
+    /// </summary>
+    public void StartCautiously(IEnumerable<string> indexerIds)
+    {
+        lock (_gate)
+        {
+            var now = _time.GetUtcNow();
+            foreach (var id in indexerIds)
+            {
+                var state = StateFor(id);
+                RollDay(state, now);
+                state.RequestsToday = Math.Max(state.RequestsToday, LaneBudget(_policyFor(id), SearchLane.Background));
+            }
+        }
+
+        StateChanged?.Invoke();
     }
 
     /// <summary>Raised after any state change worth persisting.</summary>
@@ -167,6 +205,37 @@ public sealed class IndexerRequestGovernor
             return new IndexerAvailability(reason is null || retryAt is not null, reason);
         }
     }
+
+    /// <summary>Requests left today for <paramref name="indexerId"/> in <paramref name="lane"/> (the background lane only has its share).</summary>
+    public int Remaining(string indexerId, SearchLane lane)
+    {
+        lock (_gate)
+        {
+            var state = StateFor(indexerId);
+            RollDay(state, _time.GetUtcNow());
+            return Math.Max(0, LaneBudget(_policyFor(indexerId), lane) - state.RequestsToday);
+        }
+    }
+
+    /// <summary>
+    /// Network requests one search target may send to the site (07d GOV-03 B): the policy's cap (twice that for the
+    /// interactive lane), or a single request while less than <see cref="IndexerPolicy.LowBudgetShare"/> of the lane's
+    /// daily budget is left, so the rest of the day is shared by many searches instead of a few.
+    /// </summary>
+    public (int Cap, bool LowBudget) RequestCapPerSearch(string indexerId, SearchLane lane)
+    {
+        var policy = _policyFor(indexerId);
+        var laneBudget = LaneBudget(policy, lane);
+        if (Remaining(indexerId, lane) < laneBudget * IndexerPolicy.LowBudgetShare)
+        {
+            return (1, true);
+        }
+
+        return (lane == SearchLane.Interactive ? policy.MaxRequestsPerSearch * 2 : policy.MaxRequestsPerSearch, false);
+    }
+
+    private static int LaneBudget(IndexerPolicy policy, SearchLane lane) =>
+        lane == SearchLane.Background ? (int)Math.Floor(policy.DailyBudget * policy.BackgroundBudgetShare) : policy.DailyBudget;
 
     public IReadOnlyList<IndexerStateSnapshot> Snapshot()
     {
@@ -227,7 +296,8 @@ public sealed class IndexerRequestGovernor
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            TimeSpan wait;
+            TimeSpan wait = TimeSpan.Zero;
+            Lease? lease = null;
             lock (_gate)
             {
                 var now = _time.GetUtcNow();
@@ -243,6 +313,7 @@ public sealed class IndexerRequestGovernor
                     var recent = RecentFor(indexerId);
                     recent.Enqueue(now);
                     _lastStart[indexerId] = now;
+                    state.LastRequestUtc = now;
                     state.RequestsToday++;
                     state.InFlight++;
                     if (state.Breaker == IndexerBreakerState.Open)
@@ -250,15 +321,23 @@ public sealed class IndexerRequestGovernor
                         state.Breaker = IndexerBreakerState.HalfOpen;
                     }
 
-                    return new Lease(this, indexerId);
+                    lease = new Lease(this, indexerId);
                 }
-
-                if (retryAt!.Value > deadline)
+                else if (retryAt!.Value > deadline)
                 {
                     throw new IndexerUnavailableException(indexerId, $"{reason} (would wait past the search budget)");
                 }
+                else
+                {
+                    wait = retryAt.Value - now;
+                }
+            }
 
-                wait = retryAt.Value - now;
+            if (lease is not null)
+            {
+                // A request cancelled before it reports still used the budget: persist it now (07d GOV-06).
+                StateChanged?.Invoke();
+                return lease;
             }
 
             await Task.Delay(wait < TimeSpan.FromMilliseconds(10) ? TimeSpan.FromMilliseconds(10) : wait, _time, cancellationToken);
@@ -362,9 +441,7 @@ public sealed class IndexerRequestGovernor
             return "half-open probe in progress";
         }
 
-        var budget = lane == SearchLane.Background
-            ? (int)Math.Floor(policy.DailyBudget * policy.BackgroundBudgetShare)
-            : policy.DailyBudget;
+        var budget = LaneBudget(policy, lane);
         if (state.RequestsToday >= budget)
         {
             return $"daily budget used ({state.RequestsToday}/{budget}, {lane})";

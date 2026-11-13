@@ -28,6 +28,8 @@ public sealed class FetchJobService : IFetchJobService
     private readonly Dictionary<long, Dictionary<CandidateRejectReason, int>> _overrideRejectsByEpisodeId = [];
     private readonly Dictionary<long, IReadOnlyList<EpisodeFetchCandidate>> _candidatesByMovieId = [];
     private readonly Dictionary<(long ShowId, int SeasonNumber), IReadOnlyList<SeasonPackCandidate>> _packCandidatesBySeason = [];
+    private readonly Dictionary<long, string> _sourceProblemByEpisodeId = [];
+    private readonly Dictionary<(long ShowId, int SeasonNumber), string> _packSourceProblems = [];
     private readonly object _gate = new();
     private CartCandidateDebugSession? _activeHuntDebugSession;
 
@@ -84,6 +86,22 @@ public sealed class FetchJobService : IFetchJobService
             return _overrideRejectsByEpisodeId.TryGetValue(episodeId, out var counts)
                 ? new Dictionary<CandidateRejectReason, int>(counts)
                 : new Dictionary<CandidateRejectReason, int>();
+        }
+    }
+
+    public string? GetSearchSourceProblem(long episodeId)
+    {
+        lock (_gate)
+        {
+            return _sourceProblemByEpisodeId.GetValueOrDefault(episodeId);
+        }
+    }
+
+    public string? GetPackSearchSourceProblem(long showId, int seasonNumber)
+    {
+        lock (_gate)
+        {
+            return _packSourceProblems.GetValueOrDefault((showId, seasonNumber));
         }
     }
 
@@ -291,13 +309,40 @@ public sealed class FetchJobService : IFetchJobService
                 overrides,
                 packTermGuard,
                 show.DisplayTitle);
-            var snapshotResults = await _snapshotService.CaptureSnapshotAsync(
-                show,
-                _progressService,
-                cancellationToken,
-                MediaKind.TvSeasonPack,
-                packRecipe.RecipeId,
-                selectedSeasons);
+            // One search session for the pack (07d GOV-03 B): its queries share the per-search request cap.
+            IReadOnlyList<TorrentSearchResult> snapshotResults;
+            string? sourceProblem;
+            using (var session = NativeSearchService.BeginSession())
+            {
+                snapshotResults = await _snapshotService.CaptureSnapshotAsync(
+                    show,
+                    _progressService,
+                    cancellationToken,
+                    MediaKind.TvSeasonPack,
+                    packRecipe.RecipeId,
+                    selectedSeasons);
+                sourceProblem = snapshotResults.Count == 0 ? session.Session.NoSourceReason : null;
+            }
+
+            lock (_gate)
+            {
+                foreach (var seasonNumber in selectedSeasons)
+                {
+                    if (sourceProblem is null)
+                    {
+                        _packSourceProblems.Remove((showId, seasonNumber));
+                    }
+                    else
+                    {
+                        _packSourceProblems[(showId, seasonNumber)] = sourceProblem;
+                    }
+                }
+            }
+
+            if (sourceProblem is not null)
+            {
+                _logger.Warning($"Season pack search for {show.DisplayTitle} did not run: {sourceProblem}", LogTarget.All);
+            }
             _progressService.Report(0, "Filtering results...");
             var packSummary = await MapSeasonPackCandidatesAsync(
                 show,
@@ -356,6 +401,7 @@ public sealed class FetchJobService : IFetchJobService
                 _candidatesByEpisodeId[episode.Id] = [];
                 _searchRowsByEpisodeId[episode.Id] = 0;
                 _overrideRejectsByEpisodeId[episode.Id] = [];
+                _sourceProblemByEpisodeId.Remove(episode.Id);
             }
         }
     }
@@ -458,12 +504,29 @@ public sealed class FetchJobService : IFetchJobService
             $"Cart snapshot search started for {show.DisplayTitle}. Recipe='{recipe.Name}', Orders={targetEpisodes.Count}, TargetResults={RecipeRuntimeSettings.GetSnapshotTargetResults(recipe, _settingsService.Current.AutoTorrent)}, TimeoutSeconds={RecipeRuntimeSettings.GetSnapshotTimeoutSeconds(recipe, _settingsService.Current.AutoTorrent)}, LocalWorkers={RecipeRuntimeSettings.GetLocalMatchWorkers(recipe, _settingsService.Current.AutoTorrent)}.",
             LogTarget.All);
 
-        var snapshotResults = await _snapshotService.CaptureSnapshotAsync(
-            show,
-            _progressService,
-            cancellationToken,
-            MediaKind.TvEpisode,
-            recipe.RecipeId);
+        // One search session for the show-level snapshot (07d GOV-03 B).
+        IReadOnlyList<TorrentSearchResult> snapshotResults;
+        using (var session = NativeSearchService.BeginSession())
+        {
+            snapshotResults = await _snapshotService.CaptureSnapshotAsync(
+                show,
+                _progressService,
+                cancellationToken,
+                MediaKind.TvEpisode,
+                recipe.RecipeId);
+            if (snapshotResults.Count == 0 && session.Session.NoSourceReason is { } sourceProblem)
+            {
+                _logger.Warning($"Snapshot search for {show.DisplayTitle} did not run: {sourceProblem}", LogTarget.All);
+                lock (_gate)
+                {
+                    foreach (var episode in targetEpisodes)
+                    {
+                        _sourceProblemByEpisodeId[episode.Id] = sourceProblem;
+                    }
+                }
+            }
+        }
+
         _progressService.Report(0, "Filtering results...");
         var usesAnimeAbsolute = RecipeRuntimeSettings.UsesAnimeAbsoluteEpisodeNumbering(recipe);
         var snapshotCandidates = snapshotResults
@@ -697,6 +760,9 @@ public sealed class FetchJobService : IFetchJobService
         RecipeExecutionOverrides? overrides)
     {
         recipe = RecipeRuntimeSettings.WithCartOverrides(recipe, overrides);
+        // One search session per episode (07d GOV-03 B): its queries share the per-search request cap and the backend,
+        // and it tells "no candidates" from "no search source could be asked".
+        using var searchSession = NativeSearchService.BeginSession();
         var maxCandidates = RecipeRuntimeSettings.GetMaxCandidatesPerFetch(recipe, _settingsService.Current.AutoTorrent, overrides);
         var writeDebug = _activeHuntDebugSession is not null;
         var resultsByUrl = new Dictionary<string, TorrentSearchResult>(StringComparer.OrdinalIgnoreCase);
@@ -815,6 +881,24 @@ public sealed class FetchJobService : IFetchJobService
         var searchResults = resultsByUrl.Values
             .OrderByDescending(result => result.Seeders)
             .ToList();
+
+        var noSource = candidates.Count == 0 && searchResults.Count == 0 ? searchSession.Session.NoSourceReason : null;
+        lock (_gate)
+        {
+            if (noSource is null)
+            {
+                _sourceProblemByEpisodeId.Remove(episode.Id);
+            }
+            else
+            {
+                _sourceProblemByEpisodeId[episode.Id] = noSource;
+            }
+        }
+
+        if (noSource is not null)
+        {
+            _logger.Warning($"Episode search for {label} did not run: {noSource}", LogTarget.All);
+        }
 
         return new EpisodeSearchSummary(candidates, searchResults, evaluated);
     }

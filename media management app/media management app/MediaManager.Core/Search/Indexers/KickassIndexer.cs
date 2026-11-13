@@ -38,7 +38,12 @@ public sealed partial class KickassIndexer(string baseUrl = "https://katcr.to") 
         for (var page = 1; page <= MaxPages; page++)
         {
             var uri = new Uri($"{baseUrl.TrimEnd('/')}/search/{Uri.EscapeDataString(query.Text.Trim())}/{page}/");
-            var response = await http.GetAsync(uri, cancellationToken);
+            var response = await IndexerParsing.NextPageAsync(() => http.GetAsync(uri, cancellationToken), page == 1);
+            if (response is null)
+            {
+                break;
+            }
+
             var rows = Parse(response.Body, $"{response.FinalUri.Scheme}://{response.FinalUri.Authority}");
             results.AddRange(rows);
             if (rows.Count < FullPageRows)

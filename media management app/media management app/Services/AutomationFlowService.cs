@@ -102,6 +102,7 @@ public sealed class AutomationFlowService : IAutomationFlowService
                 _logger);
             var recipe = termGuard.Recipe;
             var queries = _searchPlanBuilder.BuildEpisodeQueries(recipe, show, episode);
+            using var session = NativeSearchService.BeginSession();
             var results = await SearchAsync(
                 recipe,
                 queries,
@@ -121,7 +122,7 @@ public sealed class AutomationFlowService : IAutomationFlowService
                 recipe,
                 _settingsService.Current.AutoTorrent,
                 request.Overrides);
-            return BuildDryRunResult(_settingsService.Current.AutoTorrent, recipe, show.DisplayTitle, queries, evaluated, maxCandidates);
+            return BuildDryRunResult(_settingsService.Current.AutoTorrent, recipe, show.DisplayTitle, queries, evaluated, maxCandidates, session.Session.NoSourceReason);
         }
         finally
         {
@@ -144,6 +145,7 @@ public sealed class AutomationFlowService : IAutomationFlowService
                 _logger);
             var recipe = termGuard.Recipe;
             var queries = _searchPlanBuilder.BuildMovieQueries(recipe, movie);
+            using var session = NativeSearchService.BeginSession();
             var results = await SearchAsync(
                 recipe,
                 queries,
@@ -160,7 +162,7 @@ public sealed class AutomationFlowService : IAutomationFlowService
                 request.Overrides);
             // native-search P5 / SRCH-15: movies often have hundreds of encodes; keep up to 40 ranked by the
             // recipe score so the cart picker can compare them (the recipe's own count still decides the top).
-            return BuildDryRunResult(_settingsService.Current.AutoTorrent, recipe, movie.DisplayTitle, queries, evaluated, Math.Max(maxCandidates, MovieCandidateListCap));
+            return BuildDryRunResult(_settingsService.Current.AutoTorrent, recipe, movie.DisplayTitle, queries, evaluated, Math.Max(maxCandidates, MovieCandidateListCap), session.Session.NoSourceReason);
         }
         finally
         {
@@ -521,13 +523,16 @@ public sealed class AutomationFlowService : IAutomationFlowService
         string title,
         IReadOnlyList<string> queries,
         IReadOnlyList<RecipeCandidateResult> evaluated,
-        int maxCandidates)
+        int maxCandidates,
+        string? searchSourceProblem = null)
     {
         return new RecipeDryRunResult
         {
             Recipe = recipe,
             TargetTitle = title,
             Queries = queries.ToList(),
+            // Only meaningful when nothing came back at all (some sites answering is a normal search).
+            SearchSourceProblem = evaluated.Count == 0 ? searchSourceProblem : null,
             // Same recipe dedupe as the batch hunt (the movie / retry path used to skip it): one torrent
             // returned by several engines or queries must not take several of the maxCandidates slots.
             AcceptedCandidates = (RecipeRuntimeSettings.GetDeduplicateCandidates(recipe, autoTorrent)

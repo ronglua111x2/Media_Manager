@@ -40,7 +40,12 @@ public sealed class KnabenIndexer(string baseUrl = "https://api.knaben.org") : I
                 ["hide_unsafe"] = true,
                 ["hide_xxx"] = true
             };
-            var response = await http.PostJsonAsync(new Uri(baseUrl.TrimEnd('/') + "/v1"), body.ToJsonString(), cancellationToken);
+            var response = await IndexerParsing.NextPageAsync(() => http.PostJsonAsync(new Uri(baseUrl.TrimEnd('/') + "/v1"), body.ToJsonString(), cancellationToken), page == 0);
+            if (response is null)
+            {
+                break;
+            }
+
             var rows = Parse(response.Body);
             results.AddRange(rows);
             if (rows.Count < PageSize)

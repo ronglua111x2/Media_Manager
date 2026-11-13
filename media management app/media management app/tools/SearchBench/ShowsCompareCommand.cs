@@ -58,10 +58,13 @@ public static class ShowsCompareCommand
         var planner = new SearchPlanBuilder(new SearchTitleResolver());
         var evaluator = new CandidateEvaluationService(new SearchTitleResolver());
         using var http = new HttpClient(new SocketsHttpHandler { AllowAutoRedirect = true, AutomaticDecompression = System.Net.DecompressionMethods.All }) { Timeout = TimeSpan.FromSeconds(20) };
-        var governor = new IndexerRequestGovernor();
+        // Shares the app's indexer budget (07d GOV-07); one search session per target, as the app does (GOV-03 B).
+        using var benchState = BenchState.Open(args);
+        var governor = benchState.Governor;
         var cache = new IndexerResponseCache();
+        var session = new SearchSession();
         var orchestrator = new SearchOrchestrator(governor, (id, lane, budget) =>
-            new GovernedIndexerHttp(http, governor, cache, id, lane, budget.MaxGovernorWait, TimeSpan.FromMinutes(30), "MediaManager/1.0 (+native-search; SearchBench)", budget.PerIndexer));
+            new GovernedIndexerHttp(http, governor, cache, id, lane, budget.MaxGovernorWait, TimeSpan.FromMinutes(30), "MediaManager/1.0 (+native-search; SearchBench)", budget.PerIndexer, session));
         // --disable "a,b": leave indexers out (e.g. ones whose daily budget an earlier run already used today).
         var disabled = (args.GetValueOrDefault("disable") ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var nativeSettings = new NativeSearchSettings();
@@ -110,6 +113,7 @@ public static class ShowsCompareCommand
 
             var nativeWatch = new Stopwatch();
             var nativeRows = new List<TorrentSearchResult>();
+            session = new SearchSession();
             async Task RunNativeAsync()
             {
                 nativeWatch.Start();

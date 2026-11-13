@@ -80,13 +80,16 @@ public static class IndexerResultNormalizer
     }
 }
 
+/// <param name="Requests">Network requests sent (07d GOV-08); <paramref name="CacheHits"/> answers taken from the cache.</param>
 public sealed record IndexerRunTelemetry(
     string IndexerId,
     string Status,
     int Rows,
     int Queries,
     long ElapsedMs,
-    string? Detail);
+    string? Detail,
+    int Requests = 0,
+    int CacheHits = 0);
 
 public sealed record OrchestratedSearch(
     IReadOnlyList<TorrentSearchResult> Results,
@@ -95,7 +98,10 @@ public sealed record OrchestratedSearch(
 {
     public string Summary =>
         $"rows={Results.Count} in {ElapsedMs}ms; " +
-        string.Join(", ", Indexers.Select(i => $"{i.IndexerId}:{i.Status}:{i.Rows}/{i.ElapsedMs}ms{(i.Detail is null ? "" : $" ({i.Detail})")}"));
+        string.Join(", ", Indexers.Select(i =>
+            $"{i.IndexerId}:{i.Status}:{i.Rows}/{i.ElapsedMs}ms" +
+            (i.Status == "skipped" ? "" : $"/{i.Requests}req{(i.CacheHits > 0 ? $"+{i.CacheHits}hit" : "")}") +
+            (i.Detail is null ? "" : $" ({i.Detail})")));
 }
 
 /// <summary>
@@ -261,6 +267,13 @@ public sealed class SearchOrchestrator(IndexerRequestGovernor governor, Func<str
             status = "timeout";
             detail = $"{budget.Overall.TotalSeconds:0}s search budget";
         }
+        catch (IndexerSearchCapException ex)
+        {
+            // The per-search cap (07d GOV-03 B): the rows of the queries already sent are kept, and the answer still
+            // counts as complete.
+            status = "trimmed";
+            detail = ex.Reason;
+        }
         catch (IndexerBlockedException ex)
         {
             status = "blocked";
@@ -285,6 +298,6 @@ public sealed class SearchOrchestrator(IndexerRequestGovernor governor, Func<str
             detail = $"{ex.GetType().Name}: {ex.Message}";
         }
 
-        return (new IndexerRunTelemetry(indexer.Id, status, rows.Count, ran, watch.ElapsedMilliseconds, detail), rows);
+        return (new IndexerRunTelemetry(indexer.Id, status, rows.Count, ran, watch.ElapsedMilliseconds, detail, http.NetworkRequests, http.CacheHits), rows);
     }
 }

@@ -990,8 +990,28 @@ public sealed class AutoTrackService : IAutoTrackService
                         var searchRows = _fetchJobService.GetSearchRowCount(order.EpisodeId.Value);
                         var overrideRejects = _fetchJobService.GetOverrideRejectCounts(order.EpisodeId.Value);
 
-                        if (!candidatesByEpisodeId.TryGetValue(order.EpisodeId.Value, out var candidates) ||
-                            candidates.Count == 0)
+                        if ((!candidatesByEpisodeId.TryGetValue(order.EpisodeId.Value, out var candidates) || candidates.Count == 0) &&
+                            _fetchJobService.GetSearchSourceProblem(order.EpisodeId.Value) is { } sourceProblem)
+                        {
+                            // Nothing was searched (every native site paused, breaker open or out of budget): say so, and
+                            // do not start the NoCandidates back-off, so the next hunt tries again once a site is back.
+                            result.Failed++;
+                            _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.Failed, sourceProblem);
+                            RecordAndLogEpisodeOutcome(
+                                result,
+                                BuildEpisodeOutcome(
+                                    order,
+                                    show.DisplayTitle,
+                                    episodeLabel,
+                                    searchRows,
+                                    recipeMatched: 0,
+                                    policyKept: 0,
+                                    HuntEpisodeStage.Search,
+                                    sourceProblem));
+                            continue;
+                        }
+
+                        if (candidates is null || candidates.Count == 0)
                         {
                             result.Failed++;
                             var rejectedByOverride = searchRows > 0 && overrideRejects.Count > 0;

@@ -18,6 +18,15 @@ public interface IFetchJobService
 
     IReadOnlyDictionary<CandidateRejectReason, int> GetOverrideRejectCounts(long episodeId);
 
+    /// <summary>
+    /// "No search source available: …" when the last search of this episode found nothing because no native site
+    /// could be asked (paused, breaker open, budget used); null otherwise.
+    /// </summary>
+    string? GetSearchSourceProblem(long episodeId) => null;
+
+    /// <summary>The same for the last season pack search of <paramref name="showId"/> season <paramref name="seasonNumber"/>.</summary>
+    string? GetPackSearchSourceProblem(long showId, int seasonNumber) => null;
+
     CartCandidateDebugSession? TakeHuntDebugSession();
 
     Task<IReadOnlyDictionary<long, IReadOnlyList<EpisodeFetchCandidate>>> FetchEpisodeCandidatesAsync(

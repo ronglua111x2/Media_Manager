@@ -75,7 +75,7 @@ public sealed class IndexerBlockedException(string indexerId, string detail)
 }
 
 /// <summary>The governor refused to send a request (breaker open, budget used, kill switch...).</summary>
-public sealed class IndexerUnavailableException(string indexerId, string reason)
+public class IndexerUnavailableException(string indexerId, string reason)
     : Exception($"{indexerId} unavailable: {reason}")
 {
     public string IndexerId { get; } = indexerId;

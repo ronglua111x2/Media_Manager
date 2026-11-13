@@ -151,6 +151,8 @@ public sealed class IndexerResponseCache(TimeProvider? time = null)
 /// is classified (429 → rate limited, 403/challenge → blocked, 5xx/timeout → failure) and reported back.
 /// Successful responses are cached. Uses .NET HttpClient, i.e. the Windows certificate store (the Python
 /// plugins failed TLS on bitsearch/torlock with "certificate has expired" where Windows is fine).
+/// With a <see cref="SearchSession"/>, a request beyond the per-search cap is not sent
+/// (<see cref="IndexerSearchCapException"/>); cache hits are never limited (07d GOV-03 B).
 /// </summary>
 public sealed class GovernedIndexerHttp(
     HttpClient http,
@@ -161,11 +163,18 @@ public sealed class GovernedIndexerHttp(
     TimeSpan maxWait,
     TimeSpan cacheTtl,
     string userAgent,
-    TimeSpan? requestTimeout = null) : IIndexerHttp
+    TimeSpan? requestTimeout = null,
+    SearchSession? session = null) : IIndexerHttp
 {
     private readonly object _pendingLock = new();
     private readonly List<string> _pendingKeys = [];
     private int _pendingNetworkResponses;
+    private int _networkRequests;
+    private int _cacheHits;
+
+    public int NetworkRequests => Volatile.Read(ref _networkRequests);
+
+    public int CacheHits => Volatile.Read(ref _cacheHits);
 
     public Task<IndexerHttpResponse> GetAsync(Uri uri, CancellationToken cancellationToken) =>
         GetCachedAsync($"{indexerId} GET {uri}", () => SendAsync(() => new HttpRequestMessage(HttpMethod.Get, uri), cancellationToken), cancellationToken);
@@ -209,8 +218,10 @@ public sealed class GovernedIndexerHttp(
 
     private async Task<IndexerHttpResponse> GetCachedAsync(string key, Func<Task<IndexerHttpResponse>> send, CancellationToken cancellationToken)
     {
+        var fromNetwork = false;
         var response = await cache.GetOrAddAsync(key, cacheTtl, send, cancellationToken, () =>
         {
+            fromNetwork = true;
             lock (_pendingLock)
             {
                 _pendingNetworkResponses++;
@@ -221,12 +232,40 @@ public sealed class GovernedIndexerHttp(
             _pendingKeys.Add(key);
         }
 
+        if (!fromNetwork)
+        {
+            Interlocked.Increment(ref _cacheHits);
+            session?.CountCacheHit(indexerId);
+        }
+
         return response;
     }
 
     private async Task<IndexerHttpResponse> SendAsync(Func<HttpRequestMessage> build, CancellationToken cancellationToken)
     {
-        using var lease = await governor.AcquireAsync(indexerId, lane, maxWait, cancellationToken);
+        // Only a request that really goes out counts against the per-search cap (this runs on a cache miss).
+        if (session is not null)
+        {
+            var (cap, lowBudget) = governor.RequestCapPerSearch(indexerId, lane);
+            if (!session.TryReserveRequest(indexerId, cap))
+            {
+                throw new IndexerSearchCapException(indexerId, cap, lowBudget);
+            }
+        }
+
+        IDisposable lease;
+        try
+        {
+            lease = await governor.AcquireAsync(indexerId, lane, maxWait, cancellationToken);
+        }
+        catch
+        {
+            session?.ReleaseRequest(indexerId);
+            throw;
+        }
+
+        using var leaseScope = lease;
+        Interlocked.Increment(ref _networkRequests);
         using var request = build();
         request.Headers.UserAgent.ParseAdd(userAgent);
         HttpResponseMessage response;

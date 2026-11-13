@@ -48,10 +48,13 @@ public static class MoviesCompareCommand
         var planner = new SearchPlanBuilder(new SearchTitleResolver());
         var evaluator = new CandidateEvaluationService(new SearchTitleResolver());
         using var http = new HttpClient(new SocketsHttpHandler { AllowAutoRedirect = true, AutomaticDecompression = System.Net.DecompressionMethods.All }) { Timeout = TimeSpan.FromSeconds(20) };
-        var governor = new IndexerRequestGovernor();
+        // Shares the app's indexer budget (07d GOV-07); one search session per target, as the app does (GOV-03 B).
+        using var benchState = BenchState.Open(args);
+        var governor = benchState.Governor;
         var cache = new IndexerResponseCache();
+        var session = new SearchSession();
         var orchestrator = new SearchOrchestrator(governor, (id, lane, budget) =>
-            new GovernedIndexerHttp(http, governor, cache, id, lane, budget.MaxGovernorWait, TimeSpan.FromMinutes(30), "MediaManager/1.0 (+native-search; SearchBench)", budget.PerIndexer));
+            new GovernedIndexerHttp(http, governor, cache, id, lane, budget.MaxGovernorWait, TimeSpan.FromMinutes(30), "MediaManager/1.0 (+native-search; SearchBench)", budget.PerIndexer, session));
         var indexers = NativeIndexerCatalog.Create();
         using var qbit = new QbittorrentSearchBackend();
         if (!nativeOnly)
@@ -80,6 +83,7 @@ public static class MoviesCompareCommand
 
             var nativeWatch = Stopwatch.StartNew();
             var nativeRows = new List<TorrentSearchResult>();
+            session = new SearchSession();
             var qualities = RecipeCandidateFilter.GetFilterModule(recipe)?.QualityAllowList;
             var nativeQueries = queries
                 .SelectMany(query => NativeQueryText.SpecificQueries(query, MediaKind.Movie, qualities, movie.ReleaseYear)

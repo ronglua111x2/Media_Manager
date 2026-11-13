@@ -22,12 +22,6 @@ var only = (argsMap.GetValueOrDefault("only") ?? string.Empty)
 var maxSeconds = int.TryParse(argsMap.GetValueOrDefault("max-seconds"), out var ms) ? ms : 60;
 var pluginsOverride = argsMap.GetValueOrDefault("plugins");
 var useNative = string.Equals(argsMap.GetValueOrDefault("backend"), "native", StringComparison.OrdinalIgnoreCase);
-using var nativeHttp = new HttpClient(new SocketsHttpHandler { AllowAutoRedirect = true, AutomaticDecompression = System.Net.DecompressionMethods.All }) { Timeout = TimeSpan.FromSeconds(20) };
-var governor = new media_management_app.Search.IndexerRequestGovernor();
-var responseCache = new media_management_app.Search.IndexerResponseCache();
-var orchestrator = new media_management_app.Search.SearchOrchestrator(governor, (id, lane, budget) =>
-    new media_management_app.Search.GovernedIndexerHttp(nativeHttp, governor, responseCache, id, lane, budget.MaxGovernorWait, TimeSpan.FromMinutes(30), "MediaManager/1.0 (+native-search; SearchBench)", budget.PerIndexer));
-var nativeIndexers = media_management_app.Search.NativeIndexerCatalog.Create();
 var nativeReduced = new Dictionary<string, SearchRun>(StringComparer.OrdinalIgnoreCase);
 SearchRecipe? currentRecipe = null;
 bool IsAnimeMovieRecipe() => currentRecipe is not null && RecipeRuntimeSettings.UsesAnimeAbsoluteEpisodeNumbering(currentRecipe);
@@ -67,6 +61,15 @@ if (command != "movies")
     Console.Error.WriteLine("Commands: movies, movies-compare, shows-compare, reeval-movies, reeval-shows, compare, gate.");
     return 2;
 }
+
+using var nativeHttp = new HttpClient(new SocketsHttpHandler { AllowAutoRedirect = true, AutomaticDecompression = System.Net.DecompressionMethods.All }) { Timeout = TimeSpan.FromSeconds(20) };
+// The app's indexer budget is shared when the native backend is used (07d GOV-07).
+using var movieBench = useNative ? BenchState.Open(argsMap) : null;
+var governor = movieBench?.Governor ?? new media_management_app.Search.IndexerRequestGovernor();
+var responseCache = new media_management_app.Search.IndexerResponseCache();
+var orchestrator = new media_management_app.Search.SearchOrchestrator(governor, (id, lane, budget) =>
+    new media_management_app.Search.GovernedIndexerHttp(nativeHttp, governor, responseCache, id, lane, budget.MaxGovernorWait, TimeSpan.FromMinutes(30), "MediaManager/1.0 (+native-search; SearchBench)", budget.PerIndexer));
+var nativeIndexers = media_management_app.Search.NativeIndexerCatalog.Create();
 
 var recipeJson = new JsonSerializerOptions
 {
