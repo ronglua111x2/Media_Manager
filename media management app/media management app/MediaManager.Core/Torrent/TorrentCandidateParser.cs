@@ -48,6 +48,13 @@ public static class TorrentCandidateParser
     /// "S3 - 13", "S4 - 17v2", "Season 3 - 04": one episode of a season as SubsPlease, Erai-raws and Anime Time name it. Not when an episode range
     /// follows ("S4 - 01-12" is a batch of season 4), and not a year.
     /// </summary>
+    /// <summary>
+    /// "Show Season 9 Episode 4", "Show.Season.2.Ep.13": one episode (cross-review 2, F2). Matched on the raw name so an
+    /// episode range ("Season 1 Episode 1-12") is not taken for one episode.
+    /// </summary>
+    internal const string SeasonEpisodeWordsPattern =
+        @"\bSeason[\s._]*(?<season4>\d{1,2})[\s._]*(?:Episode|Ep)[\s._]*(?<episode4>\d{1,4})(?:v\d{1,2})?\b(?![\s._]*(?:-|~|to)[\s._]*\d)";
+
     internal const string SeasonDashEpisodePattern =
         @"\b(?:S(?<season3>\d{1,2})|Season\s*(?<season3>[1-9]))\s+-\s+(?!(?:19|20)\d{2}\b)(?<episode3>\d{2,4})(?:v\d{1,2})?\b(?!\s*(?:-|~|to)\s*\d)";
 
@@ -69,6 +76,7 @@ public static class TorrentCandidateParser
     private static readonly Regex YearRangeRegex = new(@"\b(?<from>(?:19|20)\d{2})\s*(?:-|to)\s*(?<to>(?:19|20)\d{2})\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex SeasonRangeRegex = new(SeasonRangePattern, RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex SeasonDashEpisodeRegex = new(SeasonDashEpisodePattern, RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex SeasonEpisodeWordsRegex = new(SeasonEpisodeWordsPattern, RegexOptions.IgnoreCase | RegexOptions.Compiled);
     // "Seasons 1-3", "Season 1 - 3", "Season 1 to 10", "Seasons 1 - Season 3", "Season 02 - 04"; not "Season 3 - 04"
     // (Anime Time's episode 4 of season 3).
     private static readonly Regex SeasonWordRangeRegex = new(@"\bSeasons?\s*(?:(?<from>0\d)\s*(?:-|to)\s*(?<to>\d{1,3})|(?<from>\d{1,3})(?:(?:-|to)(?<to>\d{1,3})|\s*-\s*S(?:eason\s*)?(?<to>\d{1,3})|\s+(?:-|to)\s+(?<to>\d)(?!\d)|\s+to\s+(?<to>\d{1,3}))?)(?!\s*\+)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -172,6 +180,13 @@ public static class TorrentCandidateParser
             rest = NormalizeText(fileName[(dashMatch.Index + dashMatch.Length)..]);
             season = int.Parse(dashMatch.Groups["season3"].Value, System.Globalization.CultureInfo.InvariantCulture);
             episode = int.Parse(dashMatch.Groups["episode3"].Value, System.Globalization.CultureInfo.InvariantCulture);
+        }
+        else if (SeasonEpisodeWordsRegex.Match(fileName) is { Success: true } wordsMatch)
+        {
+            showPart = NormalizeText(fileName[..wordsMatch.Index]);
+            rest = NormalizeText(fileName[(wordsMatch.Index + wordsMatch.Length)..]);
+            season = int.Parse(wordsMatch.Groups["season4"].Value, System.Globalization.CultureInfo.InvariantCulture);
+            episode = int.Parse(wordsMatch.Groups["episode4"].Value, System.Globalization.CultureInfo.InvariantCulture);
         }
         else if (allowAnimeAbsolute &&
                  !AirDateRegex.IsMatch(normalized) &&

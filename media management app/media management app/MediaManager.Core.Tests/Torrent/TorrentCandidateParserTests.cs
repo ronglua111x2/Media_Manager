@@ -283,8 +283,8 @@ public class TorrentCandidateParserTests
     [InlineData(4, "Show.Name.S01E01-E02.1080p.mkv", 1, 1, 1, 1, false, false, null, false, null)]
     [InlineData(5, "Show.Name.S01E01-02.1080p.mkv", 1, 1, 1, 1, false, false, null, false, null)]
     [InlineData(6, "Show.Name.1x05.HDTV.mkv", 1, 5, 1, 5, false, false, null, false, null)]
-    // Not parsed by this parser; the pack flow reads it through Sonarr (S01E05).
-    [InlineData(7, "Show Name Season 1 Episode 5.mkv", null, null, null, null, false, false, null, false, null)]
+    // "Season N Episode M" is one episode (cross-review 2, F2); the pack flow also reads it through Sonarr.
+    [InlineData(7, "Show Name Season 1 Episode 5.mkv", 1, 5, 1, 5, false, false, null, false, null)]
     [InlineData(8, "Show.Name.S01E05.PROPER.1080p.mkv", 1, 5, 1, 5, false, false, null, false, null)]
     [InlineData(9, "Show.Name.S01E05.REPACK.1080p.mkv", 1, 5, 1, 5, false, false, null, false, null)]
     [InlineData(10, "[SubsPlease] Show - 05 (1080p) [ABCD1234].mkv", null, null, null, 5, false, false, null, false, null)]
