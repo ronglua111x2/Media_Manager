@@ -843,7 +843,10 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             return;
         }
 
-        if (NamesAnotherEpisode(selectedFile, namedSeason, namedEpisode, out var fileEpisode, out var fileRange))
+        var trackedEpisodes = _databaseService.GetTrackedEpisodes(show.Id)
+            .Select(row => (row.SeasonNumber, row.EpisodeNumber))
+            .ToHashSet();
+        if (NamesAnotherEpisode(selectedFile, namedSeason, namedEpisode, trackedEpisodes, out var fileEpisode, out var fileRange))
         {
             // A single-file torrent is taken as-is; refuse it when its name says it is another
             // episode (for example a torrent adopted under the wrong episode) (PARSE-25).
@@ -1819,10 +1822,17 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
         return TorrentFileRules.SelectEpisodeFile(files, seasonNumber, episodeNumber);
     }
 
+    /// <summary>
+    /// True when the file's name says it is another episode than (<paramref name="seasonNumber"/>,
+    /// <paramref name="episodeNumber"/>). Within one season a number always means the same episode. A name in another
+    /// season counts only when the show has that episode: TMDB may keep two cours in one season (S01E13..E24) while the
+    /// release names the second cour "S2 - 01".."S2 - 12", and such a file is the episode it was assigned to.
+    /// </summary>
     private static bool NamesAnotherEpisode(
         TorrentContentFile file,
         int seasonNumber,
         int episodeNumber,
+        IReadOnlySet<(int SeasonNumber, int EpisodeNumber)> trackedEpisodes,
         out string namedEpisode,
         out (int First, int Last)? fileRange)
     {
@@ -1841,13 +1851,21 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
         // A multi-episode file names each episode of its range (audit L1-M2).
         var first = parsed.EpisodeNumber.Value;
         var lastEpisode = parsed.LastEpisodeNumber ?? first;
-        if (parsed.SeasonNumber != seasonNumber || episodeNumber < first || episodeNumber > lastEpisode)
+        var fileSeason = parsed.SeasonNumber.Value;
+        if (fileSeason == seasonNumber)
         {
-            return true;
+            if (episodeNumber < first || episodeNumber > lastEpisode)
+            {
+                return true;
+            }
+
+            fileRange = lastEpisode > first ? (first, lastEpisode) : null;
+            return false;
         }
 
-        fileRange = lastEpisode > first ? (first, lastEpisode) : null;
-        return false;
+        // Another season: refused only when it names an episode the show has (cross-review 2, N1/N2).
+        return Enumerable.Range(first, lastEpisode - first + 1)
+            .Any(number => trackedEpisodes.Contains((fileSeason, number)));
     }
 
     private static SourceItem CreateEpisodeSourceItem(

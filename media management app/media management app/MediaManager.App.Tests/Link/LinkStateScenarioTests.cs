@@ -495,6 +495,53 @@ public sealed class LinkStateScenarioTests : IDisposable
         Assert.Contains(result.Messages, message => message.Contains("S01E12", StringComparison.Ordinal));
     }
 
+    // Cross-review 2 (N1/N2): TMDB keeps both cours in season 1 (24 episodes) while the release names the second cour
+    // "S2 - NN". The file names S02E13 / S02E05, which this show does not have, so it is the episode it was assigned.
+    [Theory]
+    [InlineData("[Grp] Demo Show S2 - 13 (1080p).mkv", 13)]
+    [InlineData("[Grp] Demo Show S2 - 05 (1080p).mkv", 17)]
+    public async Task EpisodeLink_SeasonNameTmdbDoesNotHave_IsLinked(string fileName, int episode)
+    {
+        _host.AddTorrent("HCOUR", fileName);
+        var showId = _host.AddShow(5030, "Demo Show", Enumerable.Range(1, 24).Select(number => (1, number, $"Episode {number}")).ToArray());
+        _host.AssignEpisodeTorrent(showId, 1, episode, "HCOUR");
+
+        var result = await _host.Link.LinkEpisodeAsync(showId, 1, episode);
+
+        Assert.Equal(1, result.LinkedCount);
+        Assert.Equal((1, episode), (Assert.Single(_host.Items()).SeasonNumber!.Value, _host.Items().Single().EpisodeNumber!.Value));
+        Assert.Contains(_host.LibraryFiles(), path => path.EndsWith($"S01E{episode:00}.mkv", StringComparison.Ordinal));
+    }
+
+    // N3: the season TMDB has, at the same number, links as before.
+    [Fact]
+    public async Task EpisodeLink_SeasonDashEpisode_SameEpisode_IsLinked()
+    {
+        _host.AddTorrent("HS2", "[Grp] Demo Show S2 - 05 (1080p).mkv");
+        var showId = _host.AddShow(5031, "Demo Show", Enumerable.Range(1, 12).SelectMany(number => new[] { (1, number, $"S1 {number}"), (2, number, $"S2 {number}") }).ToArray());
+        _host.AssignEpisodeTorrent(showId, 2, 5, "HS2");
+
+        var result = await _host.Link.LinkEpisodeAsync(showId, 2, 5);
+
+        Assert.Equal(1, result.LinkedCount);
+        Assert.Contains(_host.LibraryFiles(), path => path.EndsWith("S02E05.mkv", StringComparison.Ordinal));
+    }
+
+    // A file naming an episode of another season that the show does have is still refused (PARSE-25).
+    [Fact]
+    public async Task EpisodeLink_FileNamesARealEpisodeOfAnotherSeason_IsNotLinked()
+    {
+        _host.AddTorrent("HS2W", "[Grp] Demo Show S2 - 05 (1080p).mkv");
+        var showId = _host.AddShow(5032, "Demo Show", Enumerable.Range(1, 12).SelectMany(number => new[] { (1, number, $"S1 {number}"), (2, number, $"S2 {number}") }).ToArray());
+        _host.AssignEpisodeTorrent(showId, 1, 5, "HS2W");
+
+        var result = await _host.Link.LinkEpisodeAsync(showId, 1, 5);
+
+        Assert.Equal(0, result.LinkedCount);
+        Assert.Empty(_host.Items());
+        Assert.Contains(result.Messages, message => message.Contains("S02E05", StringComparison.Ordinal));
+    }
+
     // PARSE-29 (LINK-06, harness E): a library file deleted outside the app must make the episode Missing
     // and remove its dangling Jellyfin symlink.
     [Fact]
