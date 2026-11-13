@@ -45,7 +45,7 @@ public sealed class TorrentCandidateParseResult
 public static class TorrentCandidateParser
 {
     private static readonly Regex EpisodeRegex = new(
-        @"(?<title>.*?)(?:\bS(?<season>\d{1,3})E(?<episode>\d{1,4})(?:E\d{1,4})*(?:v\d{1,2})?\b|\b(?<season2>\d{1,3})x(?<episode2>\d{1,4})(?:v\d{1,2})?\b)(?<rest>.*)$",
+        @"(?<title>.*?)(?:\bS(?<season>\d{1,3})E(?<episode>\d{1,4})(?:E\d{1,4})*(?:v\d{1,2})?\b|\b(?<season2>\d{1,2})x(?<episode2>\d{1,3})(?:v\d{1,2})?\b)(?<rest>.*)$",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex AbsoluteDigitCandidateRegex = new(
         @"\bEP\s*(?<episode>\d{1,4})(?:v\d{1,2})?\b|\b(?<episode>\d{2,4})(?:v\d{1,2})?\b",

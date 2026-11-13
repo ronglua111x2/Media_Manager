@@ -21,7 +21,7 @@ public sealed class TorrentReleaseKindFlags
 public static class TorrentReleaseKind
 {
     private static readonly Regex ExplicitEpisodeRegex = new(
-        @"\bS\d{1,3}E\d{1,4}\b|\b\d{1,3}x\d{1,4}\b",
+        @"\bS\d{1,3}E\d{1,4}\b|\b\d{1,2}x\d{1,3}\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static readonly Regex PackKeywordRegex = new(

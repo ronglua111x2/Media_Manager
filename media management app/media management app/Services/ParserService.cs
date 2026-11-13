@@ -6,7 +6,7 @@ namespace media_management_app.Services;
 
 public sealed class ParserService : IParserService
 {
-    private static readonly Regex EpisodeRegex = new(@"(?<show>.*?)(?:\bS(?<season>\d{1,3})E(?<episode>\d{1,4})(?:E\d{1,4})*\b|\b(?<season2>\d{1,3})x(?<episode2>\d{1,4})\b)\s*(?<rest>.*)$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex EpisodeRegex = new(@"(?<show>.*?)(?:\bS(?<season>\d{1,3})E(?<episode>\d{1,4})(?:E\d{1,4})*\b|\b(?<season2>\d{1,2})x(?<episode2>\d{1,3})\b)\s*(?<rest>.*)$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex AnimeAbsoluteRegex = new(@"^\[(?<group>[^\]]+)\]\s*(?<show>.+?)\s*-\s*(?<episode>\d{1,4})(?:\s*(?<rest>.*))?$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex BracketedHashRegex = new(@"\[[0-9a-f]{6,10}\]", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex MovieYearRegex = new(@"^(?<title>.*?)(?:\s|\(|\[)(?<year>(?:19|20)\d{2})(?:\)|\])?(?:\s|$)", RegexOptions.IgnoreCase | RegexOptions.Compiled);

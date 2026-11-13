@@ -16,6 +16,20 @@ public class TorrentCandidateParserTests
         result.Quality.Should().Be("1080p");
     }
 
+    // Audit R2-B-03: a DVD resolution ("720x480") is not season 720, episode 480.
+    [Theory]
+    [InlineData("[Group] Show - 05 [DVD 720x480 x264].mkv")]
+    [InlineData("Show.Name.05.848x480.DVDRip.mkv")]
+    [InlineData("Show Name - 05 (640x480).avi")]
+    public void Parse_DvdResolution_IsNotASeasonEpisode(string fileName)
+    {
+        var result = TorrentCandidateParser.Parse(fileName);
+
+        result.SeasonNumber.Should().NotBe(720);
+        result.SeasonNumber.Should().NotBe(848);
+        result.SeasonNumber.Should().NotBe(640);
+    }
+
     [Fact]
     public void Parse_OneXZeroOneFormat_ParsesSeasonAndEpisode()
     {

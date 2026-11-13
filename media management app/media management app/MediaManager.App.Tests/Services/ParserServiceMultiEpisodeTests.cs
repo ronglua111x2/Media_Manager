@@ -49,6 +49,15 @@ public sealed class ParserServiceMultiEpisodeTests
         Assert.Null(parsed.LastEpisodeNumber);
     }
 
+    // Audit R2-B-03: Import must not read a DVD resolution as S720E480.
+    [Fact]
+    public void Parse_DvdResolutionInName_IsNotReadAsSeasonEpisode()
+    {
+        var parsed = _parser.Parse("[Group] Show - 05 [DVD 720x480 x264].mkv", @"D:\Media\Show");
+
+        Assert.NotEqual(720, parsed.SeasonNumber);
+    }
+
     [Fact]
     public void Scan_MultiEpisodeFile_CarriesTheRangeIntoTheSourceItem()
     {
