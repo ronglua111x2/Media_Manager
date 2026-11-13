@@ -17,8 +17,13 @@ public sealed class TorrentValidationConfig
     /// <summary>
     /// Extensions that fail validation (executables/scripts/installers). Archives are not listed —
     /// some legitimate packs include them and would false-positive.
+    /// SEC-A09: settings.json saves this list, so it can only add to <see cref="BuiltInDangerousExtensions"/>; the
+    /// validator always blocks the built-in entries too.
     /// </summary>
-    public List<string> DangerousExtensions { get; set; } =
+    public List<string> DangerousExtensions { get; set; } = [.. BuiltInDangerousExtensions];
+
+    /// <summary>The built-in dangerous extensions: blocked even when a saved settings list leaves some out.</summary>
+    public static IReadOnlyList<string> BuiltInDangerousExtensions { get; } =
     [
         ".exe", ".scr", ".bat", ".cmd", ".com", ".pif",
         ".vbs", ".js", ".jar", ".ps1", ".psm1", ".psd1",

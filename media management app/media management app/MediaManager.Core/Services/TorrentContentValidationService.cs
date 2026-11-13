@@ -36,6 +36,8 @@ public sealed class TorrentContentValidationService
 
     private readonly Func<TorrentValidationConfig> _getConfig;
     private readonly ITorrentContentValidationLogger? _logger;
+    private int _warnedDisabled;
+    private int _warnedWeakList;
 
     public TorrentContentValidationService(
         Func<TorrentValidationConfig>? getConfig = null,
@@ -64,8 +66,17 @@ public sealed class TorrentContentValidationService
         var config = _getConfig() ?? new TorrentValidationConfig();
         if (!config.EnableContentValidation)
         {
+            if (Interlocked.Exchange(ref _warnedDisabled, 1) == 0)
+            {
+                _logger?.Warning(
+                    "Torrent content validation is disabled in settings.json (TorrentValidation.EnableContentValidation = false): " +
+                    "torrents are added and adopted without checking their files for executables or shortcuts.");
+            }
+
             return Task.FromResult(result);
         }
+
+        WarnIfSavedListDropsBuiltIns(config);
 
         if (files.Count == 0)
         {
@@ -268,9 +279,40 @@ public sealed class TorrentContentValidationService
         }
     }
 
+    private void WarnIfSavedListDropsBuiltIns(TorrentValidationConfig config)
+    {
+        if (Volatile.Read(ref _warnedWeakList) != 0)
+        {
+            return;
+        }
+
+        var saved = (config.DangerousExtensions ?? [])
+            .Select(NormalizeExtension)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var missing = TorrentValidationConfig.BuiltInDangerousExtensions
+            .Select(NormalizeExtension)
+            .Where(extension => !saved.Contains(extension))
+            .ToList();
+        if (missing.Count == 0 || Interlocked.Exchange(ref _warnedWeakList, 1) != 0)
+        {
+            return;
+        }
+
+        _logger?.Warning(
+            $"settings.json TorrentValidation.DangerousExtensions leaves out {missing.Count} built-in entr{(missing.Count == 1 ? "y" : "ies")} " +
+            $"({string.Join(", ", missing.Take(12))}{(missing.Count > 12 ? ", ..." : string.Empty)}). They are still blocked; the setting can only add extensions.");
+    }
+
+    private static string NormalizeExtension(string extension)
+    {
+        var trimmed = (extension ?? string.Empty).Trim().ToLowerInvariant();
+        return trimmed.StartsWith('.') ? trimmed : "." + trimmed;
+    }
+
     private static HashSet<string> GetDangerousExtensions(TorrentValidationConfig config)
     {
         return config.GetAllDangerousExtensions()
+            .Concat(TorrentValidationConfig.BuiltInDangerousExtensions)
             .Concat(AlwaysDangerousExtensions)
             .Select(e => e.StartsWith('.') ? e.ToLowerInvariant() : "." + e.ToLowerInvariant())
             .ToHashSet(StringComparer.OrdinalIgnoreCase);

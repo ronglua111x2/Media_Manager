@@ -187,9 +187,10 @@ public sealed class TorrentAddGateService : ITorrentAddGateService
         var validationEnabled = _settingsService.Current.TorrentValidation?.EnableContentValidation ?? true;
         if (!validationEnabled)
         {
-            _logger.Info(
-                $"Content validation skipped for '{order.Title}' (hash={addedTorrent.Hash}).",
-                LogTarget.File | LogTarget.Console);
+            // SEC-A09: the switch lives only in settings.json; make every unchecked add visible.
+            _logger.Warning(
+                $"Content validation is disabled in settings: '{order.Title}' (hash={addedTorrent.Hash}) was added without checking its files.",
+                LogTarget.All);
             return await GetLiveTorrentAsync(addedTorrent, cancellationToken);
         }
 
