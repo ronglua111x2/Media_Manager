@@ -141,3 +141,16 @@ Bước tiếp theo:
   - vài bản native có nhưng loại do seed thấp hơn ngưỡng ở thời điểm đo.
 
 **Sửa sau lần đo.** RSS search của TorrentDownloads khớp **bất kỳ từ nào**: `Golam 1440p` trả về 50 bản 1440p không liên quan. Indexer giờ chỉ giữ dòng có đủ mọi từ trong tên; năm và token chất lượng là tùy chọn.
+
+### Lần đo 3: TV/anime theo recipe thật (13/11/2026)
+
+`SearchBench shows-compare`, 35 show (tập mới nhất + season pack mới nhất). Chi tiết ở `docs/code-review/2026-11/07c-native-search.md` §6.3.
+
+| Nhóm | qBittorrent tốt | Native tốt | Native/qBit | Thời gian TB qBit / native |
+|---|---|---|---|---|
+| Tập anime (28) | 259 | 302 | 117% | 67 s / 17 s |
+| Season pack (32) | 110 | 120 | 109% | 180 s / 70 s |
+| Tập TV (5) | 25 | 23 | 92% | 55 s / 15 s |
+
+Native đạt mục tiêu 90% ở cả ba nhóm, dù bitsearch và torrentdownloads bị tắt ở hơn nửa sau của lần đo. Cổng P6 vẫn cần số liệu `Both` từ dùng thật.
+

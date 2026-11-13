@@ -33,33 +33,33 @@
 | NS-02 | Cao | M | Bản không có năm nhận nhầm phần tiếp theo (Dune Part Two, Frozen II); số "5.1" của audio được tính là số trong tên | K, T | Đã sửa |
 | NS-03 | Cao | A | TMDB timeout khi tra IMDb id làm dừng cả lượt cart hoặc Auto-Track như thể user bấm Hủy | K | Đã sửa |
 | NS-04 | Cao | G | Lỗi parse (trang lạ trả 200) không bao giờ mở breaker | K | Đã sửa |
-| NS-05 | TB | G | Retry-After: giới hạn 30 phút, giá trị 0 hoặc thời điểm đã qua làm mất cooldown, 503 bị bỏ qua | K | Chưa |
+| NS-05 | TB | G | Retry-After: giới hạn 30 phút, giá trị 0 hoặc thời điểm đã qua làm mất cooldown, 503 bị bỏ qua | K | Đã sửa |
 | NS-06 | TB | G, A | Cache single-flight và memo query buộc mọi người gọi sau theo token, lane và thời hạn của người gọi đầu | K | Đã sửa |
 | NS-07 | TB | A | Memo 15 phút lưu cả kết quả thiếu (một số site timeout hoặc bị chặn) | K | Đã sửa |
 | NS-08 | TB | G, A | Cache response và memo không bao giờ dọn, bộ nhớ tăng mãi khi app chạy nhiều ngày | K | Đã sửa |
-| NS-09 | TB | G | Lane interactive không được ưu tiên hơn lane background | R | Chưa |
+| NS-09 | TB | G | Lane interactive không được ưu tiên hơn lane background | R | Đã sửa |
 | NS-10 | TB | M | Junk filter: chuỗi "4k" nằm bất kỳ đâu trong tên bắt áp ngưỡng 2160p; `.Bat.` bị coi là file thực thi | K, T | Đã sửa |
-| NS-11 | TB | M | Movie có tên là số giống năm (1917, Wonder Woman 1984) luôn bị loại vì sai tên (có từ trước, nằm ở parser) | T | Chưa |
-| NS-12 | TB | M | Anime `- 06v2` bị loại vì sai tập (có từ trước, nằm ở parser) | T | Chưa |
-| NS-13 | TB | P | LimeTorrents đổi layout thì trả 0 dòng kèm trạng thái "ok"; nhiều indexer JSON cũng vậy | K | Chưa |
-| NS-14 | TB | P | SubsPlease nhận query có số tập, mà API của nó chỉ khớp tên show, nên luôn trả rỗng | K | Chưa |
+| NS-11 | TB | M | Movie có tên là số giống năm (1917, Wonder Woman 1984) luôn bị loại vì sai tên (có từ trước, nằm ở parser) | T | Đã sửa |
+| NS-12 | TB | M | Anime `- 06v2` bị loại vì sai tập (có từ trước, nằm ở parser) | T | Đã sửa |
+| NS-13 | TB | P | LimeTorrents đổi layout thì trả 0 dòng kèm trạng thái "ok"; nhiều indexer JSON cũng vậy | K | Đã sửa |
+| NS-14 | TB | P | SubsPlease nhận query có số tập, mà API của nó chỉ khớp tên show, nên luôn trả rỗng | K | Đã sửa |
 | NS-15 | TB | P, G | Một exception lạ ở một indexer (ví dụ timestamp ngoài phạm vi) làm mất kết quả của mọi indexer | K | Đã sửa |
-| NS-16 | TB | A | Both: qBittorrent lỗi vẫn ghi record với qBittorrent = 0, nên cổng P6 có thể qua nhờ qBittorrent hỏng | K | Chưa |
-| NS-17 | TB | A | Both: snapshot và dry-run hỏng hẳn khi qBittorrent tắt, dù native vẫn chạy được | K | Chưa |
-| NS-18 | TB | M | Rút gọn query bỏ mất năm nằm trong tên phim (Blade Runner 2049 → "Blade Runner") | K, T | Chưa |
-| NS-19 | TB | M | Tên thay thế toàn token ngắn ("IS", "Us") khớp với mọi bản | T | Chưa |
+| NS-16 | TB | A | Both: qBittorrent lỗi vẫn ghi record với qBittorrent = 0, nên cổng P6 có thể qua nhờ qBittorrent hỏng | K | Đã sửa |
+| NS-17 | TB | A | Both: snapshot và dry-run hỏng hẳn khi qBittorrent tắt, dù native vẫn chạy được | K | Đã sửa |
+| NS-18 | TB | M | Rút gọn query bỏ mất năm nằm trong tên phim (Blade Runner 2049 → "Blade Runner") | K, T | Đã sửa |
+| NS-19 | TB | M | Tên thay thế toàn token ngắn ("IS", "Us") khớp với mọi bản | T | Đã sửa |
 | NS-20 | TB | A | Lần tra IMDb id thất bại được nhớ tới khi tắt app, nên EZTV im lặng không search show đó | K | Đã sửa |
-| NS-21 | TB | P | BT4G, TsukiHime và SubsPlease luôn báo seed = 0 (nghĩa là không biết), nên bị `MinimumSeeders` loại | R | Chưa |
-| NS-22 | Thấp | A | Checkbox "Pause all" hiển thị lệch với trạng thái thật sau khi rời Settings mà không lưu | R | Chưa |
+| NS-21 | TB | P | BT4G, TsukiHime và SubsPlease luôn báo seed = 0 (nghĩa là không biết), nên bị `MinimumSeeders` loại | R | Đã sửa |
+| NS-22 | Thấp | A | Checkbox "Pause all" hiển thị lệch với trạng thái thật sau khi rời Settings mà không lưu | R | Đã sửa |
 | NS-23 | Thấp | G | Một request thành công đang chạy dở đóng lại breaker vừa mở vì 403 (apibay chạy 2 request song song) | R | Đã sửa |
-| NS-24 | Thấp | G | Trạng thái governor chỉ lưu khi có 2 s không có hoạt động, nên crash giữa lượt hunt làm mất breaker | R | Chưa |
-| NS-25 | Thấp | A, G | Timeout từng indexer đặt trên 20 s không có tác dụng (`HttpClient.Timeout` = 20 s) | R | Chưa |
-| NS-26 | Thấp | G, P | Policy LimeTorrents được nới hai lần mà không có số đo; `FullPageRows = 20` trong khi một trang thật có 40 dòng | R | Chưa |
-| NS-27 | Thấp | P | Không lọc theo category: sách, nhạc và app chiếm chỗ trong 4 trang LimeTorrents | R | Chưa |
-| NS-28 | Thấp | P, G | Dedupe fuzzy: dung lượng trôi dần theo bản được giữ; merge giữ size 0 dù bản khác có size | R | Chưa |
-| NS-29 | Thấp | P | TsukiHime không đọc `is_adult` | R | Chưa |
-| NS-30 | Thấp | nhiều | Các lỗi nhỏ khác, xem mục 3 | R | Chưa |
-| NS-31 | TB | đo | Bench chỉ đo movie; TV, anime và pack chưa được đo theo recipe | K | Chưa |
+| NS-24 | Thấp | G | Trạng thái governor chỉ lưu khi có 2 s không có hoạt động, nên crash giữa lượt hunt làm mất breaker | R | Đã sửa |
+| NS-25 | Thấp | A, G | Timeout từng indexer đặt trên 20 s không có tác dụng (`HttpClient.Timeout` = 20 s) | R | Đã sửa |
+| NS-26 | Thấp | G, P | Policy LimeTorrents được nới hai lần mà không có số đo; `FullPageRows = 20` trong khi một trang thật có 40 dòng | R | Sửa một phần |
+| NS-27 | Thấp | P | Không lọc theo category: sách, nhạc và app chiếm chỗ trong 4 trang LimeTorrents | R | Sửa một phần |
+| NS-28 | Thấp | P, G | Dedupe fuzzy: dung lượng trôi dần theo bản được giữ; merge giữ size 0 dù bản khác có size | R | Đã sửa |
+| NS-29 | Thấp | P | TsukiHime không đọc `is_adult` | R | Đã sửa |
+| NS-30 | Thấp | nhiều | Các lỗi nhỏ khác, xem mục 3 | R | Sửa một phần |
+| NS-31 | TB | đo | Bench chỉ đo movie; TV, anime và pack chưa được đo theo recipe | K | Đã đo |
 | NS-32 | TB | P | Tên từ LimeTorrents và TorrentDownloads bị mojibake (UTF-8 bị đọc thành Windows-1252), nên bản Nga/Trung bị loại nhầm | K | Đã sửa |
 
 ---
@@ -382,6 +382,50 @@ Kết quả: 552 test Core và 140 test App đều pass.
 Chạy lại bench sau khi sửa: các bản Nga/Trung của Coherence đã được nhận (19 lên 21 bản tốt). Chỉ còn 1 dòng mojibake không khôi phục được; các movie khác giữ nguyên số. Tổng số bản tốt của native là 565 trên 15 movie.
 
 **Còn lại, chấp nhận được:** nếu một lượt chạy kết thúc giữa chừng (timeout, lỗi HTTP ở trang sau) thì các trang đã thành công không được báo. Lúc đó breaker đang ở HalfOpen sẽ mở lại sớm hơn. Hướng này an toàn với site, và site không bao giờ bị chặn vĩnh viễn.
+
+## 6.2 Đợt sửa 2 (ngày 2026-11-13)
+
+| ID | Đã làm | Commit |
+|---|---|---|
+| NS-12 | "v2" thuộc về số tập (`- 06v2`, `S01E06v2`). | `14cac6c` |
+| NS-14 | SubsPlease chỉ nhận tên show (bỏ marker tập/mùa, từ pack, chất lượng, số tập cuối). | `14cac6c` |
+| NS-21 | BT4G, TsukiHime, SubsPlease đánh dấu `SeedersUnknown`; ngưỡng seed bỏ qua các dòng đó; khi gộp, dòng có seed thật được ưu tiên. | `14cac6c` |
+| NS-28 | Gộp giữ dung lượng đã biết; dedupe fuzzy so với dung lượng gốc của nhóm. | `14cac6c` |
+| NS-29 | TsukiHime bỏ dòng `is_adult` / Sukebei. | `14cac6c` |
+| NS-13 | Indexer JSON/RSS báo lỗi parse khi trang có kết quả mà không đọc được dòng nào; LimeTorrents báo lỗi khi có link torrent mà không có dòng. | `14cac6c` |
+| NS-26 | Một trang LimeTorrents có 40 dòng (không còn request thừa). Policy: xem quota 1000 bên dưới. | `14cac6c`, `96460b6` |
+| NS-05 | Retry-After được tôn trọng trong khoảng 1 phút–24 giờ; 503 có Retry-After là rate limit. | `fbd7c5c` |
+| NS-09 | Request nền chờ khi có request tay đang xếp hàng cho cùng site. | `fbd7c5c` |
+| NS-24, NS-25 | Trạng thái lưu chậm nhất 10 s sau thay đổi đầu tiên; `HttpClient` không còn cắt timeout ở 20 s. | `fbd7c5c` |
+| NS-18 | Rút gọn query chỉ bỏ đúng năm của phim (ưu tiên khớp chính xác, sau đó ±1). | `fbd7c5c` |
+| NS-11 | Số giống năm trong tên phim được đưa lại vào token ("1917", "Wonder Woman 1984"). | `fbd7c5c` |
+| NS-19 | Tên không có từ dài hơn 2 chữ ("Us", "IS", "86") phải đứng đầu tên bản phát hành. | `fbd7c5c` |
+| NS-16, NS-17 | Record Both có `qbittorrent.error`, `native.fromMemo`; gate bỏ các record đó. Snapshot/dry-run ở chế độ Both vẫn chạy native khi qBittorrent tắt. | `fbd7c5c` |
+| NS-22, NS-30 (Refresh) | Settings hiện kill switch thật; Refresh giữ các ô tick chưa lưu. | `fbd7c5c` |
+| NS-30 (dấu nháy, dakuten), NS-27 (Nyaa) | "Schindler s List" khớp "Schindler's"; giữ dakuten tiếng Nhật; Nyaa tìm trong mục Anime (`c=1_0`). | `5e2b411` |
+| Phim khác cùng năm | Bản đúng năm vẫn phải có tên phim (và phần sau tên) khớp. Kiểm chứng offline trên 3 709 dòng thật (`SearchBench reeval-movies`): chỉ loại 11 dòng, đều là phim khác (phim tài liệu "To End All War: Oppenheimer…", "Oppenheimer The Real Story"). Tách từ ở chỗ đổi hệ chữ ("绝命毒师电影El Camino"). | `8eeee01` |
+| Bản giả `… exe` / `… scr` | Junk filter nhận đuôi thực thi cả khi dấu chấm bị đổi thành khoảng trắng (plugin torrentdownloads của qBittorrent). Bench TV/anime đã tính các bản này là "tốt" cho qBittorrent. | `8eeee01` |
+| Quota | Quota ngày của mọi site là 1000: chỉ là cầu chì chống vòng lặp; chống ban vẫn là giới hạn mỗi phút, khoảng cách, số request song song (quyết định của user). | `96460b6` |
+| Hiển thị quota | Pill "Search n/m" ở màn Auto, News, Cart; bấm vào xem trạng thái từng site (sẵn sàng, hết phần Auto-Track, hết quota + giờ reset, bị chặn tới, rate limit, tạm dừng, tắt). Settings dùng cùng cách mô tả. | `96460b6` |
+
+Kết quả: 609 test Core, 150 test App pass.
+
+**Còn lại (Thấp, chưa làm):** con trỏ `next` của torrents-csv, dung lượng có dấu phẩy thập phân, ngày quota theo UTC (reset 07:00 giờ Việt Nam), header TMDB dùng chung giữa các thread, dòng log `Run Cart … Mode=`, nhóm "DL" của `WEB-DL`, đổi backend giữa lượt chạy, bộ lọc cart picker có thể bỏ chọn, category của apibay/LimeTorrents.
+
+## 6.3 Số đo TV/anime theo recipe thật (NS-31, ngày 2026-11-13)
+
+`SearchBench shows-compare` (mới): với mỗi show đang theo dõi, tập mới nhất và season pack mới nhất (mùa đã chiếu hết ít nhất 7 ngày), query dựng bằng recipe tập/pack của chính show đó, chạy song song qBittorrent (plugin của recipe, tối đa 30 s mỗi query) và native, chấm bằng luật của app (pack: `SeasonPackIdentity`, không probe metadata).
+
+| Nhóm | Mục | qBittorrent tốt | Native tốt | Native/qBit | Native hơn | qBit hơn | Bằng | Thời gian TB qBit / native |
+|---|---|---|---|---|---|---|---|---|
+| Tập anime | 28 | 259 | **302** | **117%** | 14 | 4 | 10 | 67 s / 17 s |
+| Season pack | 32 | 110 | **120** | **109%** | 9 | 7 | 16 | 180 s / 70 s |
+| Tập TV | 5 | 25 | 23 | 92% | 1 | 1 | 3 | 55 s / 15 s |
+
+- 29 mục đầu chạy đủ nguồn. Sau đó bitsearch và torrentdownloads hết quota 200/ngày của bench, rồi bị tắt ở phần sau, nên các mục sau thiệt cho native. Riêng nhóm đủ nguồn: tập anime 123%, pack 122%, tập TV 250% (ít mẫu).
+- Số "tốt" của qBittorrent có cả bản giả: `Rick and Morty S09E10 1080p WEB h264-EDITH scr` (3 037 seed) và `… exe` được tính là tốt vì plugin đổi dấu chấm thành khoảng trắng. Đã sửa ở junk filter (`8eeee01`).
+- Các bản tốt chỉ qBittorrent có: chủ yếu từ torrentdownloads (khi native đã tắt nó), kickass (native tắt vì trang danh sách không có hash), TPB vượt 100 dòng của apibay, và vài bản native có nhưng số seed lúc đo thấp hơn ngưỡng.
+- Pack sinh 8–12 query mỗi pack, làm hết quota của bitsearch/torrentdownloads; đã gộp còn 2 dạng mỗi tên (07d GOV-03, `a4b6f71`).
 
 ## 7. Thứ tự sửa đề xuất
 

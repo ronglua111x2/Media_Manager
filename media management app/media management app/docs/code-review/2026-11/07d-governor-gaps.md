@@ -395,3 +395,14 @@ Ngoài chuyện ngân sách: khi 3 show đầu bảng chữ cái có tập kẹt
 6. **GOV-05:** hạ quota ngày của LimeTorrents xuống 400 (sửa một dòng) và ghi số đo vào doc.
 7. **GOV-09 và mục 4:** sửa doc 01, 03, 06 và 07.
 8. **GOV-01, GOV-02:** chỉ sửa doc. EZTV 2 giờ cho lane nền chỉ làm nếu sau GOV-04 vẫn thấy EZTV tốn nhiều.
+
+## 6. Trạng thái (ngày 2026-11-13)
+
+| ID | Trạng thái |
+|---|---|
+| GOV-04 | **Đã sửa** (`db1bf2e`): tập `NoCandidates` của Auto-Track chờ 1 giờ (tập chiếu < 12 giờ), 3 giờ (< 2 ngày), 6 giờ (< 7 ngày), rồi 24 giờ; Run Now bỏ qua chờ. Show được xoay vòng theo lần hunt gần nhất. `TorrentHuntIntervalMinutes` có tác dụng. |
+| GOV-03 A | **Đã sửa** (`a4b6f71`): query pack của native gộp còn `<tên> Sxx` và `<tên> season N`. Thử 3 show: Bloom Into You 8 → 4 query, không mất bản tốt. |
+| GOV-05 | **Đổi theo quyết định của user** (`96460b6`): quota ngày của mọi site là 1000, chỉ làm cầu chì; LimeTorrents giữ 10/phút, 3 s. |
+| GOV-09 | **Đã sửa doc 03** (cùng đợt này). |
+| GOV-03 B, GOV-01, GOV-02, GOV-06, GOV-07, GOV-08 | Chưa làm. |
+
