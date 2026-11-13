@@ -240,6 +240,27 @@ public class SpecialRuleMappingTests
         Assert.DoesNotContain(result.Items, item => item.Episode is not null);
     }
 
+    /// <summary>Audit R2-C-05: of two copies naming S00E02, the better quality is linked, not the first by path.</summary>
+    [Fact]
+    public async Task DirectS00E_TwoCopies_TheBetterQualityWins()
+    {
+        var pack = new SpecialShowBuilder("Quiet Club", 900008)
+            .Season(1, 3, new DateTime(2013, 4, 5))
+            .Special(1, "A Festival Afterword", new DateTime(2013, 9, 19))
+            .Special(2, "The Gift Exchange", new DateTime(2013, 12, 24))
+            .RegularFiles(1, "Quiet Club/Season 01", episode => $"Quiet Club S01E{episode:00}.mkv")
+            .SpecialFile("Quiet Club/Specials/Quiet Club - S00E02 [720p].mkv", null)
+            .SpecialFile("Quiet Club/Specials/Quiet Club - S00E02 [1080p].mkv", 2)
+            .Build("direct-copies", "two copies of one S00Exx");
+        using var host = new SpecialOrchestratorHost(_ => throw new InvalidOperationException("Gemini must not be called."));
+
+        var result = await host.ResolveAsync(pack, useGemini: false);
+
+        var mapped = Mapped(result);
+        Assert.Equal(2, mapped["Quiet Club/Specials/Quiet Club - S00E02 [1080p].mkv"]);
+        Assert.False(mapped.ContainsKey("Quiet Club/Specials/Quiet Club - S00E02 [720p].mkv"));
+    }
+
     /// <summary>SPEC-02: "OVA - 01" is the first OVA, not TMDB S00E01 (here a recap).</summary>
     [Fact]
     public async Task OvaDash_NumberIsNotTheTmdbEpisode_NotMapped()

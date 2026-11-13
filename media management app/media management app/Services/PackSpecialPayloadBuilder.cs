@@ -401,14 +401,17 @@ public static class PackSpecialPayloadBuilder
             });
         }
 
-        for (var index = 0; index < context.Candidates.Count; index++)
+        // Copies that name the same S00Exx: the better revision or quality claims it first, as for regular
+        // episodes, instead of the first one in path order (audit R2-C-05).
+        var directOrder = Enumerable.Range(0, context.Candidates.Count)
+            .Where(index => context.Candidates[index].NamingPattern == SpecialMappingNamingPattern.StandardS00E)
+            .GroupBy(index => TryGetDirectS00E(context.Candidates[index]) ?? 0)
+            .OrderBy(group => group.Key)
+            .SelectMany(group => TorrentFileRules.OrderByPreference(group, index => context.Candidates[index].RelativePath, _ => 0L))
+            .ToList();
+        foreach (var index in directOrder)
         {
             var candidate = context.Candidates[index];
-            if (candidate.NamingPattern != SpecialMappingNamingPattern.StandardS00E)
-            {
-                continue;
-            }
-
             var directEpisode = TryGetDirectS00E(candidate);
             if (directEpisode is null)
             {
@@ -423,7 +426,7 @@ public static class PackSpecialPayloadBuilder
 
             if (claimed.Contains(directEpisode.Value))
             {
-                unresolved[index] = $"File name says S00E{directEpisode.Value:00}, which another file already claims.";
+                unresolved[index] = $"File name says S00E{directEpisode.Value:00}, which another file (a better or equal copy) already claims.";
                 continue;
             }
 
