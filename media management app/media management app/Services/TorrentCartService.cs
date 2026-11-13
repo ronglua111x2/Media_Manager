@@ -112,6 +112,12 @@ public sealed class TorrentCartService : ITorrentCartService
             throw new InvalidOperationException($"Episode S{seasonNumber:00}E{episodeNumber:00} is already in the cart.");
         }
 
+        // An episode TMDB removed is kept only for its history; searching it would hunt a "ghost" (cross-review 2, G2).
+        if (_databaseService.GetTrackedEpisodes(showId).FirstOrDefault(episode => episode.Id == episodeId) is { IsRemovedUpstream: true })
+        {
+            throw new InvalidOperationException($"Episode S{seasonNumber:00}E{episodeNumber:00} is no longer on TMDB and cannot be added to the cart.");
+        }
+
         var order = new TorrentCartOrder
         {
             TargetKind = MediaKind.TvEpisode,
