@@ -224,6 +224,22 @@ public class SpecialRuleMappingTests
         Assert.Equal(2, Mapped(result)[specialFile]);
     }
 
+    /// <summary>
+    /// Audit R2-C-02: a file whose name says a S00Exx number TMDB does not have can never take a Gemini answer (the
+    /// guard drops any other number), so it is not sent: no request is spent on it, every time.
+    /// </summary>
+    [Fact]
+    public async Task DirectS00ENotInTmdb_IsNotSentToGemini()
+    {
+        var pack = DirectPack("Quiet Club/Specials/Quiet Club - S00E09.mkv");
+        using var host = new SpecialOrchestratorHost(_ => throw new InvalidOperationException("Gemini must not be called."));
+
+        var result = await host.ResolveAsync(pack, useGemini: true);
+
+        Assert.Equal(0, host.Gemini.Calls);
+        Assert.DoesNotContain(result.Items, item => item.Episode is not null);
+    }
+
     /// <summary>SPEC-02: "OVA - 01" is the first OVA, not TMDB S00E01 (here a recap).</summary>
     [Fact]
     public async Task OvaDash_NumberIsNotTheTmdbEpisode_NotMapped()

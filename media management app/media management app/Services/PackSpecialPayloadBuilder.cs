@@ -38,7 +38,9 @@ public static class PackSpecialPayloadBuilder
 
     /// <summary>
     /// Candidates the rules left open, in the order Gemini sees them: by parent season, numbered files by their
-    /// number, unnumbered files after the numbered ones of the same season (PR-14).
+    /// number, unnumbered files after the numbered ones of the same season (PR-14). A file whose name states its
+    /// S00Exx number is never sent: the guard would drop any other answer, so it would only spend a request on
+    /// every AI Link and keep the result out of the cache (audit R2-C-02).
     /// </summary>
     private static IReadOnlyList<int> OrderForGemini(
         SpecialMappingContext context,
@@ -47,6 +49,8 @@ public static class PackSpecialPayloadBuilder
         var resolved = proposals.Select(proposal => proposal.CandidateIndex).ToHashSet();
         return Enumerable.Range(0, context.Candidates.Count)
             .Where(index => !resolved.Contains(index))
+            .Where(index => !(context.Candidates[index].NamingPattern == SpecialMappingNamingPattern.StandardS00E &&
+                              TryGetDirectS00E(context.Candidates[index]) is not null))
             .Select(index => (Index: index, Candidate: context.Candidates[index]))
             .OrderBy(item => item.Candidate.ParentSeason ?? int.MaxValue)
             .ThenBy(item => item.Candidate.LocalIndex > 0 ? 0 : 1)
