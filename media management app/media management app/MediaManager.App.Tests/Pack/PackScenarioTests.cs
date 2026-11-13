@@ -302,6 +302,17 @@ public class PackScenarioTests
         }
     }
 
+    // Audit R2-B-02: Inspect showed "- 13".."- 24" as S02E01..E12 but stored only season 1 as coverage, so Link
+    // then skipped them as "outside pack coverage".
+    [Fact]
+    public void AbsoluteBatchAcrossTwoSeasons_InspectThenLink_LinksTheSecondSeason()
+    {
+        var inventory = PackScenario.RunInspectThenLink(Scenarios["absolute-two-seasons"] with { Covered = [1] });
+
+        Assert.Equal(24, inventory.RegularEpisodeCount);
+        PackScenario.AssertRegular(inventory, "[Grp] Show (01-24)/[Grp] Show - 13 [1080p].mkv", 2, 1);
+    }
+
     [Fact]
     public void AbsoluteNumberBeyondShow_IsSkippedWithReason()
     {
@@ -742,7 +753,20 @@ internal sealed record PackScenarioDefinition(
 
 internal static class PackScenario
 {
-    public static PackTorrentInventory Run(PackScenarioDefinition scenario)
+    /// <summary>
+    /// The app's real order: Inspect on completion stores the owner plus the inventory's covered seasons, then Link
+    /// runs with that stored coverage (audit R2-B-02).
+    /// </summary>
+    public static PackTorrentInventory RunInspectThenLink(PackScenarioDefinition scenario)
+    {
+        var inspected = Run(scenario with { Covered = [] }, PackAnalyzeMode.Inspect);
+        var stored = inspected.CoveredSeasons.Append(scenario.Owner).Distinct().Order().ToArray();
+        return Run(scenario with { Covered = stored });
+    }
+
+    public static PackTorrentInventory Run(PackScenarioDefinition scenario) => Run(scenario, PackAnalyzeMode.Link);
+
+    private static PackTorrentInventory Run(PackScenarioDefinition scenario, PackAnalyzeMode mode)
     {
         var episodes = BuildEpisodes(scenario);
         var seasons = scenario.EpisodesPerSeason
@@ -756,7 +780,7 @@ internal static class PackScenario
             episodes,
             seasons,
             scenario.Covered.ToHashSet(),
-            PackAnalyzeMode.Link,
+            mode,
             ResolveSpecialsOffline(files, specials, episodes.Where(episode => episode.SeasonNumber > 0).ToList()),
             ownerSeasonNumber: scenario.Owner,
             fileSizes: scenario.Sizes);

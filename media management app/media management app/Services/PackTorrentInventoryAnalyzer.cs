@@ -91,8 +91,14 @@ public static class PackTorrentInventoryAnalyzer
         var groupedSeasons = seasonGroups
             .Where(group => group.SeasonNumber > 0)
             .Select(group => group.SeasonNumber);
+        // Seasons the files resolve to count too: absolute numbering can place a flat batch's "- 13".."- 24" in
+        // season 2. Inspect stores this as the pack's coverage and Link skips anything outside it (audit R2-B-02).
+        var resolvedSeasons = inventory.Files
+            .Where(file => file is { Classification: PackFileClassification.RegularEpisode, MatchedSeasonNumber: > 0 })
+            .Select(file => file.MatchedSeasonNumber!.Value);
         inventory.CoveredSeasons = folderSeasons
             .Concat(groupedSeasons)
+            .Concat(resolvedSeasons)
             .Distinct()
             .Order()
             .ToList();
