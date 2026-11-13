@@ -98,3 +98,11 @@ Ghi chú do các phiên sửa lỗi viết trong lúc làm, chép vào đây đ�
 | `l309-tmdb-episode-id.md` | L3-09: theo dõi tập bằng ID tập TMDB, migration 011/012, giới hạn đã biết |
 | `gemini-eval-progress.md`, `gemini-eval-first-run-2026-11-13.md` | Bộ eval Gemini cho mapping special: số request, tỉ lệ sai im lặng 18–24%, rule OVA mới |
 | `governor-gaps-07d.md`, `native-search-batch3.md` | Search: tóm tắt 07d (governor), trạng thái batch 3 của `feat/native-search` |
+
+## 6. Trạng thái nhánh `release/2026-11` (13/11/2026)
+
+- Gộp `claude/fix-parser-integration` (parser, link, special, Gemini, L3-09) và `feat/native-search`, merge `fdf63ea`.
+- Rà chéo lần 2 sau khi gộp và sửa 11 lỗi do hai nhánh va nhau: tập "ma" bị Auto-Track săn, order kẹt khi TMDB đánh số lại, reset bị adopt hoặc hunt gắn lại torrent cũ (migration 013 `ResetTorrentHashes`), "S2 - NN" khi TMDB gộp mùa, mùa không có trên TMDB đi vào review, "Season N Episode M", tập ma trong cart, `.lnk` cùng các đuôi shortcut/script luôn bị chặn.
+- Test tự động (Release x64): Core 855 pass, 3 bỏ qua; App 512 pass.
+- **Test tay trên sandbox: CHƯA LÀM** (user tạm bỏ qua). Sandbox và kịch bản 90 bước nằm ở máy local, ngoài repo. Phải chạy trước khi chuyển app thật sang bản này.
+- Bước tiếp theo: audit bảo mật trên nhánh này, sửa, rồi mới push. Mỗi lần push vào `main` sẽ tự phát hành một bản public (BLD-04).
