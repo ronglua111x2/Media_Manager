@@ -9,11 +9,17 @@ namespace media_management_app.Services;
 
 public interface INativeSearchService
 {
-    /// <summary>True when searches for this media kind go to the native indexers (Search.Backend = Native or Both).</summary>
+    /// <summary>
+    /// True when this recipe searches the native indexers: its backend is Native or Both, and native search is enabled
+    /// and not paused. No recipe: qBittorrent.
+    /// </summary>
     bool UsesNative(MediaKind kind, SearchRecipe? recipe = null);
 
-    /// <summary>True when the qBittorrent search should also run for comparison (Search.Backend = Both).</summary>
+    /// <summary>True when the qBittorrent search also runs for comparison (recipe backend Both, native available).</summary>
     bool ComparesWithQbittorrent(MediaKind kind, SearchRecipe? recipe = null);
+
+    /// <summary>Settings → Search engines → Enable native search (the master switch; recipes choose the backend).</summary>
+    bool NativeEnabled => true;
 
     /// <summary>Runs one query on the native indexers (governed, cached) and returns rows in the app's result shape.</summary>
     Task<IReadOnlyList<TorrentSearchResult>> SearchAsync(SearchRecipe recipe, string query, MediaKind kind, CancellationToken cancellationToken, SearchSubject? subject = null);
@@ -59,7 +65,8 @@ public sealed record SearchSubject(
 /// <summary>
 /// App side of native search (native-search P2): builds the indexer set from settings, owns the request
 /// governor (state persisted to &lt;StateFolder&gt;/indexer-state.json so limits survive restarts) and the
-/// response cache, and routes each query according to the Search.Backend flag. Results are converted to
+/// response cache, and routes each query to the backend its recipe chose (<see cref="SearchBackendResolver"/>):
+/// a Native/Both recipe searches with qBittorrent, with a warning, while native search is off or paused. Results are converted to
 /// <see cref="TorrentSearchResult"/> so evaluation, dedupe, cart and the add gate stay unchanged.
 /// </summary>
 public sealed class NativeSearchService : INativeSearchService, IDisposable
@@ -89,6 +96,9 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
     private readonly SemaphoreSlim _imdbGate = new(1, 1);
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, MemoEntry> _recent = new(StringComparer.OrdinalIgnoreCase);
     private static readonly TimeSpan RecentTtl = TimeSpan.FromMinutes(15);
+    // Fallback warnings already logged (recipe + reason → time): a hunt asks once per episode, the log says it once.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTimeOffset> _fallbackLogged = new(StringComparer.Ordinal);
+    private static readonly TimeSpan FallbackLogInterval = TimeSpan.FromMinutes(30);
     private readonly object _saveGate = new();
     private readonly object _saveFileGate = new();
     private System.Threading.Timer? _saveTimer;
@@ -183,6 +193,8 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
     }
 
     private NativeSearchSettings Settings => _settingsService.Current.Search ??= new NativeSearchSettings();
+
+    public bool NativeEnabled => Settings.NativeEnabled;
 
     public bool UsesNative(MediaKind kind, SearchRecipe? recipe = null) => BackendFor(kind, recipe) is SearchBackends.Native or SearchBackends.Both;
 
@@ -586,33 +598,31 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
     }
 
     /// <summary>
-    /// Recipe choice first, then the per-kind override, then the Settings default. Inside a search session the first
+    /// The recipe's backend, or qBittorrent while native search is off or paused. Inside a search session the first
     /// answer is kept for the whole run, so changing Settings mid-run cannot split it between backends (doc 06 §1).
     /// </summary>
     private string BackendFor(MediaKind kind, SearchRecipe? recipe = null) =>
         SessionScope.Value is { } session
-            ? session.PinBackend($"{kind}|{recipe?.RecipeId}", () => ResolveBackend(kind, recipe))
-            : ResolveBackend(kind, recipe);
+            ? session.PinBackend($"{kind}|{recipe?.RecipeId}", () => ResolveBackend(recipe, session))
+            : ResolveBackend(recipe, null);
 
-    private string ResolveBackend(MediaKind kind, SearchRecipe? recipe)
+    private string ResolveBackend(SearchRecipe? recipe, SearchSession? session)
     {
-        if (recipe is not null && RecipeRuntimeSettings.GetSearchBackend(recipe) is { } fromRecipe)
+        var decision = SearchBackendResolver.Resolve(recipe, Settings.NativeEnabled, _governor.KillSwitch);
+        if (decision.FallbackReason is { } reason)
         {
-            return Normalize(fromRecipe);
+            session?.NoteBackendFallback(reason);
+            var now = DateTimeOffset.UtcNow;
+            var key = $"{recipe?.RecipeId}|{reason}";
+            var logged = _fallbackLogged.TryGetValue(key, out var last) && now - last < FallbackLogInterval;
+            if (!logged)
+            {
+                _fallbackLogged[key] = now;
+                _logger.Warning($"[Search] {reason}", LogTarget.All);
+            }
         }
 
-        var settings = Settings;
-        if (settings.BackendByKind.TryGetValue(kind.ToString(), out var perKind) && !string.IsNullOrWhiteSpace(perKind))
-        {
-            return Normalize(perKind);
-        }
-
-        return Normalize(settings.Backend);
-
-        static string Normalize(string? value) =>
-            string.Equals(value, SearchBackends.Native, StringComparison.OrdinalIgnoreCase) ? SearchBackends.Native
-            : string.Equals(value, SearchBackends.Both, StringComparison.OrdinalIgnoreCase) ? SearchBackends.Both
-            : SearchBackends.Qbittorrent;
+        return decision.Effective;
     }
 
     private string StatePath => Path.Combine(_settingsService.Current.StateFolder, StateFileName);

@@ -201,9 +201,23 @@ public static class RecipeRuntimeSettings
     public static bool GetEnableCandidateMetadataProbe(SearchRecipe recipe, AutoTorrentSettings fallback) =>
         GetBool(GetParserModule(recipe), EnableCandidateMetadataProbeKey, fallback.EnableCandidateMetadataProbe);
 
+    /// <summary>Writes the recipe's search backend, adding a Search module if the recipe has none.</summary>
+    public static void SetSearchBackend(SearchRecipe recipe, string backend)
+    {
+        var search = GetSearchModule(recipe);
+        if (search is null)
+        {
+            search = new RecipeModuleConfig { BlockType = RecipeBlockType.SearchSource, Order = 20, IsEnabled = true };
+            recipe.Modules.Add(search);
+        }
+
+        search.ExtensionData[SearchBackendKey] = backend;
+    }
+
     /// <summary>
-    /// Search backend chosen by the recipe (native-search plan 08 §Q4): "Qbittorrent", "Native" or "Both", or
-    /// null when the recipe uses the Settings default ("Default" or missing).
+    /// Search backend stored in the recipe (native-search plan 08 §Q4): "Qbittorrent", "Native" or "Both", or null
+    /// when the recipe has none ("Default" or missing: a recipe from before the move to per-recipe backends, which
+    /// <c>SearchBackendMigration</c> fills in once, or one imported later, which searches with qBittorrent).
     /// </summary>
     public static string? GetSearchBackend(SearchRecipe recipe)
     {

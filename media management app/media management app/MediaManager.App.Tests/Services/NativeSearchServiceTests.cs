@@ -30,7 +30,7 @@ public sealed class NativeSearchServiceTests : IDisposable
         Directory.CreateDirectory(_stateFolder);
         var settings = new FakeSettingsService();
         settings.Current.StateFolder = _stateFolder;
-        settings.Current.Search.Backend = SearchBackends.Native;
+        settings.Current.Search.NativeEnabled = true;
         // Kill switch: no request ever leaves the test.
         settings.Current.Search.PauseAll = true;
         return new NativeSearchService(settings, new FakeAppLogger(), externalIds);
@@ -98,41 +98,110 @@ public sealed class NativeSearchServiceTests : IDisposable
         Assert.Contains("paused", session.Session.NoSourceReason);
     }
 
+    private static SearchRecipe RecipeWith(string backend, MediaKind kind = MediaKind.Movie)
+    {
+        var recipe = new SearchRecipe { RecipeId = "r1", Name = "Recipe 01", TargetKind = kind };
+        RecipeRuntimeSettings.SetSearchBackend(recipe, backend);
+        return recipe;
+    }
+
+    private NativeSearchService CreateWith(bool nativeEnabled, bool pauseAll, out FakeSettingsService settings, FakeAppLogger? logger = null)
+    {
+        Directory.CreateDirectory(_stateFolder);
+        settings = new FakeSettingsService();
+        settings.Current.StateFolder = _stateFolder;
+        settings.Current.Search.NativeEnabled = nativeEnabled;
+        settings.Current.Search.PauseAll = pauseAll;
+        return new NativeSearchService(settings, logger ?? new FakeAppLogger(), new TimingOutExternalIds());
+    }
+
+    private static readonly IReadOnlyList<TorrentSearchResult> QbitRows =
+        [new TorrentSearchResult { FileName = "Movie.01.2013.1080p", FileUrl = "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567" }];
+
     [Fact]
     public async Task BothMode_UsesTheQbittorrentRows_WhenNoNativeSiteCouldBeAsked()
     {
-        Directory.CreateDirectory(_stateFolder);
-        var settings = new FakeSettingsService();
-        settings.Current.StateFolder = _stateFolder;
-        settings.Current.Search.Backend = SearchBackends.Both;
-        settings.Current.Search.PauseAll = true;
-        using var service = new NativeSearchService(settings, new FakeAppLogger(), new TimingOutExternalIds());
-        var recipe = new SearchRecipe { Name = "Movie", TargetKind = MediaKind.Movie };
-        IReadOnlyList<TorrentSearchResult> qbitRows = [new TorrentSearchResult { FileName = "Coherence.2013.1080p", FileUrl = "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567" }];
+        // Every site disabled: native runs but no source answers, so the qBittorrent comparison rows are used.
+        using var service = CreateWith(nativeEnabled: true, pauseAll: false, out var settings);
+        foreach (var id in NativeIndexerCatalog.AllIds)
+        {
+            settings.Current.Search.Indexers[id] = new IndexerSettings { Enabled = false };
+        }
 
-        var rows = await service.SearchOrFallbackAsync(recipe, "Coherence 2013", MediaKind.Movie, () => Task.FromResult(qbitRows), CancellationToken.None);
+        var rows = await service.SearchOrFallbackAsync(RecipeWith(SearchBackends.Both), "Movie 01 2013", MediaKind.Movie, () => Task.FromResult(QbitRows), CancellationToken.None);
 
         Assert.Single(rows);
     }
 
     [Fact]
+    public void RecipeDecidesTheBackend_SettingsBackendIsIgnored()
+    {
+        using var service = CreateWith(nativeEnabled: true, pauseAll: false, out var settings);
+        settings.Current.Search.Backend = SearchBackends.Native;
+        settings.Current.Search.BackendByKind["Movie"] = SearchBackends.Both;
+
+        Assert.False(service.UsesNative(MediaKind.Movie, RecipeWith(SearchBackends.Qbittorrent)));
+        Assert.False(service.UsesNative(MediaKind.Movie));
+        Assert.True(service.UsesNative(MediaKind.Movie, RecipeWith(SearchBackends.Native)));
+        Assert.False(service.ComparesWithQbittorrent(MediaKind.Movie, RecipeWith(SearchBackends.Native)));
+        Assert.True(service.ComparesWithQbittorrent(MediaKind.Movie, RecipeWith(SearchBackends.Both)));
+    }
+
+    [Theory]
+    [InlineData(false, false, "turned off")]
+    [InlineData(true, true, "paused")]
+    public async Task NativeRecipe_WhenNativeIsOffOrPaused_SearchesWithQbittorrent_AndSaysWhy(bool nativeEnabled, bool pauseAll, string why)
+    {
+        var logger = new FakeAppLogger();
+        using var service = CreateWith(nativeEnabled, pauseAll, out _, logger);
+        var recipe = RecipeWith(SearchBackends.Native);
+        var qbitCalls = 0;
+
+        using var session = NativeSearchService.BeginSession();
+        var rows = await service.SearchOrFallbackAsync(recipe, "Movie 01 2013", MediaKind.Movie, () => { qbitCalls++; return Task.FromResult(QbitRows); }, CancellationToken.None);
+
+        Assert.Single(rows);
+        Assert.Equal(1, qbitCalls);
+        Assert.False(session.Session.NoSourceAvailable);
+        Assert.Contains(why, session.Session.BackendNote);
+        Assert.Contains("qBittorrent", session.Session.BackendNote);
+        Assert.Equal("qBittorrent", ((INativeSearchService)service).BackendName(MediaKind.Movie, recipe));
+        Assert.Contains(logger.Warnings, message => message.Contains(why) && message.Contains("Recipe 01"));
+    }
+
+    [Fact]
+    public void FallbackWarning_IsLoggedOncePerRecipe_NotPerQuery()
+    {
+        var logger = new FakeAppLogger();
+        using var service = CreateWith(nativeEnabled: false, pauseAll: false, out _, logger);
+        var recipe = RecipeWith(SearchBackends.Both);
+
+        for (var i = 0; i < 5; i++)
+        {
+            using (NativeSearchService.BeginSession())
+            {
+                service.UsesNative(MediaKind.Movie, recipe);
+            }
+        }
+
+        Assert.Single(logger.Warnings, message => message.Contains("turned off"));
+    }
+
+    [Fact]
     public void Backend_IsChosenOncePerSession()
     {
-        Directory.CreateDirectory(_stateFolder);
-        var settings = new FakeSettingsService();
-        settings.Current.StateFolder = _stateFolder;
-        settings.Current.Search.Backend = SearchBackends.Native;
-        using var service = new NativeSearchService(settings, new FakeAppLogger(), new TimingOutExternalIds());
+        using var service = CreateWith(nativeEnabled: true, pauseAll: false, out var settings);
+        var recipe = RecipeWith(SearchBackends.Native, MediaKind.TvEpisode);
 
         using (NativeSearchService.BeginSession())
         {
-            Assert.True(service.UsesNative(MediaKind.TvEpisode));
-            settings.Current.Search.Backend = SearchBackends.Qbittorrent;
-            Assert.True(service.UsesNative(MediaKind.TvEpisode));
-            Assert.Equal("Native", ((INativeSearchService)service).BackendName(MediaKind.TvEpisode));
+            Assert.True(service.UsesNative(MediaKind.TvEpisode, recipe));
+            settings.Current.Search.NativeEnabled = false;
+            Assert.True(service.UsesNative(MediaKind.TvEpisode, recipe));
+            Assert.Equal("Native", ((INativeSearchService)service).BackendName(MediaKind.TvEpisode, recipe));
         }
 
-        Assert.False(service.UsesNative(MediaKind.TvEpisode));
+        Assert.False(service.UsesNative(MediaKind.TvEpisode, recipe));
     }
 
     [Fact]

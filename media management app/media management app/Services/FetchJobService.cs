@@ -30,6 +30,9 @@ public sealed class FetchJobService : IFetchJobService
     private readonly Dictionary<(long ShowId, int SeasonNumber), IReadOnlyList<SeasonPackCandidate>> _packCandidatesBySeason = [];
     private readonly Dictionary<long, string> _sourceProblemByEpisodeId = [];
     private readonly Dictionary<(long ShowId, int SeasonNumber), string> _packSourceProblems = [];
+    // Why a Native/Both recipe searched with qBittorrent (native search off or paused), for the order status.
+    private readonly Dictionary<long, string> _backendNoteByEpisodeId = [];
+    private readonly Dictionary<(long ShowId, int SeasonNumber), string> _packBackendNotes = [];
     private readonly object _gate = new();
     private CartCandidateDebugSession? _activeHuntDebugSession;
 
@@ -94,6 +97,22 @@ public sealed class FetchJobService : IFetchJobService
         lock (_gate)
         {
             return _sourceProblemByEpisodeId.GetValueOrDefault(episodeId);
+        }
+    }
+
+    public string? GetSearchBackendNote(long episodeId)
+    {
+        lock (_gate)
+        {
+            return _backendNoteByEpisodeId.GetValueOrDefault(episodeId);
+        }
+    }
+
+    public string? GetPackSearchBackendNote(long showId, int seasonNumber)
+    {
+        lock (_gate)
+        {
+            return _packBackendNotes.GetValueOrDefault((showId, seasonNumber));
         }
     }
 
@@ -312,6 +331,7 @@ public sealed class FetchJobService : IFetchJobService
             // One search session for the pack (07d GOV-03 B): its queries share the per-search request cap.
             IReadOnlyList<TorrentSearchResult> snapshotResults;
             string? sourceProblem;
+            string? backendNote;
             using (var session = NativeSearchService.BeginSession())
             {
                 snapshotResults = await _snapshotService.CaptureSnapshotAsync(
@@ -322,12 +342,14 @@ public sealed class FetchJobService : IFetchJobService
                     packRecipe.RecipeId,
                     selectedSeasons);
                 sourceProblem = snapshotResults.Count == 0 ? session.Session.NoSourceReason : null;
+                backendNote = session.Session.BackendNote;
             }
 
             lock (_gate)
             {
                 foreach (var seasonNumber in selectedSeasons)
                 {
+                    SetOrRemove(_packBackendNotes, (showId, seasonNumber), backendNote);
                     if (sourceProblem is null)
                     {
                         _packSourceProblems.Remove((showId, seasonNumber));
@@ -514,6 +536,14 @@ public sealed class FetchJobService : IFetchJobService
                 cancellationToken,
                 MediaKind.TvEpisode,
                 recipe.RecipeId);
+            lock (_gate)
+            {
+                foreach (var episode in targetEpisodes)
+                {
+                    SetOrRemove(_backendNoteByEpisodeId, episode.Id, session.Session.BackendNote);
+                }
+            }
+
             if (snapshotResults.Count == 0 && session.Session.NoSourceReason is { } sourceProblem)
             {
                 _logger.Warning($"Snapshot search for {show.DisplayTitle} did not run: {sourceProblem}", LogTarget.All);
@@ -885,6 +915,7 @@ public sealed class FetchJobService : IFetchJobService
         var noSource = candidates.Count == 0 && searchResults.Count == 0 ? searchSession.Session.NoSourceReason : null;
         lock (_gate)
         {
+            SetOrRemove(_backendNoteByEpisodeId, episode.Id, searchSession.Session.BackendNote);
             if (noSource is null)
             {
                 _sourceProblemByEpisodeId.Remove(episode.Id);
@@ -903,12 +934,25 @@ public sealed class FetchJobService : IFetchJobService
         return new EpisodeSearchSummary(candidates, searchResults, evaluated);
     }
 
+    private static void SetOrRemove<TKey>(Dictionary<TKey, string> notes, TKey key, string? note)
+        where TKey : notnull
+    {
+        if (note is null)
+        {
+            notes.Remove(key);
+        }
+        else
+        {
+            notes[key] = note;
+        }
+    }
+
     private Task<IReadOnlyList<TorrentSearchResult>> SearchSingleQueryAsync(
         SearchRecipe recipe,
         string query,
         CancellationToken cancellationToken,
         SearchSubject? subject = null) =>
-        // native-search: Search.Backend decides between native indexers and the qBittorrent search.
+        // native-search: the recipe's backend decides between native indexers and the qBittorrent search.
         _nativeSearch.SearchOrFallbackAsync(
             recipe,
             query,

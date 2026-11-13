@@ -89,6 +89,32 @@ public sealed class SearchSession
         }
     }
 
+    private string? _backendNote;
+
+    /// <summary>
+    /// Why this session searched with qBittorrent although its recipe chose Native/Both (native search off or paused),
+    /// for the order status; null when the recipe's backend ran.
+    /// </summary>
+    public string? BackendNote
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _backendNote;
+            }
+        }
+    }
+
+    /// <summary>Keeps the first fallback note of the session.</summary>
+    public void NoteBackendFallback(string note)
+    {
+        lock (_gate)
+        {
+            _backendNote ??= note;
+        }
+    }
+
     /// <summary>Remembers the per-site outcome of one native search of this session.</summary>
     public void Record(IReadOnlyList<IndexerRunTelemetry> indexers)
     {

@@ -109,8 +109,9 @@ Danh sách việc, PR và tiêu chí nghiệm thu của từng giai đoạn: [07
 | P4 | Xong | Query pack theo từng season, search nhắm đích cho tập mà snapshot bỏ sót, biến thể số tập anime có đệm số 0 |
 | P5 | Xong | `JunkFilter` (`SuspiciousRelease`), picker có dòng thuộc tính và ô lọc nhanh, movie giữ tới 40 ứng viên |
 | P6 | **Chờ cổng** | Cách làm: bật `Both` (hoặc `Native` riêng cho Movie) trong Settings, dùng thật vài ngày, chạy `tools/SearchBench compare` và `movies --backend native`, rồi mới đổi mặc định và xoá code theo [06 §5](./06-rollout-and-migration.md#5-danh-sách-xoá-ở-p6-sau-khi-qua-cổng) |
+| P6 bước 1 | Xong (13/11/2026) | Recipe quyết định backend (`searchBackend`: Qbittorrent/Native/Both), Settings chỉ còn **Enable native search** và kill switch; native tắt thì recipe Native/Both lùi về qBittorrent kèm cảnh báo; migration một lần từ `Search.Backend`/`BackendByKind`. Xem [06 §1b](./06-rollout-and-migration.md#1b-backend-theo-recipe-p6-bước-1-13112026) |
 
-Khác với plan ban đầu: IMDb id và trạng thái governor được lưu bằng file JSON thay cho bảng DB (xem [06](./06-rollout-and-migration.md)). Native hiện dùng **mọi indexer đang bật** cho mỗi loại media, chưa theo danh sách plugin của từng recipe (recipe v2 thuộc P6).
+Khác với plan ban đầu: IMDb id và trạng thái governor được lưu bằng file JSON thay cho bảng DB (xem [06](./06-rollout-and-migration.md)). Native hiện dùng **mọi indexer đang bật** cho mỗi loại media, chưa theo danh sách của từng recipe (ô chọn site native theo recipe là bước kế tiếp của P6, xem [06 §3](./06-rollout-and-migration.md#3-recipe-v2)).
 
 ## Mục lục
 
