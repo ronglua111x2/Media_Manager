@@ -251,6 +251,7 @@ public sealed class SymlinkCoordinatorService : ISymlinkCoordinatorService
         {
             var result = await Task.Run(() =>
             {
+                var subtitles = ParkSubtitles(moves);
                 foreach (var symlinkPath in moves
                              .SelectMany(move => CollectSymlinkPathsForNfoCleanup(move.Previous))
                              .Distinct(StringComparer.OrdinalIgnoreCase))
@@ -265,6 +266,7 @@ public sealed class SymlinkCoordinatorService : ISymlinkCoordinatorService
                     TryWriteNfoForItem(move.Item);
                 }
 
+                PlaceSubtitles(subtitles);
                 return moved;
             }, cancellationToken);
 
@@ -279,6 +281,66 @@ public sealed class SymlinkCoordinatorService : ISymlinkCoordinatorService
         finally
         {
             _syncGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Subtitles next to a moved symlink belong to its file. They get temporary names before any symlink moves, so a
+    /// chain or a swap cannot mix them up; <see cref="PlaceSubtitles"/> then names them after the new symlink.
+    /// </summary>
+    private List<(LibraryLinkMove Move, string ParkedPath, string Suffix)> ParkSubtitles(IReadOnlyList<LibraryLinkMove> moves)
+    {
+        var parked = new List<(LibraryLinkMove Move, string ParkedPath, string Suffix)>();
+        foreach (var move in moves)
+        {
+            var oldSymlink = move.Previous.SymlinkPath;
+            if (string.IsNullOrWhiteSpace(oldSymlink))
+            {
+                continue;
+            }
+
+            var baseName = Path.GetFileNameWithoutExtension(oldSymlink);
+            foreach (var subtitle in _subtitleCleanupService.FindSubtitleFiles(oldSymlink))
+            {
+                var parkedPath = $"{subtitle}.mm-move-{Guid.NewGuid():N}.tmp";
+                try
+                {
+                    File.Move(subtitle, parkedPath);
+                    parked.Add((move, parkedPath, Path.GetFileName(subtitle)[baseName.Length..]));
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    _logger.Warning($"Subtitle '{subtitle}' could not follow its renumbered episode: {ex.Message}", LogTarget.All);
+                }
+            }
+        }
+
+        return parked;
+    }
+
+    private void PlaceSubtitles(IReadOnlyList<(LibraryLinkMove Move, string ParkedPath, string Suffix)> parked)
+    {
+        foreach (var (move, parkedPath, suffix) in parked)
+        {
+            var newSymlink = move.Item.SymlinkPath;
+            var target = string.IsNullOrWhiteSpace(newSymlink) || !File.Exists(newSymlink)
+                ? null
+                : Path.Combine(Path.GetDirectoryName(newSymlink)!, Path.GetFileNameWithoutExtension(newSymlink) + suffix);
+            try
+            {
+                if (target is not null && !File.Exists(target))
+                {
+                    File.Move(parkedPath, target);
+                    continue;
+                }
+
+                // No symlink to follow (its library link is gone) or a subtitle already there: dropped, as on an unlink.
+                File.Delete(parkedPath);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _logger.Warning($"Subtitle '{parkedPath}' could not be placed next to '{newSymlink}': {ex.Message}", LogTarget.All);
+            }
         }
     }
 

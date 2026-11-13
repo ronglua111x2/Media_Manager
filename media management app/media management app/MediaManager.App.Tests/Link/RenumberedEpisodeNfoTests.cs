@@ -41,6 +41,9 @@ public sealed class RenumberedEpisodeNfoTests : IDisposable
         var show = _host.Db.GetTrackedShow(showId)!;
         foreach (var item in _host.Items())
         {
+            // Subtitles next to the symlink belong to its file and follow it.
+            var subtitle = item.EpisodeNumber == 1 ? ".eng.srt" : ".srt";
+            File.WriteAllText(Path.ChangeExtension(item.SymlinkPath!, null) + subtitle, $"subtitle {item.EpisodeNumber}");
             nfoWriter.WriteEpisodeNfoIfNeeded(
                 item.SymlinkPath!,
                 _host.Db.GetTrackedEpisodes(showId).Single(episode => episode.EpisodeNumber == item.EpisodeNumber),
@@ -55,7 +58,7 @@ public sealed class RenumberedEpisodeNfoTests : IDisposable
             TestFake<IPosterImageService>.Create(),
             TestFake<IWindowsNotificationService>.Create(),
             nfoWriter,
-            TestFake<ISymlinkSubtitleCleanupService>.Create(),
+            new SymlinkSubtitleCleanupService(logger),
             TestFake<IJellyfinLibraryRefreshService>.Create(),
             logger);
         var moved = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -67,8 +70,13 @@ public sealed class RenumberedEpisodeNfoTests : IDisposable
 
         var files = _host.JellyfinFiles().Select(Path.GetFileName).Order().ToList();
         Assert.Equal(
-            ["Demo Show - S01E02.mkv", "Demo Show - S01E02.nfo", "Demo Show - S01E03.mkv", "Demo Show - S01E03.nfo", "tvshow.nfo"],
+            [
+                "Demo Show - S01E02.eng.srt", "Demo Show - S01E02.mkv", "Demo Show - S01E02.nfo",
+                "Demo Show - S01E03.mkv", "Demo Show - S01E03.nfo", "Demo Show - S01E03.srt", "tvshow.nfo"
+            ],
             files);
+        Assert.Equal("subtitle 1", File.ReadAllText(JellyfinPath("Demo Show - S01E02.eng.srt")));
+        Assert.Equal("subtitle 2", File.ReadAllText(JellyfinPath("Demo Show - S01E03.srt")));
         var second = File.ReadAllText(JellyfinPath("Demo Show - S01E02.nfo"));
         Assert.Contains("<title>Episode 121</title>", second);
         Assert.Contains("<episode>2</episode>", second);
