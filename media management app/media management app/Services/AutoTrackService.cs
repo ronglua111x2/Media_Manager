@@ -24,6 +24,10 @@ public sealed class AutoTrackService : IAutoTrackService
     private readonly IAppLogger _logger;
     private readonly SemaphoreSlim _discoveryLock = new(1, 1);
     private readonly SemaphoreSlim _huntLock = new(1, 1);
+
+    // GOV-04: when each show was last given a hunt slot (rotation), and when the last scheduled hunt ran.
+    private readonly Dictionary<long, DateTime> _lastHuntedUtc = [];
+    private DateTime? _lastScheduledHuntUtc;
     private readonly SemaphoreSlim _reconcileLock = new(1, 1);
     private readonly SemaphoreSlim _interruptedRecoveryLock = new(1, 1);
     private readonly DateTime _sessionStartUtc = DateTime.UtcNow;
@@ -464,6 +468,20 @@ public sealed class AutoTrackService : IAutoTrackService
         bool resumeOnly,
         bool bypassSchedule)
     {
+        // Settings → Auto-Track "torrent hunt interval": TMDB checks run every 30 min, hunts only this often
+        // (it used to be saved but never read; audit 07d GOV-04). Run Now and resume runs are not gated.
+        if (!bypassSchedule && !resumeOnly)
+        {
+            var interval = TimeSpan.FromMinutes(Math.Clamp(GetAutoTrackSettings().TorrentHuntIntervalMinutes, 15, 1440));
+            var now = DateTime.UtcNow;
+            if (_lastScheduledHuntUtc is { } last && now - last < interval - TimeSpan.FromMinutes(1))
+            {
+                return SkippedResult($"Next torrent hunt after {(last + interval).ToLocalTime():HH:mm} (hunt interval {interval.TotalMinutes:0} min).");
+            }
+
+            _lastScheduledHuntUtc = now;
+        }
+
         // Before the hunt queue is built: orders a previous session left in Searching/Approved block their episode.
         await RecoverInterruptedOrdersOnceAsync(cancellationToken);
 
@@ -487,6 +505,10 @@ public sealed class AutoTrackService : IAutoTrackService
 
         var batchSize = Math.Clamp(settings.Search.MaxShowsPerHuntCycle, 1, 20);
         var batch = huntQueue.Take(batchSize).ToList();
+        foreach (var (show, _) in batch)
+        {
+            _lastHuntedUtc[show.Id] = DateTime.UtcNow;
+        }
 
         var preflight = await EnsureHuntPreflightAsync(cancellationToken);
         if (!preflight.Ok)
@@ -810,6 +832,15 @@ public sealed class AutoTrackService : IAutoTrackService
                 IsAutoTrackHuntBlocked,
                 nowLocal,
                 resumeOnly ? 0 : huntDelayHours);
+            if (!resumeOnly && !bypassSchedule)
+            {
+                // A hunt that found nothing waits before the next try (1 h for a new episode, up to 24 h).
+                var nowUtc = DateTime.UtcNow;
+                pending = pending
+                    .Where(episode => AutoTrackHuntBackoff.NextAttemptUtc(
+                        _torrentCartService.GetAutoTrackEpisodeOrder(episode.Id), episode.AirDate, nowUtc) is null)
+                    .ToList();
+            }
             if (!bypassSchedule &&
                 !resumeOnly &&
                 AutoTrackWeekAnchor.IsWeeklyScheduleEnforced(show, settings))
@@ -848,7 +879,11 @@ public sealed class AutoTrackService : IAutoTrackService
             queue.Add((show, batch));
         }
 
-        return queue;
+        // Rotation: the show that waited longest gets the next slot (alphabetical order starved later shows).
+        return queue
+            .OrderBy(entry => _lastHuntedUtc.TryGetValue(entry.Show.Id, out var last) ? last : DateTime.MinValue)
+            .ThenBy(entry => entry.Show.Title, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     private static string FormatHuntBatchStage(IReadOnlyList<TrackedEpisode> episodes)

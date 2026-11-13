@@ -29,6 +29,9 @@ public interface ITorrentCartService
 
     bool HasActiveManualEpisodeOrder(long episodeId);
 
+    /// <summary>The Auto-Track order of an episode in any status, or null.</summary>
+    TorrentCartOrder? GetAutoTrackEpisodeOrder(long episodeId);
+
     bool TryGetActiveMovieOrder(long movieId, out TorrentCartOrder? order);
 
     bool TryGetActiveSeasonPackOrder(long showId, int seasonNumber, out TorrentCartOrder? order);
@@ -241,6 +244,10 @@ public sealed class TorrentCartService : ITorrentCartService
         NotifyChanged();
         return order;
     }
+
+    public TorrentCartOrder? GetAutoTrackEpisodeOrder(long episodeId) =>
+        _databaseService.GetTorrentCartOrders().FirstOrDefault(item =>
+            item.EpisodeId == episodeId && item.Source == TorrentOrderSource.AutoTrack);
 
     public bool HasActiveManualEpisodeOrder(long episodeId)
     {
