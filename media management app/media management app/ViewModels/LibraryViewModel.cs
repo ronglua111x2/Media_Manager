@@ -1695,7 +1695,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
         SelectedMediaCard = null;
         RefreshLibrary();
         StatusMessage = result.HardlinkErrorCount > 0
-            ? $"{result.Summary} {result.HardlinkErrorCount} hardlink error(s)."
+            ? $"{result.Summary} {result.HardlinkErrorCount} hardlink error(s). {result.Messages.LastOrDefault()}"
             : result.Summary;
     }
 
@@ -1718,7 +1718,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
         SelectedMovie = null;
         RefreshLibrary();
         StatusMessage = result.HardlinkErrorCount > 0
-            ? $"{result.Summary} {result.HardlinkErrorCount} hardlink error(s)."
+            ? $"{result.Summary} {result.HardlinkErrorCount} hardlink error(s). {result.Messages.LastOrDefault()}"
             : result.Summary;
     }
 

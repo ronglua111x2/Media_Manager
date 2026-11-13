@@ -1,3 +1,4 @@
+using media_management_app.Common;
 using media_management_app.Models;
 
 namespace media_management_app.Services;
@@ -34,6 +35,12 @@ public interface IAutoTorrentLinkService
     AutoTorrentLinkResult ClearShowLinksForRenumbering(long showId);
 
     AutoTorrentLinkResult RemoveMovieLinks(long movieId);
+
+    /// <summary>
+    /// Checks, without changing anything, that every library link of a tracked show or movie can be removed now.
+    /// ErrorCount and Messages name the links that cannot (open in a player, drive offline, outside the library).
+    /// </summary>
+    AutoTorrentLinkResult CheckMediaLinksRemovable(MediaKind mediaKind, long mediaId);
 
     AutoTorrentLinkResult RemoveOrphanPackSpecialLink(long sourceItemId);
 

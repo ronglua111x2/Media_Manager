@@ -1,6 +1,7 @@
 using System.IO;
 using media_management_app.Common;
 using media_management_app.Models;
+using media_management_app.Services;
 
 namespace MediaManager.App.Tests.Link;
 
@@ -361,6 +362,29 @@ public sealed class LinkStateScenarioTests : IDisposable
 
         Assert.Equal(0, reset.ErrorCount);
         Assert.DoesNotContain(_host.Items(), item => item.EpisodeNumber == 2);
+    }
+
+    // Audit R2-A-04: Delete Media while the library drive is offline stops before deleting anything, so the show
+    // can be deleted once the drive is back instead of leaving Linked rows and Jellyfin symlinks behind for good.
+    [Fact]
+    public void DeleteMedia_WhenLibraryIsOffline_DeletesNothing()
+    {
+        var showId = TwoLinkedEpisodes(5037, "HDM1", "HDM2");
+        var management = new LibraryManagementService(
+            _host.Db,
+            _host.Link,
+            TestFake<ITorrentCartService>.Create(),
+            TestFake<IPosterImageService>.Create(),
+            new MediaManager.App.Tests.Cleanup.FakeAppLogger());
+        Directory.Move(_host.Library, _host.Library + "_offline");
+
+        var result = management.DeleteSelectedMedia(MediaKind.TvEpisode, showId);
+
+        Directory.Move(_host.Library + "_offline", _host.Library);
+        Assert.Equal(0, result.DeletedShowCount);
+        Assert.NotNull(_host.Db.GetTrackedShow(showId));
+        Assert.Contains(result.Messages, message => message.Contains("was not deleted", StringComparison.Ordinal));
+        Assert.All(_host.Items(), item => Assert.True(item.State == ItemState.Linked && File.Exists(item.LinkedPath)));
     }
 
     // Audit R2-A-01: the library folder setting changed and the old folder was deleted on a mounted drive. Its
