@@ -153,7 +153,55 @@ public sealed class SpecialMappingCacheTests
         Assert.Equal(3, result.Items.Single(item => item.RelativePath.EndsWith("S1S03.mkv", StringComparison.Ordinal)).Episode?.EpisodeNumber);
     }
 
-    private static Task<SpecialMappingResult> ResolveWithCacheAsync(SpecialOrchestratorHost host, SpecialCase pack)
+    // Audit R2-C-04: Retry means the user rejected the cached mapping. If the retry fails (or cannot be cached), the
+    // next AI Link must not replay the rejected mapping.
+    [Fact]
+    public async Task RetryThatFails_ForgetsTheRejectedCachedMapping()
+    {
+        var pack = SpecialCases.TwoSeasonBrassPack();
+        var geminiDown = false;
+        using var host = new SpecialOrchestratorHost(prompt =>
+            geminiDown ? throw new InvalidOperationException("Gemini is down.") : FakeGeminiResponses.CorrectTwoSeasonPack(prompt));
+        host.Orchestrator.RememberAccepted(await ResolveWithCacheAsync(host, pack));
+        geminiDown = true;
+
+        await ResolveWithCacheAsync(host, pack, bypassCache: true);
+        var next = await ResolveWithCacheAsync(host, pack);
+
+        Assert.False(next.FromCache);
+    }
+
+    // Audit R2-C-03: a cache hit shows the rule rows as the current rules write them, not the stored flags.
+    [Fact]
+    public async Task CacheHit_RuleRowsCarryTheCurrentTitleFlags()
+    {
+        var pack = SpecialCases.TwoSeasonBrassPack();
+        string cacheJson;
+        using (var writer = new SpecialOrchestratorHost(FakeGeminiResponses.CorrectTwoSeasonPack))
+        {
+            writer.Orchestrator.RememberAccepted(await ResolveWithCacheAsync(writer, pack));
+            cacheJson = await File.ReadAllTextAsync(CachePath(writer));
+        }
+
+        var root = System.Text.Json.Nodes.JsonNode.Parse(cacheJson)!;
+        var ruleRow = root.AsArray()
+            .SelectMany(entry => entry!["Result"]!["Items"]!.AsArray())
+            .First(item => item!["RelativePath"]!.GetValue<string>().EndsWith("S1S03.mkv", StringComparison.Ordinal))!;
+        ruleRow["TitleConfirmed"] = true;
+        ruleRow["Reason"] = "stale reason from an older app";
+
+        using var host = new SpecialOrchestratorHost(FakeGeminiResponses.CorrectTwoSeasonPack);
+        await File.WriteAllTextAsync(CachePath(host), root.ToJsonString());
+
+        var result = await ResolveWithCacheAsync(host, pack);
+
+        Assert.True(result.FromCache);
+        var row = result.Items.Single(item => item.RelativePath.EndsWith("S1S03.mkv", StringComparison.Ordinal));
+        Assert.False(row.TitleConfirmed);
+        Assert.NotEqual("stale reason from an older app", row.Reason);
+    }
+
+    private static Task<SpecialMappingResult> ResolveWithCacheAsync(SpecialOrchestratorHost host, SpecialCase pack, bool bypassCache = false)
     {
         var tree = PackFolderTreeAnalyzer.Analyze(pack.Files.Select(file => file.RelativePath).ToList());
         return host.Orchestrator.ResolveAsync(
@@ -165,7 +213,7 @@ public sealed class SpecialMappingCacheTests
             "hash-" + pack.Name,
             progress: null,
             useGemini: true,
-            bypassCache: false);
+            bypassCache: bypassCache);
     }
 
     /// <summary>What a pre-PR-15 cache held for this pack: every special as a Gemini pair, all correct.</summary>

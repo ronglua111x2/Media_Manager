@@ -116,8 +116,11 @@ public sealed class SpecialMappingOrchestrator : ISpecialMappingOrchestrator
 
         if (bypassCache)
         {
+            // The user rejected this mapping with Retry: forget it, or the next AI Link replays it even when the
+            // retry fails or cannot be cached (audit R2-C-04).
+            _cache.Remove(cacheKey, torrentHash, tmdbId);
             _logger.Info(
-                $"Gemini special mapping cache bypassed for torrent={shortHash} tmdbId={tmdbId}.",
+                $"Gemini special mapping cache bypassed and cleared for torrent={shortHash} tmdbId={tmdbId}.",
                 LogTarget.All);
         }
 
@@ -127,6 +130,7 @@ public sealed class SpecialMappingOrchestrator : ISpecialMappingOrchestrator
             var problems = CheckCached(fromCache, request, specialsEpisodes, isLegacy);
             if (problems.Count == 0)
             {
+                fromCache = WithCurrentRuleItems(fromCache, request, specialsEpisodes);
                 _logger.Info(
                     $"Gemini special mapping cache hit for torrent={shortHash} tmdbId={tmdbId}{(isLegacy ? " (entry from before PR-15, checked against the rules)" : string.Empty)}.",
                     LogTarget.All);
@@ -228,6 +232,38 @@ public sealed class SpecialMappingOrchestrator : ISpecialMappingOrchestrator
                 SuggestedEpisode = Live(item.SuggestedEpisode),
                 MatchesSuggestion = item.MatchesSuggestion
             })
+            .ToList();
+        return new SpecialMappingResult
+        {
+            Items = items,
+            Warnings = cached.Warnings,
+            UsedGemini = cached.UsedGemini,
+            ByPath = items
+                .GroupBy(item => item.RelativePath, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase)
+        };
+    }
+
+    /// <summary>
+    /// Rule rows of a cache hit as the current rules write them (title confirmation, reason). The pairs already
+    /// agree (CheckCached); only the flags can be stale, for example "title matches TMDB" stored before the
+    /// number check, which kept a misnumbered row from being highlighted (audit R2-C-03).
+    /// </summary>
+    private static SpecialMappingResult WithCurrentRuleItems(
+        SpecialMappingResult cached,
+        SpecialMappingAIRequest request,
+        IReadOnlyList<TrackedEpisode> specialsEpisodes)
+    {
+        var current = PackSpecialPayloadBuilder.ApplyProposals(request, specialsEpisodes, SpecialMappingSource.Rule).Items
+            .Where(item => item.Episode is not null)
+            .GroupBy(item => item.RelativePath, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+        var items = cached.Items
+            .Select(item => item.Source == SpecialMappingSource.Rule &&
+                            current.TryGetValue(item.RelativePath, out var fresh) &&
+                            fresh.Episode?.EpisodeNumber == item.Episode?.EpisodeNumber
+                ? fresh
+                : item)
             .ToList();
         return new SpecialMappingResult
         {

@@ -76,6 +76,20 @@ public sealed class SpecialMappingCache
         }
     }
 
+    /// <summary>Forgets the entry for <paramref name="key"/> and any pre-v2 entry for the same torrent and show.</summary>
+    public void Remove(string key, string torrentHash, int tmdbId)
+    {
+        lock (_sync)
+        {
+            EnsureLoaded();
+            var removed = _entries.Remove(key) | _entries.Remove(LegacyKey(torrentHash, tmdbId));
+            if (removed)
+            {
+                Persist();
+            }
+        }
+    }
+
     /// <summary>Stores an accepted mapping. A result with candidates but no mapped file is not stored.</summary>
     public void Save(string key, string torrentHash, int tmdbId, SpecialMappingResult result, string? model)
     {
