@@ -251,7 +251,7 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             items = items.Where(item => item.MediaKind == MediaKind.Movie && item.ProviderId == movieProviderId);
         }
 
-        var storage = new LinkStorageProbe();
+        var storage = _hardlinkService.CreateLinkStorageProbe() ?? new LinkStorageProbe();
         foreach (var item in items.ToList())
         {
             if (!storage.IsLinkStorageReachable(item))

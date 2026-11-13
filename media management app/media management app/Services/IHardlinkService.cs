@@ -9,4 +9,7 @@ public interface IHardlinkService
     bool CreateHardLink(SourceItem item, out string? createdPath, out string? errorMessage);
 
     bool RemoveHardLink(SourceItem item, out string? removedPath, out string? errorMessage);
+
+    /// <summary>A storage probe that knows the currently configured library folder of each drive.</summary>
+    LinkStorageProbe CreateLinkStorageProbe();
 }

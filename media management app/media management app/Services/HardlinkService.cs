@@ -138,6 +138,9 @@ public sealed class HardlinkService : IHardlinkService
         return true;
     }
 
+    public LinkStorageProbe CreateLinkStorageProbe() =>
+        new(item => _libraryPathResolver.TryResolveGeneratedLibraryRoot(item, out var libraryRoot, out _) ? libraryRoot : null);
+
     public bool RemoveHardLink(SourceItem item, out string? removedPath, out string? errorMessage)
     {
         removedPath = null;
@@ -159,7 +162,7 @@ public sealed class HardlinkService : IHardlinkService
 
         removedPath = item.LinkedPath;
         var linkExists = File.Exists(item.LinkedPath);
-        if (!linkExists && !new LinkStorageProbe().IsLinkStorageReachable(item))
+        if (!linkExists && !CreateLinkStorageProbe().IsLinkStorageReachable(item))
         {
             // A missing file on an offline drive is not a deleted file: reporting success would let the
             // caller drop the record and orphan the file when the drive returns (audit L3-02).

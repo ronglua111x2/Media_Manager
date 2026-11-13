@@ -242,7 +242,7 @@ public sealed class SymlinkSyncService : ISymlinkSyncService
         var linkedGroupsByPath = BuildLinkedGroupsByPath(linkedItems);
 
         var syncedLinkedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var storageProbe = new LinkStorageProbe();
+        var storageProbe = _hardlinkService.CreateLinkStorageProbe() ?? new LinkStorageProbe();
         foreach (var item in linkedItems)
         {
             if (!string.IsNullOrWhiteSpace(item.LinkedPath) && File.Exists(item.LinkedPath))

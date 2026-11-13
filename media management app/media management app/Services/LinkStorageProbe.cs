@@ -14,6 +14,18 @@ public sealed class LinkStorageProbe
 {
     private readonly Dictionary<string, bool> _folderExists = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _unreachable = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Func<SourceItem, string?>? _currentLibraryRoot;
+
+    /// <param name="currentLibraryRoot">
+    /// The library folder currently configured for an item's drive. With it, a link inside that folder is
+    /// reachable when the folder is, and a link anywhere else (an old library folder after the setting changed, an
+    /// imported path) only needs its drive or share: a deleted old library folder on a mounted drive is gone, not
+    /// offline (audit R2-A-01). Without it the probe falls back to the folder above Shows/Movies.
+    /// </param>
+    public LinkStorageProbe(Func<SourceItem, string?>? currentLibraryRoot = null)
+    {
+        _currentLibraryRoot = currentLibraryRoot;
+    }
 
     /// <summary>Folders found unreachable during this pass (for one log line per folder).</summary>
     public IReadOnlyCollection<string> UnreachableFolders => _unreachable;
@@ -41,7 +53,41 @@ public sealed class LinkStorageProbe
             return true;
         }
 
-        return IsFolderReachable(FindLibraryAnchor(item.LinkedPath));
+        if (_currentLibraryRoot is null)
+        {
+            return IsFolderReachable(FindLibraryAnchor(item.LinkedPath));
+        }
+
+        var libraryRoot = _currentLibraryRoot(item);
+        return IsFolderReachable(
+            !string.IsNullOrWhiteSpace(libraryRoot) && IsInside(item.LinkedPath, libraryRoot)
+                ? libraryRoot
+                : SafePathRoot(item.LinkedPath));
+    }
+
+    private static bool IsInside(string path, string root)
+    {
+        try
+        {
+            var fullRoot = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            return Path.GetFullPath(path).StartsWith(fullRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return false;
+        }
+    }
+
+    private static string? SafePathRoot(string path)
+    {
+        try
+        {
+            return Path.GetPathRoot(Path.GetFullPath(path));
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return null;
+        }
     }
 
     internal static string? FindLibraryAnchor(string linkedPath)

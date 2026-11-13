@@ -363,6 +363,23 @@ public sealed class LinkStateScenarioTests : IDisposable
         Assert.DoesNotContain(_host.Items(), item => item.EpisodeNumber == 2);
     }
 
+    // Audit R2-A-01: the library folder setting changed and the old folder was deleted on a mounted drive. Its
+    // links are gone, not offline: the episode becomes Missing and a reset goes through.
+    [Fact]
+    public async Task OldLibraryFolderDeleted_OnAMountedDrive_LinksCountAsGone()
+    {
+        var showId = TwoLinkedEpisodes(5036, "HOD1", "HOD2");
+        _host.Settings.DriveLibraryRoots[Path.GetPathRoot(_host.Root)!] = Path.Combine(_host.Root, "lib-new");
+        Directory.Delete(_host.Library, recursive: true);
+
+        await _host.Reconciliation.ReconcileAsync(TorrentReconciliationScope.All);
+        var reset = _host.Link.ResetEpisodeForRedownload(showId, 1, 2);
+
+        Assert.Equal(EpisodeAvailability.Missing, _host.Availability(showId, 1, 1));
+        Assert.Equal(0, reset.ErrorCount);
+        Assert.DoesNotContain(_host.Items(), item => item.EpisodeNumber == 2);
+    }
+
     private long TwoLinkedEpisodes(int tmdbId, string firstHash, string secondHash)
     {
         _host.AddTorrent(firstHash, $"Demo.{tmdbId}.S01E01.mkv");
