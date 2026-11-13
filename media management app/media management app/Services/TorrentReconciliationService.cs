@@ -24,6 +24,12 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
     private readonly IPackLinkCoordinatorService _packLinkCoordinatorService;
     private readonly ISettingsService _settingsService;
     private readonly IAppLogger _logger;
+    private readonly ITorrentContentValidationService _contentValidationService;
+    private readonly ITorrentBlacklistService _blacklistService;
+
+    // Torrents refused for adoption this session (SEC-A01): checked and logged once, still counted in every result.
+    private readonly HashSet<string> _unsafeHashes = new(StringComparer.OrdinalIgnoreCase);
+    private readonly object _unsafeHashesGate = new();
 
     public event EventHandler? Reconciled;
 
@@ -35,7 +41,9 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
         IAutoTorrentLinkService autoTorrentLinkService,
         IPackLinkCoordinatorService packLinkCoordinatorService,
         ISettingsService settingsService,
-        IAppLogger logger)
+        IAppLogger logger,
+        ITorrentContentValidationService contentValidationService,
+        ITorrentBlacklistService blacklistService)
     {
         _qbittorrentClient = qbittorrentClient;
         _databaseService = databaseService;
@@ -45,6 +53,8 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
         _packLinkCoordinatorService = packLinkCoordinatorService;
         _settingsService = settingsService;
         _logger = logger;
+        _contentValidationService = contentValidationService;
+        _blacklistService = blacklistService;
     }
 
     public async Task<TorrentReconciliationResult> ReconcileAsync(
@@ -437,7 +447,7 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
 
         foreach (var torrent in torrents.Where(torrent => !usedHashes.Contains(torrent.Hash)))
         {
-            var matches = new List<Func<Task>>();
+            var matches = new List<AdoptionMatch>();
 
             // A torrent the user reset an episode, pack or movie from is never adopted for it again (cross-review 2, B).
             foreach (var (show, episode) in episodes.Where(item =>
@@ -447,13 +457,13 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
             {
                 if (MatchesEpisode(torrent.Name, show, episode))
                 {
-                    matches.Add(() =>
+                    matches.Add(new AdoptionMatch(show.Id, MediaKind.TvEpisode, $"{show.DisplayTitle} S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00}", () =>
                     {
                         adoptedEpisodeIds.Add(episode.Id);
                         _trackedShowService.UpdateTorrentState(episode.Id, torrent);
                         CountMatched(torrent, result);
                         return AutoLinkEpisodeIfConfiguredAsync(show, episode, torrent, result, cancellationToken);
-                    });
+                    }));
                 }
             }
 
@@ -464,7 +474,7 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
             {
                 if (MatchesSeasonPack(torrent.Name, show, season))
                 {
-                    matches.Add(async () =>
+                    matches.Add(new AdoptionMatch(show.Id, MediaKind.TvSeasonPack, $"{show.DisplayTitle} season {season.SeasonNumber}", async () =>
                     {
                         adoptedSeasons.Add((show.Id, season.SeasonNumber));
                         _trackedShowService.UpdateSeasonPackTorrent(show.Id, season.SeasonNumber, torrent);
@@ -476,7 +486,7 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
                             previousProgress: 0,
                             result,
                             cancellationToken);
-                    });
+                    }));
                 }
             }
 
@@ -487,23 +497,109 @@ public sealed class TorrentReconciliationService : ITorrentReconciliationService
             {
                 if (MatchesMovie(torrent.Name, movie))
                 {
-                    matches.Add(() =>
+                    matches.Add(new AdoptionMatch(movie.Id, MediaKind.Movie, movie.Title, () =>
                     {
                         adoptedMovieIds.Add(movie.Id);
                         _trackedMovieService.UpdateTorrentState(movie.Id, torrent);
                         CountMatched(torrent, result);
                         return AutoLinkMovieIfConfiguredAsync(movie, torrent, result, cancellationToken);
-                    });
+                    }));
                 }
             }
 
-            if (matches.Count == 1)
+            if (matches.Count == 1 &&
+                await IsSafeToAdoptAsync(torrent, matches[0], result, cancellationToken))
             {
-                await matches[0]();
+                await matches[0].Adopt();
                 usedHashes.Add(torrent.Hash);
             }
         }
     }
+
+    /// <summary>
+    /// SEC-A01: a torrent matched by name was not validated by the add gate (added by hand, or an add that was
+    /// canceled or failed mid-validation). Run the gate's blacklist and file-list checks before attaching it.
+    /// A refused torrent is never deleted: it may be the user's own download (DEL-02). It stays in qBittorrent,
+    /// unattached and unlinked, and is reported. An empty file list (metadata not ready) waits for a later pass.
+    /// </summary>
+    private async Task<bool> IsSafeToAdoptAsync(
+        AddedTorrentResult torrent,
+        AdoptionMatch match,
+        TorrentReconciliationResult result,
+        CancellationToken cancellationToken)
+    {
+        bool alreadyRefused;
+        lock (_unsafeHashesGate)
+        {
+            alreadyRefused = _unsafeHashes.Contains(torrent.Hash);
+        }
+
+        if (alreadyRefused)
+        {
+            result.UnsafeSkipped.Add(torrent.Name);
+            return false;
+        }
+
+        string? reason = null;
+        if (_blacklistService.IsBlacklisted(match.MediaId, null, torrent.Hash))
+        {
+            reason = "its infohash is blacklisted";
+        }
+        else
+        {
+            IReadOnlyList<TorrentContentFile> files;
+            try
+            {
+                files = await _qbittorrentClient.GetTorrentFilesAsync(torrent.Hash, cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.Debug(
+                    $"Adoption of '{torrent.Name}' (hash={torrent.Hash}) postponed: file list unavailable ({ex.Message}).",
+                    LogTarget.File);
+                return false;
+            }
+
+            if (files.Count == 0)
+            {
+                _logger.Debug(
+                    $"Adoption of '{torrent.Name}' (hash={torrent.Hash}) postponed: metadata not ready.",
+                    LogTarget.File);
+                return false;
+            }
+
+            var validation = await _contentValidationService.ValidateFilesAsync(
+                torrent.Hash,
+                files,
+                cancellationToken,
+                torrent.Name,
+                isPack: match.Kind == MediaKind.TvSeasonPack);
+            if (!validation.IsValid)
+            {
+                var suspicious = string.Join(", ", validation.SuspiciousFiles.Select(file => file.FileName).Distinct().Take(5));
+                reason = string.IsNullOrEmpty(suspicious) ? validation.Summary : $"{validation.Summary} ({suspicious})";
+            }
+        }
+
+        if (reason is null)
+        {
+            return true;
+        }
+
+        lock (_unsafeHashesGate)
+        {
+            _unsafeHashes.Add(torrent.Hash);
+        }
+
+        result.UnsafeSkipped.Add(torrent.Name);
+        _logger.Warning(
+            $"Not attaching qBittorrent torrent '{torrent.Name}' (hash={torrent.Hash}) to {match.Target}: {reason}. " +
+            "Media Manager did not add or validate this torrent and left it in qBittorrent. Remove it there if you do not trust it.",
+            LogTarget.All);
+        return false;
+    }
+
+    private sealed record AdoptionMatch(long MediaId, MediaKind Kind, string Target, Func<Task> Adopt);
 
     private void SyncOrdersFromTrackedItems(
         IEnumerable<TorrentCartOrder> orders,

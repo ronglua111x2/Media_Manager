@@ -88,6 +88,17 @@ public sealed class LinkTestHost : IDisposable
 
     public List<string> Warnings { get; } = [];
 
+    /// <summary>Content verdict for reconcile adoption (SEC-A01); null = every file list is safe.</summary>
+    public Func<string, IReadOnlyList<TorrentContentFile>, TorrentContentValidationResult>? ContentVerdict { get; set; }
+
+    /// <summary>Hashes reconcile asked the content validator about.</summary>
+    public List<string> ValidatedHashes { get; } = [];
+
+    /// <summary>Hashes anything asked the fake qBittorrent to delete.</summary>
+    public List<string> DeletedHashes { get; } = [];
+
+    public TorrentBlacklistService Blacklist { get; private set; } = null!;
+
     /// <summary>What the fake TMDB catalog returns for show refreshes and organization switches.</summary>
     public TmdbShowDetails? TmdbDetails { get; set; }
 
@@ -124,6 +135,7 @@ public sealed class LinkTestHost : IDisposable
             "GetTorrentsAsync" => Task.FromResult<IReadOnlyList<AddedTorrentResult>>(host.Torrents.ToList()),
             "GetTorrentFilesAsync" => Task.FromResult<IReadOnlyList<TorrentContentFile>>(
                 host.TorrentFiles.TryGetValue((string)args![0]!, out var files) ? files.ToList() : []),
+            "DeleteTorrentsAsync" => RecordDeletes(host, (IEnumerable<string>)args![0]!),
             _ => null
         });
 
@@ -195,6 +207,20 @@ public sealed class LinkTestHost : IDisposable
             host.Link,
             logger);
         var movies = TestFake<ITrackedMovieService>.Create((method, _) => method.Name == "GetMovies" ? new List<TrackedMovie>() : null);
+        var contentValidation = TestFake<ITorrentContentValidationService>.Create((method, args) =>
+        {
+            if (method.Name != "ValidateFilesAsync")
+            {
+                return null;
+            }
+
+            var hash = (string)args![0]!;
+            host.ValidatedHashes.Add(hash);
+            var verdict = host.ContentVerdict?.Invoke(hash, (IReadOnlyList<TorrentContentFile>)args[1]!)
+                          ?? new TorrentContentValidationResult { TorrentHash = hash, IsValid = true, Recommendation = TorrentHandleRecommendation.Safe };
+            return Task.FromResult(verdict);
+        });
+        host.Blacklist = new TorrentBlacklistService(host.Db, logger);
         host.Reconciliation = new TorrentReconciliationService(
             qbittorrent,
             host.Db,
@@ -203,8 +229,16 @@ public sealed class LinkTestHost : IDisposable
             host.Link,
             TestFake<IPackLinkCoordinatorService>.Create(),
             settings,
-            logger);
+            logger,
+            contentValidation,
+            host.Blacklist);
         return host;
+    }
+
+    private static Task RecordDeletes(LinkTestHost host, IEnumerable<string> hashes)
+    {
+        host.DeletedHashes.AddRange(hashes);
+        return Task.CompletedTask;
     }
 
     /// <summary>Adds a completed torrent whose files exist on disk under the downloads folder.</summary>
