@@ -187,10 +187,11 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
         IReadOnlyList<string> titles,
         IReadOnlyList<string> candidateTokens)
     {
-        var normalizedCandidate = TitleNormalizer.NormalizeTokens(candidateTokens);
         foreach (var candidateTitle in titles.Where(title => !string.IsNullOrWhiteSpace(title)))
         {
-            var titleTokens = TitleNormalizer.SignificantTitleTokens(candidateTitle);
+            // Repeated words count as often as the release repeats them: "Hunter x Hunter" needs "hunter" twice
+            // (audit 07c NS-30).
+            var titleTokens = TitleNormalizer.SignificantTitleTokens(candidateTitle, distinct: false);
             if (titleTokens.Count == 0)
             {
                 if (MatchesShortTitle(candidateTitle, candidateTokens))
@@ -201,7 +202,7 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
                 continue;
             }
 
-            var matched = titleTokens.Count(normalizedCandidate.Contains);
+            var matched = TitleNormalizer.CountTitleTokenMatches(titleTokens, candidateTokens);
             var required = Math.Max(1, Math.Min(2, titleTokens.Count));
             if (matched >= required)
             {

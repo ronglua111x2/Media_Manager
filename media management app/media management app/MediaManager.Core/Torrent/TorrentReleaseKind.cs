@@ -21,7 +21,9 @@ public sealed class TorrentReleaseKindFlags
 public static class TorrentReleaseKind
 {
     private static readonly Regex ExplicitEpisodeRegex = new(
-        @"\bS\d{1,3}E\d{1,4}\b|\b\d{1,3}x\d{1,4}\b",
+        // "OreGairu 3rd season 03": an ordinal season followed by an episode number (not a batch "01-12").
+        @"\bS\d{1,3}E\d{1,4}\b|\b\d{1,3}x\d{1,4}\b|\b\d{1,2}(?:st|nd|rd|th)\s+season\s+(?:-\s+)?\d{2,3}(?:v\d)?\b(?!\s*(?:-|~|to)\s*\d)|" +
+        TorrentCandidateParser.SeasonDashEpisodePattern,
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static readonly Regex PackKeywordRegex = new(
@@ -33,7 +35,7 @@ public static class TorrentReleaseKind
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static readonly Regex SeasonRangeRegex = new(
-        @"\bS\d{1,3}\s*(?:-|to)\s*S?\d{1,3}\b",
+        TorrentCandidateParser.SeasonRangePattern,
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static readonly Regex EpisodeRangeRegex = new(

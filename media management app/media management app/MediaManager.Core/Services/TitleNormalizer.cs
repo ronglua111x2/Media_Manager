@@ -168,6 +168,35 @@ public static class TitleNormalizer
         return set;
     }
 
+    /// <summary>
+    /// How many tokens of a title (<see cref="SignificantTitleTokens"/> with repeats) the candidate tokens contain,
+    /// counting a repeated word only as often as the candidate repeats it: "Hunter x Hunter" needs "hunter" twice, so
+    /// "Monster Hunter Stories" matches one token, not two (audit 07c NS-30; it used to accept "Kill Me Baby" for
+    /// "Kill la Kill").
+    /// </summary>
+    public static int CountTitleTokenMatches(IReadOnlyList<string> titleTokens, IEnumerable<string> candidateTokens)
+    {
+        var normalized = candidateTokens.Select(NormalizeToken).Where(token => token.Length > 0).ToList();
+        var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var token in normalized)
+        {
+            counts[token] = counts.GetValueOrDefault(token) + 1;
+        }
+
+        // Same apostrophe join as NormalizeTokens ("Schindler s" → "schindlers").
+        for (var i = 0; i + 1 < normalized.Count; i++)
+        {
+            if (normalized[i + 1] == "s")
+            {
+                counts.TryAdd(normalized[i] + "s", 1);
+            }
+        }
+
+        return titleTokens
+            .GroupBy(token => token, StringComparer.Ordinal)
+            .Sum(group => Math.Min(group.Count(), counts.GetValueOrDefault(group.Key)));
+    }
+
     public static bool TokenEquals(string? left, string? right) =>
         string.Equals(NormalizeToken(left), NormalizeToken(right), StringComparison.Ordinal);
 

@@ -154,10 +154,10 @@ public sealed class SnapshotCandidateMatcher
         IReadOnlyList<string> titleVariants,
         IReadOnlyList<string> candidateTokens)
     {
-        var normalizedCandidate = TitleNormalizer.NormalizeTokens(candidateTokens);
         foreach (var showTitle in titleVariants.Where(title => !string.IsNullOrWhiteSpace(title)))
         {
-            var showTokens = TitleNormalizer.SignificantTitleTokens(showTitle);
+            // With repeats: "Hunter x Hunter" is two tokens that both need a "hunter" (audit 07c NS-30).
+            var showTokens = TitleNormalizer.SignificantTitleTokens(showTitle, distinct: false);
             if (showTokens.Count == 0)
             {
                 // "IS", "86": the parsed title must start with exactly that title (audit 07c NS-19).
@@ -171,7 +171,7 @@ public sealed class SnapshotCandidateMatcher
                 continue;
             }
 
-            var matched = showTokens.Count(normalizedCandidate.Contains);
+            var matched = TitleNormalizer.CountTitleTokenMatches(showTokens, candidateTokens);
             var required = Math.Max(2, (int)Math.Ceiling(showTokens.Count * 0.6));
             if (matched >= required)
             {

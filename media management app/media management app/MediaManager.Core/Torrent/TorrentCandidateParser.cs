@@ -41,6 +41,20 @@ public sealed class TorrentCandidateParseResult
 
 public static class TorrentCandidateParser
 {
+    /// <summary>
+    /// "S3 - 13", "S4 - 17v2": one episode of a season as SubsPlease and Erai-raws name it. Not when an episode range
+    /// follows ("S4 - 01-12" is a batch of season 4), and not a year.
+    /// </summary>
+    internal const string SeasonDashEpisodePattern =
+        @"\bS(?<season3>\d{1,2})\s+-\s+(?!(?:19|20)\d{2}\b)(?<episode3>\d{2,4})(?:v\d{1,2})?\b(?!\s*(?:-|~|to)\s*\d)";
+
+    /// <summary>
+    /// Season ranges: "S01-S03", "S1-3", "S01 - S03", "S1 to 3", "S1 - 3". A spaced dash before a number of two or more
+    /// digits without "S" ("S3 - 13") is an episode (<see cref="SeasonDashEpisodePattern"/>), not seasons 3 to 13.
+    /// </summary>
+    internal const string SeasonRangePattern =
+        @"\bS(?<from>\d{1,3})(?:\s*(?:-|to)\s*S(?<to>\d{1,3})|(?:-|to)(?<to>\d{1,3})|\s+(?:-|to)\s+(?<to>\d)(?!\d)|\s+to\s+(?<to>\d{1,3}))\b";
+
     private static readonly Regex EpisodeRegex = new(
         // "v2" release revisions ("S01E06v2", "- 06v2") belong to the episode number (audit 07c NS-12).
         @"(?<title>.*?)(?:\bS(?<season>\d{1,3})E(?<episode>\d{1,4})(?:v\d{1,2})?\b|\b(?<season2>\d{1,3})x(?<episode2>\d{1,4})(?:v\d{1,2})?\b)(?<rest>.*)$",
@@ -50,7 +64,8 @@ public static class TorrentCandidateParser
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex YearRegex = new(@"\b(19|20)\d{2}\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex YearRangeRegex = new(@"\b(?<from>(?:19|20)\d{2})\s*(?:-|to)\s*(?<to>(?:19|20)\d{2})\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-    private static readonly Regex SeasonRangeRegex = new(@"\bS(?<from>\d{1,3})\s*(?:-|to)\s*S?(?<to>\d{1,3})\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex SeasonRangeRegex = new(SeasonRangePattern, RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex SeasonDashEpisodeRegex = new(SeasonDashEpisodePattern, RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex SeasonWordRangeRegex = new(@"\bSeasons?\s*(?<from>\d{1,3})(?:\s*(?:-|to)\s*(?<to>\d{1,3}))?(?!\s*\+)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex SeasonPlusListRegex = new(
         @"\bSeasons?\s+(?<list>\d{1,3}(?:\s*\+\s*\d{1,3})+(?:\s*\+\s*(?:OVA|OVAs?|Specials?|Movies?))?)\b",
@@ -106,6 +121,15 @@ public static class TorrentCandidateParser
             var episodeText = match.Groups["episode"].Success ? match.Groups["episode"].Value : match.Groups["episode2"].Value;
             season = int.TryParse(seasonText, out var seasonValue) ? seasonValue : null;
             episode = int.TryParse(episodeText, out var episodeValue) ? episodeValue : null;
+        }
+        else if (SeasonDashEpisodeRegex.Match(fileName) is { Success: true } dashMatch)
+        {
+            // "Show S3 - 13" (SubsPlease / Erai-raws style) is season 3 episode 13, not a pack of seasons 3-13. Matched
+            // on the raw name: NormalizeText turns the dash into a space.
+            showPart = NormalizeText(fileName[..dashMatch.Index]);
+            rest = NormalizeText(fileName[(dashMatch.Index + dashMatch.Length)..]);
+            season = int.Parse(dashMatch.Groups["season3"].Value, System.Globalization.CultureInfo.InvariantCulture);
+            episode = int.Parse(dashMatch.Groups["episode3"].Value, System.Globalization.CultureInfo.InvariantCulture);
         }
         else if (allowAnimeAbsolute &&
                  !TorrentReleaseKind.HasPackSignalsFromTitle(fileName) &&
@@ -376,11 +400,12 @@ public static class TorrentCandidateParser
 
     public static IEnumerable<string> Tokenize(string value)
     {
+        // Brackets separate words too: "[Ex-torrenty.org]BoJack.Horseman" is "org" and "BoJack", not "orgBoJack".
         return value
             .Replace('.', ' ')
             .Replace('-', ' ')
             .Replace('_', ' ')
-            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Split([' ', '[', ']', '(', ')', '【', '】', '{', '}'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Select(token => new string(token.Where(char.IsLetterOrDigit).ToArray()))
             .Where(token => !string.IsNullOrWhiteSpace(token));
     }

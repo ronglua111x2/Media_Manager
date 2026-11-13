@@ -27,7 +27,7 @@ public static class ShowsCompareCommand
 {
     private static readonly string[] AnimeEngines = ["nyaasi", "subsplease", "nekobt", "tsukihime", "animetosho"];
 
-    private sealed record Target(TrackedShow Show, MediaKind Kind, SearchRecipe Recipe, TrackedEpisode? Episode, int? Season, string Label);
+    internal sealed record Target(TrackedShow Show, MediaKind Kind, SearchRecipe Recipe, TrackedEpisode? Episode, int? Season, string Label);
 
     public static async Task<int> RunAsync(Dictionary<string, string> args)
     {
@@ -40,7 +40,7 @@ public static class ShowsCompareCommand
         var nativeOnly = args.GetValueOrDefault("native-only") is "1" or "true";
         var dumpPath = args.GetValueOrDefault("dump");
         using var dump = dumpPath is null ? null : new StreamWriter(dumpPath, append: false);
-        dump?.WriteLine("target\tbackend\tverdict\tdetail\tseeds\tengine\tname");
+        dump?.WriteLine("show\ttarget\tbackend\tverdict\tdetail\tseeds\tengine\tsize\tname");
 
         var recipes = Directory.EnumerateFiles(Path.Combine(state, "Recipes"), "*.rcp")
             .Select(path => JsonSerializer.Deserialize<SearchRecipe>(File.ReadAllText(path), new JsonSerializerOptions
@@ -150,7 +150,7 @@ public static class ShowsCompareCommand
                     {
                         var r = Evaluate(row);
                         var verdict = r.IsAccepted ? $"accepted:{CandidateTiers.Classify(recipe, r)}" : $"rejected:{r.RejectReason}";
-                        dump.WriteLine($"{target.Label}\t{backend}\t{verdict}\t{(r.IsAccepted ? "" : r.RejectDetail)}\t{row.Seeders}\t{row.EngineName}\t{row.FileName.Replace('\t', ' ')}");
+                        dump.WriteLine($"{show.Title}\t{target.Label}\t{backend}\t{verdict}\t{(r.IsAccepted ? "" : r.RejectDetail)}\t{row.Seeders}\t{row.EngineName}\t{row.FileSize}\t{row.FileName.Replace('\t', ' ')}");
                     }
                 }
             }
@@ -204,7 +204,7 @@ public static class ShowsCompareCommand
         return 0;
     }
 
-    private static RecipeCandidateResult EvaluateRow(Target target, CandidateEvaluationService evaluator, TorrentSearchResult row)
+    internal static RecipeCandidateResult EvaluateRow(Target target, CandidateEvaluationService evaluator, TorrentSearchResult row)
     {
         if (target.Kind != MediaKind.TvSeasonPack)
         {
@@ -260,6 +260,43 @@ public static class ShowsCompareCommand
     /// <summary>Latest aired episode(s) and latest fully aired season of every tracked show, with the show's recipes.</summary>
     private static List<Target> LoadTargets(string state, List<SearchRecipe> recipes, int episodesPerShow, bool packs)
     {
+        var cutoff = DateTime.Today.AddDays(-2);
+        var targets = new List<Target>();
+        foreach (var (show, episodes) in LoadShows(state))
+        {
+            var aired = episodes.Where(ep => ep.AirDate is { } air && air <= cutoff).ToList();
+            foreach (var episode in aired.OrderByDescending(ep => ep.AirDate).ThenByDescending(ep => ep.SeasonNumber).ThenByDescending(ep => ep.EpisodeNumber).Take(episodesPerShow))
+            {
+                targets.Add(EpisodeTarget(recipes, show, episode));
+            }
+
+            if (packs)
+            {
+                // Latest season whose every episode aired at least a week ago.
+                var packSeason = episodes
+                    .GroupBy(ep => ep.SeasonNumber)
+                    .Where(g => g.All(ep => ep.AirDate is { } air && air <= DateTime.Today.AddDays(-7)))
+                    .Select(g => (int?)g.Key)
+                    .Max();
+                if (packSeason is not null)
+                {
+                    targets.Add(PackTarget(recipes, show, packSeason.Value));
+                }
+            }
+        }
+
+        return targets;
+    }
+
+    internal static Target EpisodeTarget(List<SearchRecipe> recipes, TrackedShow show, TrackedEpisode episode) =>
+        new(show, MediaKind.TvEpisode, Find(recipes, show.RecipeId, MediaKind.TvEpisode, "default-tv"), episode, null, $"S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00}");
+
+    internal static Target PackTarget(List<SearchRecipe> recipes, TrackedShow show, int season) =>
+        new(show, MediaKind.TvSeasonPack, Find(recipes, show.PackRecipeId, MediaKind.TvSeasonPack, "default-tv-pack"), null, season, $"S{season:00} pack");
+
+    /// <summary>Every tracked show with its episodes (season 0 excluded), from the app database opened read-only.</summary>
+    internal static List<(TrackedShow Show, List<TrackedEpisode> Episodes)> LoadShows(string state)
+    {
         using var connection = new SqliteConnection($"Data Source={Path.Combine(state, "media-manager.db")};Mode=ReadOnly");
         connection.Open();
         var shows = new List<TrackedShow>();
@@ -284,8 +321,7 @@ public static class ShowsCompareCommand
             }
         }
 
-        var cutoff = DateTime.Today.AddDays(-2);
-        var targets = new List<Target>();
+        var result = new List<(TrackedShow, List<TrackedEpisode>)>();
         foreach (var show in shows)
         {
             var episodes = new List<TrackedEpisode>();
@@ -308,32 +344,13 @@ public static class ShowsCompareCommand
                 }
             }
 
-            var aired = episodes.Where(ep => ep.AirDate is { } air && air <= cutoff).ToList();
-            var episodeRecipe = Find(recipes, show.RecipeId, MediaKind.TvEpisode, "default-tv");
-            foreach (var episode in aired.OrderByDescending(ep => ep.AirDate).ThenByDescending(ep => ep.SeasonNumber).ThenByDescending(ep => ep.EpisodeNumber).Take(episodesPerShow))
-            {
-                targets.Add(new Target(show, MediaKind.TvEpisode, episodeRecipe, episode, null, $"S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00}"));
-            }
-
-            if (packs)
-            {
-                // Latest season whose every episode aired at least a week ago.
-                var packSeason = episodes
-                    .GroupBy(ep => ep.SeasonNumber)
-                    .Where(g => g.All(ep => ep.AirDate is { } air && air <= DateTime.Today.AddDays(-7)))
-                    .Select(g => (int?)g.Key)
-                    .Max();
-                if (packSeason is not null)
-                {
-                    targets.Add(new Target(show, MediaKind.TvSeasonPack, Find(recipes, show.PackRecipeId, MediaKind.TvSeasonPack, "default-tv-pack"), null, packSeason, $"S{packSeason:00} pack"));
-                }
-            }
+            result.Add((show, episodes));
         }
 
-        return targets;
+        return result;
     }
 
-    private static SearchRecipe Find(List<SearchRecipe> recipes, string? id, MediaKind kind, string fallbackId) =>
+    internal static SearchRecipe Find(List<SearchRecipe> recipes, string? id, MediaKind kind, string fallbackId) =>
         recipes.FirstOrDefault(r => r.RecipeId == id && r.TargetKind == kind)
         ?? recipes.FirstOrDefault(r => r.RecipeId == fallbackId)
         ?? recipes.First(r => r.TargetKind == kind);

@@ -7,13 +7,21 @@ public static class SeasonPackIdentity
 {
     public const string NoExplicitSeasonCoverage = "no explicit season coverage";
 
+    private static readonly SearchTitleResolver TitleResolver = new();
+
+    /// <param name="titleVariants">
+    /// Titles the pack may carry (primary, recipe aliases, library alternative titles: romaji, original title...).
+    /// Defaults to <see cref="SearchTitleResolver.ResolveForMatching"/>, the same set the episode evaluator uses: a pack
+    /// named only "Yagate Kimi ni Naru S01" or "Honzuki no Gekokujou S04" is the show's pack.
+    /// </param>
     public static (CandidateRejectReason Reason, string Detail) GetRejectReason(
         TrackedShow show,
         IReadOnlyList<int> selectedSeasons,
         TorrentSearchResult result,
         TorrentCandidateParseResult parsed,
         SearchRecipe packRecipe,
-        IReadOnlyList<int>? coveredSeasonsOverride = null)
+        IReadOnlyList<int>? coveredSeasonsOverride = null,
+        IReadOnlyList<string>? titleVariants = null)
     {
         var coveredSeasons = coveredSeasonsOverride ?? parsed.CoveredSeasons;
         if (!result.CanAdd)
@@ -52,14 +60,43 @@ public static class SeasonPackIdentity
                 $"does not cover selected seasons {string.Join(",", selectedSeasons)}");
         }
 
-        var titleTokens = TitleNormalizer.SignificantTitleTokens(show.Title, distinct: false);
-        var candidateTokens = TitleNormalizer.NormalizeTokens(parsed.TitleTokens);
-        var matched = titleTokens.Count(candidateTokens.Contains);
-        if (matched < Math.Min(2, titleTokens.Count))
+        titleVariants ??= TitleResolver.ResolveForMatching(packRecipe, show.Title, show.GetSearchableAlternativeTitles());
+        if (!MatchesTitle(titleVariants, parsed.TitleTokens))
         {
-            return (CandidateRejectReason.TitleMismatch, "does not contain enough show title tokens");
+            return (CandidateRejectReason.TitleMismatch, "does not contain enough show title or alias tokens");
         }
 
         return RecipeCandidateFilter.GetRejectReason(packRecipe, result, parsed);
+    }
+
+    /// <summary>
+    /// True when the release title carries one title variant: at least two of its words (all of them for a one-word
+    /// title), a repeated word counted only as often as the release repeats it ("Hunter x Hunter" is not matched by
+    /// "Monster Hunter Stories"). A title without a word longer than two letters ("86") must start the release title.
+    /// </summary>
+    public static bool MatchesTitle(IReadOnlyList<string> titleVariants, IReadOnlyList<string> candidateTokens)
+    {
+        foreach (var variant in titleVariants.Where(title => !string.IsNullOrWhiteSpace(title)))
+        {
+            var titleTokens = TitleNormalizer.SignificantTitleTokens(variant, distinct: false);
+            if (titleTokens.Count == 0)
+            {
+                var exact = TitleNormalizer.MatchTokens(variant);
+                var candidate = candidateTokens.Select(TitleNormalizer.NormalizeToken).Where(token => token.Length > 0).ToList();
+                if (exact.Count > 0 && candidate.Count >= exact.Count && candidate.Take(exact.Count).SequenceEqual(exact, StringComparer.Ordinal))
+                {
+                    return true;
+                }
+
+                continue;
+            }
+
+            if (TitleNormalizer.CountTitleTokenMatches(titleTokens, candidateTokens) >= Math.Min(2, titleTokens.Count))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
