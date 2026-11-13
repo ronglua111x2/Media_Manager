@@ -147,7 +147,74 @@ public sealed class GeminiPayloadV2Tests
         Assert.Empty(SpecialMappingValidator.ValidateGeminiPairs(GeminiResult(request, episodes[2]), request));
     }
 
-    private static SpecialMappingCandidate Candidate(string path, SpecialMappingNamingPattern pattern, int parentSeason, int localIndex) =>
+    // Audit L2-03: a root OVA folder (no parent season) keeps its order too: "OVA 03" never gets an earlier episode
+    // than "OVA 02".
+    [Fact]
+    public void Validator_RootOvaFolderOutOfOrder_OnePairIsDropped()
+    {
+        var episodes = SixSpecials();
+        var request = OrderRequest(
+            Candidate("Show/OVA/Show - OVA - 01.mkv", SpecialMappingNamingPattern.OvaDash, null, 1),
+            Candidate("Show/OVA/Show - OVA - 02.mkv", SpecialMappingNamingPattern.OvaDash, null, 2),
+            Candidate("Show/OVA/Show - OVA - 03.mkv", SpecialMappingNamingPattern.OvaDash, null, 3));
+        var result = Pairs(request,
+            (0, episodes[4], SpecialMappingSource.Gemini),
+            (1, episodes[6], SpecialMappingSource.Gemini),
+            (2, episodes[5], SpecialMappingSource.Gemini));
+
+        var violations = SpecialMappingValidator.ValidateGeminiPairs(result, request);
+
+        Assert.Contains("order", Assert.Single(violations).Message, StringComparison.Ordinal);
+    }
+
+    // Audit L2-03: a Gemini pair must keep the order against the pairs the rules placed in the same group; only
+    // the Gemini pair is dropped, never the rule pair.
+    [Fact]
+    public void Validator_GeminiPairOutOfOrderAgainstARulePair_TheGeminiPairIsDropped()
+    {
+        var episodes = SixSpecials();
+        var request = OrderRequest(
+            Candidate("Show/S1/Specials/Show - S1S01.mkv", SpecialMappingNamingPattern.SnSnn, 1, 1),
+            Candidate("Show/S1/Specials/Show - S1S02.mkv", SpecialMappingNamingPattern.SnSnn, 1, 2),
+            Candidate("Show/S1/Specials/Show - S1S03.mkv", SpecialMappingNamingPattern.SnSnn, 1, 3));
+        var result = Pairs(request,
+            (1, episodes[2], SpecialMappingSource.Rule),
+            (0, episodes[3], SpecialMappingSource.Gemini),
+            (2, episodes[4], SpecialMappingSource.Gemini));
+
+        var violation = Assert.Single(SpecialMappingValidator.ValidateGeminiPairs(result, request));
+
+        Assert.EndsWith("S1S01.mkv", violation.RelativePath, StringComparison.Ordinal);
+    }
+
+    private static List<TrackedEpisode> SixSpecials() =>
+        Enumerable.Range(0, 7)
+            .Select(number => new TrackedEpisode { SeasonNumber = 0, EpisodeNumber = number, Title = $"Special {number}" })
+            .ToList();
+
+    private static SpecialMappingAIRequest OrderRequest(params SpecialMappingCandidate[] candidates) =>
+        new()
+        {
+            Context = new SpecialMappingContext { ShowTitle = "Show", Candidates = candidates },
+            GeminiCandidateIndices = Enumerable.Range(0, candidates.Length).ToList()
+        };
+
+    private static SpecialMappingResult Pairs(
+        SpecialMappingAIRequest request,
+        params (int Candidate, TrackedEpisode Episode, SpecialMappingSource Source)[] pairs) =>
+        new()
+        {
+            Items = pairs
+                .Select(pair => new SpecialMappingItem
+                {
+                    RelativePath = request.Context.Candidates[pair.Candidate].RelativePath,
+                    Episode = pair.Episode,
+                    Source = pair.Source
+                })
+                .ToList()
+        };
+
+    private static SpecialMappingCandidate Candidate(string path, SpecialMappingNamingPattern pattern, int? parentSeason, int localIndex) =>
         new()
         {
             RelativePath = path,

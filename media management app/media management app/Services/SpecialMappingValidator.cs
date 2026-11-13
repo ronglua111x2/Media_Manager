@@ -163,11 +163,43 @@ public static class SpecialMappingValidator
             }
         }
 
-        foreach (var season in pairs
-                     .Where(pair => pair.Candidate!.ParentSeason is > 0 && pair.Candidate.LocalIndex > 0)
-                     .GroupBy(pair => pair.Candidate!.ParentSeason!.Value))
+        // Order check per group of numbered files: same parent season (0 = none, a root OVA/Specials folder) and
+        // same naming pattern, so "OVA - N" and "SnSnn" numbers are never compared with each other. Pairs the rules
+        // placed in the group are fixed points: a Gemini pair that contradicts one is dropped (audit L2-03).
+        var rulePairs = result.Items
+            .Where(item => item.Source != SpecialMappingSource.Gemini && item.Episode is not null)
+            .Select(item => (Item: item, Candidate: candidatesByPath.GetValueOrDefault(item.RelativePath)))
+            .Where(pair => pair.Candidate is { LocalIndex: > 0 })
+            .ToList();
+        foreach (var group in pairs
+                     .Where(pair => pair.Candidate!.LocalIndex > 0)
+                     .GroupBy(pair => (Season: pair.Candidate!.ParentSeason ?? 0, Pattern: pair.Candidate.NamingPattern)))
         {
-            var ordered = season.OrderBy(pair => pair.Candidate!.LocalIndex).ToList();
+            var label = group.Key.Season > 0 ? $"season {group.Key.Season}'s specials" : "the specials in this folder";
+            var fixedPoints = rulePairs
+                .Where(rule => (rule.Candidate!.ParentSeason ?? 0) == group.Key.Season && rule.Candidate.NamingPattern == group.Key.Pattern)
+                .ToList();
+            var remaining = new List<(SpecialMappingItem Item, SpecialMappingCandidate? Candidate)>();
+            foreach (var pair in group)
+            {
+                var index = pair.Candidate!.LocalIndex;
+                var episode = pair.Item.Episode!.EpisodeNumber;
+                var conflict = fixedPoints.FirstOrDefault(rule =>
+                    (rule.Candidate!.LocalIndex < index && rule.Item.Episode!.EpisodeNumber >= episode) ||
+                    (rule.Candidate.LocalIndex > index && rule.Item.Episode!.EpisodeNumber <= episode));
+                if (conflict.Item is not null)
+                {
+                    violations.Add(new SpecialMappingViolation(
+                        pair.Item.RelativePath,
+                        episode,
+                        $"'{FileName(pair.Item.RelativePath)}' → S00E{episode:00} breaks the order of {label} against '{FileName(conflict.Item.RelativePath)}' (S00E{conflict.Item.Episode!.EpisodeNumber:00}); left unmapped."));
+                    continue;
+                }
+
+                remaining.Add(pair);
+            }
+
+            var ordered = remaining.OrderBy(pair => pair.Candidate!.LocalIndex).ToList();
             var keep = LongestIncreasingRun(ordered.Select(pair => pair.Item.Episode!.EpisodeNumber).ToList());
             for (var position = 0; position < ordered.Count; position++)
             {
@@ -180,7 +212,7 @@ public static class SpecialMappingValidator
                 violations.Add(new SpecialMappingViolation(
                     item.RelativePath,
                     item.Episode!.EpisodeNumber,
-                    $"'{FileName(item.RelativePath)}' → S00E{item.Episode.EpisodeNumber:00} breaks the order of season {season.Key}'s specials; left unmapped."));
+                    $"'{FileName(item.RelativePath)}' → S00E{item.Episode.EpisodeNumber:00} breaks the order of {label}; left unmapped."));
             }
         }
 
