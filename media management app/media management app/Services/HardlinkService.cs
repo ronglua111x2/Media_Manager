@@ -263,6 +263,97 @@ public sealed class HardlinkService : IHardlinkService
         }
     }
 
+    public bool TryBuildLibraryPath(SourceItem item, out string libraryPath, out string? errorMessage)
+    {
+        libraryPath = string.Empty;
+        if (!_libraryPathResolver.TryResolveMediaRoot(item, out var mediaRoot, out errorMessage))
+        {
+            return false;
+        }
+
+        libraryPath = BuildOutputPath(item, mediaRoot);
+        return true;
+    }
+
+    public bool MoveHardLinks(IReadOnlyList<HardLinkRename> renames, out string? errorMessage)
+    {
+        errorMessage = null;
+        var staged = new List<(HardLinkRename Rename, string TempPath)>();
+        var placed = new List<(HardLinkRename Rename, string TempPath)>();
+        try
+        {
+            foreach (var rename in renames)
+            {
+                var tempPath = $"{rename.FromPath}.mm-move-{Guid.NewGuid():N}.tmp";
+                File.Move(rename.FromPath, tempPath);
+                staged.Add((rename, tempPath));
+            }
+
+            foreach (var (rename, tempPath) in staged)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(rename.ToPath)!);
+                File.Move(tempPath, rename.ToPath);
+                placed.Add((rename, tempPath));
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            errorMessage = ex.Message;
+            _logger.Warning($"Library links were not moved, every file is put back: {ex.Message}", LogTarget.All);
+            PutBack(staged, placed);
+            CleanupAfterMove(renames.Select(rename => (rename.Item, rename.ToPath)));
+            return false;
+        }
+
+        foreach (var rename in renames)
+        {
+            _logger.Info($"Moved library link {rename.FromPath} -> {rename.ToPath}", LogTarget.File | LogTarget.Console);
+        }
+
+        CleanupAfterMove(renames.Select(rename => (rename.Item, rename.FromPath)));
+        return true;
+    }
+
+    private void PutBack(
+        List<(HardLinkRename Rename, string TempPath)> staged,
+        List<(HardLinkRename Rename, string TempPath)> placed)
+    {
+        foreach (var (rename, tempPath) in Enumerable.Reverse(placed))
+        {
+            TryMoveBack(rename.ToPath, tempPath);
+        }
+
+        foreach (var (rename, tempPath) in Enumerable.Reverse(staged))
+        {
+            TryMoveBack(tempPath, rename.FromPath);
+        }
+    }
+
+    private void TryMoveBack(string fromPath, string toPath)
+    {
+        try
+        {
+            File.Move(fromPath, toPath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // The file is still in the library under the other name; say where so it can be found.
+            _logger.Error($"Could not put library file back: {fromPath} -> {toPath}", ex, LogTarget.All);
+        }
+    }
+
+    private void CleanupAfterMove(IEnumerable<(SourceItem Item, string Path)> paths)
+    {
+        foreach (var (item, path) in paths)
+        {
+            if (_libraryPathResolver.TryResolveGeneratedLibraryRoot(item, out var libraryRoot, out _) &&
+                ResolveCleanupRoot(path, libraryRoot) is { } cleanupRoot)
+            {
+                CleanupEmptyLibraryFolders(Path.GetDirectoryName(path), cleanupRoot);
+            }
+        }
+    }
+
     private void CleanupEmptyLibraryFolders(string? startDirectory, string outputRoot)
     {
         if (string.IsNullOrWhiteSpace(startDirectory) || !Directory.Exists(startDirectory))

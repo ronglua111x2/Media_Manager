@@ -52,6 +52,7 @@ public sealed class SymlinkCoordinatorService : ISymlinkCoordinatorService
         _eventHub.HardlinkRemoved += OnHardlinkRemoved;
         _eventHub.HardlinksCreated += OnHardlinksCreated;
         _eventHub.HardlinksRemoved += OnHardlinksRemoved;
+        _eventHub.HardlinksMoved += OnHardlinksMoved;
     }
 
     public void Start()
@@ -100,6 +101,7 @@ public sealed class SymlinkCoordinatorService : ISymlinkCoordinatorService
         _eventHub.HardlinkRemoved -= OnHardlinkRemoved;
         _eventHub.HardlinksCreated -= OnHardlinksCreated;
         _eventHub.HardlinksRemoved -= OnHardlinksRemoved;
+        _eventHub.HardlinksMoved -= OnHardlinksMoved;
 
         try
         {
@@ -209,6 +211,75 @@ public sealed class SymlinkCoordinatorService : ISymlinkCoordinatorService
                     LogTarget.All);
             }
         });
+    }
+
+    private void OnHardlinksMoved(object? sender, LibraryLinkMoveBatchEventArgs e)
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await ProcessHardlinksMovedAsync(e.Moves, _shutdown.Token);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(
+                    $"Symlink coordinator failed after moving {e.Moves.Count} renumbered library link(s).",
+                    ex,
+                    LogTarget.All);
+            }
+        });
+    }
+
+    /// <summary>
+    /// TMDB renumbered linked episodes and their library links moved (audit L3-09): the NFO and subtitles next to each
+    /// old symlink describe the episode that used to be there, so they go; the symlinks move as one batch; the new
+    /// symlinks get the NFO of their episode and Jellyfin is asked to rescan them.
+    /// </summary>
+    private async Task ProcessHardlinksMovedAsync(IReadOnlyList<LibraryLinkMove> moves, CancellationToken cancellationToken)
+    {
+        if (moves.Count == 0)
+        {
+            return;
+        }
+
+        await _syncGate.WaitAsync(cancellationToken);
+        try
+        {
+            var result = await Task.Run(() =>
+            {
+                foreach (var symlinkPath in moves
+                             .SelectMany(move => CollectSymlinkPathsForNfoCleanup(move.Previous))
+                             .Distinct(StringComparer.OrdinalIgnoreCase))
+                {
+                    _nfoWriterService.DeleteEpisodeNfo(symlinkPath);
+                    _subtitleCleanupService.DeleteSubtitleFiles(symlinkPath);
+                }
+
+                var moved = _symlinkSyncService.MoveItems(moves);
+                foreach (var move in moves)
+                {
+                    TryWriteNfoForItem(move.Item);
+                }
+
+                return moved;
+            }, cancellationToken);
+
+            _logger.Info($"Symlink coordinator moved {moves.Count} renumbered link(s). {result.Summary}", LogTarget.All);
+            foreach (var move in moves)
+            {
+                _jellyfinLibraryRefreshService.EnqueueFromSourceItem(move.Item);
+            }
+
+            _eventHub.PublishSymlinkStateChanged();
+        }
+        finally
+        {
+            _syncGate.Release();
+        }
     }
 
     private async Task RunStartupReconcileAsync()

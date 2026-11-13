@@ -88,4 +88,7 @@ public sealed class SourceItem
     public bool IsOrphanPackSpecial { get; set; }
 
     public DateTime LastSeenUtc { get; set; } = DateTime.UtcNow;
+
+    /// <summary>A copy with the same values (all of them are values or strings).</summary>
+    public SourceItem Clone() => (SourceItem)MemberwiseClone();
 }

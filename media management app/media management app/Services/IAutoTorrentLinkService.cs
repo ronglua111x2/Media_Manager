@@ -34,6 +34,16 @@ public interface IAutoTorrentLinkService
     /// </summary>
     AutoTorrentLinkResult ClearShowLinksForRenumbering(long showId);
 
+    /// <summary>
+    /// Moves the links of a show's episodes from their old number to their new one (key = old number, value = new):
+    /// library hardlinks are renamed, records renumbered and the Jellyfin symlinks follow (audit L3-09). All or
+    /// nothing: when a link cannot move, <see cref="EpisodeLinkMoveResult.BlockedKeys"/> or
+    /// <see cref="EpisodeLinkMoveResult.Failed"/> says so and nothing was changed.
+    /// </summary>
+    EpisodeLinkMoveResult MoveEpisodeLinks(
+        long showId,
+        IReadOnlyDictionary<(int SeasonNumber, int EpisodeNumber), (int SeasonNumber, int EpisodeNumber)> moves);
+
     AutoTorrentLinkResult RemoveMovieLinks(long movieId);
 
     /// <summary>

@@ -363,6 +363,24 @@ public sealed class DatabaseService : IDatabaseService
         command.ExecuteNonQuery();
     }
 
+    public void UpdateSourceItemFilePath(long id, string filePath)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE SourceItems
+            SET FilePath = $FilePath, FileName = $FileName, ParentFolder = $ParentFolder
+            WHERE Id = $Id;
+            """;
+        command.Parameters.AddWithValue("$FilePath", filePath);
+        command.Parameters.AddWithValue("$FileName", Path.GetFileName(filePath));
+        command.Parameters.AddWithValue("$ParentFolder", Path.GetDirectoryName(filePath) ?? string.Empty);
+        command.Parameters.AddWithValue("$Id", id);
+        command.ExecuteNonQuery();
+    }
+
     private static void AddParameters(SqliteCommand command, SourceItem item)
     {
         command.Parameters.AddWithValue("$SourceRootFolder", item.SourceRootFolder);
@@ -1342,6 +1360,60 @@ public sealed class DatabaseService : IDatabaseService
         command.Parameters.AddWithValue("$Id", episodeId);
         command.Parameters.AddWithValue("$RemovedUpstreamUtc", removedUtc.ToString("O"));
         command.ExecuteNonQuery();
+    }
+
+    public void MoveTrackedEpisodes(
+        long showId,
+        IReadOnlyCollection<long> deleteEpisodeIds,
+        IReadOnlyList<(long EpisodeId, int SeasonNumber, int EpisodeNumber)> moves)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var transaction = connection.BeginTransaction();
+        var now = DateTime.UtcNow.ToString("O");
+
+        foreach (var episodeId in deleteEpisodeIds)
+        {
+            using var delete = connection.CreateCommand();
+            delete.Transaction = transaction;
+            delete.CommandText = "DELETE FROM TrackedEpisodes WHERE Id = $Id AND ShowId = $ShowId;";
+            delete.Parameters.AddWithValue("$Id", episodeId);
+            delete.Parameters.AddWithValue("$ShowId", showId);
+            delete.ExecuteNonQuery();
+        }
+
+        // (Season, -Id) is free for every row: no real episode number is negative.
+        foreach (var move in moves)
+        {
+            using var park = connection.CreateCommand();
+            park.Transaction = transaction;
+            park.CommandText = "UPDATE TrackedEpisodes SET EpisodeNumber = -Id WHERE Id = $Id AND ShowId = $ShowId;";
+            park.Parameters.AddWithValue("$Id", move.EpisodeId);
+            park.Parameters.AddWithValue("$ShowId", showId);
+            park.ExecuteNonQuery();
+        }
+
+        foreach (var move in moves)
+        {
+            using var place = connection.CreateCommand();
+            place.Transaction = transaction;
+            place.CommandText = """
+                UPDATE TrackedEpisodes
+                SET SeasonNumber = $SeasonNumber, EpisodeNumber = $EpisodeNumber, UpdatedUtc = $UpdatedUtc
+                WHERE Id = $Id AND ShowId = $ShowId;
+                UPDATE TorrentCartOrders
+                SET SeasonNumber = $SeasonNumber, EpisodeNumber = $EpisodeNumber, UpdatedUtc = $UpdatedUtc
+                WHERE EpisodeId = $Id;
+                """;
+            place.Parameters.AddWithValue("$SeasonNumber", move.SeasonNumber);
+            place.Parameters.AddWithValue("$EpisodeNumber", move.EpisodeNumber);
+            place.Parameters.AddWithValue("$UpdatedUtc", now);
+            place.Parameters.AddWithValue("$Id", move.EpisodeId);
+            place.Parameters.AddWithValue("$ShowId", showId);
+            place.ExecuteNonQuery();
+        }
+
+        transaction.Commit();
     }
 
     public void DeleteTrackedEpisode(long episodeId)

@@ -1,5 +1,6 @@
 using media_management_app.Common;
 using media_management_app.Models;
+using media_management_app.Services.Events;
 
 namespace media_management_app.Services.Symlink;
 
@@ -179,6 +180,81 @@ public sealed class SymlinkSyncService : ISymlinkSyncService
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Every old symlink is removed before any new one is made: in a chain or a swap (E04 -> E05 while E05 -> E06) the
+    /// old symlink of one record is the new path of another, and removing it afterwards would delete the new one.
+    /// Only symlinks are removed, never a real file in the Jellyfin folder (audit L3-09).
+    /// </summary>
+    public SymlinkSyncResult MoveItems(IReadOnlyList<LibraryLinkMove> moves)
+    {
+        var result = new SymlinkSyncResult();
+        var settings = _settingsService.Current.Symlink;
+        if (!settings.Enabled || moves.Count == 0)
+        {
+            return result;
+        }
+
+        var oldFolders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var removed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var move in moves)
+        {
+            foreach (var symlinkPath in GetPreviousSymlinkPaths(move.Previous))
+            {
+                var folder = Path.GetDirectoryName(symlinkPath);
+                if (!string.IsNullOrWhiteSpace(folder))
+                {
+                    oldFolders.Add(folder);
+                }
+
+                if (!removed.Add(symlinkPath) || !_symlinkService.IsSymlink(symlinkPath))
+                {
+                    continue;
+                }
+
+                if (_symlinkService.TryRemoveSymlink(symlinkPath, out var removeError))
+                {
+                    result.RemovedCount++;
+                }
+                else
+                {
+                    result.ErrorCount++;
+                    result.Messages.Add($"{move.Item.FileName}: {removeError}");
+                }
+            }
+
+            move.Item.SymlinkPath = null;
+            _databaseService.UpdateSourceItemSymlinkPath(move.Item.Id, null);
+        }
+
+        foreach (var move in moves)
+        {
+            Merge(result, SyncItem(move.Item, move.Item.LinkedPath));
+        }
+
+        foreach (var folder in oldFolders)
+        {
+            CleanupEmptyFolders(folder, settings.UnifiedRoot);
+        }
+
+        return result;
+    }
+
+    private IEnumerable<string> GetPreviousSymlinkPaths(SourceItem previous)
+    {
+        var paths = new List<string>();
+        if (!string.IsNullOrWhiteSpace(previous.SymlinkPath))
+        {
+            paths.Add(Path.GetFullPath(previous.SymlinkPath));
+        }
+
+        if (TryResolveSymlinkPath(ApplyTrackedMetadata(previous), out var resolved, out _))
+        {
+            paths.Add(Path.GetFullPath(resolved));
+        }
+
+        return paths.Distinct(StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>

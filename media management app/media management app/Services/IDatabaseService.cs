@@ -23,6 +23,9 @@ public interface IDatabaseService
 
     void UpdateSourceItemSymlinkPath(long id, string? symlinkPath);
 
+    /// <summary>Points a record at its renamed file (an imported library file that was moved to a new episode number).</summary>
+    void UpdateSourceItemFilePath(long id, string filePath);
+
     int MarkMissingSourceItems(IEnumerable<string> sourceFolders, IEnumerable<string> seenFilePaths);
 
     int DeleteSourceItemsByState(ItemState state);
@@ -122,6 +125,15 @@ public interface IDatabaseService
     void MarkTrackedEpisodeRemovedUpstream(long episodeId, DateTime removedUtc);
 
     void DeleteTrackedEpisode(long episodeId);
+
+    /// <summary>
+    /// In one transaction: deletes <paramref name="deleteEpisodeIds"/>, then gives each moved row its new number (through
+    /// temporary numbers, so chains and swaps work) and moves the cart orders of those rows with them (audit L3-09).
+    /// </summary>
+    void MoveTrackedEpisodes(
+        long showId,
+        IReadOnlyCollection<long> deleteEpisodeIds,
+        IReadOnlyList<(long EpisodeId, int SeasonNumber, int EpisodeNumber)> moves);
 
     void UpdateTrackedEpisodeAvailability(long episodeId, EpisodeAvailability availability);
 
