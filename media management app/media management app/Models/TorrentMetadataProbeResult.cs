@@ -12,6 +12,9 @@ public sealed class TorrentMetadataProbeResult
 
     public long TotalSize { get; init; }
 
+    /// <summary>SHA-1 of the bencoded info dictionary (lower-case hex), when the bytes were a v1 or hybrid torrent.</summary>
+    public string? InfoHashV1 { get; init; }
+
     public IReadOnlyList<TorrentMetadataFile> Files { get; init; } = [];
 
     public IReadOnlyList<TorrentMetadataFile> VideoFiles => Files

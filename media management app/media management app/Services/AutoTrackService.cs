@@ -1292,7 +1292,13 @@ public sealed class AutoTrackService : IAutoTrackService
             {
                 failedCandidateUrls.Add(candidate.Url);
                 order.FailedCandidateUrls = SerializeFailedCandidateUrls(failedCandidateUrls);
-                order.PendingValidationHash = string.Empty;
+                // SEC-A02: the gate stops a torrent whose check did not finish but leaves it in qBittorrent. Keep its
+                // hash while it is there, so reconcile does not adopt it and recovery can re-check it.
+                if (!await IsPendingTorrentStillPresentAsync(order.PendingValidationHash))
+                {
+                    order.PendingValidationHash = string.Empty;
+                }
+
                 order.LastFailureReason = ex.Message;
                 order.StatusDetail = $"Candidate failed: {candidate.Name} — {ex.Message}";
                 _torrentCartService.SaveOrder(order);
@@ -1487,6 +1493,25 @@ public sealed class AutoTrackService : IAutoTrackService
                 order.Id,
                 keepCandidates: false,
                 $"Recovered torrent rejected after restart: {ex.Message}; will search again.");
+            return true;
+        }
+    }
+
+    /// <summary>True when qBittorrent still lists <paramref name="hash"/>, or when that cannot be checked (keep the hash).</summary>
+    private async Task<bool> IsPendingTorrentStillPresentAsync(string? hash)
+    {
+        if (string.IsNullOrWhiteSpace(hash))
+        {
+            return false;
+        }
+
+        try
+        {
+            return await _addGateService.TryGetExistingByHashAsync(hash, CancellationToken.None) is not null;
+        }
+        catch (Exception ex)
+        {
+            _logger.Debug($"Could not check pending torrent {hash}: {ex.Message}; keeping its hash.", LogTarget.File);
             return true;
         }
     }

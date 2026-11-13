@@ -1638,12 +1638,20 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
             StatusMessage = $"Using existing qBittorrent download: {existing.Name}";
         }
 
+        // SEC-A02: persist the hash before the check (up to ~90 s), like Auto-Track, so a crash, a cancel or a failed
+        // add leaves a trace: reconcile never adopts a torrent whose check did not finish.
         var addedTorrent = await _addGateService.AddPausedValidateAndResumeAsync(
             order,
             savePath,
             cancellationToken,
             existing,
+            onTorrentAdded: torrent =>
+            {
+                order.PendingValidationHash = torrent.Hash;
+                _torrentCartService.SaveOrder(order);
+            },
             isResetHash: isResetHash);
+        order.PendingValidationHash = string.Empty;
         order.TorrentHash = addedTorrent.Hash;
         order.TorrentName = addedTorrent.Name;
         order.TorrentState = QbittorrentTorrentStateNormalizer.Normalize(addedTorrent.State, addedTorrent.IsComplete);
@@ -1693,6 +1701,13 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
 
     private void HandleManualMalwareReject(TorrentCartOrder order, MaliciousTorrentException ex)
     {
+        // The gate deleted the rejected torrent (or never added it): nothing is pending any more.
+        if (_torrentCartService.GetOrder(order.Id) is { } stored && !string.IsNullOrWhiteSpace(stored.PendingValidationHash))
+        {
+            stored.PendingValidationHash = string.Empty;
+            _torrentCartService.SaveOrder(stored);
+        }
+
         var selected = _torrentCartService.GetCandidates(order.Id)
             .FirstOrDefault(candidate =>
                 string.Equals(candidate.Url, order.SelectedCandidateUrl, StringComparison.OrdinalIgnoreCase));
