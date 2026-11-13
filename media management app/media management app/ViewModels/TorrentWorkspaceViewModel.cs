@@ -21,6 +21,7 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
     private readonly ITorrentCartService _torrentCartService;
     private readonly IAutomationFlowService _automationFlowService;
     private readonly IFetchJobService _fetchJobService;
+    private readonly INativeSearchService _nativeSearch;
     private readonly IDatabaseService _databaseService;
     private readonly IRecipeService _recipeService;
     private readonly ISettingsService _settingsService;
@@ -58,8 +59,10 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         ITorrentAddGateService addGateService,
         ITorrentBlacklistService blacklistService,
         IAppLogger logger,
-        IAppLifecycleService lifecycleService)
+        IAppLifecycleService lifecycleService,
+        INativeSearchService nativeSearch)
     {
+        _nativeSearch = nativeSearch;
         _trackedShowService = trackedShowService;
         _trackedMovieService = trackedMovieService;
         _mediaCardCatalogService = mediaCardCatalogService;
@@ -1351,7 +1354,7 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
             ? "Show snapshot search"
             : "Parallel episode search";
         _logger.Info(
-            $"Run Cart: Media='{show.DisplayTitle}', Recipe='{recipe.Name}', Target='TV episode', Mode='{mode}', Orders={orders.Count}.",
+            $"Run Cart: Media='{show.DisplayTitle}', Recipe='{recipe.Name}', Target='TV episode', Mode='{mode}', Backend='{_nativeSearch.BackendName(MediaKind.TvEpisode, recipe)}', Orders={orders.Count}.",
             LogTarget.All);
 
         var ordersByEpisodeId = orders
@@ -1381,6 +1384,14 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         {
             if (!candidatesByEpisodeId.TryGetValue(episodeId, out var candidates) || candidates.Count == 0)
             {
+                // No native site could be asked: the search did not run, so it is not "no candidates".
+                if (_fetchJobService.GetSearchSourceProblem(episodeId) is { } sourceProblem)
+                {
+                    result.FailedCount++;
+                    _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.Failed, sourceProblem);
+                    continue;
+                }
+
                 result.NoCandidateCount++;
                 _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.NoCandidates, "No candidates found.");
                 continue;
@@ -1401,7 +1412,7 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
                 ?? throw new InvalidOperationException("Tracked movie was not found.");
             var recipe = _recipeService.GetRecipeOrDefault(SelectedMovieRecipeId ?? movie.RecipeId, MediaKind.Movie);
             _logger.Info(
-                $"Run Cart: Media='{movie.DisplayTitle}', Recipe='{recipe.Name}', Target='Movie', Mode='Single movie search'.",
+                $"Run Cart: Media='{movie.DisplayTitle}', Recipe='{recipe.Name}', Target='Movie', Mode='Single movie search', Backend='{_nativeSearch.BackendName(MediaKind.Movie, recipe)}'.",
                 LogTarget.All);
             var result = await _automationFlowService.DryRunAsync(new RecipeRunRequest
             {
@@ -1412,7 +1423,9 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
             }, cancellationToken);
             if (result.BestCandidate is null)
             {
-                return CartSearchResult.NoneFound(order, result.Summary);
+                return result.SearchSourceProblem is { } sourceProblem
+                    ? throw new SearchSourceUnavailableException(sourceProblem)
+                    : CartSearchResult.NoneFound(order, result.Summary);
             }
 
             return CartSearchResult.Found(order, $"Found {result.AcceptedCandidates.Count} movie candidate(s).", ToCartCandidates(result.AcceptedCandidates));
@@ -1434,7 +1447,9 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         }, cancellationToken);
         if (episodeResult.BestCandidate is null)
         {
-            return CartSearchResult.NoneFound(order, episodeResult.Summary);
+            return episodeResult.SearchSourceProblem is { } sourceProblem
+                ? throw new SearchSourceUnavailableException(sourceProblem)
+                : CartSearchResult.NoneFound(order, episodeResult.Summary);
         }
 
         return CartSearchResult.Found(order, $"Found {episodeResult.AcceptedCandidates.Count} episode candidate(s).", ToCartCandidates(episodeResult.AcceptedCandidates));
@@ -1499,7 +1514,7 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
             ?? throw new InvalidOperationException("Tracked show was not found.");
         var recipe = _recipeService.GetRecipeOrDefault(SelectedPackRecipeId ?? show.PackRecipeId, MediaKind.TvSeasonPack);
         _logger.Info(
-            $"Run Cart: Media='{show.DisplayTitle}', Recipe='{recipe.Name}', Target='Season pack', Mode='Pack snapshot search', Season=S{order.SeasonNumber.Value:00}.",
+            $"Run Cart: Media='{show.DisplayTitle}', Recipe='{recipe.Name}', Target='Season pack', Mode='Pack snapshot search', Backend='{_nativeSearch.BackendName(MediaKind.TvSeasonPack, recipe)}', Season=S{order.SeasonNumber.Value:00}.",
             LogTarget.All);
         await _fetchJobService.FetchSeasonPacksAsync(
             order.MediaId,
@@ -1510,7 +1525,9 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         if (!_fetchJobService.TryGetPackCandidates(order.MediaId, order.SeasonNumber.Value, out var candidates) ||
             candidates.Count == 0)
         {
-            return CartSearchResult.NoneFound(order, "No season pack candidates found.");
+            return _fetchJobService.GetPackSearchSourceProblem(order.MediaId, order.SeasonNumber.Value) is { } sourceProblem
+                ? throw new SearchSourceUnavailableException(sourceProblem)
+                : CartSearchResult.NoneFound(order, "No season pack candidates found.");
         }
 
         return CartSearchResult.Found(order, $"Found {candidates.Count} season pack candidate(s).", ToCartCandidates(candidates));

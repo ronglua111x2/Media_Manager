@@ -28,8 +28,9 @@ public sealed class SystemSettingsViewModel : SettingsViewModel
         GeminiModelRouter geminiRouter,
         IGoogleDriveClient googleDriveClient,
         IBackupService backupService,
-        IAppLogger logger)
-        : base(settingsService, databaseService, libraryPathResolver, qbittorrentClient, warpCliService, windowsStartupService, trayIconService, windowsNotificationService, themeService, symlinkCoordinatorService, symlinkService, jellyfinLibraryRefreshService, httpClient, geminiApiClient, geminiModelCatalog, geminiRouter, googleDriveClient, backupService, logger)
+        IAppLogger logger,
+        INativeSearchService nativeSearch)
+        : base(settingsService, databaseService, libraryPathResolver, qbittorrentClient, warpCliService, windowsStartupService, trayIconService, windowsNotificationService, themeService, symlinkCoordinatorService, symlinkService, jellyfinLibraryRefreshService, httpClient, geminiApiClient, geminiModelCatalog, geminiRouter, googleDriveClient, backupService, logger, nativeSearch)
     {
     }
 }

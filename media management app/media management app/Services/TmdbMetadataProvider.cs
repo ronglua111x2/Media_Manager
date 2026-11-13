@@ -9,7 +9,7 @@ using media_management_app.Models;
 
 namespace media_management_app.Services;
 
-public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogService, ITmdbMovieCatalogService
+public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogService, ITmdbMovieCatalogService, ITmdbExternalIdService
 {
     private const double HighConfidenceThreshold = 75;
     private readonly ISettingsService _settingsService;
@@ -56,7 +56,6 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
             return new MetadataMatchResult { IsAvailable = false, ErrorMessage = "TMDb read access token is not configured." };
         }
 
-        ConfigureHeaders();
 
         try
         {
@@ -125,7 +124,6 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
             };
         }
 
-        ConfigureHeaders();
 
         try
         {
@@ -224,7 +222,6 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
             throw new InvalidOperationException("TMDb read access token is not configured.");
         }
 
-        ConfigureHeaders();
         var searchPath = $"search/tv?query={Uri.EscapeDataString(query.Trim())}&include_adult=false&language=en-US&page=1";
         using var response = await GetAsyncWithRetryAsync(searchPath, cancellationToken);
         response.EnsureSuccessStatusCode();
@@ -256,6 +253,32 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
         return searchResults;
     }
 
+    /// <summary>IMDb id ("tt1234567") of a TMDB show or movie, or null (native-search: EZTV searches by IMDb id).</summary>
+    public async Task<string?> GetImdbIdAsync(bool isMovie, int tmdbId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(_settingsService.Current.TmdbReadAccessToken))
+        {
+            return null;
+        }
+
+        using var response = await GetAsyncWithRetryAsync($"{(isMovie ? "movie" : "tv")}/{tmdbId}/external_ids", cancellationToken);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            // 401/429/5xx: a TMDB problem, not "no IMDb id" (the caller retries it sooner).
+            throw new HttpRequestException($"TMDb external_ids returned {(int)response.StatusCode}.", null, response.StatusCode);
+        }
+
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+        var imdbId = GetString(document.RootElement, "imdb_id");
+        return string.IsNullOrWhiteSpace(imdbId) ? null : imdbId.Trim();
+    }
+
     public async Task<TmdbShowDetails> GetTvShowSummaryAsync(int tmdbId, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(_settingsService.Current.TmdbReadAccessToken))
@@ -263,7 +286,6 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
             throw new InvalidOperationException("TMDb read access token is not configured.");
         }
 
-        ConfigureHeaders();
         using var detailsResponse = await GetAsyncWithRetryAsync($"tv/{tmdbId}?language=en-US", cancellationToken);
         detailsResponse.EnsureSuccessStatusCode();
 
@@ -298,7 +320,6 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
             throw new InvalidOperationException("TMDb read access token is not configured.");
         }
 
-        ConfigureHeaders();
         using var detailsResponse = await GetAsyncWithRetryAsync($"tv/{tmdbId}?language=en-US", cancellationToken);
         detailsResponse.EnsureSuccessStatusCode();
 
@@ -370,7 +391,6 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
             throw new InvalidOperationException("TMDb read access token is not configured.");
         }
 
-        ConfigureHeaders();
         using var response = await GetAsyncWithRetryAsync($"tv/{tmdbId}/episode_groups", cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
@@ -415,7 +435,6 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
             throw new InvalidOperationException("TMDb read access token is not configured.");
         }
 
-        ConfigureHeaders();
 
         // Show-level metadata still comes from the standard TV details endpoint.
         using var detailsResponse = await GetAsyncWithRetryAsync($"tv/{tmdbId}?language=en-US", cancellationToken);
@@ -508,7 +527,6 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
             throw new InvalidOperationException("TMDb read access token is not configured.");
         }
 
-        ConfigureHeaders();
         var searchPath = $"search/movie?query={Uri.EscapeDataString(query.Trim())}&include_adult=false&language=en-US&page=1";
         using var response = await GetAsyncWithRetryAsync(searchPath, cancellationToken);
         response.EnsureSuccessStatusCode();
@@ -545,7 +563,6 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
             throw new InvalidOperationException("TMDb read access token is not configured.");
         }
 
-        ConfigureHeaders();
         using var response = await GetAsyncWithRetryAsync($"movie/{tmdbId}?language=en-US", cancellationToken);
         response.EnsureSuccessStatusCode();
 
@@ -710,7 +727,6 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
             };
         }
 
-        ConfigureHeaders();
 
         try
         {
@@ -1185,13 +1201,6 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
         return (penalty, $"TMDb season {seasonNumber:00} does not contain episode {episodeNumber:00}; max episode is {maxEpisode:00}");
     }
 
-    private void ConfigureHeaders()
-    {
-        _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _settingsService.Current.TmdbReadAccessToken);
-        _httpClient.DefaultRequestHeaders.Accept.Clear();
-        _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-    }
-
     private async Task<HttpResponseMessage> GetAsyncWithRetryAsync(string requestUri, CancellationToken cancellationToken)
     {
         const int maxAttempts = 3;
@@ -1199,7 +1208,12 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
         {
             try
             {
-                var response = await _httpClient.GetAsync(requestUri, cancellationToken);
+                // Headers per request: the HttpClient is shared, and native search looks up IMDb ids from search
+                // threads while other TMDB calls run (mutating DefaultRequestHeaders is not thread-safe, 07c NS-30).
+                using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _settingsService.Current.TmdbReadAccessToken);
+                request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+                var response = await _httpClient.SendAsync(request, cancellationToken);
                 if (!ShouldRetry(response.StatusCode) || attempt == maxAttempts)
                 {
                     return response;

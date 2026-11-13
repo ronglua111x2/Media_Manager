@@ -385,7 +385,8 @@ public partial class SettingsViewModel : ViewModelBase
         GeminiModelRouter geminiRouter,
         IGoogleDriveClient googleDriveClient,
         IBackupService backupService,
-        IAppLogger logger)
+        IAppLogger logger,
+        INativeSearchService nativeSearch)
     {
         _settingsService = settingsService;
         _databaseService = databaseService;
@@ -410,6 +411,7 @@ public partial class SettingsViewModel : ViewModelBase
         AutoTorrentDownloadFolders = [];
         LibraryRootPreview = [];
         LoadFromSettings();
+        AttachNativeSearch(nativeSearch);
     }
 
     public override void OnNavigatedTo()
@@ -509,6 +511,7 @@ public partial class SettingsViewModel : ViewModelBase
         ApplyGeminiSettings();
         ApplyAutoTorrentSettings();
         ApplyWarpSettings();
+        ApplySearchSettings();
         ApplyLogSettings();
         ApplyStartupSettings();
         ApplyAutoTrackSettings();
@@ -1313,6 +1316,7 @@ public partial class SettingsViewModel : ViewModelBase
             }
 
             SelectedSourceFolder = SourceFolders.FirstOrDefault();
+            LoadSearchSettings();
         }
         finally
         {

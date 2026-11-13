@@ -156,16 +156,22 @@ public sealed class SnapshotCandidateMatcher
     {
         foreach (var showTitle in titleVariants.Where(title => !string.IsNullOrWhiteSpace(title)))
         {
-            var showTokens = TorrentCandidateParser.Tokenize(showTitle)
-                .Where(token => token.Length > 2)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList();
+            // With repeats: "Hunter x Hunter" is two tokens that both need a "hunter" (audit 07c NS-30).
+            var showTokens = TitleNormalizer.SignificantTitleTokens(showTitle, distinct: false);
             if (showTokens.Count == 0)
             {
-                return (true, 1);
+                // "IS", "86": the parsed title must start with exactly that title (audit 07c NS-19).
+                var titleTokens = TitleNormalizer.MatchTokens(showTitle);
+                var candidate = candidateTokens.Select(TitleNormalizer.NormalizeToken).Where(token => token.Length > 0).ToList();
+                if (titleTokens.Count > 0 && candidate.Count >= titleTokens.Count && candidate.Take(titleTokens.Count).SequenceEqual(titleTokens, StringComparer.Ordinal))
+                {
+                    return (true, 1);
+                }
+
+                continue;
             }
 
-            var matched = showTokens.Count(token => candidateTokens.Contains(token, StringComparer.OrdinalIgnoreCase));
+            var matched = TitleNormalizer.CountTitleTokenMatches(showTokens, candidateTokens);
             var required = Math.Max(2, (int)Math.Ceiling(showTokens.Count * 0.6));
             if (matched >= required)
             {

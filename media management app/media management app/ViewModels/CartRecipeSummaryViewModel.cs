@@ -421,7 +421,7 @@ public sealed partial class CartRecipeSummaryViewModel : ObservableObject
             RecipeRuntimeSettings.GetSkipDefaultTitle(query) ? "Primary skipped" : "Primary included"
         };
 
-        if (RecipeRuntimeSettings.GetUseLibraryEnglishTitles(identity))
+        if (RecipeRuntimeSettings.GetUseLibraryEnglishTitles(recipe))
         {
             parts.Add($"Library titles ≤{RecipeRuntimeSettings.GetMaxLibraryAlternativeTitlesForSearch(identity)}");
         }

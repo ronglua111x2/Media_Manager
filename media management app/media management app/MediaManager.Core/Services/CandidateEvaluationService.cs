@@ -47,8 +47,7 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
             return Rejected(result, CandidateRejectReason.YearMismatch, $"explicit year mismatch {parsed.ExplicitYear} != {show.FirstAirYear}");
         }
 
-        var titleVariants = _titleResolver.Resolve(
-            _titleResolver.CreateRequest(recipe, show.Title, show.GetSearchableAlternativeTitles()));
+        var titleVariants = _titleResolver.ResolveForMatching(recipe, show.Title, show.GetSearchableAlternativeTitles());
         var titleMatch = EvaluateTitleMatch(titleVariants, parsed.TitleTokens);
         if (!titleMatch.IsMatch)
         {
@@ -81,20 +80,52 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
             return Rejected(result, CandidateRejectReason.WrongReleaseKind, kindReject);
         }
 
-        if (movie.ReleaseYear is not null && !result.FileName.Contains(movie.ReleaseYear.Value.ToString(), StringComparison.OrdinalIgnoreCase))
+        var titleVariants = _titleResolver.ResolveForMatching(recipe, movie.Title, movie.GetSearchableAlternativeTitles());
+        var candidateTokens = parsed.TitleTokens.Count > 0 ? parsed.TitleTokens : TorrentCandidateParser.Tokenize(result.FileName).ToList();
+        // The parser strips every 19xx/20xx token from the release title, including title numbers ("1917",
+        // "Wonder Woman 1984", "Blade Runner 2049"): put back the ones a title variant contains (audit 07c NS-11).
+        var titleNumbers = titleVariants
+            .SelectMany(TitleNormalizer.MatchTokens)
+            .Where(token => token.Length == 4 && token.All(char.IsDigit))
+            .ToHashSet(StringComparer.Ordinal);
+        if (titleNumbers.Count > 0)
         {
-            return Rejected(result, CandidateRejectReason.YearMismatch, $"does not contain release year {movie.ReleaseYear}");
+            candidateTokens = candidateTokens
+                .Concat(TorrentCandidateParser.Tokenize(result.FileName).Where(titleNumbers.Contains))
+                .ToList();
+        }
+        var yearMatch = YearMatcher.Match(movie.ReleaseYear, result.FileName, titleVariants);
+        if (yearMatch.IsRejected)
+        {
+            return Rejected(result, CandidateRejectReason.YearMismatch, yearMatch.Detail);
         }
 
-        var titleVariants = _titleResolver.Resolve(
-            _titleResolver.CreateRequest(recipe, movie.Title, movie.GetSearchableAlternativeTitles()));
-        var titleMatch = EvaluateTitleMatch(
-            titleVariants,
-            parsed.TitleTokens.Count > 0 ? parsed.TitleTokens : TorrentCandidateParser.Tokenize(result.FileName).ToList());
+        var titleMatch = EvaluateTitleMatch(titleVariants, candidateTokens);
         if (!titleMatch.IsMatch)
         {
             return Rejected(result, CandidateRejectReason.TitleMismatch, "does not contain enough movie title or alias tokens");
         }
+
+        // When the year does not confirm the film (one off, or none), the release title must match one title
+        // variant completely and carry no sequel marker the variant lacks: otherwise "Kill Bill Vol 1" (2003) is
+        // taken for Vol. 2 (2004) and "Dune Part Two" for "Dune" (audit 07c NS-01/02).
+        // Same year: a sequel released the same year ("The Matrix Revolutions" for "The Matrix Reloaded", 2003).
+        if (yearMatch.Kind == YearMatchKind.Exact && !MovieReleaseTitle.MatchesTitle(result.FileName, titleVariants, ignorePrefix: true))
+        {
+            return Rejected(result, CandidateRejectReason.TitleMismatch, "the release names another film of the same year");
+        }
+
+        if (yearMatch.Kind == YearMatchKind.OffByOne && !MovieReleaseTitle.MatchesTitle(result.FileName, titleVariants))
+        {
+            return Rejected(result, CandidateRejectReason.YearMismatch, $"{yearMatch.Detail} and the title is not an exact match");
+        }
+
+        if (yearMatch.Kind == YearMatchKind.Missing && !MovieReleaseTitle.MatchesTitle(result.FileName, titleVariants))
+        {
+            return Rejected(result, CandidateRejectReason.YearMismatch, $"no release year and title is not an exact match (expected {movie.ReleaseYear})");
+        }
+
+        titleMatch = (true, titleMatch.Score + YearMatcher.IdentityBonus(yearMatch.Kind));
 
         var audioScore = GetAudioScore(filter, result.FileName);
         var preferTermsScore = GetPreferTermsScore(filter, result.FileName);
@@ -158,16 +189,20 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
     {
         foreach (var candidateTitle in titles.Where(title => !string.IsNullOrWhiteSpace(title)))
         {
-            var titleTokens = TorrentCandidateParser.Tokenize(candidateTitle)
-                .Where(token => token.Length > 2)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList();
+            // Repeated words count as often as the release repeats them: "Hunter x Hunter" needs "hunter" twice
+            // (audit 07c NS-30).
+            var titleTokens = TitleNormalizer.SignificantTitleTokens(candidateTitle, distinct: false);
             if (titleTokens.Count == 0)
             {
-                return (true, 1);
+                if (MatchesShortTitle(candidateTitle, candidateTokens))
+                {
+                    return (true, 1);
+                }
+
+                continue;
             }
 
-            var matched = titleTokens.Count(token => candidateTokens.Contains(token, StringComparer.OrdinalIgnoreCase));
+            var matched = TitleNormalizer.CountTitleTokenMatches(titleTokens, candidateTokens);
             var required = Math.Max(1, Math.Min(2, titleTokens.Count));
             if (matched >= required)
             {
@@ -176,6 +211,17 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
         }
 
         return (false, 0);
+    }
+
+    /// <summary>
+    /// A title without a word longer than two letters ("IS", "Us", "86") cannot be matched word by word: the parsed
+    /// release title must then start with exactly that title (audit 07c NS-19; it used to match every release).
+    /// </summary>
+    private static bool MatchesShortTitle(string title, IReadOnlyList<string> candidateTokens)
+    {
+        var titleTokens = TitleNormalizer.MatchTokens(title);
+        var candidate = candidateTokens.Select(TitleNormalizer.NormalizeToken).Where(token => token.Length > 0).ToList();
+        return titleTokens.Count > 0 && candidate.Count >= titleTokens.Count && candidate.Take(titleTokens.Count).SequenceEqual(titleTokens, StringComparer.Ordinal);
     }
 
     private static int EvaluateEpisodeTitleMatch(string? targetTitle, string? candidateTitle)

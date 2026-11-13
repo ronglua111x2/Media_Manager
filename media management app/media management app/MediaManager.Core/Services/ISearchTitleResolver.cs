@@ -27,4 +27,16 @@ public interface ISearchTitleResolver
         SearchRecipe recipe,
         string primaryTitle,
         IReadOnlyList<string> libraryAlternativeTitles);
+
+    /// <summary>
+    /// Titles a release may legitimately carry when <b>matching</b> results (native-search P1, SRCH-12).
+    /// Unlike search titles this always includes the primary title, manual aliases and every library
+    /// alternative title (romaji, original title...), whatever the recipe's search settings: extra titles
+    /// only make a correct release easier to accept, they never cost a search query.
+    /// </summary>
+    IReadOnlyList<string> ResolveForMatching(
+        SearchRecipe recipe,
+        string primaryTitle,
+        IReadOnlyList<string> libraryAlternativeTitles) =>
+        Resolve(CreateRequest(recipe, primaryTitle, libraryAlternativeTitles));
 }

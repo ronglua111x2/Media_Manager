@@ -207,12 +207,26 @@ public class CandidateEvaluationServiceTests
     }
 
     [Fact]
-    public void EvaluateMovie_MissingYear_RejectsYearMismatch()
+    public void EvaluateMovie_MissingYearWithCompleteTitle_Accepts()
     {
+        // native-search P1 / SRCH-11: a year-less release is trusted when the whole title matches.
         _titles.Titles = ["Cosmic Princess Kaguya"];
         var recipe = RecipeBuilder.Movie().Build();
         var movie = TrackedShowBuilder.Movie("Cosmic Princess Kaguya", 2026);
         var filename = "Cosmic.Princess.Kaguya.1080p.NF.WEB-DL.mkv";
+
+        var result = _sut.EvaluateMovie(recipe, movie, TorrentResultBuilder.Magnet(filename));
+
+        result.IsAccepted.Should().BeTrue(result.RejectDetail);
+    }
+
+    [Fact]
+    public void EvaluateMovie_MissingYearWithPartialTitle_RejectsYearMismatch()
+    {
+        _titles.Titles = ["Cosmic Princess Kaguya"];
+        var recipe = RecipeBuilder.Movie().Build();
+        var movie = TrackedShowBuilder.Movie("Cosmic Princess Kaguya", 2026);
+        var filename = "Cosmic.Princess.1080p.NF.WEB-DL.mkv";
 
         var result = _sut.EvaluateMovie(recipe, movie, TorrentResultBuilder.Magnet(filename));
 

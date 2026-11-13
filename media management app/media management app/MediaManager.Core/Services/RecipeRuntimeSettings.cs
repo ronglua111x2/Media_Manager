@@ -49,6 +49,8 @@ public static class RecipeRuntimeSettings
     public const string EnginePriorityModeKey = "enginePriorityMode";
     public const string EnginePriorityKey = "enginePriority";
     public const string PluginsLastCustomKey = "pluginsLastCustom";
+    public const string SearchBackendKey = "searchBackend";
+    public const string DefaultSearchBackend = "Default";
     public const string EngineWeightKey = "engineWeight";
     public const int DefaultEngineWeight = 0;
     public const int MinEngineWeight = 0;
@@ -198,6 +200,18 @@ public static class RecipeRuntimeSettings
 
     public static bool GetEnableCandidateMetadataProbe(SearchRecipe recipe, AutoTorrentSettings fallback) =>
         GetBool(GetParserModule(recipe), EnableCandidateMetadataProbeKey, fallback.EnableCandidateMetadataProbe);
+
+    /// <summary>
+    /// Search backend chosen by the recipe (native-search plan 08 §Q4): "Qbittorrent", "Native" or "Both", or
+    /// null when the recipe uses the Settings default ("Default" or missing).
+    /// </summary>
+    public static string? GetSearchBackend(SearchRecipe recipe)
+    {
+        var value = GetSearchModule(recipe)?.ExtensionData.TryGetValue(SearchBackendKey, out var raw) == true ? raw?.Trim() : null;
+        return string.IsNullOrWhiteSpace(value) || string.Equals(value, DefaultSearchBackend, StringComparison.OrdinalIgnoreCase)
+            ? null
+            : value;
+    }
 
     public static bool GetEnableCandidateDebugLog(SearchRecipe recipe) =>
         GetBool(GetSearchModule(recipe), EnableCandidateDebugLogKey, false);
@@ -592,8 +606,18 @@ public static class RecipeRuntimeSettings
     public static bool GetSanitizeQuery(RecipeModuleConfig? queryModule) =>
         GetBool(queryModule, SanitizeQueryKey, true);
 
-    public static bool GetUseLibraryEnglishTitles(RecipeModuleConfig? identityModule) =>
-        GetBool(identityModule, UseLibraryEnglishTitlesKey, false);
+    public static bool GetUseLibraryEnglishTitles(RecipeModuleConfig? identityModule, bool fallback = false) =>
+        GetBool(identityModule, UseLibraryEnglishTitlesKey, fallback);
+
+    /// <summary>
+    /// Whether library alternative titles are searched for this recipe. Movies default to on when the
+    /// recipe does not say (native-search P1, SRCH-12); other kinds keep the old default (off).
+    /// </summary>
+    public static bool GetUseLibraryEnglishTitles(SearchRecipe recipe)
+    {
+        var identity = recipe.Modules.FirstOrDefault(module => module.BlockType == RecipeBlockType.Identity);
+        return GetUseLibraryEnglishTitles(identity, fallback: recipe.TargetKind == MediaKind.Movie);
+    }
 
     public static int GetMaxLibraryAlternativeTitlesForSearch(RecipeModuleConfig? identityModule) =>
         GetInt(

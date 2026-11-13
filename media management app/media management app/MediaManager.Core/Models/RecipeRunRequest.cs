@@ -35,8 +35,15 @@ public sealed class RecipeDryRunResult
         .OrderByDescending(candidate => candidate.TotalScore)
         .FirstOrDefault();
 
-    public string Summary =>
-        $"{AcceptedCandidates.Count} accepted, {RejectedCandidates.Count} rejected, {Queries.Count} quer{(Queries.Count == 1 ? "y" : "ies")}.";
+    /// <summary>
+    /// "No search source available: …" when the native search could not ask any site (all paused, breaker open,
+    /// budget used): the run found nothing because it did not search, not because nothing matched.
+    /// </summary>
+    public string? SearchSourceProblem { get; init; }
+
+    public string Summary => AcceptedCandidates.Count == 0 && SearchSourceProblem is { } problem
+        ? problem
+        : $"{AcceptedCandidates.Count} accepted, {RejectedCandidates.Count} rejected, {Queries.Count} quer{(Queries.Count == 1 ? "y" : "ies")}.";
 }
 
 public sealed class RecipeCandidateResult
@@ -83,5 +90,6 @@ public enum CandidateRejectReason
     SizeTooLarge = 11,
     SizeTooSmall = 12,
     WrongReleaseKind = 13,
-    Blacklisted = 14
+    Blacklisted = 14,
+    SuspiciousRelease = 15
 }
