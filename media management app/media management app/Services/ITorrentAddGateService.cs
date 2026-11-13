@@ -27,13 +27,17 @@ public interface ITorrentAddGateService
     /// validation is disabled, returns immediately after add (plus infohash blacklist check).
     /// <paramref name="onTorrentAdded"/> runs once the torrent is in qBittorrent and its hash is known,
     /// before validation, so callers can persist the hash in case the app dies mid-validation.
+    /// <paramref name="isResetHash"/> (<see cref="ResetTorrentGuard.For"/>): a torrent the order's target was reset
+    /// from is never attached: refused before adding (magnet hash, existing copy, left untouched) or, when its hash is
+    /// only known after adding, deleted again; throws <see cref="ResetTorrentReusedException"/>.
     /// </summary>
     Task<AddedTorrentResult> AddPausedValidateAndResumeAsync(
         TorrentCartOrder order,
         string savePath,
         CancellationToken cancellationToken = default,
         AddedTorrentResult? existingTorrent = null,
-        Action<AddedTorrentResult>? onTorrentAdded = null);
+        Action<AddedTorrentResult>? onTorrentAdded = null,
+        Func<string?, bool>? isResetHash = null);
 }
 
 public sealed class TorrentAddGateService : ITorrentAddGateService
@@ -89,7 +93,8 @@ public sealed class TorrentAddGateService : ITorrentAddGateService
         string savePath,
         CancellationToken cancellationToken = default,
         AddedTorrentResult? existingTorrent = null,
-        Action<AddedTorrentResult>? onTorrentAdded = null)
+        Action<AddedTorrentResult>? onTorrentAdded = null,
+        Func<string?, bool>? isResetHash = null)
     {
         if (string.IsNullOrWhiteSpace(order.SelectedCandidateUrl))
         {
@@ -99,6 +104,14 @@ public sealed class TorrentAddGateService : ITorrentAddGateService
         if (_blacklistService.IsBlacklisted(order.MediaId, order.SelectedCandidateUrl))
         {
             throw new MaliciousTorrentException("Selected candidate is blacklisted for this show.");
+        }
+
+        // The torrent this target was reset from (cross-review 2, B): refuse before touching qBittorrent.
+        if (isResetHash is not null &&
+            (isResetHash(TorrentListingIdentity.TryParseInfoHashFromUrl(order.SelectedCandidateUrl)) ||
+             isResetHash(existingTorrent?.Hash)))
+        {
+            throw new ResetTorrentReusedException($"'{order.Title}' was reset for redownload from this torrent; choose another candidate.");
         }
 
         var category = _settingsService.Current.AutoTorrent.GetCategoryFor(order.TargetKind);
@@ -139,6 +152,16 @@ public sealed class TorrentAddGateService : ITorrentAddGateService
         _logger.Debug(
             $"Torrent added for '{order.Title}'. Hash={addedTorrent.Hash}, Name='{addedTorrent.Name}'.",
             LogTarget.File);
+
+        if (existingTorrent is null && isResetHash is not null && isResetHash(addedTorrent.Hash))
+        {
+            // Only known after the add (a .torrent link): this is a fresh copy of the rejected download, remove it.
+            _logger.Warning(
+                $"Added torrent for '{order.Title}' is the one it was reset from (hash={addedTorrent.Hash}); removing it.",
+                LogTarget.File | LogTarget.Console);
+            await _cleanupService.DeleteTorrentAsync(addedTorrent.Hash, deleteFiles: true, reason: "reset for redownload from this torrent", cancellationToken);
+            throw new ResetTorrentReusedException($"'{order.Title}' was reset for redownload from this torrent; choose another candidate.");
+        }
 
         if (!string.IsNullOrWhiteSpace(addedTorrent.Hash))
         {

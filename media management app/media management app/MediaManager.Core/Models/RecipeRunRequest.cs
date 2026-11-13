@@ -91,5 +91,7 @@ public enum CandidateRejectReason
     SizeTooSmall = 12,
     WrongReleaseKind = 13,
     Blacklisted = 14,
-    SuspiciousRelease = 15
+    SuspiciousRelease = 15,
+    /// <summary>The user reset this episode, season pack or movie from this torrent ("Reset for redownload").</summary>
+    ResetDownload = 16
 }

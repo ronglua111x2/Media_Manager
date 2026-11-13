@@ -1605,6 +1605,16 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         var existing = await _addGateService.TryGetExistingByListingUrlAsync(
             order.SelectedCandidateUrl,
             cancellationToken);
+        var isResetHash = ResetTorrentGuard.For(order, _databaseService);
+        if (existing is not null && isResetHash(existing.Hash))
+        {
+            // The copy in qBittorrent is the download this target was reset from (cross-review 2, B).
+            const string message = "This torrent is the one you reset for redownload. Choose another candidate.";
+            _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.CandidatesFound, message);
+            StatusMessage = message;
+            return false;
+        }
+
         if (existing is not null)
         {
             var confirm = AppMessageBox.Show(
@@ -1632,7 +1642,8 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
             order,
             savePath,
             cancellationToken,
-            existing);
+            existing,
+            isResetHash: isResetHash);
         order.TorrentHash = addedTorrent.Hash;
         order.TorrentName = addedTorrent.Name;
         order.TorrentState = QbittorrentTorrentStateNormalizer.Normalize(addedTorrent.State, addedTorrent.IsComplete);

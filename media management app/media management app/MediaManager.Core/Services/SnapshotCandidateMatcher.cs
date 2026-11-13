@@ -19,6 +19,11 @@ public sealed class SnapshotCandidateMatcher
         var result = candidate.Result;
         var parsed = candidate.Parsed;
 
+        if (episode.WasResetFrom(CandidateDeduplicator.TryGetInfoHash(result.FileUrl)))
+        {
+            return Reject(CandidateRejectReason.ResetDownload, "the episode was reset for redownload from this torrent");
+        }
+
         if (!result.CanAdd)
         {
             return Reject(CandidateRejectReason.NotAddable, $"not addable link type '{result.LinkType}'");

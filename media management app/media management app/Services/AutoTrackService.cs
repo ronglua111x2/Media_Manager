@@ -1746,7 +1746,8 @@ public sealed class AutoTrackService : IAutoTrackService
             {
                 order.PendingValidationHash = torrent.Hash;
                 _torrentCartService.SaveOrder(order);
-            });
+            },
+            isResetHash: ResetTorrentGuard.For(order, _databaseService));
 
         if (order.EpisodeId is null)
         {

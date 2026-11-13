@@ -14,6 +14,12 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
 
     public RecipeCandidateResult EvaluateEpisode(SearchRecipe recipe, TrackedShow show, TrackedEpisode episode, TorrentSearchResult result)
     {
+        // "Reset for redownload" rejected this torrent for this episode: never offer it again (cross-review 2, B).
+        if (episode.WasResetFrom(CandidateDeduplicator.TryGetInfoHash(result.FileUrl)))
+        {
+            return Rejected(result, CandidateRejectReason.ResetDownload, "the episode was reset for redownload from this torrent");
+        }
+
         var usesAnimeAbsolute = RecipeRuntimeSettings.UsesAnimeAbsoluteEpisodeNumbering(recipe);
         var parsed = TorrentCandidateParser.Parse(result.FileName, usesAnimeAbsolute);
         var filter = RecipeCandidateFilter.GetFilterModule(recipe);
@@ -65,6 +71,11 @@ public sealed class CandidateEvaluationService : ICandidateEvaluationService
 
     public RecipeCandidateResult EvaluateMovie(SearchRecipe recipe, TrackedMovie movie, TorrentSearchResult result)
     {
+        if (movie.WasResetFrom(CandidateDeduplicator.TryGetInfoHash(result.FileUrl)))
+        {
+            return Rejected(result, CandidateRejectReason.ResetDownload, "the movie was reset for redownload from this torrent");
+        }
+
         var parsed = TorrentCandidateParser.Parse(result.FileName);
         var filter = RecipeCandidateFilter.GetFilterModule(recipe);
         var reject = RecipeCandidateFilter.GetRejectReason(recipe, result, parsed);

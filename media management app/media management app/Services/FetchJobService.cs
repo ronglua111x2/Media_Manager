@@ -1388,8 +1388,20 @@ public sealed class FetchJobService : IFetchJobService
             overrides);
         var candidates = new List<SeasonPackCandidate>();
         var evaluated = new List<RecipeCandidateResult>();
+        // "Reset for redownload" rejected these packs for these seasons (cross-review 2, B).
+        var resetSeasonLists = _databaseService.GetTrackedSeasons(show.Id)
+            .Where(season => selectedSeasons.Contains(season.SeasonNumber))
+            .Select(season => season.ResetTorrentHashes)
+            .ToList();
         foreach (var result in snapshotResults)
         {
+            var resultHash = CandidateDeduplicator.TryGetInfoHash(result.FileUrl);
+            if (resetSeasonLists.Any(list => ResetTorrentHashList.Contains(list, resultHash)))
+            {
+                evaluated.Add(RejectedRecipeResult(result, CandidateRejectReason.ResetDownload, "the season was reset for redownload from this pack"));
+                continue;
+            }
+
             var parsed = TorrentCandidateParser.Parse(result.FileName);
             var reject = GetPackRejectReason(show, selectedSeasons, result, parsed, packRecipe);
             var rejectReason = PackRejectDetail(reject);
