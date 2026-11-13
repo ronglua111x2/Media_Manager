@@ -358,8 +358,9 @@ public static class PackSpecialPayloadBuilder
 
     /// <summary>
     /// The deterministic tier, in order: <c>S00Exx</c> in the file name (Direct), the season air-date window
-    /// (exact-count blocks only), <c>OVA - N</c> when TMDB S00EN is titled OVA N, then the title matcher for any
-    /// file. The old global Flatten and whole-pack Ordinal rules are gone (PARSE-09): what the window mapper cannot
+    /// (exact-count blocks only), <c>OVA - N</c> when TMDB S00EN is titled OVA N, the title matcher for any
+    /// file, then the window again over the entries of one kind (OVA-titled entries, or the window without
+    /// recap/preview/promo titles; exact count only). The old global Flatten and whole-pack Ordinal rules are gone (PARSE-09): what the window mapper cannot
     /// place exactly is only suggested for review and left for Gemini.
     /// </summary>
     private static (
@@ -472,6 +473,18 @@ public static class PackSpecialPayloadBuilder
             if (titleMatch is not null)
             {
                 Propose(index, titleMatch.EpisodeNumber, SpecialMappingProposalReason.Title);
+            }
+        }
+
+        // Last: the season groups the exact window could not place, counted over the entries of the same kind
+        // (the window's OVAs, or the window without recaps/previews/promos). Runs after the title rule so that a
+        // titled file can only confirm or veto the count, never be overridden by it.
+        var placed = proposals.ToDictionary(proposal => proposal.CandidateIndex, proposal => proposal.ProposedS00E);
+        foreach (var assignment in SpecialSeasonWindowMapper.MapByKind(context.Candidates, blocks, placed))
+        {
+            if (!claimed.Contains(assignment.Episode.EpisodeNumber))
+            {
+                Propose(assignment.CandidateIndex, assignment.Episode.EpisodeNumber, assignment.Reason);
             }
         }
 
@@ -655,6 +668,8 @@ public static class PackSpecialPayloadBuilder
             SpecialMappingProposalReason.Window => $"{prefix}: special number in its season's air-date window → {code}.",
             SpecialMappingProposalReason.Inferred => $"{prefix}: the only unnumbered special of its season took the only free slot → {code} (inferred).",
             SpecialMappingProposalReason.OvaNumber => $"{prefix}: OVA number matches the TMDB title of {code}.",
+            SpecialMappingProposalReason.OvaOrder => $"{prefix}: OVA number counted among the TMDB entries of its season titled OVA → {code}.",
+            SpecialMappingProposalReason.WindowWithoutAsides => $"{prefix}: special number in its season's air-date window, recap/preview/promo entries skipped → {code}.",
             SpecialMappingProposalReason.Flatten => $"{prefix}: global flatten to {code}.",
             SpecialMappingProposalReason.Title => $"{prefix}: title match to {code}.",
             SpecialMappingProposalReason.Ordinal => $"{prefix}: ordinal to {code}.",

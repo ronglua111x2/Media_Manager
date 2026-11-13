@@ -85,7 +85,7 @@ internal static class FakeGeminiResponses
         });
 
     /// <summary>
-    /// Plausible but not what the season-window suggestion says: S2S07 to S00E16 (the first recap) instead of
+    /// Plausible but not what the season-window suggestion says: S2S07 to S00E16 (the first movie) instead of
     /// S00E15. Order and window checks pass, so the row must stand out in review.
     /// </summary>
     public static string SeasonTwoLastDiffersFromSuggestion(string userJson) =>

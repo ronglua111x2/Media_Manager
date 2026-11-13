@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Offline/live evaluation of the Gemini special/OVA mapping (see README.md). Not part of the solution, CI or
+    `dotnet test`: it is built and run by hand. It references the app and links the synthetic test fixtures, so
+    the builder, provider, orchestrator and validator it measures are the app's own.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows10.0.17763.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <Platforms>AnyCPU;x64</Platforms>
+    <UseWPF>true</UseWPF>
+    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
+    <RuntimeIdentifier></RuntimeIdentifier>
+    <PublishSingleFile>false</PublishSingleFile>
+    <SelfContained>false</SelfContained>
+    <!-- The app is a self-contained WinExe; this tool only loads its assembly. -->
+    <ValidateExecutableReferencesMatchSelfContained>false</ValidateExecutableReferencesMatchSelfContained>
+    <RootNamespace>GeminiSpecialEval</RootNamespace>
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\media management app.csproj" />
+  </ItemGroup>
+
+  <!-- The synthetic cases with known answers are the test project's fixtures, compiled in as they are. -->
+  <ItemGroup>
+    <Compile Include="..\..\MediaManager.App.Tests\Special\Fixtures\SpecialCases.cs" Link="Fixtures\SpecialCases.cs" />
+    <Compile Include="..\..\MediaManager.App.Tests\Special\Fixtures\SpecialShowBuilder.cs" Link="Fixtures\SpecialShowBuilder.cs" />
+  </ItemGroup>
+
+</Project>

@@ -76,16 +76,174 @@ public class SpecialRuleMappingTests
         Assert.Equal(pack.ExpectedS00E.ToDictionary(pair => pair.Key, pair => pair.Value!.Value), Mapped(result));
     }
 
-    /// <summary>Scenario I: a recap aired before season 1 is not in the pack, so season 1's block is not exact.</summary>
+    /// <summary>
+    /// Scenario I: a recap aired before season 1 is not in the pack, so season 1's block is not exact; once the
+    /// recap is left out it is (Gemini linked S01S01 to the recap in every eval sample).
+    /// </summary>
     [Fact]
-    public async Task RecapBeforeSeasonOne_RulesOnly_OnlyTheExactBlockResolves()
+    public async Task RecapBeforeSeasonOne_RulesOnly_RecapSkippedBothResolve()
     {
         var pack = SpecialCases.RecapBeforeSeasonOne();
         using var host = new SpecialOrchestratorHost(_ => throw new InvalidOperationException("Gemini must not be called."));
 
+        var result = await host.ResolveAsync(pack, useGemini: true);
+
+        Assert.Equal(
+            new Dictionary<string, int> { ["Show/Season 1/Show.S01S01.mkv"] = 2, ["Show/Season 2/Show.S02S01.mkv"] = 3 },
+            Mapped(result));
+        Assert.Equal(SpecialMappingProposalReason.WindowWithoutAsides, Reason(result, "Show.S01S01.mkv"));
+        Assert.Equal(SpecialMappingProposalReason.Window, Reason(result, "Show.S02S01.mkv"));
+        Assert.Equal(0, host.Gemini.Calls);
+    }
+
+    /// <summary>A recap sits between mini 08 and mini 09: without it the window holds exactly the nine minis.</summary>
+    [Theory]
+    [InlineData("rail-untitled", "Night Rail - SP09.mkv")]
+    [InlineData("rail-titled", "Night Rail - Mini Anime 09.mkv")]
+    public async Task RecapInsideTheWindow_RulesOnly_SkippedAndEveryMiniResolves(string name, string lastMini)
+    {
+        var pack = SpecialCases.ByName(name);
+        using var host = new SpecialOrchestratorHost(_ => throw new InvalidOperationException("Gemini must not be called."));
+
+        var result = await host.ResolveAsync(pack, useGemini: true);
+
+        Assert.Equal(pack.ExpectedS00E.ToDictionary(pair => pair.Key, pair => pair.Value!.Value), Mapped(result));
+        Assert.Equal(SpecialMappingProposalReason.WindowWithoutAsides, Reason(result, lastMini));
+        Assert.Equal(0, host.Gemini.Calls);
+    }
+
+    /// <summary>Leaving the preview out still leaves four entries for three files: nothing is placed.</summary>
+    [Fact]
+    public async Task AsideTitlesSkipped_CountStillDiffers_LeftOpen()
+    {
+        var pack = new SpecialShowBuilder("Copper Lantern", 900102)
+            .Season(1, 12, new DateTime(2019, 4, 5))
+            .Special(1, "Picture Drama 1", new DateTime(2019, 6, 26))
+            .Special(2, "Picture Drama 2", new DateTime(2019, 7, 24))
+            .Special(3, "Cast Talk Show", new DateTime(2019, 8, 1))
+            .Special(4, "Picture Drama 3", new DateTime(2019, 8, 28))
+            .Special(5, "Season 2 Preview", new DateTime(2019, 9, 25))
+            .RegularFiles(1, "Copper Lantern/Season 01", episode => $"Copper Lantern - S01E{episode:00}.mkv")
+            .SpecialFile("Copper Lantern/Season 01/Specials/Copper Lantern - S1S01.mkv", 1)
+            .SpecialFile("Copper Lantern/Season 01/Specials/Copper Lantern - S1S02.mkv", 2)
+            .SpecialFile("Copper Lantern/Season 01/Specials/Copper Lantern - S1S03.mkv", 4)
+            .Build("aside-count-differs", "a talk show the rule cannot tell from the dramas");
+        using var host = new SpecialOrchestratorHost(_ => throw new InvalidOperationException("Gemini must not be called."));
+
         var result = await host.ResolveAsync(pack, useGemini: false);
 
-        Assert.Equal(new Dictionary<string, int> { ["Show/Season 2/Show.S02S01.mkv"] = 3 }, Mapped(result));
+        Assert.Empty(Mapped(result));
+    }
+
+    /// <summary>
+    /// Eval case root-ova-titled-tmdb: "OVA - 01..04" in a root folder, TMDB titles four entries "OVA:" with a recap
+    /// and a drama CD between them. The k-th OVA is the k-th "OVA:" entry, not the k-th entry (Gemini Flash-Lite
+    /// answered E1..E4 in every sample).
+    /// </summary>
+    [Fact]
+    public async Task OvaFolder_TmdbNamesItsOvas_KthOvaTakesTheKthOvaEntry()
+    {
+        var show = OrchardShow();
+        for (var index = 1; index <= 4; index++)
+        {
+            show.SpecialFile($"Glass Orchard/OVA/Glass Orchard - OVA - {index:00}.mkv", null);
+        }
+
+        using var host = new SpecialOrchestratorHost(_ => throw new InvalidOperationException("Gemini must not be called."));
+
+        var result = await host.ResolveAsync(show.Build("root-ova", "OVA order"), useGemini: true);
+
+        Assert.Equal(
+            new Dictionary<string, int>
+            {
+                ["Glass Orchard/OVA/Glass Orchard - OVA - 01.mkv"] = 2,
+                ["Glass Orchard/OVA/Glass Orchard - OVA - 02.mkv"] = 3,
+                ["Glass Orchard/OVA/Glass Orchard - OVA - 03.mkv"] = 5,
+                ["Glass Orchard/OVA/Glass Orchard - OVA - 04.mkv"] = 6
+            },
+            Mapped(result));
+        Assert.All(result.Items, item => Assert.Equal(SpecialMappingProposalReason.OvaOrder, item.ProposalReason));
+        Assert.Equal(0, host.Gemini.Calls);
+    }
+
+    /// <summary>A titled OVA the title rule placed on its own slot confirms the count; the others follow it.</summary>
+    [Fact]
+    public async Task OvaFolder_TitledOvaAgreesWithTheCount_OthersFollow()
+    {
+        var pack = OrchardShow()
+            .SpecialFile("Glass Orchard/OVA/Glass Orchard - OVA - 01.mkv", 2)
+            .SpecialFile("Glass Orchard/OVA/Glass Orchard - OVA - 02 - Winter Festival.mkv", 3)
+            .SpecialFile("Glass Orchard/OVA/Glass Orchard - OVA - 03.mkv", 5)
+            .SpecialFile("Glass Orchard/OVA/Glass Orchard - OVA - 04.mkv", 6)
+            .Build("root-ova-titled-middle", "title confirms the count");
+        using var host = new SpecialOrchestratorHost(_ => throw new InvalidOperationException("Gemini must not be called."));
+
+        var result = await host.ResolveAsync(pack, useGemini: false);
+
+        Assert.Equal(pack.ExpectedS00E.ToDictionary(pair => pair.Key, pair => pair.Value!.Value), Mapped(result));
+        Assert.Equal(SpecialMappingProposalReason.Title, Reason(result, "Glass Orchard - OVA - 02 - Winter Festival.mkv"));
+        Assert.Equal(SpecialMappingProposalReason.OvaOrder, Reason(result, "Glass Orchard - OVA - 03.mkv"));
+    }
+
+    /// <summary>OVA 02's title names the third OVA: the count and the title disagree, so the count places nothing.</summary>
+    [Fact]
+    public async Task OvaFolder_TitledOvaContradictsTheCount_GroupLeftOpen()
+    {
+        var pack = OrchardShow()
+            .SpecialFile("Glass Orchard/OVA/Glass Orchard - OVA - 01.mkv", null)
+            .SpecialFile("Glass Orchard/OVA/Glass Orchard - OVA - 02 - Hot Springs.mkv", 5)
+            .SpecialFile("Glass Orchard/OVA/Glass Orchard - OVA - 03.mkv", null)
+            .SpecialFile("Glass Orchard/OVA/Glass Orchard - OVA - 04.mkv", null)
+            .Build("root-ova-title-veto", "title vetoes the count");
+        using var host = new SpecialOrchestratorHost(_ => throw new InvalidOperationException("Gemini must not be called."));
+
+        var result = await host.ResolveAsync(pack, useGemini: false);
+
+        Assert.Equal(
+            new Dictionary<string, int> { ["Glass Orchard/OVA/Glass Orchard - OVA - 02 - Hot Springs.mkv"] = 5 },
+            Mapped(result));
+    }
+
+    /// <summary>Three OVA files for four "OVA:" entries: which one is missing is not known, so nothing is placed.</summary>
+    [Fact]
+    public async Task OvaFolder_MoreOvaEntriesThanFiles_LeftOpen()
+    {
+        var show = OrchardShow();
+        for (var index = 1; index <= 3; index++)
+        {
+            show.SpecialFile($"Glass Orchard/OVA/Glass Orchard - OVA - {index:00}.mkv", null);
+        }
+
+        using var host = new SpecialOrchestratorHost(_ => throw new InvalidOperationException("Gemini must not be called."));
+
+        var result = await host.ResolveAsync(show.Build("root-ova-missing", "count differs"), useGemini: false);
+
+        Assert.Empty(Mapped(result));
+    }
+
+    /// <summary>
+    /// A root OVA folder of a show with two seasons belongs to no window: the count is not tried across the whole
+    /// Season 0 list (only a one-season show's root folder counts as that season).
+    /// </summary>
+    [Fact]
+    public async Task OvaFolder_RootOfAMultiSeasonShow_NotCounted()
+    {
+        var pack = new SpecialShowBuilder("Glass Orchard", 900101)
+            .Season(1, 12, new DateTime(2021, 1, 8))
+            .Season(2, 12, new DateTime(2023, 1, 6))
+            .Special(1, "OVA: Summer Trip", new DateTime(2021, 8, 25))
+            .Special(2, "Recap Special", new DateTime(2022, 12, 20))
+            .Special(3, "OVA: Hot Springs", new DateTime(2023, 8, 2))
+            .RegularFiles(1, "Glass Orchard/Season 01", episode => $"Glass Orchard S01E{episode:00}.mkv")
+            .RegularFiles(2, "Glass Orchard/Season 02", episode => $"Glass Orchard S02E{episode:00}.mkv")
+            .SpecialFile("Glass Orchard/OVA/Glass Orchard - OVA - 01.mkv", 1)
+            .SpecialFile("Glass Orchard/OVA/Glass Orchard - OVA - 02.mkv", 3)
+            .Build("root-ova-two-seasons", "no window for a root folder");
+        using var host = new SpecialOrchestratorHost(_ => throw new InvalidOperationException("Gemini must not be called."));
+
+        var result = await host.ResolveAsync(pack, useGemini: false);
+
+        Assert.DoesNotContain(result.Items, item => item.ProposalReason == SpecialMappingProposalReason.OvaOrder);
     }
 
     [Fact]
@@ -321,7 +479,7 @@ public class SpecialRuleMappingTests
     public void TitleMatcher_TwoEntriesScoreTheSame_PicksNone()
     {
         var pack = SpecialCases.BrassShow().Build("brass", "titles only");
-        const string fileName = "[Grp] Harbor Brass - Recap Part.mkv";
+        const string fileName = "[Grp] Harbor Brass - Encore Part.mkv";
         var parsed = TorrentCandidateParser.Parse(fileName, "Pack/Specials/" + fileName);
 
         Assert.Null(SpecialEpisodeTitleMatcher.TryMatch(parsed, pack.Specials, new HashSet<int>()));
@@ -345,6 +503,21 @@ public class SpecialRuleMappingTests
 
         Assert.Equal(2, Mapped(result)["Quiet Club/Specials/Quiet Club - The Gift Exchange.mkv"]);
     }
+
+    /// <summary>One season; TMDB S00 has four "OVA:" entries with a recap (E1) and a drama CD (E4) between them.</summary>
+    private static SpecialShowBuilder OrchardShow() =>
+        new SpecialShowBuilder("Glass Orchard", 900101)
+            .Season(1, 12, new DateTime(2021, 1, 8))
+            .Special(1, "Recap Special", new DateTime(2021, 3, 20))
+            .Special(2, "OVA: Summer Trip", new DateTime(2021, 8, 25))
+            .Special(3, "OVA: Winter Festival", new DateTime(2021, 12, 22))
+            .Special(4, "Picture Drama Collection", new DateTime(2022, 2, 23))
+            .Special(5, "OVA: Hot Springs", new DateTime(2022, 4, 27))
+            .Special(6, "OVA: The Last Day", new DateTime(2022, 6, 29))
+            .RegularFiles(1, "Glass Orchard/Season 01", episode => $"Glass Orchard S01E{episode:00}.mkv");
+
+    private static SpecialMappingProposalReason? Reason(SpecialMappingResult result, string fileName) =>
+        result.Items.Single(item => item.RelativePath.EndsWith("/" + fileName, StringComparison.Ordinal)).ProposalReason;
 
     private static SpecialCase DirectPack(string specialFile) =>
         new SpecialShowBuilder("Quiet Club", 900008)

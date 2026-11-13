@@ -17,7 +17,9 @@ internal static class SpecialCases
     /// <summary>
     /// Shape of the real two-season BD pack: S1 has 7 <c>S1Snn</c> specials plus one unnumbered OVA,
     /// S2 has 7 <c>S2Snn</c> specials. TMDB S00 has 32 entries: block S1 = E1-E8 (8), block S2 =
-    /// E9-E19 (11: 7 specials, 3 movie recaps, a promo), block S3 = E20-E32.
+    /// E9-E19 (11: 7 specials, 3 movie recaps, a promo), block S3 = E20-E32. As on the real list, the films and the
+    /// promo carry their own titles, with no "recap" or "promo" in them: no rule can tell them from the specials, so
+    /// season 2 stays open for Gemini (the rule that skips recap/promo titles cannot place it).
     /// </summary>
     public static SpecialCase TwoSeasonBrassPack()
     {
@@ -72,10 +74,10 @@ internal static class SpecialCases
             show.Special(9 + index, welcome[index].Title, welcome[index].Date);
         }
 
-        show.Special(16, "Harbor Brass Movie: Recap Part 1", D(2017, 9, 13))
-            .Special(17, "Harbor Brass Movie: Recap Part 2", D(2017, 9, 13))
-            .Special(18, "Harbor Brass Movie: Recap Part 3", D(2017, 9, 13))
-            .Special(19, "Season 3 Countdown Promo", D(2024, 3, 30))
+        show.Special(16, "Harbor Brass Movie: Encore, Part 1", D(2017, 9, 13))
+            .Special(17, "Harbor Brass Movie: Encore, Part 2", D(2017, 9, 13))
+            .Special(18, "Harbor Brass Movie: Encore, Part 3", D(2017, 9, 13))
+            .Special(19, "Harbor Brass Season 3 Starts Now!", D(2024, 3, 30))
             .Special(20, "April Fools Video", D(2024, 7, 31));
 
         DateTime[] bonusDates = [D(2024, 6, 26), D(2024, 7, 31), D(2024, 8, 28), D(2024, 9, 25), D(2024, 10, 30), D(2024, 11, 27)];
