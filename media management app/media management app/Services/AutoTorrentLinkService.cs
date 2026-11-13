@@ -173,6 +173,246 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
         return result;
     }
 
+    public EpisodeLinkMoveResult RenumberEpisodes(
+        long showId,
+        IReadOnlyList<EpisodeRenumber> episodeMoves,
+        IReadOnlyCollection<long> deleteEpisodeIds)
+    {
+        var result = new EpisodeLinkMoveResult();
+        var providerId = _databaseService.GetTrackedShow(showId)?.TmdbId.ToString();
+        if (string.IsNullOrWhiteSpace(providerId) || episodeMoves.Count == 0)
+        {
+            return result;
+        }
+
+        var moves = episodeMoves.ToDictionary(move => move.From, move => move.To);
+
+        var allItems = _databaseService.GetSourceItems();
+        var planned = new List<(SourceItem Previous, SourceItem Moved)>();
+        foreach (var item in allItems.Where(item =>
+                     item.MediaKind == MediaKind.TvEpisode &&
+                     !item.IsOrphanPackSpecial &&
+                     string.Equals(item.Provider, "tmdb", StringComparison.OrdinalIgnoreCase) &&
+                     string.Equals(item.ProviderId, providerId, StringComparison.OrdinalIgnoreCase)))
+        {
+            var keys = GetOutputEpisodeKeys(item).ToList();
+            if (!keys.Any(moves.ContainsKey))
+            {
+                continue;
+            }
+
+            if (TryRenumber(item, keys, moves) is { } moved)
+            {
+                planned.Add((item, moved));
+                continue;
+            }
+
+            // One file cannot name episodes that TMDB moved apart; never guess which one it is.
+            BlockMove(
+                result,
+                keys.Where(moves.ContainsKey),
+                $"{item.FileName}: its episodes {DescribeKeys(keys)} no longer follow each other on TMDB, so the file stays where it is.");
+        }
+
+        var renames = PlanLinkRenames(planned, allItems, result);
+        if (result.BlockedKeys.Count > 0)
+        {
+            return result;
+        }
+
+        if (!_hardlinkService.MoveHardLinks(renames.Values.ToList(), out var moveError))
+        {
+            result.Failed = true;
+            result.Messages.Add($"Library links were not moved, every file is back in place: {moveError}");
+            return result;
+        }
+
+        foreach (var (previous, moved) in planned)
+        {
+            if (!string.IsNullOrWhiteSpace(previous.LinkedPath) &&
+                renames.TryGetValue(Path.GetFullPath(previous.LinkedPath), out var rename))
+            {
+                moved.LinkedPath = rename.ToPath;
+                if (IsSamePath(previous.FilePath, rename.FromPath))
+                {
+                    // An imported library file is its own record's file: the record follows the rename.
+                    moved.FilePath = rename.ToPath;
+                    moved.FileName = Path.GetFileName(rename.ToPath);
+                    moved.ParentFolder = Path.GetDirectoryName(rename.ToPath) ?? moved.ParentFolder;
+                }
+            }
+        }
+
+        try
+        {
+            // Rows and link records in one transaction: a crash or error never leaves links on new numbers with rows
+            // on old ones, which the next refresh would shift a second time.
+            _databaseService.ApplyEpisodeRenumbering(showId, deleteEpisodeIds, episodeMoves, planned.Select(pair => pair.Moved).ToList());
+        }
+        catch
+        {
+            var back = renames.Values.Select(rename => new HardLinkRename(rename.Item, rename.ToPath, rename.FromPath)).ToList();
+            if (!_hardlinkService.MoveHardLinks(back, out var backError))
+            {
+                _logger.Error(
+                    $"Renumbering was not saved and the library files could not all be put back ({backError}). Renamed: " +
+                    string.Join("; ", renames.Values.Select(rename => $"{rename.FromPath} -> {rename.ToPath}")),
+                    targets: LogTarget.All);
+            }
+
+            throw;
+        }
+
+        foreach (var (previous, moved) in planned)
+        {
+            result.MovedCount++;
+            _logger.Info(
+                $"TMDB renumbered {moved.DisplayTitle} {DescribeLinkTarget(previous)}: its link {previous.FileName} now is {DescribeLinkTarget(moved)}.",
+                LogTarget.All);
+        }
+
+        _eventHub.PublishHardlinksMoved(planned.Select(pair => new LibraryLinkMove(pair.Moved, pair.Previous)).ToList());
+        return result;
+    }
+
+    /// <summary>
+    /// The record at its new number, or null when its episodes do not all move, or no longer follow each other
+    /// (a multi-episode file S01E02-E03 whose E03 went elsewhere).
+    /// </summary>
+    private static SourceItem? TryRenumber(
+        SourceItem item,
+        IReadOnlyList<(int SeasonNumber, int EpisodeNumber)> keys,
+        IReadOnlyDictionary<(int SeasonNumber, int EpisodeNumber), (int SeasonNumber, int EpisodeNumber)> moves)
+    {
+        if (!keys.All(moves.ContainsKey))
+        {
+            return null;
+        }
+
+        var first = moves[keys[0]];
+        for (var index = 1; index < keys.Count; index++)
+        {
+            if (moves[keys[index]] != (first.SeasonNumber, first.EpisodeNumber + index))
+            {
+                return null;
+            }
+        }
+
+        var moved = item.Clone();
+        if (item.MappedSeasonNumber is not null && item.MappedEpisodeNumber is not null)
+        {
+            moved.MappedSeasonNumber = first.SeasonNumber;
+            moved.MappedEpisodeNumber = first.EpisodeNumber;
+            return moved;
+        }
+
+        moved.SeasonNumber = first.SeasonNumber;
+        moved.EpisodeNumber = first.EpisodeNumber;
+        moved.LastEpisodeNumber = item.LastEpisodeNumber is { } last
+            ? last - keys[0].EpisodeNumber + first.EpisodeNumber
+            : null;
+        return moved;
+    }
+
+    /// <summary>
+    /// The library files to rename, by their current full path. A file is renamed only when it carries the name the
+    /// app gives it in the current library folder; an imported original or a link in an old library folder keeps its
+    /// name and only its record moves. Adds blocked keys when a file cannot follow.
+    /// </summary>
+    private Dictionary<string, HardLinkRename> PlanLinkRenames(
+        IReadOnlyList<(SourceItem Previous, SourceItem Moved)> planned,
+        IReadOnlyList<SourceItem> allItems,
+        EpisodeLinkMoveResult result)
+    {
+        var renames = new Dictionary<string, HardLinkRename>(StringComparer.OrdinalIgnoreCase);
+        var plannedIds = planned.Select(pair => pair.Previous.Id).ToHashSet();
+        var storage = _hardlinkService.CreateLinkStorageProbe() ?? new LinkStorageProbe();
+        foreach (var (previous, moved) in planned)
+        {
+            if (string.IsNullOrWhiteSpace(previous.LinkedPath))
+            {
+                continue;
+            }
+
+            var fromPath = Path.GetFullPath(previous.LinkedPath);
+            var keys = GetOutputEpisodeKeys(previous).ToList();
+            if (renames.ContainsKey(fromPath) ||
+                !_hardlinkService.TryBuildLibraryPath(previous, out var currentPath, out _) ||
+                !IsSamePath(currentPath, fromPath))
+            {
+                continue;
+            }
+
+            if (!_hardlinkService.TryBuildLibraryPath(moved, out var toPath, out var pathError))
+            {
+                BlockMove(result, keys, $"{previous.FileName}: {pathError}");
+                continue;
+            }
+
+            if (!File.Exists(fromPath))
+            {
+                if (!storage.IsLinkStorageReachable(previous))
+                {
+                    BlockMove(result, keys, $"{previous.FileName}: the library folder of '{fromPath}' is not reachable.");
+                    continue;
+                }
+
+                // Deleted outside the app: the record moves without a link, as the link-status check would leave it.
+                moved.LinkedPath = null;
+                moved.State = ItemState.Parsed;
+                moved.Notes = "Linked path no longer exists.";
+                continue;
+            }
+
+            if (allItems.Any(other => !plannedIds.Contains(other.Id) &&
+                                      !string.IsNullOrWhiteSpace(other.LinkedPath) &&
+                                      IsSamePath(other.LinkedPath, fromPath)))
+            {
+                BlockMove(result, keys, $"{previous.FileName}: another record that keeps its number uses the same library file.");
+                continue;
+            }
+
+            renames[fromPath] = new HardLinkRename(previous, fromPath, toPath);
+        }
+
+        // A file already at a new path that is not itself moving away (a leftover in the library) must not be hit.
+        var movingAway = renames.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var group in renames.Values.GroupBy(rename => Path.GetFullPath(rename.ToPath), StringComparer.OrdinalIgnoreCase))
+        {
+            if (group.Count() == 1 && (!File.Exists(group.Key) || movingAway.Contains(group.Key)))
+            {
+                continue;
+            }
+
+            foreach (var rename in group)
+            {
+                BlockMove(
+                    result,
+                    GetOutputEpisodeKeys(rename.Item),
+                    $"{rename.Item.FileName}: '{Path.GetFileName(rename.ToPath)}' is already taken in the library, so the file stays where it is.");
+            }
+        }
+
+        return renames;
+    }
+
+    private static void BlockMove(
+        EpisodeLinkMoveResult result,
+        IEnumerable<(int SeasonNumber, int EpisodeNumber)> keys,
+        string message)
+    {
+        result.BlockedKeys.UnionWith(keys);
+        result.Messages.Add(message);
+    }
+
+    private static string DescribeKeys(IEnumerable<(int SeasonNumber, int EpisodeNumber)> keys) =>
+        string.Join(", ", keys.Select(key => $"S{key.SeasonNumber:00}E{key.EpisodeNumber:00}"));
+
+    private static bool IsSamePath(string? left, string? right) =>
+        !string.IsNullOrWhiteSpace(left) &&
+        !string.IsNullOrWhiteSpace(right) &&
+        string.Equals(Path.GetFullPath(left), Path.GetFullPath(right), StringComparison.OrdinalIgnoreCase);
+
     public AutoTorrentLinkResult CheckMediaLinksRemovable(MediaKind mediaKind, long mediaId)
     {
         var result = new AutoTorrentLinkResult();
@@ -592,21 +832,24 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             return;
         }
 
+        // After TMDB renumbered the episode its download is still named with the number it had (audit L3-09).
+        var namedSeason = episode.DownloadSeasonNumber ?? episode.SeasonNumber;
+        var namedEpisode = episode.DownloadEpisodeNumber ?? episode.EpisodeNumber;
         var videoFiles = await GetCompletedVideoFilesAsync(torrent, cancellationToken);
-        var selectedFile = SelectEpisodeFile(videoFiles, episode);
+        var selectedFile = SelectEpisodeFile(videoFiles, namedSeason, namedEpisode);
         if (selectedFile is null)
         {
             AddSkip(result, $"{show.DisplayTitle} S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00}: no unambiguous completed video file.");
             return;
         }
 
-        if (NamesAnotherEpisode(selectedFile, episode, out var namedEpisode, out var fileRange))
+        if (NamesAnotherEpisode(selectedFile, namedSeason, namedEpisode, out var fileEpisode, out var fileRange))
         {
             // A single-file torrent is taken as-is; refuse it when its name says it is another
             // episode (for example a torrent adopted under the wrong episode) (PARSE-25).
             AddSkip(
                 result,
-                $"{show.DisplayTitle} S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00}: file '{Path.GetFileName(selectedFile.Name)}' is {namedEpisode}, not linked.");
+                $"{show.DisplayTitle} S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00}: file '{Path.GetFileName(selectedFile.Name)}' is {fileEpisode}, not linked.");
             return;
         }
 
@@ -617,12 +860,16 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
             BuildSourcePath(torrent, selectedFile),
             AutoTorrentLinkKind.Episode,
             packOwnerSeasonNumber: null);
-        if (fileRange is { } range && RangeIsInTmdb(show.Id, episode.SeasonNumber, range.First, range.Last))
+        if (fileRange is { } range)
         {
             // One file holding several episodes is linked once as "S01E01-E02", whichever of its
-            // episodes the torrent was assigned to (audit L1-M2).
-            episodeItem.EpisodeNumber = range.First;
-            episodeItem.LastEpisodeNumber = range.Last;
+            // episodes the torrent was assigned to (audit L1-M2); shifted like its episode when TMDB renumbered.
+            var offset = episode.EpisodeNumber - namedEpisode;
+            if (RangeIsInTmdb(show.Id, episode.SeasonNumber, range.First + offset, range.Last + offset))
+            {
+                episodeItem.EpisodeNumber = range.First + offset;
+                episodeItem.LastEpisodeNumber = range.Last + offset;
+            }
         }
 
         LinkSourceItem(episodeItem, result);
@@ -1562,19 +1809,20 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
         item.AutoTorrentPackOwnerSeasonNumber is not null ||
         item.IsOrphanPackSpecial;
 
-    private static TorrentContentFile? SelectEpisodeFile(IReadOnlyList<TorrentContentFile> files, TrackedEpisode episode)
+    private static TorrentContentFile? SelectEpisodeFile(IReadOnlyList<TorrentContentFile> files, int seasonNumber, int episodeNumber)
     {
         if (files.Count == 1)
         {
             return files[0];
         }
 
-        return TorrentFileRules.SelectEpisodeFile(files, episode.SeasonNumber, episode.EpisodeNumber);
+        return TorrentFileRules.SelectEpisodeFile(files, seasonNumber, episodeNumber);
     }
 
     private static bool NamesAnotherEpisode(
         TorrentContentFile file,
-        TrackedEpisode episode,
+        int seasonNumber,
+        int episodeNumber,
         out string namedEpisode,
         out (int First, int Last)? fileRange)
     {
@@ -1593,7 +1841,7 @@ public sealed class AutoTorrentLinkService : IAutoTorrentLinkService
         // A multi-episode file names each episode of its range (audit L1-M2).
         var first = parsed.EpisodeNumber.Value;
         var lastEpisode = parsed.LastEpisodeNumber ?? first;
-        if (parsed.SeasonNumber != episode.SeasonNumber || episode.EpisodeNumber < first || episode.EpisodeNumber > lastEpisode)
+        if (parsed.SeasonNumber != seasonNumber || episodeNumber < first || episodeNumber > lastEpisode)
         {
             return true;
         }

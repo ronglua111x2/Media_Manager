@@ -123,6 +123,17 @@ public interface IDatabaseService
 
     void DeleteTrackedEpisode(long episodeId);
 
+    /// <summary>
+    /// Saves a TMDB renumbering in one transaction (audit L3-09): deletes <paramref name="deleteEpisodeIds"/>, gives each
+    /// moved row its new number (through temporary numbers, so chains and swaps work) and moves its cart orders with it,
+    /// and saves the renumbered link records by id (file path, numbers, link path, state, notes).
+    /// </summary>
+    void ApplyEpisodeRenumbering(
+        long showId,
+        IReadOnlyCollection<long> deleteEpisodeIds,
+        IReadOnlyList<EpisodeRenumber> episodeMoves,
+        IReadOnlyList<SourceItem> movedItems);
+
     void UpdateTrackedEpisodeAvailability(long episodeId, EpisodeAvailability availability);
 
     void UpdateTrackedEpisodeTorrent(

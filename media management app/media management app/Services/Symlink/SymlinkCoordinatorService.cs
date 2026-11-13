@@ -52,6 +52,7 @@ public sealed class SymlinkCoordinatorService : ISymlinkCoordinatorService
         _eventHub.HardlinkRemoved += OnHardlinkRemoved;
         _eventHub.HardlinksCreated += OnHardlinksCreated;
         _eventHub.HardlinksRemoved += OnHardlinksRemoved;
+        _eventHub.HardlinksMoved += OnHardlinksMoved;
     }
 
     public void Start()
@@ -100,6 +101,7 @@ public sealed class SymlinkCoordinatorService : ISymlinkCoordinatorService
         _eventHub.HardlinkRemoved -= OnHardlinkRemoved;
         _eventHub.HardlinksCreated -= OnHardlinksCreated;
         _eventHub.HardlinksRemoved -= OnHardlinksRemoved;
+        _eventHub.HardlinksMoved -= OnHardlinksMoved;
 
         try
         {
@@ -209,6 +211,137 @@ public sealed class SymlinkCoordinatorService : ISymlinkCoordinatorService
                     LogTarget.All);
             }
         });
+    }
+
+    private void OnHardlinksMoved(object? sender, LibraryLinkMoveBatchEventArgs e)
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await ProcessHardlinksMovedAsync(e.Moves, _shutdown.Token);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(
+                    $"Symlink coordinator failed after moving {e.Moves.Count} renumbered library link(s).",
+                    ex,
+                    LogTarget.All);
+            }
+        });
+    }
+
+    /// <summary>
+    /// TMDB renumbered linked episodes and their library links moved (audit L3-09): the NFO and subtitles next to each
+    /// old symlink describe the episode that used to be there, so they go; the symlinks move as one batch; the new
+    /// symlinks get the NFO of their episode and Jellyfin is asked to rescan them.
+    /// </summary>
+    private async Task ProcessHardlinksMovedAsync(IReadOnlyList<LibraryLinkMove> moves, CancellationToken cancellationToken)
+    {
+        if (moves.Count == 0)
+        {
+            return;
+        }
+
+        await _syncGate.WaitAsync(cancellationToken);
+        try
+        {
+            var result = await Task.Run(() =>
+            {
+                var subtitles = ParkSubtitles(moves);
+                foreach (var symlinkPath in moves
+                             .SelectMany(move => CollectSymlinkPathsForNfoCleanup(move.Previous))
+                             .Distinct(StringComparer.OrdinalIgnoreCase))
+                {
+                    _nfoWriterService.DeleteEpisodeNfo(symlinkPath);
+                    _subtitleCleanupService.DeleteSubtitleFiles(symlinkPath);
+                }
+
+                var moved = _symlinkSyncService.MoveItems(moves);
+                foreach (var move in moves)
+                {
+                    TryWriteNfoForItem(move.Item);
+                }
+
+                PlaceSubtitles(subtitles);
+                return moved;
+            }, cancellationToken);
+
+            _logger.Info($"Symlink coordinator moved {moves.Count} renumbered link(s). {result.Summary}", LogTarget.All);
+            foreach (var move in moves)
+            {
+                _jellyfinLibraryRefreshService.EnqueueFromSourceItem(move.Item);
+            }
+
+            _eventHub.PublishSymlinkStateChanged();
+        }
+        finally
+        {
+            _syncGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Subtitles next to a moved symlink belong to its file. They get temporary names before any symlink moves, so a
+    /// chain or a swap cannot mix them up; <see cref="PlaceSubtitles"/> then names them after the new symlink.
+    /// </summary>
+    private List<(LibraryLinkMove Move, string ParkedPath, string Suffix)> ParkSubtitles(IReadOnlyList<LibraryLinkMove> moves)
+    {
+        var parked = new List<(LibraryLinkMove Move, string ParkedPath, string Suffix)>();
+        foreach (var move in moves)
+        {
+            var oldSymlink = move.Previous.SymlinkPath;
+            if (string.IsNullOrWhiteSpace(oldSymlink))
+            {
+                continue;
+            }
+
+            var baseName = Path.GetFileNameWithoutExtension(oldSymlink);
+            foreach (var subtitle in _subtitleCleanupService.FindSubtitleFiles(oldSymlink))
+            {
+                var parkedPath = $"{subtitle}.mm-move-{Guid.NewGuid():N}.tmp";
+                try
+                {
+                    File.Move(subtitle, parkedPath);
+                    parked.Add((move, parkedPath, Path.GetFileName(subtitle)[baseName.Length..]));
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    _logger.Warning($"Subtitle '{subtitle}' could not follow its renumbered episode: {ex.Message}", LogTarget.All);
+                }
+            }
+        }
+
+        return parked;
+    }
+
+    private void PlaceSubtitles(IReadOnlyList<(LibraryLinkMove Move, string ParkedPath, string Suffix)> parked)
+    {
+        foreach (var (move, parkedPath, suffix) in parked)
+        {
+            var newSymlink = move.Item.SymlinkPath;
+            var target = string.IsNullOrWhiteSpace(newSymlink) || !File.Exists(newSymlink)
+                ? null
+                : Path.Combine(Path.GetDirectoryName(newSymlink)!, Path.GetFileNameWithoutExtension(newSymlink) + suffix);
+            try
+            {
+                if (target is not null && !File.Exists(target))
+                {
+                    File.Move(parkedPath, target);
+                    continue;
+                }
+
+                // No symlink to follow (its library link is gone) or a subtitle already there: dropped, as on an unlink.
+                File.Delete(parkedPath);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _logger.Warning($"Subtitle '{parkedPath}' could not be placed next to '{newSymlink}': {ex.Message}", LogTarget.All);
+            }
+        }
     }
 
     private async Task RunStartupReconcileAsync()

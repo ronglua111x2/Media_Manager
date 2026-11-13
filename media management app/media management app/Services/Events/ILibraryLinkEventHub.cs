@@ -12,6 +12,9 @@ public interface ILibraryLinkEventHub
 
     event EventHandler<LibraryLinkBatchEventArgs>? HardlinksRemoved;
 
+    /// <summary>Library links that now belong to another episode number (TMDB renumbered, audit L3-09).</summary>
+    event EventHandler<LibraryLinkMoveBatchEventArgs>? HardlinksMoved;
+
     event EventHandler? SymlinkStateChanged;
 
     IDisposable BeginBulkMutation();
@@ -20,7 +23,34 @@ public interface ILibraryLinkEventHub
 
     void PublishHardlinkRemoved(SourceItem item, string linkedPath);
 
+    /// <summary>Raised at once, never buffered: the moves are one batch already.</summary>
+    void PublishHardlinksMoved(IReadOnlyList<LibraryLinkMove> moves);
+
     void PublishSymlinkStateChanged();
+}
+
+/// <summary>A record whose library link moved to another episode number: <see cref="Item"/> as saved now, <see cref="Previous"/> as it was.</summary>
+public sealed class LibraryLinkMove
+{
+    public LibraryLinkMove(SourceItem item, SourceItem previous)
+    {
+        Item = item;
+        Previous = previous;
+    }
+
+    public SourceItem Item { get; }
+
+    public SourceItem Previous { get; }
+}
+
+public sealed class LibraryLinkMoveBatchEventArgs : EventArgs
+{
+    public LibraryLinkMoveBatchEventArgs(IReadOnlyList<LibraryLinkMove> moves)
+    {
+        Moves = moves;
+    }
+
+    public IReadOnlyList<LibraryLinkMove> Moves { get; }
 }
 
 public sealed class LibraryLinkEventArgs : EventArgs

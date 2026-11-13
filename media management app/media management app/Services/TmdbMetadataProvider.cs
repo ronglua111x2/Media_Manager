@@ -944,6 +944,7 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
 
             details.Episodes.Add(new TmdbEpisodeDetails
             {
+                TmdbEpisodeId = GetEpisodeId(episodeElement),
                 SeasonNumber = seasonNumber,
                 EpisodeNumber = episodeNumber,
                 Title = GetString(episodeElement, "name") ?? $"Episode {episodeNumber}",
@@ -957,6 +958,10 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
         details.EpisodeCount = details.Episodes.Count;
         return details;
     }
+
+    // Season details and episode groups both list the base episode object, whose "id" is the TMDB episode id.
+    private static int? GetEpisodeId(JsonElement episodeElement) =>
+        GetInt(episodeElement, "id") is > 0 and var id ? id : null;
 
     private static bool IsSpecialsGroupName(string name)
     {
@@ -992,6 +997,7 @@ public sealed class TmdbMetadataProvider : IMetadataProvider, ITmdbShowCatalogSe
 
             details.Episodes.Add(new TmdbEpisodeDetails
             {
+                TmdbEpisodeId = GetEpisodeId(episodeElement),
                 SeasonNumber = seasonNumber,
                 EpisodeNumber = episodeNumber,
                 Title = GetString(episodeElement, "name") ?? $"Episode {episodeNumber}",

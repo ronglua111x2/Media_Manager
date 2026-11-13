@@ -266,6 +266,12 @@ public sealed class LinkTestHost : IDisposable
         };
     }
 
+    /// <summary>Mirrors SymlinkCoordinatorService synchronously: moved library links move their Jellyfin symlinks.</summary>
+    public void FollowHardlinkMoves()
+    {
+        Hub.HardlinksMoved += (_, batch) => Symlinks.MoveItems(batch.Moves);
+    }
+
     public long AddShow(int tmdbId, string title, params (int Season, int Episode, string Title)[] episodes)
     {
         var showId = Db.UpsertTrackedShow(new TrackedShow

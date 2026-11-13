@@ -26,46 +26,9 @@ public sealed class SymlinkSubtitleCleanupService : ISymlinkSubtitleCleanupServi
 
         try
         {
-            var directory = Path.GetDirectoryName(symlinkPath);
-            if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
-            {
-                return;
-            }
-
-            var baseNameWithoutExt = Path.GetFileNameWithoutExtension(symlinkPath);
             var deletedCount = 0;
-
-            // Search for all subtitle files with pattern: {baseNameWithoutExt}.*.{subtitleExt}
-            // Examples: "Show - S01E01.eng.srt", "Show - S01E01.jpn.ass", "Movie Title.vi.srt"
-            foreach (var file in Directory.EnumerateFiles(directory))
+            foreach (var file in FindSubtitleFiles(symlinkPath))
             {
-                var fileName = Path.GetFileName(file);
-                var fileNameWithoutExt = Path.GetFileNameWithoutExtension(file);
-                var fileExtension = Path.GetExtension(file);
-
-                // Check if file matches pattern: same base name + subtitle extension
-                if (!string.Equals(fileNameWithoutExt, baseNameWithoutExt, StringComparison.OrdinalIgnoreCase))
-                {
-                    // Also check for language-suffixed subtitles: "Title.lang.srt"
-                    // Pattern: {baseNameWithoutExt}.{languageCode}.{subtitleExt}
-                    var lastDotIndex = fileNameWithoutExt.LastIndexOf('.');
-                    if (lastDotIndex <= 0)
-                    {
-                        continue;
-                    }
-
-                    var baseWithoutLang = fileNameWithoutExt[..lastDotIndex];
-                    if (!string.Equals(baseWithoutLang, baseNameWithoutExt, StringComparison.OrdinalIgnoreCase))
-                    {
-                        continue;
-                    }
-                }
-
-                if (!IsSubtitleExtension(fileExtension))
-                {
-                    continue;
-                }
-
                 TryDeleteSubtitleFile(file, ref deletedCount);
             }
 
@@ -82,6 +45,50 @@ public sealed class SymlinkSubtitleCleanupService : ISymlinkSubtitleCleanupServi
                 $"Failed to cleanup subtitle files for {Path.GetFileName(symlinkPath)}: {ex.Message}",
                 LogTarget.All);
         }
+    }
+
+    public IReadOnlyList<string> FindSubtitleFiles(string symlinkPath)
+    {
+        var directory = Path.GetDirectoryName(symlinkPath);
+        if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
+        {
+            return [];
+        }
+
+        var baseNameWithoutExt = Path.GetFileNameWithoutExtension(symlinkPath);
+        var subtitles = new List<string>();
+
+        // Search for all subtitle files with pattern: {baseNameWithoutExt}.*.{subtitleExt}
+        // Examples: "Show - S01E01.eng.srt", "Show - S01E01.jpn.ass", "Movie Title.vi.srt"
+        foreach (var file in Directory.EnumerateFiles(directory))
+        {
+            var fileNameWithoutExt = Path.GetFileNameWithoutExtension(file);
+
+            // Check if file matches pattern: same base name + subtitle extension
+            if (!string.Equals(fileNameWithoutExt, baseNameWithoutExt, StringComparison.OrdinalIgnoreCase))
+            {
+                // Also check for language-suffixed subtitles: "Title.lang.srt"
+                // Pattern: {baseNameWithoutExt}.{languageCode}.{subtitleExt}
+                var lastDotIndex = fileNameWithoutExt.LastIndexOf('.');
+                if (lastDotIndex <= 0)
+                {
+                    continue;
+                }
+
+                var baseWithoutLang = fileNameWithoutExt[..lastDotIndex];
+                if (!string.Equals(baseWithoutLang, baseNameWithoutExt, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+            }
+
+            if (IsSubtitleExtension(Path.GetExtension(file)))
+            {
+                subtitles.Add(file);
+            }
+        }
+
+        return subtitles;
     }
 
     private static bool IsSubtitleExtension(string extension)

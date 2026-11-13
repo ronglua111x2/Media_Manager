@@ -1277,9 +1277,10 @@ public sealed class DatabaseService : IDatabaseService
         var now = DateTime.UtcNow;
         using var command = connection.CreateCommand();
         command.CommandText = """
-            INSERT INTO TrackedEpisodes (ShowId, SeasonNumber, EpisodeNumber, Title, AirDate, Availability, TorrentHash, TorrentName, TorrentState, TorrentProgress, TorrentUpdatedUtc, SelectedCandidateName, SelectedCandidateUrl, SelectedCandidatePlugin, SelectedCandidateFileSize, SelectedCandidateSeeders, SelectedCandidateQuality, SelectedCandidateAudioCodec, Overview, VoteAverage, StillPath, CreatedUtc, UpdatedUtc)
-            VALUES ($ShowId, $SeasonNumber, $EpisodeNumber, $Title, $AirDate, $Availability, $TorrentHash, $TorrentName, $TorrentState, $TorrentProgress, $TorrentUpdatedUtc, $SelectedCandidateName, $SelectedCandidateUrl, $SelectedCandidatePlugin, $SelectedCandidateFileSize, $SelectedCandidateSeeders, $SelectedCandidateQuality, $SelectedCandidateAudioCodec, $Overview, $VoteAverage, $StillPath, $CreatedUtc, $UpdatedUtc)
+            INSERT INTO TrackedEpisodes (ShowId, SeasonNumber, EpisodeNumber, TmdbEpisodeId, Title, AirDate, Availability, TorrentHash, TorrentName, TorrentState, TorrentProgress, TorrentUpdatedUtc, SelectedCandidateName, SelectedCandidateUrl, SelectedCandidatePlugin, SelectedCandidateFileSize, SelectedCandidateSeeders, SelectedCandidateQuality, SelectedCandidateAudioCodec, Overview, VoteAverage, StillPath, CreatedUtc, UpdatedUtc)
+            VALUES ($ShowId, $SeasonNumber, $EpisodeNumber, $TmdbEpisodeId, $Title, $AirDate, $Availability, $TorrentHash, $TorrentName, $TorrentState, $TorrentProgress, $TorrentUpdatedUtc, $SelectedCandidateName, $SelectedCandidateUrl, $SelectedCandidatePlugin, $SelectedCandidateFileSize, $SelectedCandidateSeeders, $SelectedCandidateQuality, $SelectedCandidateAudioCodec, $Overview, $VoteAverage, $StillPath, $CreatedUtc, $UpdatedUtc)
             ON CONFLICT(ShowId, SeasonNumber, EpisodeNumber) DO UPDATE SET
+                TmdbEpisodeId = COALESCE(excluded.TmdbEpisodeId, TrackedEpisodes.TmdbEpisodeId),
                 Title = excluded.Title,
                 AirDate = excluded.AirDate,
                 Availability = excluded.Availability,
@@ -1304,6 +1305,7 @@ public sealed class DatabaseService : IDatabaseService
         command.Parameters.AddWithValue("$ShowId", episode.ShowId);
         command.Parameters.AddWithValue("$SeasonNumber", episode.SeasonNumber);
         command.Parameters.AddWithValue("$EpisodeNumber", episode.EpisodeNumber);
+        command.Parameters.AddWithValue("$TmdbEpisodeId", (object?)episode.TmdbEpisodeId ?? DBNull.Value);
         command.Parameters.AddWithValue("$Title", episode.Title);
         command.Parameters.AddWithValue("$AirDate", (object?)episode.AirDate?.ToString("yyyy-MM-dd") ?? DBNull.Value);
         command.Parameters.AddWithValue("$Availability", (int)episode.Availability);
@@ -1342,6 +1344,129 @@ public sealed class DatabaseService : IDatabaseService
         command.ExecuteNonQuery();
     }
 
+    public void ApplyEpisodeRenumbering(
+        long showId,
+        IReadOnlyCollection<long> deleteEpisodeIds,
+        IReadOnlyList<EpisodeRenumber> episodeMoves,
+        IReadOnlyList<SourceItem> movedItems)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var transaction = connection.BeginTransaction();
+        var now = DateTime.UtcNow.ToString("O");
+
+        int Execute(string sql, params (string Name, object? Value)[] parameters)
+        {
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = sql;
+            foreach (var (name, value) in parameters)
+            {
+                command.Parameters.AddWithValue(name, value ?? DBNull.Value);
+            }
+
+            return command.ExecuteNonQuery();
+        }
+
+        foreach (var episodeId in deleteEpisodeIds)
+        {
+            Execute("DELETE FROM TrackedEpisodes WHERE Id = $Id AND ShowId = $ShowId;", ("$Id", episodeId), ("$ShowId", showId));
+        }
+
+        // (Season, -Id) is free for every row: no real episode number is negative. A row no longer at the number the
+        // plan saw (another refresh moved it meanwhile) stops everything, so nothing is shifted twice.
+        // The download keeps the number it is named with, so auto-link still finds its file (audit L3-09).
+        foreach (var move in episodeMoves)
+        {
+            var parked = Execute(
+                """
+                UPDATE TrackedEpisodes
+                SET DownloadSeasonNumber = CASE WHEN COALESCE(TorrentHash, '') = '' THEN NULL ELSE COALESCE(DownloadSeasonNumber, SeasonNumber) END,
+                    DownloadEpisodeNumber = CASE WHEN COALESCE(TorrentHash, '') = '' THEN NULL ELSE COALESCE(DownloadEpisodeNumber, EpisodeNumber) END,
+                    EpisodeNumber = -Id
+                WHERE Id = $Id AND ShowId = $ShowId AND SeasonNumber = $FromSeason AND EpisodeNumber = $FromEpisode;
+                """,
+                ("$Id", move.EpisodeId),
+                ("$ShowId", showId),
+                ("$FromSeason", move.From.SeasonNumber),
+                ("$FromEpisode", move.From.EpisodeNumber));
+            if (parked != 1)
+            {
+                throw new InvalidOperationException(
+                    $"Episode row {move.EpisodeId} is no longer at S{move.From.SeasonNumber:00}E{move.From.EpisodeNumber:00}; renumbering was not saved.");
+            }
+        }
+
+        foreach (var move in episodeMoves)
+        {
+            Execute(
+                """
+                UPDATE TrackedEpisodes
+                SET SeasonNumber = $SeasonNumber,
+                    EpisodeNumber = $EpisodeNumber,
+                    DownloadSeasonNumber = CASE
+                        WHEN DownloadSeasonNumber = $SeasonNumber AND DownloadEpisodeNumber = $EpisodeNumber THEN NULL
+                        ELSE DownloadSeasonNumber END,
+                    DownloadEpisodeNumber = CASE
+                        WHEN DownloadSeasonNumber = $SeasonNumber AND DownloadEpisodeNumber = $EpisodeNumber THEN NULL
+                        ELSE DownloadEpisodeNumber END,
+                    UpdatedUtc = $UpdatedUtc
+                WHERE Id = $Id AND ShowId = $ShowId;
+                UPDATE TorrentCartOrders
+                SET SeasonNumber = $SeasonNumber, EpisodeNumber = $EpisodeNumber, UpdatedUtc = $UpdatedUtc
+                WHERE EpisodeId = $Id;
+                """,
+                ("$SeasonNumber", move.To.SeasonNumber),
+                ("$EpisodeNumber", move.To.EpisodeNumber),
+                ("$UpdatedUtc", now),
+                ("$Id", move.EpisodeId),
+                ("$ShowId", showId));
+        }
+
+        // FilePath is unique and two imported library files can swap names: park every changing path first.
+        foreach (var item in movedItems)
+        {
+            Execute(
+                "UPDATE SourceItems SET FilePath = FilePath || '|renumbering|' || Id WHERE Id = $Id AND FilePath <> $FilePath;",
+                ("$Id", item.Id),
+                ("$FilePath", item.FilePath));
+        }
+
+        foreach (var item in movedItems)
+        {
+            Execute(
+                """
+                UPDATE SourceItems
+                SET FilePath = $FilePath,
+                    FileName = $FileName,
+                    ParentFolder = $ParentFolder,
+                    SeasonNumber = $SeasonNumber,
+                    EpisodeNumber = $EpisodeNumber,
+                    LastEpisodeNumber = $LastEpisodeNumber,
+                    MappedSeasonNumber = $MappedSeasonNumber,
+                    MappedEpisodeNumber = $MappedEpisodeNumber,
+                    State = $State,
+                    Notes = $Notes,
+                    LinkedPath = $LinkedPath
+                WHERE Id = $Id;
+                """,
+                ("$FilePath", item.FilePath),
+                ("$FileName", item.FileName),
+                ("$ParentFolder", item.ParentFolder),
+                ("$SeasonNumber", item.SeasonNumber),
+                ("$EpisodeNumber", item.EpisodeNumber),
+                ("$LastEpisodeNumber", item.LastEpisodeNumber),
+                ("$MappedSeasonNumber", item.MappedSeasonNumber),
+                ("$MappedEpisodeNumber", item.MappedEpisodeNumber),
+                ("$State", (int)item.State),
+                ("$Notes", item.Notes),
+                ("$LinkedPath", item.LinkedPath),
+                ("$Id", item.Id));
+        }
+
+        transaction.Commit();
+    }
+
     public void DeleteTrackedEpisode(long episodeId)
     {
         using var connection = new SqliteConnection(_connectionString);
@@ -1364,7 +1489,8 @@ public sealed class DatabaseService : IDatabaseService
                    TorrentHash, TorrentName, TorrentState, TorrentProgress, TorrentUpdatedUtc,
                    SelectedCandidateName, SelectedCandidateUrl, SelectedCandidatePlugin, SelectedCandidateFileSize,
                    SelectedCandidateSeeders, SelectedCandidateQuality, SelectedCandidateAudioCodec,
-                   CreatedUtc, UpdatedUtc, Overview, VoteAverage, StillPath, UserRating, Thought, RemovedUpstreamUtc
+                   CreatedUtc, UpdatedUtc, Overview, VoteAverage, StillPath, UserRating, Thought, RemovedUpstreamUtc,
+                   TmdbEpisodeId, DownloadSeasonNumber, DownloadEpisodeNumber
             FROM TrackedEpisodes
             WHERE ShowId = $ShowId
             ORDER BY SeasonNumber, EpisodeNumber;
@@ -1404,7 +1530,13 @@ public sealed class DatabaseService : IDatabaseService
         using var command = connection.CreateCommand();
         command.CommandText = """
             UPDATE TrackedEpisodes
-            SET TorrentHash = $TorrentHash,
+            SET DownloadSeasonNumber = CASE
+                    WHEN COALESCE(TorrentHash, '') = COALESCE($TorrentHash, '') COLLATE NOCASE THEN DownloadSeasonNumber
+                    ELSE NULL END,
+                DownloadEpisodeNumber = CASE
+                    WHEN COALESCE(TorrentHash, '') = COALESCE($TorrentHash, '') COLLATE NOCASE THEN DownloadEpisodeNumber
+                    ELSE NULL END,
+                TorrentHash = $TorrentHash,
                 TorrentName = $TorrentName,
                 TorrentState = $TorrentState,
                 TorrentProgress = $TorrentProgress,
@@ -2609,6 +2741,9 @@ public sealed class DatabaseService : IDatabaseService
         EnsureColumn(connection, "TrackedEpisodes", "UserRating", "REAL NULL");
         EnsureColumn(connection, "TrackedEpisodes", "Thought", "TEXT NULL");
         EnsureColumn(connection, "TrackedEpisodes", "RemovedUpstreamUtc", "TEXT NULL");
+        EnsureColumn(connection, "TrackedEpisodes", "TmdbEpisodeId", "INTEGER NULL");
+        EnsureColumn(connection, "TrackedEpisodes", "DownloadSeasonNumber", "INTEGER NULL");
+        EnsureColumn(connection, "TrackedEpisodes", "DownloadEpisodeNumber", "INTEGER NULL");
     }
 
     private static void InitializeTrackedMovies(SqliteConnection connection)
@@ -2886,7 +3021,10 @@ public sealed class DatabaseService : IDatabaseService
             Thought = reader.IsDBNull(25) ? null : reader.GetString(25),
             RemovedUpstreamUtc = reader.FieldCount > 26 && !reader.IsDBNull(26)
                 ? DateTime.Parse(reader.GetString(26), null, System.Globalization.DateTimeStyles.RoundtripKind)
-                : null
+                : null,
+            TmdbEpisodeId = reader.FieldCount > 27 && !reader.IsDBNull(27) ? reader.GetInt32(27) : null,
+            DownloadSeasonNumber = reader.FieldCount > 28 && !reader.IsDBNull(28) ? reader.GetInt32(28) : null,
+            DownloadEpisodeNumber = reader.FieldCount > 29 && !reader.IsDBNull(29) ? reader.GetInt32(29) : null
         };
     }
 

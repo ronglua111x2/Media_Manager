@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using media_management_app.Common;
 using media_management_app.Models;
 
@@ -10,6 +11,7 @@ public sealed class TrackedShowService : ITrackedShowService
     private readonly IPosterImageService _posterImageService;
     private readonly IAutoTorrentLinkService _autoTorrentLinkService;
     private readonly IAppLogger _logger;
+    private readonly ConcurrentDictionary<int, object> _importLocks = new();
 
     public TrackedShowService(
         IDatabaseService databaseService,
@@ -409,6 +411,20 @@ public sealed class TrackedShowService : ITrackedShowService
         string? episodeGroupId = null,
         string? episodeGroupName = null)
     {
+        // Auto-Track and the Refresh button can refresh one show at the same time: both would renumber from the same
+        // rows and shift the links twice (audit L3-09). One import per show at a time; the second reads the result.
+        lock (_importLocks.GetOrAdd(details.TmdbId, _ => new object()))
+        {
+            return ImportShowCore(details, preferredQuality, episodeGroupId, episodeGroupName);
+        }
+    }
+
+    private long ImportShowCore(
+        TmdbShowDetails details,
+        string preferredQuality,
+        string? episodeGroupId,
+        string? episodeGroupName)
+    {
         var existing = _databaseService.GetTrackedShowByTmdbId(details.TmdbId);
 
         // First insert uses explicit args. Refresh/switch rely on the row (Switch updates organization first).
@@ -450,6 +466,10 @@ public sealed class TrackedShowService : ITrackedShowService
             PlannedEpisodeCount = details.PlannedEpisodeCount
         });
 
+        // Before the rows are matched to TMDB by number: rows, links and downloads follow their TMDB episode id to
+        // the number TMDB gives it now (audit L3-09).
+        var identity = existing is null ? null : FollowEpisodeIds(existing, details);
+
         foreach (var season in details.Seasons)
         {
             _databaseService.UpsertTrackedSeason(new TrackedSeason
@@ -470,9 +490,17 @@ public sealed class TrackedShowService : ITrackedShowService
 
             foreach (var episode in season.Episodes)
             {
+                if (identity?.IsPinned((episode.SeasonNumber, episode.EpisodeNumber), episode.TmdbEpisodeId) == true)
+                {
+                    // That number still holds the file of another episode, or this episode is still at its old
+                    // number: writing it here would show one episode's file as another's.
+                    continue;
+                }
+
                 _databaseService.UpsertTrackedEpisode(new TrackedEpisode
                 {
                     ShowId = showId,
+                    TmdbEpisodeId = episode.TmdbEpisodeId,
                     SeasonNumber = episode.SeasonNumber,
                     EpisodeNumber = episode.EpisodeNumber,
                     Title = episode.Title,
@@ -486,10 +514,103 @@ public sealed class TrackedShowService : ITrackedShowService
 
         if (existing is not null)
         {
-            HandleEpisodesRemovedUpstream(showId, details);
+            FlagPinnedEpisodes(existing, identity!);
+            HandleEpisodesRemovedUpstream(showId, details, identity!.Pinned.Keys.ToHashSet());
         }
 
         return showId;
+    }
+
+    /// <summary>
+    /// Moves every row whose TMDB episode id now has another number, with its library link, Jellyfin symlink and
+    /// download, to that number. Rows that cannot follow (the id is gone, the link cannot move) are left as they are
+    /// and returned as pinned. Rows saved before ids were stored have none: the first refresh only fills them.
+    /// </summary>
+    private EpisodeIdentityPlanner.Plan FollowEpisodeIds(TrackedShow show, TmdbShowDetails details)
+    {
+        var rows = _databaseService.GetTrackedEpisodes(show.Id);
+        var linkedKeys = GetLinkedEpisodeKeys(show.TmdbId.ToString());
+        var orderedEpisodeIds = _databaseService.GetTorrentCartOrders(MediaKind.TvEpisode, show.Id)
+            .Where(order => order.EpisodeId is not null)
+            .Select(order => order.EpisodeId!.Value)
+            .ToHashSet();
+        bool HoldsDownload(TrackedEpisode row) =>
+            linkedKeys.Contains((row.SeasonNumber, row.EpisodeNumber)) ||
+            !string.IsNullOrWhiteSpace(row.TorrentHash) ||
+            orderedEpisodeIds.Contains(row.Id);
+        bool IsInUse(TrackedEpisode row) =>
+            HoldsDownload(row) || row.UserRating is not null || !string.IsNullOrWhiteSpace(row.Thought);
+
+        var blocked = new HashSet<(int SeasonNumber, int EpisodeNumber)>();
+        while (true)
+        {
+            var plan = EpisodeIdentityPlanner.Create(rows, details, HoldsDownload, IsInUse, blocked);
+            if (plan.Moves.Count == 0)
+            {
+                foreach (var episodeId in plan.DeleteRowIds)
+                {
+                    _databaseService.DeleteTrackedEpisode(episodeId);
+                }
+
+                return plan;
+            }
+
+            var links = _autoTorrentLinkService.RenumberEpisodes(
+                show.Id,
+                plan.Moves.Select(move => new EpisodeRenumber(move.Row.Id, move.From, move.To)).ToList(),
+                plan.DeleteRowIds);
+            if (links.Failed || links.BlockedKeys.Count > 0)
+            {
+                foreach (var message in links.Messages)
+                {
+                    _logger.Warning($"{show.DisplayTitle}: {message}", LogTarget.All);
+                }
+
+                // Every blocked number is a move source, so each pass leaves fewer moves and this ends.
+                blocked.UnionWith(links.Failed ? plan.Moves.Select(move => move.From) : links.BlockedKeys);
+                continue;
+            }
+
+            foreach (var move in plan.Moves)
+            {
+                _logger.Info(
+                    $"TMDB renumbered {show.DisplayTitle} {EpisodeIdentityPlanner.Describe(move.From)} -> {EpisodeIdentityPlanner.Describe(move.To)} " +
+                    $"(TMDB episode {move.Row.TmdbEpisodeId}); its row, link and download moved with it.",
+                    LogTarget.All);
+            }
+
+            FollowAutoTrackStart(show, plan);
+            return plan;
+        }
+    }
+
+    /// <summary>"Auto-Track from S01E05" names an episode: when TMDB moves it, the start moves with it.</summary>
+    private void FollowAutoTrackStart(TrackedShow show, EpisodeIdentityPlanner.Plan plan)
+    {
+        if (show.AutoTrackFromSeason is not { } fromSeason ||
+            show.AutoTrackFromEpisode is not { } fromEpisode ||
+            plan.Moves.FirstOrDefault(move => move.From == (fromSeason, fromEpisode)) is not { } startMove)
+        {
+            return;
+        }
+
+        _databaseService.UpdateTrackedShowAutoTrack(show.Id, startMove.To.SeasonNumber, startMove.To.EpisodeNumber);
+        _logger.Info(
+            $"Auto-Track start of {show.DisplayTitle} follows its episode: {EpisodeIdentityPlanner.Describe(startMove.From)} -> {EpisodeIdentityPlanner.Describe(startMove.To)}.",
+            LogTarget.All);
+    }
+
+    private void FlagPinnedEpisodes(TrackedShow show, EpisodeIdentityPlanner.Plan identity)
+    {
+        var now = DateTime.UtcNow;
+        foreach (var (row, reason) in identity.Pinned.Values)
+        {
+            _databaseService.MarkTrackedEpisodeRemovedUpstream(row.Id, now);
+            _logger.Warning(
+                $"{show.DisplayTitle} S{row.SeasonNumber:00}E{row.EpisodeNumber:00} (TMDB episode {row.TmdbEpisodeId}): {reason}. " +
+                "Its link and download were kept as they are and the episode is flagged.",
+                LogTarget.All);
+        }
     }
 
     /// <summary>
@@ -498,7 +619,7 @@ public sealed class TrackedShowService : ITrackedShowService
     /// Only seasons TMDB returned are checked, so a partial response never removes a whole season.
     /// Unused rows are deleted; rows something still refers to are kept and flagged.
     /// </summary>
-    private void HandleEpisodesRemovedUpstream(long showId, TmdbShowDetails details)
+    private void HandleEpisodesRemovedUpstream(long showId, TmdbShowDetails details, IReadOnlySet<long> alreadyFlagged)
     {
         var returnedSeasons = details.Seasons
             .Where(season => season.Episodes.Count > 0)
@@ -529,7 +650,7 @@ public sealed class TrackedShowService : ITrackedShowService
             .Select(order => order.EpisodeId!.Value)
             .ToHashSet();
         var now = DateTime.UtcNow;
-        foreach (var episode in stale)
+        foreach (var episode in stale.Where(episode => !alreadyFlagged.Contains(episode.Id)))
         {
             var inUse = linkedKeys.Contains((episode.SeasonNumber, episode.EpisodeNumber)) ||
                         !string.IsNullOrWhiteSpace(episode.TorrentHash) ||

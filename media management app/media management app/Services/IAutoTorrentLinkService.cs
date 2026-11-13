@@ -34,6 +34,18 @@ public interface IAutoTorrentLinkService
     /// </summary>
     AutoTorrentLinkResult ClearShowLinksForRenumbering(long showId);
 
+    /// <summary>
+    /// Moves tracked episode rows of a show to the number TMDB gives them now, with their links (audit L3-09): library
+    /// hardlinks are renamed, link records and rows are saved in one transaction (deleting
+    /// <paramref name="deleteEpisodeIds"/> first) and the Jellyfin symlinks follow. All or nothing: when a link cannot
+    /// move, <see cref="EpisodeLinkMoveResult.BlockedKeys"/> or <see cref="EpisodeLinkMoveResult.Failed"/> says so and
+    /// nothing was changed. If saving fails the files are put back and the error is thrown.
+    /// </summary>
+    EpisodeLinkMoveResult RenumberEpisodes(
+        long showId,
+        IReadOnlyList<EpisodeRenumber> moves,
+        IReadOnlyCollection<long> deleteEpisodeIds);
+
     AutoTorrentLinkResult RemoveMovieLinks(long movieId);
 
     /// <summary>
