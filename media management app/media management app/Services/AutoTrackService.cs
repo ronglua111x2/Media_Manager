@@ -1683,7 +1683,7 @@ public sealed class AutoTrackService : IAutoTrackService
             }
 
             huntLeaseHeld = true;
-            if ((_settingsService.Current.Warp?.ForceTunnelForHunt ?? true) && !attempt.TunnelActive)
+            if ((_settingsService.Current.Warp?.ForceTunnelForHunt ?? false) && !attempt.TunnelActive)
             {
                 // Searching without the tunnel would quietly return far fewer results; retry next cycle.
                 await TryReleaseHuntWarpAsync();

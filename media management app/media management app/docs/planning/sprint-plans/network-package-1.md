@@ -21,7 +21,7 @@
 | -- | --- |
 | TMDB headers per request; no `BaseAddress` or default headers on the singleton | Per-destination clients, host table, diagnostics (package 2) |
 | `WarpCliProcess`: deadline 20 s `connect`, 10 s others; kill process tree | Capability leases, `IWarpCliRunner` |
-| `Warp.ForceTunnelForHunt` (Settings checkbox, default on); no tunnel aborts the hunt | Manual searches (user decision) |
+| `Warp.ForceTunnelForHunt` (Settings checkbox; default off since 2026-11-13, opt in); no tunnel aborts the hunt | Manual searches (user decision) |
 | | Classifier and wider fallback, `api.tmdb.org` (package 2) |
 
 ## Definition of Done
@@ -50,6 +50,7 @@ A hung `warp-cli` cannot be reproduced on the machine; that path is unit-tested 
 
 - **Hunt slot (GOV-04):** main lets a scheduled hunt run once per hunt interval and stamps show rotation before the preflight. A hunt that `ForceTunnelForHunt` aborts (no tunnel) searched nothing, so `AutoTrackHuntSlot` gives the slot back and rotation is stamped only after the preflight passes. The next 30-minute cycle retries, as the Settings hint says.
 - **WARP leases:** native search adds no WARP lease of its own; it runs inside the hunt's `Hunt` lease (background lane). `Hunt` and `TmdbSslRecover` share `_tunnelLeases`, so releasing one never restores the user's mode while the other still needs the tunnel.
+- **Hunt tunnel default off (user decision, 2026-11-13):** since S0, the hunt's fetch/add window also covers magnet `fetchMetadata` (up to 90 s per order), so a forced tunnel holds the whole PC on WARP longer and has not run live. `ForceTunnelForHunt` now defaults to false (model, Settings view model, `?? false` fallbacks); settings files without the key load with it off.
 - **Native search HTTP:** `NativeSearchService` builds its own `HttpClient` for `GovernedIndexerHttp` (no client timeout, per-request deadlines), so `NetworkClients` does not touch it. Its IMDb lookup goes through `TmdbMetadataProvider` and so uses `api.tmdb.org`, the per-request token and the classifier; its own deadline stays an `OperationCanceledException` and does not trigger the WARP hint.
 
 ## Risks / rollback

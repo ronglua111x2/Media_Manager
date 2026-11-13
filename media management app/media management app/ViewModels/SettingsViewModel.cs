@@ -286,7 +286,7 @@ public partial class SettingsViewModel : ViewModelBase
     private bool warpAutoRecoverOnSsl = true;
 
     [ObservableProperty]
-    private bool warpForceTunnelForHunt = true;
+    private bool warpForceTunnelForHunt;
 
     [ObservableProperty]
     private bool warpConfirmDisconnectDuringAutoTrack = true;

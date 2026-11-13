@@ -122,7 +122,7 @@ public class WarpModePolicyTests
     }
 
     [Theory]
-    [InlineData(WarpLeaseReason.Hunt, true)]
+    [InlineData(WarpLeaseReason.Hunt, false)] // hunt tunnel is opt-in (PR #12 review)
     [InlineData(WarpLeaseReason.TmdbSslRecover, true)]
     [InlineData(WarpLeaseReason.User, false)]
     public void LeaseNeedsTunnel_MissingSettings_UsesDefaults(WarpLeaseReason reason, bool expected)

@@ -1496,7 +1496,7 @@
                                               Margin="0,0,0,4"
                                               Content="Route Auto-Track torrent search through a WARP tunnel" />
                                     <TextBlock Style="{StaticResource SettingsHintStyle}" Margin="0,0,0,8"
-                                               Text="Many torrent sites block this network, so search engines return far more results through a tunnel. A DNS-only WARP mode is switched to Traffic and DNS (warp+doh) for the hunt and your mode is restored afterwards; all PC traffic uses WARP meanwhile. If no tunnel is available the hunt stops and retries next cycle. Manual searches are not affected." />
+                                               Text="Off by default. Many torrent sites block this network, so search engines return far more results through a tunnel. A DNS-only WARP mode is switched to Traffic and DNS (warp+doh) for the hunt and your mode is restored afterwards; all PC traffic uses WARP meanwhile. If no tunnel is available the hunt stops and retries next cycle. Manual searches are not affected." />
                                     <CheckBox IsChecked="{Binding WarpConfirmDisconnectDuringAutoTrack, Mode=TwoWay}"
                                               Margin="0,0,0,4"
                                               Content="Ask before disconnecting WARP while Auto-Track is using it" />

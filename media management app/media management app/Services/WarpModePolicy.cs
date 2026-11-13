@@ -40,7 +40,7 @@ public static class WarpModePolicy
     {
         if (reason == WarpLeaseReason.Hunt)
         {
-            return settings?.ForceTunnelForHunt ?? true;
+            return settings?.ForceTunnelForHunt ?? false;
         }
 
         return WarpLeaseReasonText.RequiresTunnel(reason) && (settings?.SwitchModeForTmdb ?? true);
