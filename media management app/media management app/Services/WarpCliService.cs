@@ -1,16 +1,28 @@
+using System.Diagnostics;
 using System.Text.Json;
 using media_management_app.Common;
 using media_management_app.Models;
 
 namespace media_management_app.Services;
 
+/// <summary>Runs one warp-cli command (arguments already include <c>--accept-tos</c>). Tests inject a fake.</summary>
+public delegate Task<WarpCliRunResult> WarpCliRunner(
+    string fileName,
+    string arguments,
+    TimeSpan deadline,
+    CancellationToken cancellationToken);
+
 public sealed class WarpCliService : IWarpCliService, IDisposable
 {
+    /// <summary>Prefix on every log line that records a WARP mode change or connect/disconnect, for grep.</summary>
+    public const string LogPrefix = "[WARP]";
+
     private const int StatusPollIntervalMilliseconds = 2000;
 
     private readonly ISettingsService _settingsService;
     private readonly IWindowsNotificationService _windowsNotificationService;
     private readonly IAppLogger _logger;
+    private readonly WarpCliRunner _runCli;
     private readonly SemaphoreSlim _cliGate = new(1, 1);
     private readonly object _stateLock = new();
     private readonly HashSet<WarpLeaseReason> _leases = [];
@@ -32,11 +44,13 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
         ISettingsService settingsService,
         IWindowsNotificationService windowsNotificationService,
         IAppLifecycleService lifecycleService,
-        IAppLogger logger)
+        IAppLogger logger,
+        WarpCliRunner? runCli = null)
     {
         _settingsService = settingsService;
         _windowsNotificationService = windowsNotificationService;
         _logger = logger;
+        _runCli = runCli ?? WarpCliProcess.RunAsync;
         _logWatcher = new WarpLogStatusWatcher(lifecycleService, logger, ConfirmExternalStatusAsync);
         _logWatcher.Start();
     }
@@ -107,6 +121,7 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
         TimeSpan timeout,
         CancellationToken ct = default)
     {
+        var label = WarpLeaseReasonText.Label(reason);
         await _cliGate.WaitAsync(ct);
         try
         {
@@ -127,15 +142,15 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
             SetInFlight(true, WarpConnectionChangeSource.Cli);
 
             var alreadyConnected = await QueryConnectedUnlockedAsync(ct);
-            var (modeSwitched, tunnelActive) = await EnsureTunnelModeUnlockedAsync(reason, ct);
+            var (modeSwitched, tunnelActive, readMode) = await EnsureTunnelModeUnlockedAsync(reason, alreadyConnected, ct);
             if (alreadyConnected && modeSwitched &&
                 !await WaitUntilConnectedUnlockedAsync(timeout, ct))
             {
                 // The mode change reconnects an existing tunnel; it did not come back.
-                _logger.Warning(
-                    $"WARP did not reconnect within {timeout.TotalSeconds:0}s after the mode switch ({WarpLeaseReasonText.Label(reason)}).",
+                _logger.Info(
+                    $"{LogPrefix} Reconnect did not finish within {timeout.TotalSeconds:0}s after the mode switch for {label}; connected=no.",
                     LogTarget.All);
-                await RestoreModeIfUnneededUnlockedAsync(ct);
+                await RestoreModeIfUnneededUnlockedAsync(ct, $"reconnect after mode switch did not finish ({label})");
                 SetLastKnown(false);
                 RaiseChanged(WarpConnectionChangeSource.Cli);
                 return new WarpLeaseResult(false, false);
@@ -152,14 +167,20 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
                 }
 
                 AddLease(reason, tunnelActive);
+                // The status read above is the truth; keep the cached flag in step so later [WARP] lines do not say connected=no.
+                SetLastKnown(true);
                 _logger.Debug(
-                    $"WARP lease acquired ({WarpLeaseReasonText.Label(reason)}); tunnel already up.",
+                    $"WARP lease acquired ({label}); tunnel already up.",
                     LogTarget.File | LogTarget.Console);
                 RaiseChanged(WarpConnectionChangeSource.Cli);
                 return new WarpLeaseResult(true, false, tunnelActive);
             }
 
-            _logger.Info($"Connecting WARP via warp-cli ({WarpLeaseReasonText.Label(reason)})...", LogTarget.All);
+            var modeText = DescribeModeAfterSwitch(readMode);
+            var connectStarted = Stopwatch.GetTimestamp();
+            _logger.Info(
+                $"{LogPrefix} Before connect for {label}: mode={modeText}, connected=no (status read just now). Running warp-cli connect; waiting up to {timeout.TotalSeconds:0}s.",
+                LogTarget.All);
             var connectResult = await RunCliUnlockedAsync("connect", ct);
             if (connectResult.ExitCode != 0)
             {
@@ -169,8 +190,10 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
             var connected = await WaitUntilConnectedUnlockedAsync(timeout, ct);
             if (!connected)
             {
-                _logger.Warning($"WARP connect timed out after {timeout.TotalSeconds:0}s.", LogTarget.All);
-                await RestoreModeIfUnneededUnlockedAsync(ct);
+                _logger.Info(
+                    $"{LogPrefix} Connect for {label} timed out after {timeout.TotalSeconds:0}s ({ElapsedText(connectStarted)}, connect exit {connectResult.ExitCode}); connected=no.",
+                    LogTarget.All);
+                await RestoreModeIfUnneededUnlockedAsync(ct, $"connect timed out ({label})");
                 SetLastKnown(false);
                 RaiseChanged(WarpConnectionChangeSource.Cli);
                 return new WarpLeaseResult(false, false);
@@ -183,7 +206,9 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
 
             AddLease(reason, tunnelActive);
             SetLastKnown(true);
-            _logger.Info($"WARP connected ({WarpLeaseReasonText.Label(reason)}).", LogTarget.All);
+            _logger.Info(
+                $"{LogPrefix} Connected for {label} in {ElapsedText(connectStarted)}: mode={modeText}, connected=yes. This app owns the tunnel and disconnects it when the last lease is released.",
+                LogTarget.All);
             ShowConnectedToast();
             RaiseChanged(WarpConnectionChangeSource.Cli);
             return new WarpLeaseResult(true, true, tunnelActive);
@@ -194,8 +219,10 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
         }
         catch (Exception ex)
         {
-            _logger.Warning($"WARP connect failed: {ex.Message}", LogTarget.All);
-            await RestoreModeIfUnneededUnlockedAsync(CancellationToken.None);
+            _logger.Info(
+                $"{LogPrefix} Connect for {label} stopped with an error: {ex.Message}. Restoring the user's mode if the app switched it.",
+                LogTarget.All);
+            await RestoreModeIfUnneededUnlockedAsync(CancellationToken.None, $"connect stopped with an error ({label})");
             return new WarpLeaseResult(false, false);
         }
         finally
@@ -207,6 +234,7 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
 
     public async Task ReleaseAsync(WarpLeaseReason reason, CancellationToken ct = default)
     {
+        var label = WarpLeaseReasonText.Label(reason);
         await _cliGate.WaitAsync(ct);
         try
         {
@@ -224,7 +252,7 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
             if (!removed)
             {
                 _logger.Debug(
-                    $"WARP lease release ignored ({WarpLeaseReasonText.Label(reason)}); not held.",
+                    $"WARP lease release ignored ({label}); not held.",
                     LogTarget.File | LogTarget.Console);
                 return;
             }
@@ -232,9 +260,9 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
             if (remaining > 0)
             {
                 _logger.Debug(
-                    $"WARP lease released ({WarpLeaseReasonText.Label(reason)}); {remaining} lease(s) remain.",
+                    $"WARP lease released ({label}); {remaining} lease(s) remain.",
                     LogTarget.File | LogTarget.Console);
-                await RestoreModeIfUnneededUnlockedAsync(ct);
+                await RestoreModeIfUnneededUnlockedAsync(ct, $"{label} released; {remaining} lease(s) remain");
                 RaiseChanged(WarpConnectionChangeSource.Cli);
                 return;
             }
@@ -242,15 +270,16 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
             if (!ownedByApp)
             {
                 _logger.Debug(
-                    $"WARP lease released ({WarpLeaseReasonText.Label(reason)}); tunnel was already up before acquire — leaving connected.",
+                    $"WARP lease released ({label}); tunnel was already up before acquire — leaving connected.",
                     LogTarget.File | LogTarget.Console);
-                await RestoreModeIfUnneededUnlockedAsync(ct);
+                await RestoreModeIfUnneededUnlockedAsync(ct, $"{label} released; WARP was already up before acquire");
                 RaiseChanged(WarpConnectionChangeSource.Cli);
                 return;
             }
 
-            await DisconnectCliUnlockedAsync(ct, logAsForce: false);
-            await RestoreModeIfUnneededUnlockedAsync(ct);
+            var cause = $"last lease released ({label})";
+            await DisconnectCliUnlockedAsync(ct, cause, logAsForce: false);
+            await RestoreModeIfUnneededUnlockedAsync(ct, cause);
         }
         catch (OperationCanceledException)
         {
@@ -258,7 +287,7 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
         }
         catch (Exception ex)
         {
-            _logger.Warning($"WARP lease release failed ({WarpLeaseReasonText.Label(reason)}): {ex.Message}", LogTarget.All);
+            _logger.Info($"{LogPrefix} Lease release failed ({label}): {ex.Message}", LogTarget.All);
         }
         finally
         {
@@ -281,15 +310,18 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
                 _tunnelOwnedByApp = false;
             }
 
+            var cause = string.IsNullOrEmpty(remaining)
+                ? "force-disconnect requested"
+                : $"force-disconnect while leases were active: {remaining}";
             if (!string.IsNullOrEmpty(remaining))
             {
-                _logger.Warning(
-                    $"WARP force-disconnect while leases were active: {remaining}.",
+                _logger.Info(
+                    $"{LogPrefix} Force-disconnect while leases were active: {remaining}.",
                     LogTarget.All);
             }
 
-            await DisconnectCliUnlockedAsync(ct, logAsForce: true);
-            await RestoreModeIfUnneededUnlockedAsync(ct);
+            await DisconnectCliUnlockedAsync(ct, cause, logAsForce: true);
+            await RestoreModeIfUnneededUnlockedAsync(ct, cause);
         }
         catch (OperationCanceledException)
         {
@@ -297,7 +329,7 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
         }
         catch (Exception ex)
         {
-            _logger.Warning($"WARP force-disconnect failed: {ex.Message}", LogTarget.All);
+            _logger.Info($"{LogPrefix} Force-disconnect failed: {ex.Message}", LogTarget.All);
         }
         finally
         {
@@ -439,13 +471,13 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
             var marker = TryReadMarker();
             if (marker is null)
             {
-                _logger.Warning($"WARP mode restore marker unreadable; deleting {MarkerPath}.", LogTarget.All);
+                _logger.Info($"{LogPrefix} Mode restore marker unreadable; deleting {MarkerPath}.", LogTarget.All);
                 TryDeleteMarker();
                 return;
             }
 
             _logger.Info(
-                $"WARP mode was switched to {marker.AppliedMode} by a previous session (since {marker.AppliedUtc:u}); restoring {marker.OriginalMode}.",
+                $"{LogPrefix} Found mode restore marker: mode was switched to {marker.AppliedMode} by a previous session (since {marker.AppliedUtc:u}); restoring {marker.OriginalMode} (after unclean exit).",
                 LogTarget.All);
             await RestoreFromMarkerUnlockedAsync(marker, "after unclean exit", ct);
             _modeSwitchedFrom = null;
@@ -456,7 +488,7 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
         }
         catch (Exception ex)
         {
-            _logger.Warning($"WARP mode restore after unclean exit failed: {ex.Message}", LogTarget.All);
+            _logger.Info($"{LogPrefix} Mode restore after unclean exit failed: {ex.Message}", LogTarget.All);
         }
         finally
         {
@@ -469,61 +501,83 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
     /// <summary>
     /// Switches a DNS-only mode to <see cref="WarpModePolicy.AppTunnelMode"/> for leases that need a real tunnel.
     /// Switched: this call changed the mode. TunnelActive: the lease asked for a tunnel and the mode provides one.
+    /// Mode: the mode the CLI reported during this call, or null when it was not read.
     /// </summary>
-    private async Task<(bool Switched, bool TunnelActive)> EnsureTunnelModeUnlockedAsync(WarpLeaseReason reason, CancellationToken ct)
+    private async Task<(bool Switched, bool TunnelActive, string? Mode)> EnsureTunnelModeUnlockedAsync(
+        WarpLeaseReason reason,
+        bool connected,
+        CancellationToken ct)
     {
+        var label = WarpLeaseReasonText.Label(reason);
         if (!WarpModePolicy.LeaseNeedsTunnel(reason, _settingsService.Current.Warp))
         {
-            return (false, false);
+            return (false, false, null);
         }
 
         if (_modeSwitchedFrom is not null)
         {
-            return (false, true);
+            return (false, true, null);
         }
 
         var mode = await QueryModeUnlockedAsync(ct);
         if (mode is null)
         {
-            _logger.Warning(
-                $"WARP mode could not be read; not switching it for {WarpLeaseReasonText.Label(reason)}.",
+            _logger.Info(
+                $"{LogPrefix} Mode could not be read; not switching it for {label}.",
                 LogTarget.All);
-            return (false, false);
+            return (false, false, null);
         }
 
         if (WarpModePolicy.IsTunnelMode(mode))
         {
-            return (false, true);
+            return (false, true, mode);
         }
 
         if (!WarpModePolicy.IsValidModeName(mode))
         {
-            _logger.Warning($"WARP mode '{mode}' is not recognised; not switching it.", LogTarget.All);
-            return (false, false);
+            _logger.Info($"{LogPrefix} Mode '{mode}' is not recognised; not switching it.", LogTarget.All);
+            return (false, false, mode);
         }
 
+        _logger.Info(
+            $"{LogPrefix} Before mode switch for {label}: mode={mode}, connected={YesNo(connected)} (status read just now). Switching to {WarpModePolicy.AppTunnelMode}.",
+            LogTarget.All);
+
         // Marker first: if the app dies before restoring, the next start puts the user's mode back.
+        var started = Stopwatch.GetTimestamp();
         TryWriteMarker(new WarpModeRestoreMarker(mode, WarpModePolicy.AppTunnelMode, DateTime.UtcNow));
-        var result = await RunCliUnlockedAsync($"mode {WarpModePolicy.AppTunnelMode}", ct);
+        WarpCliRunResult result;
+        try
+        {
+            result = await RunCliUnlockedAsync($"mode {WarpModePolicy.AppTunnelMode}", ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.Info(
+                $"{LogPrefix} Mode switch {mode} → {WarpModePolicy.AppTunnelMode} for {label} threw after {ElapsedText(started)}: {ex.Message}. Mode state unknown; restore marker kept for the next start.",
+                LogTarget.All);
+            throw;
+        }
+
         if (result.ExitCode != 0)
         {
             LogCliOutputOnce("mode", result);
             TryDeleteMarker();
-            _logger.Warning(
-                $"WARP mode switch {mode} → {WarpModePolicy.AppTunnelMode} failed for {WarpLeaseReasonText.Label(reason)}; no tunnel.",
+            _logger.Info(
+                $"{LogPrefix} Mode switch {mode} → {WarpModePolicy.AppTunnelMode} for {label} failed after {ElapsedText(started)} (warp-cli exit {result.ExitCode}): mode unchanged ({mode}), no tunnel for this lease.",
                 LogTarget.All);
-            return (false, false);
+            return (false, false, mode);
         }
 
         _modeSwitchedFrom = mode;
         _logger.Info(
-            $"WARP mode {mode} → {WarpModePolicy.AppTunnelMode} for {WarpLeaseReasonText.Label(reason)} (DNS-only modes cannot reach TMDB or most search engines); your mode is restored when done.",
+            $"{LogPrefix} Mode switched {mode} → {WarpModePolicy.AppTunnelMode} for {label} in {ElapsedText(started)} (warp-cli exit 0). DNS-only modes cannot reach TMDB or most search engines; mode {mode} is restored when the last tunnel lease ends.",
             LogTarget.All);
-        return (true, true);
+        return (true, true, mode);
     }
 
     /// <summary>Restores the user's mode once no held lease needs the tunnel.</summary>
-    private async Task RestoreModeIfUnneededUnlockedAsync(CancellationToken ct)
+    private async Task RestoreModeIfUnneededUnlockedAsync(CancellationToken ct, string context)
     {
         var original = _modeSwitchedFrom;
         if (original is null)
@@ -535,13 +589,16 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
         {
             if (_tunnelLeases.Count > 0)
             {
+                _logger.Debug(
+                    $"{LogPrefix} Mode {WarpModePolicy.AppTunnelMode} kept ({context}): a tunnel lease is still held.",
+                    LogTarget.File | LogTarget.Console);
                 return;
             }
         }
 
         await RestoreFromMarkerUnlockedAsync(
             new WarpModeRestoreMarker(original, WarpModePolicy.AppTunnelMode, DateTime.UtcNow),
-            "tunnel no longer needed",
+            context,
             ct);
         _modeSwitchedFrom = null;
     }
@@ -553,8 +610,8 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
             var current = await QueryModeUnlockedAsync(ct);
             if (current is null)
             {
-                _logger.Warning(
-                    $"WARP mode could not be read; keeping the restore marker to retry on next start ({context}).",
+                _logger.Info(
+                    $"{LogPrefix} Mode restore skipped ({context}): current mode could not be read; {marker.OriginalMode} not restored. Restore marker kept for the next start.",
                     LogTarget.All);
                 return;
             }
@@ -563,7 +620,7 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
             if (target is null)
             {
                 _logger.Info(
-                    $"WARP mode is now {current} (changed outside the app); not restoring {marker.OriginalMode}.",
+                    $"{LogPrefix} Mode restore skipped ({context}): current mode is {current}, not {marker.AppliedMode}, so it was changed outside the app; {marker.OriginalMode} not restored. Restore marker deleted.",
                     LogTarget.All);
                 TryDeleteMarker();
                 return;
@@ -571,23 +628,31 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
 
             if (!WarpModePolicy.IsValidModeName(target))
             {
-                _logger.Warning($"WARP restore mode '{target}' is not recognised; leaving {current}.", LogTarget.All);
+                _logger.Info(
+                    $"{LogPrefix} Mode restore skipped ({context}): restore target '{target}' is not recognised; mode stays {current}. Restore marker deleted.",
+                    LogTarget.All);
                 TryDeleteMarker();
                 return;
             }
 
+            _logger.Info(
+                $"{LogPrefix} Before restore ({context}): mode={current}, connected={YesNo(LastKnownConnected)} (last status read). Restoring {target}.",
+                LogTarget.All);
+            var started = Stopwatch.GetTimestamp();
             var result = await RunCliUnlockedAsync($"mode {target}", ct);
             if (result.ExitCode != 0)
             {
                 LogCliOutputOnce("mode", result);
-                _logger.Warning(
-                    $"WARP mode restore {current} → {target} failed; keeping the marker to retry on next start.",
+                _logger.Info(
+                    $"{LogPrefix} Mode restore {current} → {target} failed ({context}) after {ElapsedText(started)} (warp-cli exit {result.ExitCode}): mode stays {current}. Restore marker kept; the next start retries it.",
                     LogTarget.All);
                 return;
             }
 
             TryDeleteMarker();
-            _logger.Info($"WARP mode {current} → {target} restored ({context}).", LogTarget.All);
+            _logger.Info(
+                $"{LogPrefix} Mode restored {current} → {target} ({context}) in {ElapsedText(started)}; restore marker deleted.",
+                LogTarget.All);
         }
         catch (OperationCanceledException)
         {
@@ -595,7 +660,9 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
         }
         catch (Exception ex)
         {
-            _logger.Warning($"WARP mode restore failed ({context}): {ex.Message}", LogTarget.All);
+            _logger.Info(
+                $"{LogPrefix} Mode restore ({context}) failed: {ex.Message}. Mode state unknown; restore marker kept for the next start.",
+                LogTarget.All);
         }
     }
 
@@ -643,7 +710,7 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            _logger.Warning($"WARP mode restore marker write failed: {ex.Message}", LogTarget.All);
+            _logger.Info($"{LogPrefix} Mode restore marker write failed: {ex.Message}", LogTarget.All);
         }
     }
 
@@ -655,7 +722,7 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            _logger.Warning($"WARP mode restore marker delete failed: {ex.Message}", LogTarget.File);
+            _logger.Info($"{LogPrefix} Mode restore marker delete failed: {ex.Message}", LogTarget.File);
         }
     }
 
@@ -684,29 +751,37 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
         return false;
     }
 
-    private async Task DisconnectCliUnlockedAsync(CancellationToken ct, bool logAsForce)
+    private async Task DisconnectCliUnlockedAsync(CancellationToken ct, string cause, bool logAsForce)
     {
         if (!IsAvailable)
         {
-            _logger.Warning($"WARP CLI not available at {ResolvedExecutablePath}.", LogTarget.All);
+            _logger.Info(
+                $"{LogPrefix} Disconnect skipped ({cause}): warp-cli not available at {ResolvedExecutablePath}; marking connected=no.",
+                LogTarget.All);
             SetLastKnown(false);
             RaiseChanged(logAsForce ? WarpConnectionChangeSource.User : WarpConnectionChangeSource.Cli);
             return;
         }
 
+        var started = Stopwatch.GetTimestamp();
         try
         {
             _logger.Info(
-                logAsForce ? "Force-disconnecting WARP via warp-cli..." : "Disconnecting WARP via warp-cli...",
+                $"{LogPrefix} Before disconnect ({cause}): connected={YesNo(LastKnownConnected)} (last status read), mode={DescribeKnownMode()}. Running warp-cli disconnect.",
                 LogTarget.All);
             var result = await RunCliUnlockedAsync("disconnect", ct);
             if (result.ExitCode != 0)
             {
                 LogCliOutputOnce("disconnect", result);
+                _logger.Info(
+                    $"{LogPrefix} Disconnect ({cause}) failed after {ElapsedText(started)} (warp-cli exit {result.ExitCode}); marking connected=no, the real state is not verified.",
+                    LogTarget.All);
             }
             else
             {
-                _logger.Info("WARP disconnect completed.", LogTarget.File | LogTarget.Console);
+                _logger.Info(
+                    $"{LogPrefix} Disconnected ({cause}) in {ElapsedText(started)} (warp-cli exit 0); connected=no.",
+                    LogTarget.All);
             }
 
             SetLastKnown(false);
@@ -719,7 +794,9 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
         }
         catch (Exception ex)
         {
-            _logger.Warning($"WARP disconnect failed: {ex.Message}", LogTarget.All);
+            _logger.Info(
+                $"{LogPrefix} Disconnect ({cause}) failed after {ElapsedText(started)}: {ex.Message}. Connected state not verified.",
+                LogTarget.All);
         }
     }
 
@@ -748,7 +825,7 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
 
     private Task<WarpCliRunResult> RunCliUnlockedAsync(string arguments, CancellationToken ct)
     {
-        return WarpCliProcess.RunAsync(
+        return _runCli(
             ResolvedExecutablePath,
             $"--accept-tos {arguments}",
             WarpCliProcess.DeadlineFor(arguments),
@@ -761,15 +838,43 @@ public sealed class WarpCliService : IWarpCliService, IDisposable
         if (string.IsNullOrEmpty(trimmed))
         {
             _logger.Warning(
-                $"WARP {operation} failed (exit {result.ExitCode}) with empty CLI output.",
+                $"{LogPrefix} warp-cli {operation} failed (exit {result.ExitCode}) with empty CLI output.",
                 LogTarget.File | LogTarget.Console);
             return;
         }
 
         _logger.Warning(
-            $"WARP {operation} failed (exit {result.ExitCode}): {trimmed}",
+            $"{LogPrefix} warp-cli {operation} failed (exit {result.ExitCode}): {trimmed}",
             LogTarget.File | LogTarget.Console);
     }
+
+    /// <summary>Mode text for connect lines: the app's tunnel mode once switched, else what this call read.</summary>
+    private string DescribeModeAfterSwitch(string? readMode)
+    {
+        if (_modeSwitchedFrom is not null)
+        {
+            return WarpModePolicy.AppTunnelMode;
+        }
+
+        return readMode is null ? DescribeKnownMode() : readMode;
+    }
+
+    /// <summary>Mode text for disconnect lines: uses only what the app already holds, never a new CLI call.</summary>
+    private string DescribeKnownMode()
+    {
+        if (_modeSwitchedFrom is not null)
+        {
+            return $"{WarpModePolicy.AppTunnelMode} (app-switched from {_modeSwitchedFrom})";
+        }
+
+        var last = LastKnownMode;
+        return string.IsNullOrWhiteSpace(last) ? "not read" : $"{last} (last read)";
+    }
+
+    private static string YesNo(bool value) => value ? "yes" : "no";
+
+    private static string ElapsedText(long startTimestamp) =>
+        $"{Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds:0} ms";
 
     private void AddLease(WarpLeaseReason reason, bool tunnelActive)
     {
