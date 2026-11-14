@@ -122,7 +122,9 @@ public sealed class AutomationFlowService : IAutomationFlowService
                 recipe,
                 _settingsService.Current.AutoTorrent,
                 request.Overrides);
-            return BuildDryRunResult(_settingsService.Current.AutoTorrent, recipe, show.DisplayTitle, queries, evaluated, maxCandidates, session.Session.NoSourceReason, session.Session.BackendNote);
+            var dryRun = BuildDryRunResult(_settingsService.Current.AutoTorrent, recipe, show.DisplayTitle, queries, evaluated, maxCandidates, session.Session.NoSourceReason, session.Session.BackendNote);
+            _logger.Info(CartRunLog.Evaluation($"{show.DisplayTitle} S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00}", evaluated, dryRun), LogTarget.All);
+            return dryRun;
         }
         finally
         {
@@ -162,7 +164,9 @@ public sealed class AutomationFlowService : IAutomationFlowService
                 request.Overrides);
             // native-search P5 / SRCH-15: movies often have hundreds of encodes; keep up to 40 ranked by the
             // recipe score so the cart picker can compare them (the recipe's own count still decides the top).
-            return BuildDryRunResult(_settingsService.Current.AutoTorrent, recipe, movie.DisplayTitle, queries, evaluated, Math.Max(maxCandidates, MovieCandidateListCap), session.Session.NoSourceReason, session.Session.BackendNote);
+            var dryRun = BuildDryRunResult(_settingsService.Current.AutoTorrent, recipe, movie.DisplayTitle, queries, evaluated, Math.Max(maxCandidates, MovieCandidateListCap), session.Session.NoSourceReason, session.Session.BackendNote);
+            _logger.Info(CartRunLog.Evaluation(movie.DisplayTitle, evaluated, dryRun), LogTarget.All);
+            return dryRun;
         }
         finally
         {

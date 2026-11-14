@@ -387,12 +387,14 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
                     {
                         noCandidateCount++;
                         _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.NoCandidates, SearchBackendNotes.Append(result.Detail, result.BackendNote));
+                        _logger.Info(CartRunLog.OrderNoCandidates(order, result.Detail, result.BackendNote), LogTarget.All);
                         continue;
                     }
 
                     candidateCount++;
                     _torrentCartService.ReplaceCandidates(result.Order.Id, result.Candidates);
                     AppendBackendNote(result.Order.Id, result.BackendNote);
+                    _logger.Info(CartRunLog.OrderFound(order, result.Candidates.Count, result.BackendNote), LogTarget.All);
                 }
                 catch (OperationCanceledException)
                 {
@@ -404,11 +406,13 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
                 {
                     failedCount++;
                     _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.Failed, ex.Message);
+                    _logger.Warning(CartRunLog.OrderFailed(order, ex), LogTarget.All);
                 }
                 catch (Exception ex)
                 {
                     failedCount++;
                     _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.Failed, ex.Message);
+                    LogOrderFailure(order, ex);
                 }
             }
 
@@ -416,7 +420,8 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
             {
                 _trackedShowService.RefreshAvailability();
                 _trackedMovieService.RefreshAvailability();
-                finalStatus = $"Search complete. Candidates={candidateCount}, No candidates={noCandidateCount}, Failed={failedCount}.";
+                finalStatus = CartRunLog.RunComplete(candidateCount, noCandidateCount, failedCount);
+                _logger.Info(finalStatus, LogTarget.All);
             }
             else
             {
@@ -698,11 +703,13 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
                     if (result.NoCandidates)
                     {
                         _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.NoCandidates, SearchBackendNotes.Append(result.Detail, result.BackendNote));
+                        _logger.Info(CartRunLog.OrderNoCandidates(order, result.Detail, result.BackendNote), LogTarget.All);
                     }
                     else
                     {
                         _torrentCartService.ReplaceCandidates(result.Order.Id, result.Candidates);
                         AppendBackendNote(result.Order.Id, result.BackendNote);
+                        _logger.Info(CartRunLog.OrderFound(order, result.Candidates.Count, result.BackendNote), LogTarget.All);
                     }
                 }
                 catch (OperationCanceledException)
@@ -713,16 +720,19 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
                 catch (Exception ex)
                 {
                     _torrentCartService.UpdateOrderStatus(order.Id, TorrentOrderStatus.Failed, ex.Message);
+                    LogOrderFailure(order, ex);
                 }
             }
 
             _trackedShowService.RefreshAvailability();
             _trackedMovieService.RefreshAvailability();
             StatusMessage = $"Re-search complete for {order.Title}.";
+            _logger.Info($"Re-search complete for cart order id={order.Id}.", LogTarget.All);
         }
         catch (OperationCanceledException)
         {
             StatusMessage = "Re-search stopped by user.";
+            _logger.Info("Re-search stopped by user.", LogTarget.All);
         }
         finally
         {
@@ -1476,6 +1486,18 @@ public sealed partial class TorrentWorkspaceViewModel : ViewModelBase
         _operationCts?.Dispose();
         _operationCts = null;
         IsRunningCart = false;
+    }
+
+    private void LogOrderFailure(TorrentCartOrder order, Exception exception)
+    {
+        // No site answering is an expected outcome (the order says so); anything else is a bug worth a stack trace.
+        if (exception is SearchSourceUnavailableException)
+        {
+            _logger.Warning(CartRunLog.OrderFailed(order, exception), LogTarget.All);
+            return;
+        }
+
+        _logger.Error(CartRunLog.OrderFailed(order, exception), exception, LogTarget.All);
     }
 
     private void MarkSearchingEpisodeOrdersCanceled(IReadOnlyList<TorrentCartOrder> episodeOrders)
