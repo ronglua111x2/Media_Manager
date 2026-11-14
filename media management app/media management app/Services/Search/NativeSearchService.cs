@@ -69,7 +69,8 @@ public sealed record SearchSubject(
     int? Season = null,
     int? Episode = null,
     Func<TorrentSearchResult, RecipeCandidateResult>? Evaluate = null,
-    int? Year = null);
+    int? Year = null,
+    int? EvaluatedTargets = null);
 
 /// <summary>
 /// App side of native search (native-search P2): builds the indexer set from settings, owns the request
@@ -457,6 +458,8 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
                 season = subject?.Season,
                 episode = subject?.Episode,
                 evaluated = subject?.Evaluate is not null,
+                // A show snapshot is scored against several wanted episodes (best verdict per row); null elsewhere.
+                targets = subject?.EvaluatedTargets,
                 native = new { rows = native.Keys.Count, good = native.Good.Count, excellent = native.Excellent, top = native.TopName, topScore = native.TopScore, ms = nativeMs, fromMemo = nativeFromMemo },
                 qbittorrent = new { rows = qbit.Keys.Count, good = qbit.Good.Count, excellent = qbit.Excellent, top = qbit.TopName, topScore = qbit.TopScore, ms = qbitMs, error = qbitError },
                 both = native.Keys.Intersect(qbit.Keys).Count(),

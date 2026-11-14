@@ -526,6 +526,10 @@ public sealed class FetchJobService : IFetchJobService
             $"Cart snapshot search started for {show.DisplayTitle}. Recipe='{recipe.Name}', Orders={targetEpisodes.Count}, TargetResults={RecipeRuntimeSettings.GetSnapshotTargetResults(recipe, _settingsService.Current.AutoTorrent)}, TimeoutSeconds={RecipeRuntimeSettings.GetSnapshotTimeoutSeconds(recipe, _settingsService.Current.AutoTorrent)}, LocalWorkers={RecipeRuntimeSettings.GetLocalMatchWorkers(recipe, _settingsService.Current.AutoTorrent)}.",
             LogTarget.All);
 
+        var usesAnimeAbsolute = RecipeRuntimeSettings.UsesAnimeAbsoluteEpisodeNumbering(recipe);
+        var matcher = new SnapshotCandidateMatcher();
+        var titleVariants = _titleResolver.ResolveForMatching(recipe, show.Title, show.GetSearchableAlternativeTitles());
+
         // One search session for the show-level snapshot (07d GOV-03 B).
         IReadOnlyList<TorrentSearchResult> snapshotResults;
         using (var session = NativeSearchService.BeginSession())
@@ -535,7 +539,8 @@ public sealed class FetchJobService : IFetchJobService
                 _progressService,
                 cancellationToken,
                 MediaKind.TvEpisode,
-                recipe.RecipeId);
+                recipe.RecipeId,
+                scoring: BuildSnapshotScoring(show, targetEpisodes, recipe, overrides, matcher, titleVariants, usesAnimeAbsolute));
             lock (_gate)
             {
                 foreach (var episode in targetEpisodes)
@@ -558,7 +563,6 @@ public sealed class FetchJobService : IFetchJobService
         }
 
         _progressService.Report(0, "Filtering results...");
-        var usesAnimeAbsolute = RecipeRuntimeSettings.UsesAnimeAbsoluteEpisodeNumbering(recipe);
         var snapshotCandidates = snapshotResults
             .Select(result => new SnapshotCandidate
             {
@@ -566,8 +570,6 @@ public sealed class FetchJobService : IFetchJobService
                 Parsed = TorrentCandidateParser.Parse(result.FileName, usesAnimeAbsolute)
             })
             .ToList();
-        var matcher = new SnapshotCandidateMatcher();
-        var titleVariants = _titleResolver.ResolveForMatching(recipe, show.Title, show.GetSearchableAlternativeTitles());
         var snapshotQueries = _searchPlanBuilder.BuildShowSnapshotQueries(recipe, show);
         var workerCount = Math.Min(
             RecipeRuntimeSettings.GetLocalMatchWorkers(recipe, _settingsService.Current.AutoTorrent),
@@ -649,6 +651,39 @@ public sealed class FetchJobService : IFetchJobService
 
         await SearchMissingSnapshotEpisodesAsync(show, targetEpisodes, recipe, results, statusChanged, overrides, cancellationToken);
         return results;
+    }
+
+    /// <summary>Most wanted episodes a snapshot is scored against: bounds the work for a long backlog.</summary>
+    internal const int MaxSnapshotScoredEpisodes = 24;
+
+    /// <summary>
+    /// Scores the show snapshot for the Both-mode compare log (search-compare.jsonl): each row is judged by the same
+    /// snapshot matcher the cart uses, against up to <see cref="MaxSnapshotScoredEpisodes"/> of the wanted episodes,
+    /// and the best verdict wins (<see cref="SnapshotEvaluation"/>). Null when there is nothing to score against.
+    /// </summary>
+    private static SnapshotScoring? BuildSnapshotScoring(
+        TrackedShow show,
+        IReadOnlyList<TrackedEpisode> targetEpisodes,
+        SearchRecipe recipe,
+        RecipeExecutionOverrides? overrides,
+        SnapshotCandidateMatcher matcher,
+        IReadOnlyList<string> titleVariants,
+        bool usesAnimeAbsolute)
+    {
+        var targets = targetEpisodes.Take(MaxSnapshotScoredEpisodes).ToList();
+        if (targets.Count == 0)
+        {
+            return null;
+        }
+
+        var effective = RecipeRuntimeSettings.WithCartOverrides(recipe, overrides);
+        var weights = RecipeRuntimeSettings.GetCandidateScoringWeights(effective);
+        var evaluators = targets
+            .Select(episode => (Func<TorrentSearchResult, RecipeCandidateResult>)(row => matcher
+                .Match(show, episode, new SnapshotCandidate { Result = row, Parsed = TorrentCandidateParser.Parse(row.FileName, usesAnimeAbsolute) }, effective, titleVariants, weights)
+                .ToRecipeCandidateResult(row)))
+            .ToList();
+        return new SnapshotScoring(SnapshotEvaluation.BestOf(effective, evaluators), targets.Count);
     }
 
     /// <summary>

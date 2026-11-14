@@ -3,6 +3,9 @@ using media_management_app.Models;
 
 namespace media_management_app.Services;
 
+/// <summary>How to score a show snapshot: the combined verdict over the wanted episodes and how many there are.</summary>
+public sealed record SnapshotScoring(Func<TorrentSearchResult, RecipeCandidateResult> Evaluate, int Targets);
+
 public sealed class ShowSearchSnapshotService
 {
     private const int SnapshotPollDelayMilliseconds = 1000;
@@ -39,7 +42,8 @@ public sealed class ShowSearchSnapshotService
         CancellationToken cancellationToken,
         MediaKind recipeKind = MediaKind.TvEpisode,
         string? recipeId = null,
-        IReadOnlyList<int>? packSeasons = null)
+        IReadOnlyList<int>? packSeasons = null,
+        SnapshotScoring? scoring = null)
     {
         if (progressService is null)
         {
@@ -126,7 +130,7 @@ public sealed class ShowSearchSnapshotService
                     resolved.RequestedNames,
                     cancellationToken),
                 cancellationToken,
-                new SearchSubject(IsMovie: false, show.TmdbId));
+                new SearchSubject(IsMovie: false, show.TmdbId, Evaluate: scoring?.Evaluate, EvaluatedTargets: scoring?.Targets));
             completedQueries++;
             progressService?.Report(completedQueries, $"Search: Query {completedQueries}/{totalQueries}");
             _logger.Info(

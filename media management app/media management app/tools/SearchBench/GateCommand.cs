@@ -78,7 +78,7 @@ public static class GateCommand
 
         Console.WriteLine();
         Console.WriteLine("Gate (06 §4, as revised in 08 §Q5): native good ≥ 90% of qBittorrent on ≥ 90% of evaluated searches,");
-        Console.WriteLine("#1 not worse on ≥ 95%, median native time ≤ 15 s. Snapshot searches are not evaluated (show-level).");
+        Console.WriteLine("#1 not worse on ≥ 95%, median native time ≤ 15 s. Show snapshots are scored against the wanted episodes (best verdict per row, `targets` field); season-pack snapshots are not evaluated.");
         return 0;
     }
 }
