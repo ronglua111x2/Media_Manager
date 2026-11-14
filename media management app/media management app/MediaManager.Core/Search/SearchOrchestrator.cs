@@ -106,14 +106,22 @@ public sealed record OrchestratedSearch(
 
 /// <summary>
 /// Time budget of one search. PerIndexer limits each network request (a hanging site is cut off);
-/// Overall limits the whole search including waiting for the request governor: when a site's rate limit is
-/// used up, the search waits its turn instead of skipping the site.
+/// Overall limits the whole search including waiting for the request governor: when a site's min-interval or
+/// per-minute limit is used up, the search waits its turn instead of skipping the site.
+/// PerSite limits everything one site may take in this search (all its queries, pages and detail lookups, and the
+/// waiting for its turn): a site over it is dropped from this search with the rows it already returned, and the
+/// other sites go on without waiting for it. Null = no per-site limit. A site cooling down after a 429 is never
+/// waited for (<see cref="IndexerRequestGovernor"/>), whatever the budget.
 /// </summary>
-public sealed record SearchBudget(TimeSpan PerIndexer, TimeSpan Overall, TimeSpan MaxGovernorWait)
+public sealed record SearchBudget(TimeSpan PerIndexer, TimeSpan Overall, TimeSpan MaxGovernorWait, TimeSpan? PerSite = null)
 {
-    public static SearchBudget Interactive { get; } = new(TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(90), TimeSpan.FromSeconds(90));
+    public static readonly TimeSpan DefaultInteractivePerSite = TimeSpan.FromSeconds(15);
 
-    public static SearchBudget Background { get; } = new(TimeSpan.FromSeconds(15), TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5));
+    public static readonly TimeSpan DefaultBackgroundPerSite = TimeSpan.FromSeconds(60);
+
+    public static SearchBudget Interactive { get; } = new(TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(90), TimeSpan.FromSeconds(90), DefaultInteractivePerSite);
+
+    public static SearchBudget Background { get; } = new(TimeSpan.FromSeconds(15), TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5), DefaultBackgroundPerSite);
 }
 
 /// <summary>
@@ -308,7 +316,20 @@ public sealed class SearchOrchestrator(IndexerRequestGovernor governor, Func<str
         using var siteRun = governor.BeginSiteRun(indexer.Id, lane);
         var watch = Stopwatch.StartNew();
         var rows = new List<TorrentSearchResult>();
-        var http = httpFactory(indexer.Id, lane, budget);
+        // This site's own clock: when it runs out only this site stops, the other sites of the search carry on.
+        using var siteCts = CancellationTokenSource.CreateLinkedTokenSource(overallToken);
+        if (budget.PerSite is { } perSite)
+        {
+            siteCts.CancelAfter(perSite);
+        }
+
+        var siteToken = siteCts.Token;
+        // Waiting for the site's turn never goes past its budget: a longer wait is refused at once ("would wait past
+        // the search budget") instead of being sat out until the clock stops the run.
+        var http = httpFactory(
+            indexer.Id,
+            lane,
+            budget.PerSite is { } limit && limit < budget.MaxGovernorWait ? budget with { MaxGovernorWait = limit } : budget);
         var ran = 0;
         string status = "ok";
         string? detail = null;
@@ -326,7 +347,7 @@ public sealed class SearchOrchestrator(IndexerRequestGovernor governor, Func<str
                     continue;
                 }
 
-                var found = await indexer.SearchAsync(query, http, overallToken);
+                var found = await indexer.SearchAsync(query, http, siteToken);
                 http.ReportParsed(true);
                 ran++;
                 rows.AddRange(found
@@ -339,7 +360,7 @@ public sealed class SearchOrchestrator(IndexerRequestGovernor governor, Func<str
 
             if (indexer is IDetailPageResolver resolver)
             {
-                rows = await ResolveDetailRowsAsync(resolver, rows, http, couldMatter, overallToken);
+                rows = await ResolveDetailRowsAsync(resolver, rows, http, couldMatter, siteToken);
             }
         }
         catch (OperationCanceledException) when (callerToken.IsCancellationRequested)
@@ -348,8 +369,11 @@ public sealed class SearchOrchestrator(IndexerRequestGovernor governor, Func<str
         }
         catch (OperationCanceledException)
         {
+            // The site's own budget ran out while the search still had time, or the whole search did.
             status = "timeout";
-            detail = $"{budget.Overall.TotalSeconds:0}s search budget";
+            detail = overallToken.IsCancellationRequested || budget.PerSite is null
+                ? $"{budget.Overall.TotalSeconds:0}s search budget"
+                : $"{budget.PerSite.Value.TotalSeconds:0}s site budget";
         }
         catch (IndexerSearchCapException ex)
         {
@@ -380,6 +404,13 @@ public sealed class SearchOrchestrator(IndexerRequestGovernor governor, Func<str
             http.ReportParsed(false);
             status = "parse-error";
             detail = $"{ex.GetType().Name}: {ex.Message}";
+        }
+
+        if (status != "ok" && indexer is IDetailPageResolver)
+        {
+            // The run stopped before the detail pages were read: a row that still carries a page link instead of a
+            // magnet cannot be added, so it must not reach the candidate list.
+            rows = rows.Where(row => row.FileUrl.StartsWith("magnet:", StringComparison.OrdinalIgnoreCase)).ToList();
         }
 
         return (new IndexerRunTelemetry(indexer.Id, status, rows.Count, ran, watch.ElapsedMilliseconds, detail, http.NetworkRequests, http.CacheHits), rows);

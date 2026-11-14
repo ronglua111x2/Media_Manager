@@ -29,6 +29,12 @@ public partial class SettingsViewModel
     [ObservableProperty]
     private int searchOverallTimeoutSeconds = 90;
 
+    [ObservableProperty]
+    private int searchSiteBudgetSeconds = 15;
+
+    [ObservableProperty]
+    private int searchBackgroundSiteBudgetSeconds = 60;
+
     public void AttachNativeSearch(INativeSearchService nativeSearch)
     {
         _nativeSearch = nativeSearch;
@@ -43,6 +49,8 @@ public partial class SettingsViewModel
         SearchPauseAll = _nativeSearch?.PauseAll ?? search.PauseAll;
         SearchPerIndexerTimeoutSeconds = search.PerIndexerTimeoutSeconds;
         SearchOverallTimeoutSeconds = search.OverallTimeoutSeconds;
+        SearchSiteBudgetSeconds = search.SiteBudgetSeconds;
+        SearchBackgroundSiteBudgetSeconds = search.BackgroundSiteBudgetSeconds;
         SearchIndexers.Clear();
         RefreshSearchHealth();
     }
@@ -54,6 +62,8 @@ public partial class SettingsViewModel
         search.NativeEnabled = SearchNativeEnabled;
         search.PerIndexerTimeoutSeconds = Math.Clamp(SearchPerIndexerTimeoutSeconds, 3, 60);
         search.OverallTimeoutSeconds = Math.Clamp(SearchOverallTimeoutSeconds, 10, 600);
+        search.SiteBudgetSeconds = Math.Clamp(SearchSiteBudgetSeconds, 5, 120);
+        search.BackgroundSiteBudgetSeconds = Math.Clamp(SearchBackgroundSiteBudgetSeconds, 10, 300);
         foreach (var row in SearchIndexers)
         {
             if (!search.Indexers.TryGetValue(row.Id, out var config))

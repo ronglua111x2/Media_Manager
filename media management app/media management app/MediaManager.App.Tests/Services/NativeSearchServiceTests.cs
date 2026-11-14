@@ -225,6 +225,42 @@ public sealed class NativeSearchServiceTests : IDisposable
         Assert.Equal(TimeSpan.FromMinutes(45), NativeSearchService.CacheTtlFor("knaben", SearchLane.Background));
     }
 
+    [Fact]
+    public void SiteBudget_DefaultsTo15SecondsInteractive_WiderInBackground_AndIsConfigurable()
+    {
+        var settings = new NativeSearchSettings();
+
+        var interactive = NativeSearchService.BudgetFor(settings, SearchLane.Interactive);
+        var background = NativeSearchService.BudgetFor(settings, SearchLane.Background);
+        Assert.Equal(TimeSpan.FromSeconds(15), interactive.PerSite);
+        Assert.Equal(TimeSpan.FromSeconds(60), background.PerSite);
+        Assert.Equal(TimeSpan.FromSeconds(15), interactive.PerIndexer);
+        Assert.Equal(TimeSpan.FromSeconds(90), interactive.Overall);
+
+        settings.SiteBudgetSeconds = 25;
+        settings.BackgroundSiteBudgetSeconds = 120;
+        Assert.Equal(TimeSpan.FromSeconds(25), NativeSearchService.BudgetFor(settings, SearchLane.Interactive).PerSite);
+        Assert.Equal(TimeSpan.FromSeconds(120), NativeSearchService.BudgetFor(settings, SearchLane.Background).PerSite);
+
+        settings.SiteBudgetSeconds = 0;
+        settings.BackgroundSiteBudgetSeconds = 99999;
+        Assert.Equal(TimeSpan.FromSeconds(5), NativeSearchService.BudgetFor(settings, SearchLane.Interactive).PerSite);
+        Assert.Equal(TimeSpan.FromSeconds(300), NativeSearchService.BudgetFor(settings, SearchLane.Background).PerSite);
+    }
+
+    [Fact]
+    public void SitesOverBudget_ListsOnlyTheSitesCutAtTheirOwnBudget()
+    {
+        var runs = new[]
+        {
+            new IndexerRunTelemetry("kickass", "timeout", 0, 1, 15000, "15s site budget"),
+            new IndexerRunTelemetry("apibay", "timeout", 0, 1, 90000, "90s search budget"),
+            new IndexerRunTelemetry("knaben", "ok", 10, 1, 100, null)
+        };
+
+        Assert.Equal(["kickass"], NativeSearchService.SitesOverBudget(runs));
+    }
+
     public void Dispose()
     {
         try

@@ -517,7 +517,9 @@ public sealed class IndexerRequestGovernor
 
         if (state.CooldownUntilUtc is { } cooldown && cooldown > now)
         {
-            retryAt = cooldown;
+            // Not a wait the search queues for (retryAt stays null): the shortest cooldown is the server's Retry-After
+            // or 30 s of backoff, longer than any site's share of a search. Waiting it out held a whole search to its
+            // 90 s budget on a site that had just answered 429; the site is skipped for this search instead.
             return $"cooling down after rate limit until {cooldown:HH:mm:ss} UTC";
         }
 

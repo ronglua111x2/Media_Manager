@@ -69,7 +69,8 @@ public sealed record SearchSubject(
     int? Season = null,
     int? Episode = null,
     Func<TorrentSearchResult, RecipeCandidateResult>? Evaluate = null,
-    int? Year = null);
+    int? Year = null,
+    int? EvaluatedTargets = null);
 
 /// <summary>
 /// App side of native search (native-search P2): builds the indexer set from settings, owns the request
@@ -375,14 +376,32 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
     public static TimeSpan CacheTtlFor(string indexerId, SearchLane lane) =>
         indexerId == "eztv" && lane == SearchLane.Background ? TimeSpan.FromHours(2) : TimeSpan.FromMinutes(45);
 
+    /// <summary>Sites a search stopped at their own budget (not at the search's).</summary>
+    public static IReadOnlyList<string> SitesOverBudget(IReadOnlyList<IndexerRunTelemetry> runs) =>
+        runs.Where(run => run.Status == "timeout" && run.Detail?.Contains("site budget", StringComparison.Ordinal) == true)
+            .Select(run => run.IndexerId)
+            .ToList();
+
+    /// <summary>
+    /// The time budget of one search in <paramref name="lane"/>: a timeout per request, a budget per site (Settings,
+    /// 15 s interactive, 60 s background) and the budget of the whole search (90 s interactive, 5 min background).
+    /// </summary>
+    public static SearchBudget BudgetFor(NativeSearchSettings settings, SearchLane lane)
+    {
+        var overall = lane == SearchLane.Background
+            ? TimeSpan.FromMinutes(5)
+            : TimeSpan.FromSeconds(Math.Clamp(settings.OverallTimeoutSeconds, 10, 600));
+        var perSite = lane == SearchLane.Background
+            ? TimeSpan.FromSeconds(Math.Clamp(settings.BackgroundSiteBudgetSeconds, 10, 300))
+            : TimeSpan.FromSeconds(Math.Clamp(settings.SiteBudgetSeconds, 5, 120));
+        return new SearchBudget(TimeSpan.FromSeconds(Math.Clamp(settings.PerIndexerTimeoutSeconds, 3, 60)), overall, overall, perSite);
+    }
+
     private async Task<NativeOutcome> SearchReducedAsync(SearchRecipe recipe, string query, IReadOnlyList<string> specifics, MediaKind kind, CancellationToken cancellationToken, SearchSubject? subject, SearchSession session)
     {
         var settings = Settings;
         var lane = LaneScope.Value ?? SearchLane.Interactive;
-        var overall = lane == SearchLane.Background
-            ? TimeSpan.FromMinutes(5)
-            : TimeSpan.FromSeconds(Math.Clamp(settings.OverallTimeoutSeconds, 10, 600));
-        var budget = new SearchBudget(TimeSpan.FromSeconds(Math.Clamp(settings.PerIndexerTimeoutSeconds, 3, 60)), overall, overall);
+        var budget = BudgetFor(settings, lane);
         foreach (var id in NativeIndexerCatalog.AllIds)
         {
             _governor.SetDisabled(id, !NativeIndexerCatalog.IsEnabled(settings, id));
@@ -406,6 +425,14 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
             // Kickass rows carry no hash: only rows the recipe could accept get their detail page opened.
             subject?.Evaluate is { } evaluate ? row => evaluate(row).IsAccepted : null);
         _logger.Info($"[Search] native query='{query}' kind={kind}{(isAnime ? " anime" : "")} lane={lane}: {outcome.Summary}", LogTarget.File | LogTarget.Console);
+        var overSiteBudget = SitesOverBudget(outcome.Indexers);
+        if (overSiteBudget.Count > 0)
+        {
+            _logger.Warning(
+                $"[Search] native query='{query}' lane={lane}: {string.Join(", ", overSiteBudget)} left out after the site budget ({budget.PerSite?.TotalSeconds:0}s); the other sites were not held up. " +
+                "Raise it in Settings > Search engines if this site is usually slow but healthy.",
+                LogTarget.File);
+        }
         // Without the IMDb id EZTV (IMDb-only) ran no query but still says "ok": do not memoize that answer.
         return new NativeOutcome(outcome.Results, IsComplete(outcome.Indexers) && !imdbFailed, outcome.Indexers);
     }
@@ -457,6 +484,8 @@ public sealed class NativeSearchService : INativeSearchService, IDisposable
                 season = subject?.Season,
                 episode = subject?.Episode,
                 evaluated = subject?.Evaluate is not null,
+                // A show snapshot is scored against several wanted episodes (best verdict per row); null elsewhere.
+                targets = subject?.EvaluatedTargets,
                 native = new { rows = native.Keys.Count, good = native.Good.Count, excellent = native.Excellent, top = native.TopName, topScore = native.TopScore, ms = nativeMs, fromMemo = nativeFromMemo },
                 qbittorrent = new { rows = qbit.Keys.Count, good = qbit.Good.Count, excellent = qbit.Excellent, top = qbit.TopName, topScore = qbit.TopScore, ms = qbitMs, error = qbitError },
                 both = native.Keys.Intersect(qbit.Keys).Count(),
