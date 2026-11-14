@@ -34,6 +34,16 @@ public sealed class NativeSearchSettings
     /// <summary>Budget of one interactive search, including waiting for a site's rate limit (Auto-Track gets 5 min).</summary>
     public int OverallTimeoutSeconds { get; set; } = 90;
 
+    /// <summary>
+    /// Time one site may take in one search the user started (all its queries, pages and detail lookups, and waiting
+    /// for its turn), separate from the per-request timeout: a site over it is dropped from that search, the others
+    /// do not wait for it (<see cref="SearchBudget.PerSite"/>).
+    /// </summary>
+    public int SiteBudgetSeconds { get; set; } = 15;
+
+    /// <summary>The same for Auto-Track and other unattended searches, which can afford to wait longer.</summary>
+    public int BackgroundSiteBudgetSeconds { get; set; } = 60;
+
     public bool PauseAll { get; set; }
 
     /// <summary>

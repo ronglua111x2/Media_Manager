@@ -1565,6 +1565,21 @@
                                                                           Minimum="10" Maximum="600" />
                                         </Border>
                                     </UniformGrid>
+                                    <TextBlock Text="Budget per site in one search: you start it / Auto-Track (seconds)" Style="{StaticResource SettingsLabelStyle}" />
+                                    <UniformGrid Columns="2" Margin="0,0,0,2">
+                                        <Border Style="{StaticResource SettingsNumericChromeStyle}" Margin="0,0,6,0">
+                                            <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
+                                                                          Value="{Binding SearchSiteBudgetSeconds, UpdateSourceTrigger=PropertyChanged}"
+                                                                          Minimum="5" Maximum="120" />
+                                        </Border>
+                                        <Border Style="{StaticResource SettingsNumericChromeStyle}" Margin="6,0,0,0">
+                                            <materialDesign:NumericUpDown Style="{StaticResource SettingsNumericUpDownStyle}"
+                                                                          Value="{Binding SearchBackgroundSiteBudgetSeconds, UpdateSourceTrigger=PropertyChanged}"
+                                                                          Minimum="10" Maximum="300" />
+                                        </Border>
+                                    </UniformGrid>
+                                    <TextBlock Style="{StaticResource SettingsHintStyle}" Margin="0,0,0,8"
+                                               Text="A site that takes longer than this (all its requests together, including waiting for its rate limit) is left out of that search, with the rows it already returned; the other sites do not wait for it. A site cooling down after a 429 is skipped, never waited for." />
                                     <CheckBox IsChecked="{Binding SearchPauseAll, Mode=TwoWay}"
                                               Margin="0,0,0,8"
                                               Content="Pause all native searches (kill switch)" />
