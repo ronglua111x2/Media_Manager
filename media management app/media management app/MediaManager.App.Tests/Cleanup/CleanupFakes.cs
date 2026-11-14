@@ -21,8 +21,15 @@ internal sealed class FakeAppLogger : IAppLogger
     {
     }
 
+    /// <summary>Every info line logged, for tests that check what the app recorded (e.g. WARP mode changes).</summary>
+    public List<string> Infos { get; } = [];
+
     public void Info(string message, LogTarget targets = LogTarget.All, string filePath = "", string memberName = "")
     {
+        lock (Infos)
+        {
+            Infos.Add(message);
+        }
     }
 
     /// <summary>Every warning logged, for tests that check what the user is told.</summary>
