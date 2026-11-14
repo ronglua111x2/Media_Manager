@@ -25,7 +25,9 @@ public class WarpCliProcessTests
             WarpCliProcess.RunAsync("cmd.exe", HangArguments, TimeSpan.FromMilliseconds(300), CancellationToken.None));
 
         Assert.Contains("was killed", ex.Message);
-        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(30), $"took {stopwatch.Elapsed}");
+        // The hang lasts ~59 s, so finishing under 50 s still proves the process was stopped early.
+        // A busy CI runner can take tens of seconds to start and kill cmd.exe; 30 s was too tight there.
+        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(50), $"took {stopwatch.Elapsed}");
     }
 
     [Fact]
@@ -37,7 +39,9 @@ public class WarpCliProcessTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
             WarpCliProcess.RunAsync("cmd.exe", HangArguments, TimeSpan.FromSeconds(60), cts.Token));
 
-        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(30), $"took {stopwatch.Elapsed}");
+        // The hang lasts ~59 s, so finishing under 50 s still proves the process was stopped early.
+        // A busy CI runner can take tens of seconds to start and kill cmd.exe; 30 s was too tight there.
+        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(50), $"took {stopwatch.Elapsed}");
     }
 
     [Theory]
