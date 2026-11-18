@@ -276,6 +276,8 @@ Cách (b) rẻ và không đổi tính năng.
 
 **Hướng sửa:** đổi sang DIP bằng `PresentationSource.CompositionTarget.TransformFromDevice` và kẹp theo work area của màn hình chứa con trỏ. Tách thành một helper dùng chung cho hai window.
 
+**Đã sửa (2026-11-18):** `Common/WindowFit.RestoreFromMaximizedForDrag` thay cho hai bản chép `RestoreWindowForDrag`. Tính bằng pixel thiết bị rồi đổi sang DIP một lần theo DPI của cửa sổ, kẹp theo work area của màn hình chứa con trỏ (phần tính thuần ở `Common/WindowFitMath.cs`, có unit test). Cùng PR đó cũng xử lý cửa sổ không viền phóng to đè lên taskbar (hook `WM_GETMINMAXINFO`).
+
 ### UI-11 — Owner và vị trí dialog không nhất quán (Low)
 
 **Bằng chứng**

@@ -21,6 +21,7 @@ public partial class WebViewerWindow : Window
     public WebViewerWindow()
     {
         InitializeComponent();
+        WindowFit.Attach(this);
     }
 
     public WebViewerWindow(string title, PackIconLucideKind iconKind, string brandBrushKey, WindowIconKind windowIconKind)
@@ -114,7 +115,7 @@ public partial class WebViewerWindow : Window
 
         if (e.ButtonState == MouseButtonState.Pressed)
         {
-            RestoreWindowForDrag(e);
+            WindowFit.RestoreFromMaximizedForDrag(this);
             DragMove();
         }
     }
@@ -192,24 +193,5 @@ public partial class WebViewerWindow : Window
         ShellBorder.BorderThickness = isMaximized
             ? new Thickness(0)
             : NormalShellBorderThickness;
-    }
-
-    private void RestoreWindowForDrag(MouseButtonEventArgs e)
-    {
-        if (WindowState != WindowState.Maximized)
-        {
-            return;
-        }
-
-        var mousePosition = PointToScreen(e.GetPosition(this));
-        var restoredWidth = RestoreBounds.Width;
-        var restoredHeight = RestoreBounds.Height;
-        var horizontalRatio = mousePosition.X / ActualWidth;
-
-        WindowState = WindowState.Normal;
-        Width = restoredWidth;
-        Height = restoredHeight;
-        Left = mousePosition.X - (restoredWidth * horizontalRatio);
-        Top = Math.Max(0, mousePosition.Y - 20);
     }
 }

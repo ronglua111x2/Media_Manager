@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Shell;
+using media_management_app.Common;
 using media_management_app.Services;
 using media_management_app.ViewModels;
 
@@ -33,6 +34,7 @@ public partial class MainWindow : Window
         ICrashLogService crashLog)
     {
         InitializeComponent();
+        WindowFit.Attach(this);
         DataContext = viewModel;
         _settingsService = settingsService;
         _trayIconService = trayIconService;
@@ -250,7 +252,7 @@ public partial class MainWindow : Window
 
         if (e.ButtonState == MouseButtonState.Pressed)
         {
-            RestoreWindowForDrag(e);
+            WindowFit.RestoreFromMaximizedForDrag(this);
             DragMove();
         }
     }
@@ -302,24 +304,5 @@ public partial class MainWindow : Window
         WindowState = WindowState == WindowState.Maximized
             ? WindowState.Normal
             : WindowState.Maximized;
-    }
-
-    private void RestoreWindowForDrag(MouseButtonEventArgs e)
-    {
-        if (WindowState != WindowState.Maximized)
-        {
-            return;
-        }
-
-        var mousePosition = PointToScreen(e.GetPosition(this));
-        var restoredWidth = RestoreBounds.Width;
-        var restoredHeight = RestoreBounds.Height;
-        var horizontalRatio = mousePosition.X / ActualWidth;
-
-        WindowState = WindowState.Normal;
-        Width = restoredWidth;
-        Height = restoredHeight;
-        Left = mousePosition.X - (restoredWidth * horizontalRatio);
-        Top = Math.Max(0, mousePosition.Y - 20);
     }
 }
