@@ -9,12 +9,22 @@ public sealed class AppLaunchOptions
     public const string StateFolderFlag = "--state-folder";
     public const string ForceFirstRunFlag = "--force-first-run";
     public const string EnableBackgroundFlag = "--enable-background";
+    public const string UiSnapshotsFlag = "--ui-snapshots";
 
     public string? StateFolder { get; init; }
 
     public bool ForceFirstRun { get; init; }
 
     public bool EnableBackground { get; init; }
+
+    /// <summary>
+    /// Dev-only: render every main screen to PNG files in this folder, then exit.
+    /// Requires <see cref="StateFolderFlag"/> (a sandbox copy) and refuses <see cref="EnableBackgroundFlag"/>.
+    /// See docs/UI_SNAPSHOTS.md.
+    /// </summary>
+    public string? UiSnapshotOutputFolder { get; init; }
+
+    public bool IsUiSnapshotMode => !string.IsNullOrWhiteSpace(UiSnapshotOutputFolder);
 
     public bool HasStateFolderOverride => !string.IsNullOrWhiteSpace(StateFolder);
 
@@ -32,6 +42,7 @@ public sealed class AppLaunchOptions
         string? stateFolder = null;
         var forceFirstRun = false;
         var enableBackground = false;
+        string? uiSnapshotOutputFolder = null;
 
         for (var i = 0; i < args.Count; i++)
         {
@@ -50,6 +61,18 @@ public sealed class AppLaunchOptions
                 }
 
                 stateFolder = folderValue;
+                continue;
+            }
+
+            if (TryReadValueFlag(args, ref i, UiSnapshotsFlag, out var snapshotValue, out var snapshotError))
+            {
+                if (snapshotError is not null)
+                {
+                    error = snapshotError;
+                    return false;
+                }
+
+                uiSnapshotOutputFolder = snapshotValue;
                 continue;
             }
 
@@ -79,11 +102,37 @@ public sealed class AppLaunchOptions
             }
         }
 
+        if (!string.IsNullOrWhiteSpace(uiSnapshotOutputFolder))
+        {
+            if (string.IsNullOrWhiteSpace(stateFolder))
+            {
+                error = $"{UiSnapshotsFlag} needs {StateFolderFlag} <sandbox copy>; it never runs against the live state folder.";
+                return false;
+            }
+
+            if (enableBackground)
+            {
+                error = $"{UiSnapshotsFlag} cannot be combined with {EnableBackgroundFlag}.";
+                return false;
+            }
+
+            try
+            {
+                uiSnapshotOutputFolder = Path.GetFullPath(uiSnapshotOutputFolder.Trim());
+            }
+            catch (Exception ex)
+            {
+                error = $"Invalid {UiSnapshotsFlag} path: {ex.Message}";
+                return false;
+            }
+        }
+
         options = new AppLaunchOptions
         {
             StateFolder = stateFolder,
             ForceFirstRun = forceFirstRun,
-            EnableBackground = enableBackground
+            EnableBackground = enableBackground,
+            UiSnapshotOutputFolder = uiSnapshotOutputFolder
         };
         return true;
     }

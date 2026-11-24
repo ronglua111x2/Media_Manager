@@ -442,3 +442,6 @@ FodyWeavers.xsd
 # CI outputs
 /out/
 **/TestResults/
+
+# Local UI snapshots (scripts/ui-snapshots.ps1): they show real library titles, never commit
+/ui-snapshots/
