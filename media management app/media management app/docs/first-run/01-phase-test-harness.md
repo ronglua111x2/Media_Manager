@@ -13,6 +13,7 @@ Parsed by [`AppLaunchOptions.TryParse`](../../Common/AppLaunchOptions.cs) **befo
 | `--state-folder <path>` | Bootstrap and **pin** the state folder for the whole process. Never create or read `D:\MediaManagerState` this session. **Does not read or write** `%LocalAppData%\MediaManager\state-path.txt` (must not point the live app at the test folder). `settings.json` `StateFolder` inside a copied file is ignored. |
 | `--force-first-run` | Show [`FirstRunWindow`](../../Views/FirstRunWindow.xaml). On a new/`SetupCompleted == false` folder this is the **gate**. After Continue, the flag reopens a forced review (Close returns to the shell). |
 | `--enable-background` | With `--state-folder`, start Auto-Track, Backup, symlink, poster warmup like production. **Default is off.** |
+| `--ui-snapshots <folder>` | Dev tooling: with `--state-folder` (a sandbox copy, never the live folder), cut off external services, render every screen to PNG in `<folder>` and exit. Refuses `--enable-background`. Use `scripts/ui-snapshots.ps1`; see [UI_SNAPSHOTS.md](../UI_SNAPSHOTS.md). |
 
 Unknown args (for example toast activation) are ignored. Missing path after `--state-folder` shows a dialog and exits.
 

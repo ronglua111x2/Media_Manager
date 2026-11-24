@@ -35,6 +35,7 @@ meta:
     05-sprint-timeline.md (status/session notes/checklists), sprint-plans/sprint-NN-local-plan.md,
     and docs/code-review/ when audit findings or torrent safety change.
     Do not leave planning docs describing cancelled policies or stale DoD.
+  after_ui_change: "After any PR that changes UI, run scripts/ui-snapshots.ps1 and mention the snapshot folder (ui-snapshots/<run>/, git-ignored, real titles: never commit) in the report. docs/UI_SNAPSHOTS.md"
   known_debt:
     - library_reconcile_poster: "fixed — Reconciled/PackReconciled now RefreshSelectedDetailAfterReconcile (keep SelectedPosterImage; RebuildSelectedShowDetail / RebuildSelectedMovieDetail + cart). See docs/planning/sprint-plans/poster-flash-surgical-fix.md"
     - first_run: "Phases 1–4: harness, silent host scan, SetupCompleted gate, Host setup shell (Start/This PC/Apps/Library; local Restore apply; WARP hold for TMDB Test). State bootstrap: LocalAppData pointer. docs/first-run/"
@@ -704,4 +705,5 @@ resolved_docs:
 - [IMPROVEMENTS.md](./IMPROVEMENTS.md) — evaluation and suggestions
 - [BUILD.md](./BUILD.md) — x64 MSBuild and test commands
 - [STATE_FOLDER.md](./STATE_FOLDER.md) — state folder, OAuth, SchemaMigrations / FetchJobs purge
+- [UI_SNAPSHOTS.md](./UI_SNAPSHOTS.md) — `scripts/ui-snapshots.ps1` / `--ui-snapshots`: PNG of every screen at 1280x720 from a sandbox copy; run after UI changes
 - [RECIPE_SCHEMA.md](./RECIPE_SCHEMA.md) — recipe `.rcp` JSON schema

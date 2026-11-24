@@ -15,6 +15,7 @@ using media_management_app.Services.Events;
 using media_management_app.Services.Gemini;
 using media_management_app.Services.Gemini.Routing;
 using media_management_app.Services.Symlink;
+using media_management_app.Services.UiSnapshot;
 using media_management_app.Migrations;
 using media_management_app.ViewModels;
 using media_management_app.Views;
@@ -24,6 +25,8 @@ namespace media_management_app;
 public partial class App : System.Windows.Application
 {
     private const string SingleInstanceMutexName = @"Local\MediaManager.SingleInstance";
+    // --ui-snapshots runs beside the live app (its own sandbox state), so it takes a separate mutex.
+    private const string UiSnapshotMutexName = @"Local\MediaManager.UiSnapshot";
 
     private ServiceProvider? _serviceProvider;
     private Mutex? _singleInstanceMutex;
@@ -31,9 +34,28 @@ public partial class App : System.Windows.Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
-        _singleInstanceMutex = new Mutex(true, SingleInstanceMutexName, out _ownsSingleInstanceMutex);
+        var parsed = AppLaunchOptions.TryParse(e.Args, out var launchOptions, out var parseError);
+        var snapshotRequested = e.Args.Any(arg => arg.StartsWith(AppLaunchOptions.UiSnapshotsFlag, StringComparison.OrdinalIgnoreCase));
+        if (!parsed && snapshotRequested)
+        {
+            // Headless dev run: no modal dialog for the script to hang on.
+            Shutdown(2);
+            return;
+        }
+
+        _singleInstanceMutex = new Mutex(
+            true,
+            launchOptions.IsUiSnapshotMode ? UiSnapshotMutexName : SingleInstanceMutexName,
+            out _ownsSingleInstanceMutex);
         if (!_ownsSingleInstanceMutex)
         {
+            if (launchOptions.IsUiSnapshotMode)
+            {
+                WriteUiSnapshotError(launchOptions, "Another --ui-snapshots run is in progress.");
+                Shutdown(2);
+                return;
+            }
+
             AppMessageBox.Show(
                 "Media Manager is already running.",
                 "Media Manager",
@@ -43,7 +65,7 @@ public partial class App : System.Windows.Application
             return;
         }
 
-        if (!AppLaunchOptions.TryParse(e.Args, out var launchOptions, out var parseError))
+        if (!parsed)
         {
             AppMessageBox.Show(
                 parseError ?? "Invalid launch arguments.",
@@ -51,6 +73,14 @@ public partial class App : System.Windows.Application
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);
             Shutdown();
+            return;
+        }
+
+        if (launchOptions.IsUiSnapshotMode &&
+            UiSnapshotSandbox.GetStateFolderRefusal(launchOptions.StateFolder, UiSnapshotSandbox.TryReadPointerTarget()) is { } refusal)
+        {
+            WriteUiSnapshotError(launchOptions, refusal);
+            Shutdown(3);
             return;
         }
 
@@ -66,6 +96,14 @@ public partial class App : System.Windows.Application
 
         var settings = _serviceProvider.GetRequiredService<ISettingsService>();
         settings.Load(launchOptions.StateFolder);
+        if (launchOptions.IsUiSnapshotMode)
+        {
+            // Saved into the sandbox (the pin is set), so Settings' reload-on-visit keeps the cut-off values.
+            UiSnapshotSandbox.CutOffExternalServices(settings.Current, launchOptions.StateFolder!);
+            UiSnapshotSandbox.ResetTransientUiState(settings.Current);
+            settings.Save();
+        }
+
         // Once: the search backend moves from Settings into each recipe (native-search P6 step 1).
         SearchBackendMigrator.Run(settings, _serviceProvider.GetRequiredService<IRecipeService>(), _serviceProvider.GetRequiredService<IAppLogger>());
         // Shared by the search quota pill on the Auto, News and Cart screens ({DynamicResource SearchQuota}).
@@ -76,7 +114,11 @@ public partial class App : System.Windows.Application
         LogLaunchOptions(logger, launchOptions, settings);
 
         var crashLog = _serviceProvider.GetRequiredService<ICrashLogService>();
-        crashLog.ReportUncleanShutdownIfNeeded();
+        if (!launchOptions.IsUiSnapshotMode)
+        {
+            crashLog.ReportUncleanShutdownIfNeeded();
+        }
+
         crashLog.MarkAlive();
         StartCrashLoggingHooks();
 
@@ -101,7 +143,7 @@ public partial class App : System.Windows.Application
         PublishJunkCleanup.Run(AppContext.BaseDirectory, logger);
         BundleExtractionGuard.Run(logger);
 
-        if (settings.Current.Warp?.Enabled ?? true)
+        if (!launchOptions.IsUiSnapshotMode && (settings.Current.Warp?.Enabled ?? true))
         {
             // A previous session may have exited while WARP was switched to warp+doh for TMDB.
             var warpCliService = _serviceProvider.GetRequiredService<IWarpCliService>();
@@ -152,6 +194,12 @@ public partial class App : System.Windows.Application
         if (setupCompleted && !launchOptions.HasStateFolderOverride && settings.Current.Startup?.RunAtStartup == true)
         {
             EnsureStartupTaskRegistered(logger);
+        }
+
+        if (launchOptions.IsUiSnapshotMode)
+        {
+            StartUiSnapshotRun(launchOptions, logger);
+            return;
         }
 
         _serviceProvider.GetRequiredService<IWindowsNotificationService>().Initialize();
@@ -405,6 +453,57 @@ public partial class App : System.Windows.Application
         services.AddSingleton<SystemSettingsViewModel>();
         services.AddSingleton<MainViewModel>();
         services.AddSingleton<MainWindow>();
+    }
+
+    private void StartUiSnapshotRun(AppLaunchOptions launchOptions, IAppLogger logger)
+    {
+        var provider = _serviceProvider!;
+        var mainWindow = provider.GetRequiredService<MainWindow>();
+        MainWindow = mainWindow;
+        mainWindow.Show();
+
+        var runner = new UiSnapshotRunner(
+            mainWindow,
+            provider.GetRequiredService<MainViewModel>(),
+            provider.GetRequiredService<IConsoleWindowService>(),
+            provider.GetRequiredService<ITorrentAddDiskAssignmentService>(),
+            provider.GetRequiredService<IDownloadFolderCatalogService>(),
+            provider.GetRequiredService<IOperationProgressService>(),
+            logger,
+            launchOptions.UiSnapshotOutputFolder!);
+
+        Dispatcher.InvokeAsync(async () =>
+        {
+            var exitCode = 2;
+            try
+            {
+                exitCode = await runner.RunAsync();
+            }
+            catch (Exception ex)
+            {
+                logger.Error($"UI snapshots failed: {ex}");
+                WriteUiSnapshotError(launchOptions, ex.ToString());
+            }
+
+            Shutdown(exitCode);
+        }, DispatcherPriority.ApplicationIdle);
+    }
+
+    private static void WriteUiSnapshotError(AppLaunchOptions launchOptions, string message)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(launchOptions.UiSnapshotOutputFolder))
+            {
+                return;
+            }
+
+            Directory.CreateDirectory(launchOptions.UiSnapshotOutputFolder);
+            File.WriteAllText(Path.Combine(launchOptions.UiSnapshotOutputFolder, "error.txt"), message);
+        }
+        catch (Exception)
+        {
+        }
     }
 
     private void ShowFirstRunWindow(
