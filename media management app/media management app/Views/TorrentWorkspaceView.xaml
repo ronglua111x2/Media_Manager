@@ -185,6 +185,16 @@
                                                        Height="15"
                                                        Foreground="{StaticResource AppBrushAccent}" />
                         </Button>
+                        <Button Command="{Binding RefreshInJellyfinCommand}"
+                                Margin="0,0,2,0"
+                                Style="{StaticResource AppCompactIconButtonStyle}"
+                                Visibility="{Binding ShowRefreshInJellyfin, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                ToolTip="Refresh in Jellyfin: send this order's link files to Jellyfin now">
+                            <iconPacks:PackIconLucide Kind="Tv"
+                                                       Width="15"
+                                                       Height="15"
+                                                       Foreground="{StaticResource AppBrushAccent}" />
+                        </Button>
                         <Button Command="{Binding ReconcilePackCommand}"
                                 IsEnabled="{Binding CanReconcilePack}"
                                 Margin="0,0,2,0"

@@ -21,6 +21,7 @@ public sealed partial class TorrentOrderViewModel : ObservableObject
         RetrySelectCommand = new RelayCommand(RetrySelect, () => CanRetrySelect);
         RetrySearchCommand = new RelayCommand(RetrySearch, () => CanRetrySearch);
         ReconcilePackCommand = new RelayCommand(ReconcilePack, () => CanReconcilePack);
+        RefreshInJellyfinCommand = new RelayCommand(RefreshInJellyfin, () => CanRefreshInJellyfin);
     }
 
     public static bool CartOperationRunning { get; set; }
@@ -66,6 +67,33 @@ public sealed partial class TorrentOrderViewModel : ObservableObject
     public IRelayCommand RetrySearchCommand { get; }
 
     public IRelayCommand ReconcilePackCommand { get; }
+
+    public IRelayCommand RefreshInJellyfinCommand { get; }
+
+    /// <summary>Set by the cart when Jellyfin refresh is configured.</summary>
+    public bool IsJellyfinConfigured { get; init; }
+
+    /// <summary>Refresh icon shows once the order is done (linked) and Jellyfin is configured.</summary>
+    public bool ShowRefreshInJellyfin => Status == TorrentOrderStatus.Completed && IsJellyfinConfigured;
+
+    public bool CanRefreshInJellyfin => ShowRefreshInJellyfin && !IsJellyfinRefreshBusy;
+
+    private bool _isJellyfinRefreshBusy;
+
+    public bool IsJellyfinRefreshBusy
+    {
+        get => _isJellyfinRefreshBusy;
+        set
+        {
+            if (SetProperty(ref _isJellyfinRefreshBusy, value))
+            {
+                OnPropertyChanged(nameof(CanRefreshInJellyfin));
+                RefreshInJellyfinCommand.NotifyCanExecuteChanged();
+            }
+        }
+    }
+
+    public Func<TorrentOrderViewModel, Task>? RefreshInJellyfinRequested { get; set; }
 
     public Action<long, long>? CandidateSelected { get; set; }
 
@@ -297,6 +325,24 @@ public sealed partial class TorrentOrderViewModel : ObservableObject
     private void ReconcilePack()
     {
         ReconcilePackRequested?.Invoke(Id);
+    }
+
+    private async void RefreshInJellyfin()
+    {
+        if (RefreshInJellyfinRequested is null || IsJellyfinRefreshBusy)
+        {
+            return;
+        }
+
+        IsJellyfinRefreshBusy = true;
+        try
+        {
+            await RefreshInJellyfinRequested(this);
+        }
+        finally
+        {
+            IsJellyfinRefreshBusy = false;
+        }
     }
 
     public void NotifyOperationRunningChanged()

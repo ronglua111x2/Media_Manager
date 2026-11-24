@@ -397,10 +397,12 @@ public partial class App : System.Windows.Application
         services.AddSingleton<IWorkspaceNavigator, WorkspaceNavigator>();
         services.AddSingleton<AutoTrackViewModel>();
         services.AddSingleton<NewsViewModel>();
+        services.AddSingleton<IFindAddDialogs, WpfFindAddDialogs>();
         services.AddSingleton<FindAddViewModel>();
         services.AddSingleton<LibraryViewModel>();
         services.AddSingleton<StatsViewModel>();
         services.AddSingleton<TorrentWorkspaceViewModel>();
+        services.AddSingleton<ICartSearchLauncher>(provider => provider.GetRequiredService<TorrentWorkspaceViewModel>());
         services.AddSingleton<RecipeWorkspaceViewModel>();
         services.AddSingleton<SystemSettingsViewModel>();
         services.AddSingleton<MainViewModel>();

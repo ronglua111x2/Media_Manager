@@ -153,7 +153,103 @@ public sealed class JellyfinLibraryRefreshService : IJellyfinLibraryRefreshServi
             _pendingPaths.Clear();
         }
 
-        var requeued = await FlushPathsAsync(paths, cancellationToken);
+        await FlushBatchAsync(paths, notified: null, cancellationToken);
+    }
+
+    public bool IsConfigured => IsFeatureConfigured(out _);
+
+    public async Task<JellyfinRefreshNowResult> RefreshNowAsync(
+        IEnumerable<string> symlinkPaths,
+        CancellationToken cancellationToken = default)
+    {
+        var requested = (symlinkPaths ?? [])
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Select(Path.GetFullPath)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var existing = requested
+            .Where(path => File.Exists(path) || Directory.Exists(path))
+            .ToList();
+        var skipped = requested.Count - existing.Count;
+
+        if (!IsFeatureConfigured(out _))
+        {
+            _logger.Info(
+                $"Jellyfin refresh now: not configured; {requested.Count} path(s) not sent.",
+                LogTarget.File | LogTarget.Console);
+            return new JellyfinRefreshNowResult(JellyfinRefreshNowOutcome.NotConfigured, 0, skipped);
+        }
+
+        if (existing.Count == 0)
+        {
+            _logger.Info(
+                $"Jellyfin refresh now: nothing to send (requested={requested.Count}, missing on disk={skipped}).",
+                LogTarget.All);
+            return new JellyfinRefreshNowResult(JellyfinRefreshNowOutcome.NothingToSend, 0, skipped);
+        }
+
+        List<string> batch;
+        int mergedPending;
+        lock (_queueLock)
+        {
+            // Merge with the pending debounce batch and send it now, so nothing goes out twice.
+            CancelDebounceLocked();
+            mergedPending = _pendingPaths.Count(path => !existing.Contains(path, StringComparer.OrdinalIgnoreCase));
+            foreach (var path in existing)
+            {
+                _pendingPaths.Add(path);
+            }
+
+            batch = _pendingPaths.ToList();
+            _pendingPaths.Clear();
+            _consecutiveFlushFailures = 0;
+        }
+
+        _logger.Info(
+            $"Jellyfin refresh now: sending {existing.Count} path(s) (+{mergedPending} pending merged, {skipped} missing skipped).",
+            LogTarget.All);
+
+        // The flush may hold WARP for minutes after the notify; run it in the background and
+        // return as soon as Jellyfin accepted or rejected the notify.
+        var notified = new TaskCompletionSource<Exception?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var flushTask = Task.Run(() => FlushBatchAsync(batch, notified, CancellationToken.None));
+        _ = flushTask.ContinueWith(
+            task => _logger.Error("Jellyfin refresh now: background flush failed.", task.Exception, LogTarget.All),
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted,
+            TaskScheduler.Default);
+
+        await Task.WhenAny(notified.Task, flushTask).WaitAsync(cancellationToken);
+        var error = notified.Task.IsCompleted
+            ? notified.Task.Result
+            : flushTask.Exception?.GetBaseException()
+              ?? new InvalidOperationException("flush ended before the notify");
+
+        _logger.Info(
+            error is null
+                ? $"Jellyfin refresh now: notify accepted for {existing.Count} path(s)."
+                : $"Jellyfin refresh now: notify failed for {existing.Count} path(s): {error.Message}",
+            LogTarget.All);
+
+        return error is null
+            ? new JellyfinRefreshNowResult(JellyfinRefreshNowOutcome.Sent, existing.Count, skipped)
+            : new JellyfinRefreshNowResult(JellyfinRefreshNowOutcome.Failed, existing.Count, skipped, error.Message);
+    }
+
+    private async Task FlushBatchAsync(
+        List<string> paths,
+        TaskCompletionSource<Exception?>? notified,
+        CancellationToken cancellationToken)
+    {
+        bool requeued;
+        try
+        {
+            requeued = await FlushPathsAsync(paths, notified, cancellationToken);
+        }
+        finally
+        {
+            notified?.TrySetResult(new InvalidOperationException("flush ended before the notify"));
+        }
         if (requeued)
         {
             TimeSpan retryDelay;
@@ -245,10 +341,14 @@ public sealed class JellyfinLibraryRefreshService : IJellyfinLibraryRefreshServi
     }
 
     /// <returns>True when paths should be put back on the pending queue.</returns>
-    private async Task<bool> FlushPathsAsync(IReadOnlyList<string> paths, CancellationToken cancellationToken)
+    private async Task<bool> FlushPathsAsync(
+        IReadOnlyList<string> paths,
+        TaskCompletionSource<Exception?>? notified,
+        CancellationToken cancellationToken)
     {
         if (!IsFeatureConfigured(out var jellyfinSettings))
         {
+            notified?.TrySetResult(new InvalidOperationException("Jellyfin refresh is not configured"));
             _logger.Info(
                 $"Jellyfin refresh skipped {paths.Count} path(s): feature disabled or not configured.",
                 LogTarget.All);
@@ -269,6 +369,7 @@ public sealed class JellyfinLibraryRefreshService : IJellyfinLibraryRefreshServi
 
             await _jellyfinClient.ReportMediaUpdatedAsync(paths, cancellationToken);
             notifySucceeded = true;
+            notified?.TrySetResult(null);
 
             _windowsNotificationService.TryShow(new WindowsNotificationRequest
             {
@@ -324,6 +425,7 @@ public sealed class JellyfinLibraryRefreshService : IJellyfinLibraryRefreshServi
                 $"Jellyfin rejected the path notify; dropping {paths.Count} path(s). Check the Jellyfin API key.",
                 ex,
                 LogTarget.All);
+            notified?.TrySetResult(new InvalidOperationException($"Jellyfin rejected the notify (check the API key): {ex.Message}", ex));
             return false;
         }
         catch (Exception ex) when (!notifySucceeded && IsTransientJellyfinFailure(ex))
@@ -331,11 +433,13 @@ public sealed class JellyfinLibraryRefreshService : IJellyfinLibraryRefreshServi
             _logger.Warning(
                 $"Jellyfin refresh flush deferred for {paths.Count} path(s): {ex.Message}",
                 LogTarget.All);
+            notified?.TrySetResult(new InvalidOperationException($"Jellyfin unreachable, kept queued for retry: {ex.Message}", ex));
             return true;
         }
         catch (Exception ex) when (!notifySucceeded)
         {
             _logger.Error($"Jellyfin refresh flush failed for {paths.Count} path(s); re-queueing.", ex, LogTarget.All);
+            notified?.TrySetResult(ex);
             return true;
         }
         catch (Exception ex)

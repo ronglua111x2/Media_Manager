@@ -278,7 +278,19 @@
                     BorderThickness="1"
                     CornerRadius="6"
                     Padding="10,8"
-                    Margin="0,0,0,6">
+                    Margin="0,0,0,6"
+                    Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=UserControl}}">
+                <Border.ContextMenu>
+                    <ContextMenu>
+                        <MenuItem Header="Refresh in Jellyfin"
+                                  Command="{Binding PlacementTarget.Tag.RefreshEpisodeInJellyfinCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                  CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}">
+                            <MenuItem.Icon>
+                                <iconPacks:PackIconLucide Kind="RefreshCw" Width="14" Height="14" />
+                            </MenuItem.Icon>
+                        </MenuItem>
+                    </ContextMenu>
+                </Border.ContextMenu>
                 <Border.Style>
                     <Style TargetType="Border">
                         <Style.Triggers>
@@ -716,7 +728,19 @@
                 </materialDesign:Card.Style>
                 <Expander IsExpanded="{Binding IsExpanded, Mode=TwoWay}">
                     <Expander.Header>
-                        <Grid>
+                        <Grid Background="Transparent"
+                              Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=UserControl}}">
+                <Grid.ContextMenu>
+                    <ContextMenu>
+                        <MenuItem Header="Refresh season in Jellyfin"
+                                  Command="{Binding PlacementTarget.Tag.RefreshSeasonInJellyfinCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                  CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}">
+                            <MenuItem.Icon>
+                                <iconPacks:PackIconLucide Kind="RefreshCw" Width="14" Height="14" />
+                            </MenuItem.Icon>
+                        </MenuItem>
+                    </ContextMenu>
+                </Grid.ContextMenu>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
@@ -1227,6 +1251,21 @@
                            Style="{StaticResource MutedTextStyle}"
                            TextTrimming="CharacterEllipsis"
                            VerticalAlignment="Center" />
+                <Button Style="{StaticResource AppOutlinedButtonStyle}"
+                        Command="{Binding RefreshLastLinkedInJellyfinCommand}"
+                        Margin="12,0,0,0"
+                        Padding="8,2"
+                        Visibility="{Binding HasLastLinkedPaths, Converter={StaticResource BooleanToVisibilityConverter}}"
+                        ToolTip="Send everything the last Reconcile / Import linked to Jellyfin in one request.">
+                    <StackPanel Orientation="Horizontal">
+                        <iconPacks:PackIconLucide Kind="RefreshCw"
+                                                   Width="12"
+                                                   Height="12"
+                                                   Margin="0,0,6,0"
+                                                   VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding LastLinkedRefreshLabel}" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
             </StackPanel>
 
             <materialDesign:Card Grid.Row="1">
@@ -1501,6 +1540,20 @@
                                         <StackPanel Grid.Column="1"
                                                     Orientation="Horizontal"
                                                     Margin="12,0,0,0">
+                                            <Button Style="{StaticResource AppOutlinedButtonStyle}"
+                                                    Command="{Binding RefreshSelectedTitleInJellyfinCommand}"
+                                                    Margin="0,0,8,0"
+                                                    Visibility="{Binding SelectedTitleHasJellyfinSymlink, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                                    ToolTip="Send this title's link files to Jellyfin now (all linked episodes for a show). Needs Jellyfin set up in Settings.">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <iconPacks:PackIconLucide Kind="RefreshCw"
+                                                                               Width="14"
+                                                                               Height="14"
+                                                                               Margin="0,0,6,0"
+                                                                               VerticalAlignment="Center" />
+                                                    <TextBlock Text="Jellyfin" VerticalAlignment="Center" />
+                                                </StackPanel>
+                                            </Button>
                                             <Button Style="{StaticResource AppDangerButtonStyle}"
                                                     Command="{Binding ChangeEpisodeOrganizationCommand}"
                                                     Margin="0,0,8,0"
