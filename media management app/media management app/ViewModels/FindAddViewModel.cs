@@ -18,6 +18,12 @@ public sealed partial class FindAddViewModel : ViewModelBase
 {
     private const int MaxConcurrentDetailLoads = 4;
 
+    /// <summary>
+    /// Show the typed "are you sure" lock (<see cref="AddMediaLockDialog"/>) before adding.
+    /// Off: adding from Find is cheap to undo (Delete in Library). Flip to bring the lock back.
+    /// </summary>
+    public static readonly bool ConfirmBeforeAdd = false;
+
     private static readonly HttpClient PosterHttpClient = Services.Net.NetworkClients.CreateImages();
 
     private readonly ITrackedShowService _trackedShowService;
@@ -26,6 +32,10 @@ public sealed partial class FindAddViewModel : ViewModelBase
     private readonly ITmdbMovieCatalogService _movieCatalogService;
     private readonly IRecipeService _recipeService;
     private readonly IAppLogger _logger;
+    private readonly ITorrentCartService _torrentCartService;
+    private readonly ICartSearchLauncher _cartSearchLauncher;
+    private readonly IFindAddDialogs _dialogs;
+    private (MediaKind Kind, long Id)? _lastQuickAddTarget;
 
     private IReadOnlyList<SearchRecipe> _allRecipes = [];
     private IReadOnlyList<FindAddMediaCardViewModel> _allMediaCards = [];
@@ -38,8 +48,15 @@ public sealed partial class FindAddViewModel : ViewModelBase
         ITmdbShowCatalogService showCatalogService,
         ITmdbMovieCatalogService movieCatalogService,
         IRecipeService recipeService,
-        IAppLogger logger)
+        IAppLogger logger,
+        ITorrentCartService torrentCartService,
+        ICartSearchLauncher cartSearchLauncher,
+        IFindAddDialogs dialogs)
     {
+        _torrentCartService = torrentCartService;
+        _cartSearchLauncher = cartSearchLauncher;
+        _dialogs = dialogs;
+        _cartSearchLauncher.SearchFinished += OnCartSearchFinished;
         _trackedShowService = trackedShowService;
         _trackedMovieService = trackedMovieService;
         _showCatalogService = showCatalogService;
@@ -98,7 +115,12 @@ public sealed partial class FindAddViewModel : ViewModelBase
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(AddSelectedToLibraryCommand))]
+    [NotifyCanExecuteChangedFor(nameof(QuickAddSelectedCommand))]
     private bool isAddingToLibrary;
+
+    /// <summary>True after a quick-add queued orders: the status line shows "Open cart".</summary>
+    [ObservableProperty]
+    private bool canOpenQuickAddCart;
 
     [ObservableProperty]
     private int discoveredResultCount;
@@ -127,6 +149,12 @@ public sealed partial class FindAddViewModel : ViewModelBase
         : $"{SelectedResult.TypeLabel} - {SelectedResult.YearLabel} - {SelectedResult.StatLabel}";
 
     public string AddButtonText => SelectedResult?.IsAlreadyAdded == true ? "Already Added" : "Add to Library";
+
+    public string QuickAddButtonText => SelectedResult?.IsAlreadyAdded == true ? "Search now" : "Add + search";
+
+    public string QuickAddButtonToolTip => SelectedResult?.IsAlreadyAdded == true
+        ? "Queue cart orders for this title and start the cart search (stays on this tab)"
+        : "Add to library, queue cart orders and start the cart search (stays on this tab)";
 
     public string MediaSortDirectionToolTip => MediaCardSort.GetDirectionToolTip(MediaSortField, IsSortAscending);
 
@@ -257,85 +285,273 @@ public sealed partial class FindAddViewModel : ViewModelBase
     [RelayCommand(CanExecute = nameof(CanAddSelectedToLibrary))]
     private async Task AddSelectedToLibraryAsync()
     {
-        if (SelectedResult is null || SelectedResult.IsAlreadyAdded)
+        var result = SelectedResult;
+        if (result is null || result.IsAlreadyAdded)
         {
             return;
         }
 
         IsAddingToLibrary = true;
-        StatusMessage = $"Adding '{SelectedResult.Title}' to library...";
+        StatusMessage = $"Adding '{result.Title}' to library...";
         try
         {
-            var mediaTitle = SelectedResult.Year is null
-                ? SelectedResult.Title
-                : $"{SelectedResult.Title} ({SelectedResult.Year})";
-            var lockDialog = new AddMediaLockDialog(mediaTitle)
-            {
-                Owner = System.Windows.Application.Current.MainWindow
-            };
-            if (lockDialog.ShowDialog() != true)
-            {
-                StatusMessage = "Add cancelled.";
-                return;
-            }
-
-            if (SelectedResult.MediaKind == MediaKind.Movie)
-            {
-                var movie = await _trackedMovieService.AddMovieAsync(SelectedResult.ToMovieSearchResult());
-                _trackedMovieService.UpdateRecipe(movie.Id, SelectedRecipeId);
-            }
-            else
-            {
-                string? episodeGroupId = null;
-                string? episodeGroupName = null;
-                var episodeGroups = await _trackedShowService.GetEpisodeGroupsAsync(SelectedResult.TmdbId);
-                if (episodeGroups.Count > 0)
-                {
-                    var dialog = new EpisodeOrganizationDialog(
-                        SelectedResult.Year is null
-                            ? SelectedResult.Title
-                            : $"{SelectedResult.Title} ({SelectedResult.Year})",
-                        SelectedResult.SeasonCount,
-                        SelectedResult.EpisodeCount,
-                        episodeGroups)
-                    {
-                        Owner = System.Windows.Application.Current.MainWindow
-                    };
-
-                    if (dialog.ShowDialog() != true)
-                    {
-                        StatusMessage = "Add cancelled.";
-                        return;
-                    }
-
-                    episodeGroupId = dialog.SelectedEpisodeGroupId;
-                    episodeGroupName = dialog.SelectedEpisodeGroupName;
-                }
-
-                var show = await _trackedShowService.AddShowAsync(
-                    SelectedResult.ToShowSearchResult(),
-                    episodeGroupId,
-                    episodeGroupName);
-                _trackedShowService.UpdateRecipe(show.Id, SelectedRecipeId);
-                _trackedShowService.UpdatePackRecipe(show.Id, GetDefaultRecipeId(MediaKind.TvSeasonPack));
-            }
-
-            SelectedResult.IsAlreadyAdded = true;
-            RefreshExistingMedia();
-            StatusMessage = $"Added '{SelectedResult.Title}' to library.";
-            AddSelectedToLibraryCommand.NotifyCanExecuteChanged();
-            OnPropertyChanged(nameof(AddButtonText));
+            var added = await AddToLibraryCoreAsync(result);
+            StatusMessage = added is null ? "Add cancelled." : $"Added '{result.Title}' to library.";
         }
         catch (Exception ex)
         {
             StatusMessage = ex.Message;
-            _logger.Error($"Failed to add '{SelectedResult.Title}' to library.", ex, LogTarget.All);
+            _logger.Error($"Failed to add '{result.Title}' to library.", ex, LogTarget.All);
         }
         finally
         {
             IsAddingToLibrary = false;
         }
     }
+
+    /// <summary>
+    /// The add step shared by "Add to library" and "Add + search": optional lock dialog, episode order
+    /// dialog for shows, add, recipes. Returns the new item, or null when a dialog was cancelled.
+    /// </summary>
+    internal async Task<QuickAddTarget?> AddToLibraryCoreAsync(TmdbUnifiedSearchResult result)
+    {
+        var mediaTitle = FormatMediaTitle(result);
+        if (ConfirmBeforeAdd && !_dialogs.ConfirmAdd(mediaTitle))
+        {
+            return null;
+        }
+
+        QuickAddTarget target;
+        if (result.MediaKind == MediaKind.Movie)
+        {
+            var movie = await _trackedMovieService.AddMovieAsync(result.ToMovieSearchResult());
+            _trackedMovieService.UpdateRecipe(movie.Id, SelectedRecipeId);
+            target = new QuickAddTarget(MediaKind.Movie, movie.Id, movie.Title);
+        }
+        else
+        {
+            string? episodeGroupId = null;
+            string? episodeGroupName = null;
+            var episodeGroups = await _trackedShowService.GetEpisodeGroupsAsync(result.TmdbId);
+            if (episodeGroups.Count > 0 &&
+                !_dialogs.TryPickEpisodeOrganization(
+                    mediaTitle,
+                    result.SeasonCount,
+                    result.EpisodeCount,
+                    episodeGroups,
+                    out episodeGroupId,
+                    out episodeGroupName))
+            {
+                return null;
+            }
+
+            var show = await _trackedShowService.AddShowAsync(
+                result.ToShowSearchResult(),
+                episodeGroupId,
+                episodeGroupName);
+            _trackedShowService.UpdateRecipe(show.Id, SelectedRecipeId);
+            _trackedShowService.UpdatePackRecipe(show.Id, GetDefaultRecipeId(MediaKind.TvSeasonPack));
+            target = new QuickAddTarget(MediaKind.TvEpisode, show.Id, show.Title);
+        }
+
+        result.IsAlreadyAdded = true;
+        RefreshExistingMedia();
+        AddSelectedToLibraryCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(AddButtonText));
+        OnPropertyChanged(nameof(QuickAddButtonText));
+        OnPropertyChanged(nameof(QuickAddButtonToolTip));
+        return target;
+    }
+
+    /// <summary>
+    /// "Add + search" (or "Search now" when already in the library): add, queue cart orders and start
+    /// the Cart's search for just those orders. Stays on Find; the status line offers "Open cart".
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanQuickAddSelected))]
+    private async Task QuickAddSelectedAsync()
+    {
+        var result = SelectedResult;
+        if (result is null)
+        {
+            return;
+        }
+
+        var alreadyAdded = result.IsAlreadyAdded;
+        IsAddingToLibrary = true;
+        CanOpenQuickAddCart = false;
+        QuickAddTarget? target = null;
+        try
+        {
+            var option = QuickAddShowOption.AllSeasonPacks;
+            if (result.MediaKind != MediaKind.Movie)
+            {
+                var picked = _dialogs.PickQuickAddShowOption(FormatMediaTitle(result), alreadyAdded);
+                if (picked is null)
+                {
+                    StatusMessage = alreadyAdded ? "Search cancelled." : "Add cancelled.";
+                    return;
+                }
+
+                option = picked.Value;
+            }
+
+            if (alreadyAdded)
+            {
+                target = FindExistingTarget(result);
+                if (target is null)
+                {
+                    StatusMessage = $"'{result.Title}' is no longer in the library.";
+                    return;
+                }
+            }
+            else
+            {
+                StatusMessage = $"Adding '{result.Title}' to library...";
+                target = await AddToLibraryCoreAsync(result);
+                if (target is null)
+                {
+                    StatusMessage = "Add cancelled.";
+                    return;
+                }
+            }
+
+            if (option == QuickAddShowOption.LibraryOnly)
+            {
+                StatusMessage = $"Added '{result.Title}' to library.";
+                return;
+            }
+
+            var queued = QueueQuickAddOrders(target, option, result.SeasonCount);
+            _logger.Info(
+                $"Find quick-add: Kind={target.Kind}, MediaId={target.Id}, Option={option}, NewOrders={queued.NewOrderIds.Count}, AlreadyInCart={queued.SkippedExisting}, PackFallback={queued.FellBackToPacks}, Recipe={SelectedRecipeId ?? "default"}, PackRecipe={GetDefaultRecipeId(MediaKind.TvSeasonPack) ?? "default"}.",
+                LogTarget.All);
+
+            if (queued.NewOrderIds.Count > 0)
+            {
+                _cartSearchLauncher.QueueSearch(target.Kind, target.Id, target.Title, queued.NewOrderIds);
+            }
+
+            _lastQuickAddTarget = (target.Kind, target.Id);
+            CanOpenQuickAddCart = true;
+            StatusMessage = BuildQuickAddStatus(result.Title, alreadyAdded, queued);
+        }
+        catch (Exception ex)
+        {
+            // The library item stays (no rollback); only queueing failed.
+            StatusMessage = target is null
+                ? ex.Message
+                : $"'{result.Title}' is in the library, but queueing cart orders failed: {ex.Message}";
+            if (target is not null)
+            {
+                _lastQuickAddTarget = (target.Kind, target.Id);
+                CanOpenQuickAddCart = true;
+            }
+
+            _logger.Error($"Find quick-add failed for '{result.Title}'.", ex, LogTarget.All);
+        }
+        finally
+        {
+            IsAddingToLibrary = false;
+        }
+    }
+
+    private bool CanQuickAddSelected() => SelectedResult is not null && !IsAddingToLibrary;
+
+    [RelayCommand]
+    private void OpenQuickAddCart()
+    {
+        if (_lastQuickAddTarget is { } target)
+        {
+            _cartSearchLauncher.OpenCart(target.Kind, target.Id);
+        }
+    }
+
+    internal sealed record QuickAddQueueResult(IReadOnlyList<long> NewOrderIds, int SkippedExisting, bool FellBackToPacks);
+
+    /// <summary>Adds the cart orders the option asks for, skipping any already active in the cart.</summary>
+    internal QuickAddQueueResult QueueQuickAddOrders(QuickAddTarget target, QuickAddShowOption option, int fallbackSeasonCount)
+    {
+        var newOrderIds = new List<long>();
+        var skipped = 0;
+        if (target.Kind == MediaKind.Movie)
+        {
+            if (_torrentCartService.TryGetActiveMovieOrder(target.Id, out _))
+            {
+                return new QuickAddQueueResult([], 1, false);
+            }
+
+            newOrderIds.Add(_torrentCartService.AddMovieOrder(target.Id, target.Title).Id);
+            return new QuickAddQueueResult(newOrderIds, 0, false);
+        }
+
+        var plan = FindQuickAddPlanner.PlanShow(
+            option,
+            _trackedShowService.GetEpisodes(target.Id),
+            fallbackSeasonCount,
+            DateTime.Now);
+        foreach (var request in plan.Orders)
+        {
+            if (request.Episode is { } episode)
+            {
+                if (_torrentCartService.TryGetActiveEpisodeOrder(episode.Id, out _))
+                {
+                    skipped++;
+                    continue;
+                }
+
+                newOrderIds.Add(_torrentCartService.AddEpisodeOrder(
+                    target.Id,
+                    episode.Id,
+                    episode.SeasonNumber,
+                    episode.EpisodeNumber,
+                    episode.Title).Id);
+                continue;
+            }
+
+            if (_torrentCartService.TryGetActiveSeasonPackOrder(target.Id, request.SeasonNumber, out _))
+            {
+                skipped++;
+                continue;
+            }
+
+            newOrderIds.Add(_torrentCartService.AddSeasonPackOrder(target.Id, request.SeasonNumber).Id);
+        }
+
+        return new QuickAddQueueResult(newOrderIds, skipped, plan.FellBackToPacks);
+    }
+
+    private static string BuildQuickAddStatus(string title, bool alreadyAdded, QuickAddQueueResult queued)
+    {
+        var prefix = alreadyAdded ? $"'{title}'" : $"Added '{title}'";
+        var skipped = queued.SkippedExisting > 0 ? $", {queued.SkippedExisting} already in cart" : string.Empty;
+        var fallback = queued.FellBackToPacks ? $" (more than {FindQuickAddPlanner.MaxEpisodeOrders} missing episodes: using season packs)" : string.Empty;
+        return queued.NewOrderIds.Count == 0
+            ? $"{prefix}: nothing new to search{skipped}."
+            : $"{prefix} + {queued.NewOrderIds.Count} order(s) queued{skipped}, searching...{fallback}";
+    }
+
+    private QuickAddTarget? FindExistingTarget(TmdbUnifiedSearchResult result)
+    {
+        if (result.MediaKind == MediaKind.Movie)
+        {
+            var movie = _trackedMovieService.GetMovies().FirstOrDefault(item => item.TmdbId == result.TmdbId);
+            return movie is null ? null : new QuickAddTarget(MediaKind.Movie, movie.Id, movie.Title);
+        }
+
+        var show = _trackedShowService.GetShows().FirstOrDefault(item => item.TmdbId == result.TmdbId);
+        return show is null ? null : new QuickAddTarget(MediaKind.TvEpisode, show.Id, show.Title);
+    }
+
+    private void OnCartSearchFinished(object? sender, CartSearchFinishedEventArgs e)
+    {
+        if (_lastQuickAddTarget is { } target && target.Kind == e.Kind && target.Id == e.MediaId)
+        {
+            StatusMessage = $"{e.Title}: {e.Status}";
+        }
+    }
+
+    private static string FormatMediaTitle(TmdbUnifiedSearchResult result) =>
+        result.Year is null ? result.Title : $"{result.Title} ({result.Year})";
 
     public override void OnNavigatedTo()
     {
@@ -392,7 +608,10 @@ public sealed partial class FindAddViewModel : ViewModelBase
         }
 
         AddSelectedToLibraryCommand.NotifyCanExecuteChanged();
+        QuickAddSelectedCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(AddButtonText));
+        OnPropertyChanged(nameof(QuickAddButtonText));
+        OnPropertyChanged(nameof(QuickAddButtonToolTip));
     }
 
     [RelayCommand]
@@ -454,7 +673,10 @@ public sealed partial class FindAddViewModel : ViewModelBase
         OnPropertyChanged(nameof(SelectedResultHeading));
         OnPropertyChanged(nameof(SelectedResultSubheading));
         OnPropertyChanged(nameof(AddButtonText));
+        OnPropertyChanged(nameof(QuickAddButtonText));
+        OnPropertyChanged(nameof(QuickAddButtonToolTip));
         AddSelectedToLibraryCommand.NotifyCanExecuteChanged();
+        QuickAddSelectedCommand.NotifyCanExecuteChanged();
     }
 
     partial void OnSelectedRecipeIdChanged(string? value)

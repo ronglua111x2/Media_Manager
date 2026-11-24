@@ -34,6 +34,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
     private readonly IDownloadFolderCatalogService _downloadFolderCatalogService;
     private readonly IGeminiLinkConfirmationService _geminiLinkConfirmationService;
     private readonly IJellyfinMediaNavigationService _jellyfinMediaNavigationService;
+    private readonly IJellyfinLibraryRefreshService _jellyfinLibraryRefreshService;
     private readonly UiBusyWork _tabEnterBusyWork = new();
 
     private IReadOnlyList<LibraryMediaCardViewModel> _allMediaCards = [];
@@ -71,6 +72,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
         IDownloadFolderCatalogService downloadFolderCatalogService,
         IGeminiLinkConfirmationService geminiLinkConfirmationService,
         IJellyfinMediaNavigationService jellyfinMediaNavigationService,
+        IJellyfinLibraryRefreshService jellyfinLibraryRefreshService,
         ILibraryLinkEventHub libraryLinkEventHub,
         IAppLifecycleService lifecycleService)
     {
@@ -90,6 +92,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
         _downloadFolderCatalogService = downloadFolderCatalogService;
         _geminiLinkConfirmationService = geminiLinkConfirmationService;
         _jellyfinMediaNavigationService = jellyfinMediaNavigationService;
+        _jellyfinLibraryRefreshService = jellyfinLibraryRefreshService;
 
         _torrentCartService.CartChanged += (_, _) =>
         {
@@ -114,6 +117,8 @@ public sealed partial class LibraryViewModel : ViewModelBase
 
     public override void OnNavigatedTo()
     {
+        // Jellyfin settings may have changed on the Settings tab.
+        NotifyJellyfinRefreshCommands();
         if (!_hasNavigatedToLibrary)
         {
             _hasNavigatedToLibrary = true;
@@ -528,12 +533,14 @@ public sealed partial class LibraryViewModel : ViewModelBase
             }
 
             ImportStatusMessage = "Importing selected media...";
+            var linkedBefore = SnapshotLinkedSymlinkPaths();
             var result = await _mediaImportService.CommitAsync(groups);
             RefreshLibrary();
             SelectImportedMedia(result);
             IsImportPanelOpen = false;
             ImportStatusMessage = result.Summary;
             StatusMessage = result.Summary;
+            OfferJellyfinRefreshForNewLinks(linkedBefore);
         });
     }
 
@@ -1202,9 +1209,11 @@ public sealed partial class LibraryViewModel : ViewModelBase
         try
         {
             StatusMessage = "Reconciling existing qBittorrent torrents for entire library...";
+            var linkedBefore = SnapshotLinkedSymlinkPaths();
             var result = await _torrentReconciliationService.ReconcileAsync(TorrentReconciliationScope.All);
             await ReloadSelectedDetailAsync();
             StatusMessage = $"Torrent reconciliation complete. {result.Summary}.";
+            OfferJellyfinRefreshForNewLinks(linkedBefore);
         }
         catch (Exception ex)
         {
@@ -1918,6 +1927,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
         IncrementWatchedEpisodesCommand.NotifyCanExecuteChanged();
         DecrementWatchedEpisodesCommand.NotifyCanExecuteChanged();
         OpenSelectedTitleInJellyfinCommand.NotifyCanExecuteChanged();
+        NotifyJellyfinRefreshCommands();
         HandleSelectedShowForRatingChart();
     }
 
@@ -1926,6 +1936,7 @@ public sealed partial class LibraryViewModel : ViewModelBase
         OnPropertyChanged(nameof(ShowStopAutoTrackButton));
         OnPropertyChanged(nameof(SelectedTitleHasJellyfinSymlink));
         OpenSelectedTitleInJellyfinCommand.NotifyCanExecuteChanged();
+        NotifyJellyfinRefreshCommands();
     }
 
     [RelayCommand]

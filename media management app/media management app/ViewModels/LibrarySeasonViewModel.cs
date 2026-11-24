@@ -35,6 +35,9 @@ public partial class LibrarySeasonViewModel : ObservableObject
 
     public long ShowId { get; }
 
+    /// <summary>True when at least one episode of this season has a link file on disk.</summary>
+    public bool HasJellyfinSymlink => Episodes.Any(episode => episode.HasJellyfinSymlink);
+
     public int SeasonNumber { get; }
 
     public string Header => $"{AppConstants.FormatSeasonDisplayName(SeasonNumber)} | {SeasonStats}";
